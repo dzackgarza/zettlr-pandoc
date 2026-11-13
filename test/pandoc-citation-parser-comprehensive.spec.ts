@@ -17,15 +17,15 @@
  */
 
 import { EditorState } from "@codemirror/state";
-import { strict as assert } from "assert";
 import {
   type Citation,
   type CiteItem,
   extractCitationNodes,
   NODES,
   nodeToCiteItem,
-} from "source/common/modules/markdown-editor/parser/citation-parser";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+} from "@dzack/pandoc-editor/parser/citation-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { strict as assert } from "assert";
 import { referenceFamilyOf } from "source/types/common/references";
 
 function parseCitations(source: string): Citation[] {

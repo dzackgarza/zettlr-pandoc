@@ -29,7 +29,7 @@
 
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 
 interface ToastState {
   text: string;

@@ -12,10 +12,14 @@
         active: activeItem === item.path,
         project: item.type === 'directory' && item.settings.project != null,
         'is-ignored': isIgnored,
+        'is-unreadable': readError !== undefined,
+        'has-metadata-problem': metadataProblems.length > 0,
         root: isRoot
       }"
       v-bind:data-id="item.type === 'file' ? item.id : ''"
       v-bind:data-path="item.path"
+      v-bind:data-read-error="readError?.code"
+      v-bind:data-metadata-problem="metadataProblemSources(item)"
       v-bind:style="{
         'padding-left': `calc(${depth} * var(--chrome-indent) + var(--chrome-inset))`
       }"
@@ -61,7 +65,7 @@
           v-bind:class="{
             'special': typeof primaryIcon !== 'boolean' && ![ 'right', 'down' ].includes(primaryIcon)
           }"
-          v-bind:solid="typeof primaryIcon !== 'boolean' && [ 'disconnect', 'blocks-group' ].includes(primaryIcon)"
+          v-bind:solid="typeof primaryIcon !== 'boolean' && [ 'disconnect', 'blocks-group', 'warning-standard' ].includes(primaryIcon)"
         ></cds-icon>
       </span>
       <span
@@ -73,7 +77,7 @@
         role="button"
         v-bind:aria-label="`Select ${item.name}`"
         v-bind:draggable="!isRoot && !nameEditing"
-        v-bind:title="item.path"
+        v-bind:title="rowTitle"
         v-on:dragstart="beginDragging"
         v-on:drag="onDragHandler"
       >
@@ -86,11 +90,11 @@
             type="text"
             class="filename-input"
             v-bind:placeholder="filenameInputPlaceholder"
-            v-bind:value="item.name"
+            v-model="fieldText"
             v-on:keyup.enter="finishNameEditing(($event.target as HTMLInputElement).value)"
             v-on:keyup.esc="nameEditing = false"
             v-on:keydown.stop=""
-            v-on:blur="nameEditing = false"
+            v-on:blur="onNameFieldBlur($event, () => (nameEditing = false))"
             v-on:click.stop=""
           >
         </template>
@@ -134,11 +138,12 @@
         ref="newObjectInput"
         class="filename-input"
         type="text"
+        v-model="fieldText"
         v-bind:placeholder="filenameInputPlaceholder"
-        v-on:keyup.enter="handleOperationFinish(($event.target as HTMLInputElement).value)"
+        v-on:keyup.enter="finishOperation(($event.target as HTMLInputElement).value)"
         v-on:keyup.esc="operationType = undefined"
         v-on:keydown.stop=""
-        v-on:blur="operationType = undefined"
+        v-on:blur="onNameFieldBlur($event, () => (operationType = undefined))"
         v-on:click.stop=""
       >
     </div>
@@ -196,12 +201,10 @@ import {
   projectMembershipForPath,
   sortExplorerChildren,
 } from "@common/util/explorer-ordering";
-import generateFilename from "@common/util/generate-filename";
-import { pathBasename } from "@common/util/renderer-path-polyfill";
+import { isAtOrInsideRoot, pathBasename } from "@common/util/renderer-path-polyfill";
 
 import RingProgress from "@common/vue/window/toolbar-controls/RingProgress.vue";
 import type { AnyDescriptor } from "@dts/common/fsal";
-import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import type { WritingTarget } from "source/app/service-providers/targets";
 import {
   hasDataExt,
@@ -219,11 +222,19 @@ import {
 } from "source/pinia";
 import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 import getDocumentTitle from "../util/get-document-title";
-import { eventsChangeChildren } from "./util/events-change-children";
-import { filterDescriptorChildren } from "./util/filter-children";
+import { followChildren } from "./util/follow-children";
 import { useItemComposable } from "./util/item-composable";
+import { onNameFieldBlur } from "./util/name-field-blur";
+import { newDirectoryRequest } from "./util/new-directory-request";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
 import PopoverFileProps from "./util/PopoverFileProps.vue";
+import {
+  metadataProblemSentence,
+  metadataProblemSources,
+  metadataProblemsOf,
+  readErrorOf,
+  readErrorSentence,
+} from "./util/read-error";
 
 const ipcRenderer = window.ipc;
 
@@ -261,15 +272,24 @@ const {
   nameEditing,
   showPopover,
   operationType,
+  fieldText,
   onDragHandler,
   handleContextMenu,
   requestSelection,
   finishNameEditing,
+  finishOperation,
   isDirectory,
   selectedFile,
   selectedDir,
   updateObject,
-} = useItemComposable(props.item, displayText, props.windowId, nameEditingInput);
+} = useItemComposable(
+  props.item,
+  displayText,
+  props.windowId,
+  nameEditingInput,
+  newObjectInput,
+  "tree",
+);
 
 const filenameInputPlaceholder = trans("Enter a name");
 
@@ -289,11 +309,6 @@ const shouldBeCollapsed = computed<boolean>(
   () => props.filterResults.length === 0 && collapsed.value,
 );
 
-const showDotFiles = ref<boolean>(configStore.config.files.dotFiles.showInFilemanager);
-configStore.$subscribe((_mutation, state) => {
-  showDotFiles.value = state.config.files.dotFiles.showInFilemanager;
-});
-
 /**
  * The secondary icon's shape -- this is the visually FIRST icon to be
  * displayed. Displays either an angle (for directories with children), or
@@ -310,9 +325,11 @@ const secondaryIcon = computed(() => (filteredChildren.value.length > 0 ? "angle
  * @return  {string}  The icon name (as in: cds-shape)
  */
 const primaryIcon = computed(() => {
-  const { files, attachmentExtensions } = configStore.config;
+  const { attachmentExtensions } = configStore.config;
 
-  if (props.item.type === "file" && writingTarget.value !== undefined) {
+  if (readError.value !== undefined || metadataProblems.value.length > 0) {
+    return "warning-standard";
+  } else if (props.item.type === "file" && writingTarget.value !== undefined) {
     return "writing-target";
   } else if (props.item.type === "file") {
     return "markdown";
@@ -332,12 +349,6 @@ const primaryIcon = computed(() => {
     } else if (hasExt(props.item.path, attachmentExtensions)) {
       return "file-group";
     } else {
-      // Generic other file (this should not happen as they get filtered out before)
-      if (!files.dotFiles.showInFilemanager) {
-        console.warn(
-          `Encountered a file with extension ${props.item.ext}. These should've been filtered out before reaching this point!`,
-        );
-      }
       return "unknown-status";
     }
   } else if (props.item.type === "directory" && props.item.dirNotFoundFlag === true) {
@@ -400,6 +411,21 @@ const isIgnored = computed(() => {
   );
 });
 
+/** Why the text of this file could not be read; undefined for a file that was read. */
+const readError = computed(() => readErrorOf(props.item));
+
+/** The settings file or the manifest of this folder that could not be used. */
+const metadataProblems = computed(() => metadataProblemsOf(props.item));
+
+/** The path of the item and each cause that the application could not read it for. */
+const rowTitle = computed(() =>
+  [
+    props.item.path,
+    ...(readError.value === undefined ? [] : [readErrorSentence(readError.value)]),
+    ...metadataProblems.value.map(metadataProblemSentence),
+  ].join("\n"),
+);
+
 /**
  * Returns true if the file manager mode is set to "combined"
  */
@@ -418,8 +444,6 @@ const filteredChildren = computed(() => {
     return [];
   }
 
-  const filter = filterDescriptorChildren();
-
   return (
     children.value
       // Ensure we only consider filtered files
@@ -428,16 +452,10 @@ const filteredChildren = computed(() => {
           return true;
         }
 
-        return props.filterResults.some((res) => res.startsWith(child.path));
+        return props.filterResults.some((res) => isAtOrInsideRoot(res, child.path));
       })
-      // Filter based on our rules
-      .filter((child) => {
-        if (!combined.value) {
-          return child.type === "directory" && filter(child);
-        }
-
-        return filter(child);
-      })
+      // The thin and expanded modes list only folders in the tree.
+      .filter((child) => combined.value || child.type === "directory")
   );
 });
 
@@ -452,13 +470,14 @@ const sortedChildren = computed(() => {
     fileNameDisplay: configStore.config.fileNameDisplay,
     appLang: configStore.config.appLang,
     fileMetaTime: configStore.config.fileMetaTime,
+    showMarkdownExtensions: configStore.config.display.markdownFileExtensions,
   } as const;
 
   return sortExplorerChildren(
     props.item,
     filteredChildren.value,
     defaults,
-    workspaceStore.rootDescriptors,
+    workspaceStore.projectDirectories,
   );
 });
 
@@ -476,7 +495,7 @@ const basename = computed(() => {
       ? configStore.config.fileNameDisplay
       : effectiveExplorerDisplayForDirectory(
           ownerDirectory.value,
-          workspaceStore.rootDescriptors,
+          workspaceStore.projectDirectories,
           configStore.config.fileNameDisplay,
         );
   return getDocumentTitle(props.item, display);
@@ -485,7 +504,7 @@ const basename = computed(() => {
 const projectMembership = computed(() =>
   props.item.type === "directory"
     ? undefined
-    : projectMembershipForPath(props.item.path, workspaceStore.rootDescriptors),
+    : projectMembershipForPath(props.item.path, workspaceStore.projectDirectories),
 );
 
 const projectMembershipTitle = computed(() => {
@@ -526,78 +545,48 @@ watch(nameEditing, (isEditing) => {
   }
 });
 
-watch(operationType, (newVal) => {
-  if (newVal !== undefined) {
-    nextTick()
-      .then(() => {
-        if (newObjectInput.value === null) {
-          return;
-        }
-
-        if (operationType.value === "createFile") {
-          // If we're generating a file, generate a filename
-          const filenamePattern = configStore.config.newFileNamePattern;
-          const idGenPattern = configStore.config.zkn.idGen;
-          newObjectInput.value.value = generateFilename(filenamePattern, idGenPattern);
-        } else if (operationType.value === "createDir") {
-          // Else standard val for new dirs.
-          newObjectInput.value.value = trans("Untitled");
-        }
-        newObjectInput.value.focus();
-        // Select from the beginning until the last dot
-        newObjectInput.value.setSelectionRange(0, newObjectInput.value.value.lastIndexOf("."));
-      })
-      .catch((err) => reportError(err));
-  }
-});
-
 // I have no idea why passing this as a Ref to the composable doesn't work, but
 // this way it does.
 watch(toRef(props, "item"), function (value) {
   updateObject(value);
 });
 
-watch(showDotFiles, async function () {
-  if (props.item.type === "directory") {
-    await fetchChildren();
-  }
-});
+// "New directory…" opens the name field of the selected folder only.
+watch(
+  newDirectoryRequest,
+  (directoryPath) => {
+    if (directoryPath === props.item.path && props.item.type === "directory") {
+      operationType.value = "createDir";
+    }
+  },
+  { flush: "sync" },
+);
 
-let stopShortcutListener: (() => void) | undefined;
 let stopFsalListener: (() => void) | undefined;
 
 onMounted(async () => {
-  if (props.item.type === "directory") {
-    stopShortcutListener = ipcRenderer.on("shortcut", (_, message) => {
-      if (message === "new-dir") {
-        operationType.value = "createDir";
-      }
-    });
-
-    await fetchChildren();
-  }
-
-  stopFsalListener = ipcRenderer.on("fsal-events", (_, events: FSALEventPayload[]) => {
-    // A batch that pertains to a direct child of this item needs handling.
-    // We'll make it easy and simply re-fetch the list of children, once.
-    if (eventsChangeChildren(events, props.item.path)) {
-      fetchChildren().catch((err) =>
-        reportError(
-          `[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`,
-          err,
-        ),
-      );
-    }
+  // The row follows the events before its first read, so a read that fails
+  // leaves a row that a later event of its children still updates.
+  stopFsalListener = followChildren(props.item.path, () => {
+    fetchChildren().catch((err) =>
+      reportError(
+        `[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`,
+        err,
+      ),
+    );
   });
 
   // Initially scroll into view if this item is selected
   if (isSelected.value) {
     scrollIntoView();
   }
+
+  if (props.item.type === "directory") {
+    await fetchChildren();
+  }
 });
 
 onUnmounted(() => {
-  stopShortcutListener?.();
   stopFsalListener?.();
   if (uncollapseTimeout.value !== undefined) {
     clearTimeout(uncollapseTimeout.value);
@@ -770,32 +759,6 @@ function acceptDrags(event: DragEvent): void {
   event.preventDefault();
 }
 
-function handleOperationFinish(newName: string): void {
-  if (operationType.value === "createFile" && newName.trim() !== "") {
-    ipcRenderer
-      .invoke("application", {
-        command: "file-new",
-        payload: {
-          path: props.item.path,
-          name: newName.trim(),
-        },
-      })
-      .catch((e) => reportError(e));
-  } else if (operationType.value === "createDir" && newName.trim() !== "") {
-    ipcRenderer
-      .invoke("application", {
-        command: "dir-new",
-        payload: {
-          path: props.item.path,
-          name: newName.trim(),
-        },
-      })
-      .catch((e) => reportError(e));
-  }
-
-  operationType.value = undefined;
-}
-
 /**
  * Helper function to toggle the collapsed status on a directory item with children
  */
@@ -843,6 +806,8 @@ body {
       &.yellow { color: var(--accent-yellow); }
       &.green { color: var(--accent-green); }
       &.is-ignored { opacity: 0.58; }
+      &.is-unreadable .toggle-icon,
+      &.has-metadata-problem .toggle-icon { color: var(--accent-orange); }
 
       .item-icon, .toggle-icon {
         display: flex;

@@ -65,6 +65,7 @@ import {
   type AnnotationMutationPlan,
   type AnnotationTransitionError,
   emptyAnnotationSet,
+  prepareAnnotationBulkResolution,
   prepareAnnotationCreation,
   prepareAnnotationDeletion,
   prepareAnnotationMappingThroughOwnerEdit,
@@ -74,9 +75,14 @@ import {
   prepareAnnotationReattachment,
   prepareAnnotationReopen,
   prepareAnnotationResolution,
+  prepareAnnotationResolvedCleanup,
 } from "./annotation-transitions";
 import type { CollaborationSidecarData } from "./collaboration-sidecar-schema";
-import { CollaborationSidecarStore } from "./collaboration-sidecar-store";
+import {
+  type CollaborationSidecarInventory,
+  CollaborationSidecarStore,
+  collaborationSidecarFilePath,
+} from "./collaboration-sidecar-store";
 import {
   collaborationSidecar,
   normalizeText,
@@ -99,6 +105,7 @@ import {
   freezeReview,
   INVALIDATED_REVIEW_MESSAGE,
   isTransitionError,
+  type ProposalRefusal,
   prepareAcceptAll,
   prepareChunkComment,
   prepareChunkDecision,
@@ -168,7 +175,8 @@ export interface CollaborationDocumentAuthority {
 
   commitWorkingTextReplacement: (prepared: PreparedDocumentMutation) => void;
 
-  releaseTemporaryDocument: (documentId: string) => Promise<void>;
+  /** Resolves true when the document left the loaded set. */
+  releaseTemporaryDocument: (documentId: string) => Promise<boolean>;
 
   /**
    * The last step of every mutation: tell the panes what the document's
@@ -742,23 +750,39 @@ export class CollaborationApplicationService {
    * sidecar file on disk — otherwise the NEXT mutation would relocate the
    * file out from under a read that still asks for the old path, and a
    * restart before that next mutation would find nothing at the new path.
+   *
+   * The caller holds the document lock, as for detachCollaboration. The
+   * state in memory moves first: when the sidecar cannot be written, the
+   * error goes to the caller and the next write of the state lands at the
+   * new path.
    */
   public async renameCollaboration(
     documentId: string,
     oldPath: string,
     newPath: string,
   ): Promise<void> {
-    await this.withDocumentLock(documentId, async () => {
-      await this.sidecars.rename(oldPath, newPath);
-      const annotationState = this.annotationStates.get(documentId);
-      if (annotationState !== undefined) {
-        this.annotationStates.set(documentId, { ...annotationState, documentPath: newPath });
-      }
-      const review = this.reviews.getReview(documentId);
-      if (review !== undefined) {
-        this.reviews.replaceReview(documentId, { ...review, documentPath: newPath });
-      }
-    });
+    const annotationState = this.annotationStates.get(documentId);
+    if (annotationState !== undefined) {
+      this.annotationStates.set(documentId, { ...annotationState, documentPath: newPath });
+    }
+    const review = this.reviews.getReview(documentId);
+    if (review !== undefined) {
+      this.reviews.replaceReview(documentId, { ...review, documentPath: newPath });
+    }
+    await this.sidecars.rename(oldPath, newPath);
+  }
+
+  /**
+   * Drop the state that this service holds in memory for a document, with
+   * no write. The sidecar stays as it was last written, so the next load of
+   * the document attaches that state. The caller holds the document lock.
+   *
+   * Two callers: a document whose file another file replaced, and the
+   * author's decision to close a document whose state could not be written.
+   */
+  public dropCollaboration(documentId: string): void {
+    this.reviews.removeReview(documentId);
+    this.annotationStates.delete(documentId);
   }
 
   /**
@@ -769,6 +793,11 @@ export class CollaborationApplicationService {
    * screen a moment from now. I6 says the honest answer to that is
    * `orphaned` and the owner's Reattach — never a search for text that looks
    * like what the comment was about. The threads themselves survive.
+   *
+   * A document with no state in memory has none that the discarded bytes
+   * belong to. Its sidecar is the state of another time: the author closed
+   * the document without it (dropCollaboration), or this version cannot
+   * read the file. The discard leaves that file as it is.
    */
   public async discardCollaboration(
     documentId: string,
@@ -776,6 +805,9 @@ export class CollaborationApplicationService {
     diskText: string,
   ): Promise<void> {
     const review = this.reviews.getReview(documentId);
+    if (review === undefined && !this.annotationStates.has(documentId)) {
+      return;
+    }
     const persisted = review === undefined ? undefined : await this.sidecars.read(documentPath);
     const normalizedDisk = normalizeText(diskText);
     const preserveSavedReview =
@@ -863,6 +895,10 @@ export class CollaborationApplicationService {
    * Neither half is lost to a fence mismatch. A review that cannot be fenced
    * is frozen until it is reapplied or discarded; annotations that cannot be
    * fenced are still the owner's comments and become `orphaned` (I6).
+   *
+   * This broadcasts nothing. A session has the text of the buffer, and the
+   * buffer gets the restored working text from the caller: the caller
+   * broadcasts the state after that.
    */
   public async reattachCollaboration(
     documentId: string,
@@ -893,22 +929,29 @@ export class CollaborationApplicationService {
       return await this.driftedCollaboration(documentId, documentPath, sidecar, normalizedDisk);
     }
 
-    const hasOutstandingReview =
+    // The review has a claim on the buffer while it has a proposal to decide
+    // on, or while its working text is not the text of the file: text that
+    // the author accepted and did not save (`resolved-awaiting-save`). The
+    // author accepts the proposals of a closed document in the Annotations
+    // view, and a quit parks a document that no pane shows; the sidecar is
+    // then the one place that has the accepted text.
+    const restoresReview =
       sidecar.review !== null &&
-      sidecar.review.suggestions.some((suggestion) => suggestion.state === "proposed");
+      (sidecar.review.suggestions.some((suggestion) => suggestion.state === "proposed") ||
+        sidecar.workingText !== normalizedDisk);
 
     // Without a review to restore, the persisted working text has no claim
     // on the buffer: the buffer is the file. If the two disagree, the
     // anchors were measured against text nobody is looking at, and there is
     // no change set to carry them across the difference.
     const annotations =
-      hasOutstandingReview || sidecar.workingText === normalizedDisk
+      restoresReview || sidecar.workingText === normalizedDisk
         ? sidecar.annotations
         : (prepareAnnotationOrphaning(sidecar.annotations, "unmapped-document-change")
             ?.nextAnnotations ?? sidecar.annotations);
 
-    const review = hasOutstandingReview ? reviewFromSidecar(documentId, sidecar) : undefined;
-    const workingText = hasOutstandingReview ? sidecar.workingText : normalizedDisk;
+    const review = restoresReview ? reviewFromSidecar(documentId, sidecar) : undefined;
+    const workingText = restoresReview ? sidecar.workingText : normalizedDisk;
 
     // A file that already says exactly this is left alone; the orphaning
     // above and a review that did not survive are the two things that make
@@ -937,7 +980,6 @@ export class CollaborationApplicationService {
     if (review === undefined && annotations.items.length === 0) {
       return undefined;
     }
-    this.deps.authority.broadcastCollaborationState(documentId);
     return { review, annotations, workingText: review === undefined ? undefined : workingText };
   }
 
@@ -958,8 +1000,8 @@ export class CollaborationApplicationService {
     const annotations =
       prepareAnnotationOrphaning(sidecar.annotations, "external-drift")?.nextAnnotations ??
       sidecar.annotations;
-    // A review with nothing proposed has nothing to recover, and ends here
-    // exactly as it does on a reopen without drift.
+    // A review with nothing proposed has no suggestion to reapply to the
+    // new text of the file, and ends here.
     const review =
       sidecar.review?.suggestions.some((suggestion) => suggestion.state === "proposed") === true
         ? freezeReview(reviewFromSidecar(documentId, sidecar), sidecar.workingText)
@@ -989,7 +1031,6 @@ export class CollaborationApplicationService {
     if (review === undefined && annotations.items.length === 0) {
       return undefined;
     }
-    this.deps.authority.broadcastCollaborationState(documentId);
     return { review, annotations, workingText: undefined };
   }
 
@@ -1004,6 +1045,28 @@ export class CollaborationApplicationService {
    */
   public listCollaborationSidecars(): Promise<CollaborationSidecarData[]> {
     return this.sidecars.list();
+  }
+
+  /**
+   * The persisted collaboration state that can be read, and each file that
+   * cannot. For a caller that shows such a file to the author; a caller that
+   * needs the complete set reads listCollaborationSidecars, which rejects.
+   */
+  public collaborationSidecarInventory(): Promise<CollaborationSidecarInventory> {
+    return this.sidecars.inventory();
+  }
+
+  /** The file that holds the collaboration state of a document. */
+  public sidecarFileOf(documentPath: string): string {
+    return collaborationSidecarFilePath(this.deps.sidecarDirectory, documentPath);
+  }
+
+  /**
+   * Move a sidecar file that cannot be read out of the way of its document,
+   * at the author's request. Answers the new path of the file.
+   */
+  public setAsideCollaborationSidecar(file: string): Promise<string> {
+    return this.sidecars.setAside(file);
   }
 
   private lockFor(documentId: string): Mutex {
@@ -1245,15 +1308,21 @@ export class CollaborationApplicationService {
     claims: ClaimInput[];
     clientRequestId: string;
     expectedReviewGeneration: number;
-  }): Promise<SubmittedProposal | { ok: false; code: string; message: string }> {
+  }): Promise<SubmittedProposal | ProposalRefusal> {
     return this.withDocumentLock(input.documentId, async () => {
       if (this.deps.authority.resolveDocumentPath(input.documentId) === undefined) {
         return { ok: false as const, code: "DOCUMENT_NOT_FOUND", message: "Document not found." };
       }
       const acquired = await this.deps.authority.acquireDocument(input.documentId);
       const result = await this.applyProposal(input, acquired.documentPath);
-      if (!result.ok && !acquired.wasAlreadyLoaded) {
-        await this.deps.authority.releaseTemporaryDocument(input.documentId);
+      if (
+        !result.ok &&
+        !acquired.wasAlreadyLoaded &&
+        (await this.deps.authority.releaseTemporaryDocument(input.documentId))
+      ) {
+        // The load attached the annotations of the sidecar. They are on
+        // disk (I2), and a document that is not loaded has no state here.
+        this.annotationStates.delete(input.documentId);
       }
       return result;
     });
@@ -1268,7 +1337,7 @@ export class CollaborationApplicationService {
       expectedReviewGeneration: number;
     },
     documentPath: string,
-  ): Promise<SubmittedProposal | { ok: false; code: string; message: string }> {
+  ): Promise<SubmittedProposal | ProposalRefusal> {
     const requestFingerprint = proposalRequestFingerprint({
       documentId: input.documentId,
       baselineSha256: input.baselineSha256,
@@ -1303,11 +1372,13 @@ export class CollaborationApplicationService {
     try {
       diskText = await this.deps.authority.readDiskText(documentPath);
     } catch (err) {
+      // A review compares each proposal with the file, so a document whose
+      // file is gone or refused takes no proposal until a save writes it.
       return {
         ok: false,
-        code: "INTERNAL_ERROR",
+        code: "DOCUMENT_UNREADABLE",
         message:
-          "Couldn't read the document from disk: " +
+          `A review needs the file of the document, which cannot be read: ` +
           (err instanceof Error ? err.message : String(err)),
       };
     }
@@ -1372,7 +1443,7 @@ export class CollaborationApplicationService {
       requestFingerprint,
     });
     if (isTransitionError(plan)) {
-      return { ok: false, code: plan.code, message: plan.message };
+      return plan;
     }
 
     const prepared = this.deps.authority.prepareWorkingTextReplacement(
@@ -2082,10 +2153,16 @@ export class CollaborationApplicationService {
     }
 
     const review = this.reviews.getReview(documentId);
+    // The working text of an open document comes from the bytes that the
+    // editor last loaded or saved, and a save moves the fence. The file
+    // itself is not read: it can be gone while the document stays open.
     const diskFenceSha256 =
       state?.diskFenceSha256 ??
       review?.diskFenceSha256 ??
-      sha256Text(normalizeText(await this.deps.authority.readDiskText(documentPath)));
+      this.deps.authority.readSavedDiskSha256(documentId);
+    if (diskFenceSha256 === undefined) {
+      throw new Error(`The open document ${documentPath} has no saved text`);
+    }
 
     try {
       await this.sidecars.write(
@@ -2214,6 +2291,43 @@ export class CollaborationApplicationService {
   }): Promise<TextAnnotation | AnnotationFailure> {
     return this.commitAnnotationMutation(input.documentId, (context) =>
       prepareAnnotationReopen({ ...input, annotations: context.annotations }),
+    );
+  }
+
+  /**
+   * Resolve the document's open annotations in one batch: one generation
+   * bump, one sidecar write, whatever the document is open or closed (a
+   * closed document's threads live only in its sidecar). `scope` picks
+   * acted-only remediation results or every open thread.
+   */
+  public async resolveActedAnnotations(input: {
+    documentId: string;
+    actor: AnnotationActor;
+    expectedAnnotationGeneration: number;
+    scope: "acted" | "open";
+  }): Promise<TextAnnotation[] | AnnotationFailure> {
+    return this.commitAnnotationMutationOnOpenOrClosedDocument(input.documentId, (context) =>
+      prepareAnnotationBulkResolution({
+        annotations: context.annotations,
+        actor: input.actor,
+        expectedAnnotationGeneration: input.expectedAnnotationGeneration,
+        scope: input.scope,
+      }),
+    );
+  }
+
+  /** Delete every resolved annotation of the document in one batch. */
+  public async deleteResolvedAnnotations(input: {
+    documentId: string;
+    actor: AnnotationActor;
+    expectedAnnotationGeneration: number;
+  }): Promise<TextAnnotation[] | AnnotationFailure> {
+    return this.commitAnnotationMutationOnOpenOrClosedDocument(input.documentId, (context) =>
+      prepareAnnotationResolvedCleanup({
+        annotations: context.annotations,
+        actor: input.actor,
+        expectedAnnotationGeneration: input.expectedAnnotationGeneration,
+      }),
     );
   }
 

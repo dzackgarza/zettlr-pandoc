@@ -15,8 +15,8 @@
 
 import { type EditorState } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
+import { renderBlockWidgets } from "@dzack/pandoc-editor/renderers/base-renderer";
 import { type SyntaxNode, type SyntaxNodeRef } from "@lezer/common";
-import { renderBlockWidgets } from "./base-renderer";
 
 /**
  * Returns an iframe element with the given source as its src attribute.

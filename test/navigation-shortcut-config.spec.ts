@@ -9,8 +9,10 @@
  *
  * Description:     Locks the per-pane Back/Forward navigation combos onto
  *                  Zettlr's custom editor shortcut registry (issue #1
- *                  workstream 4): the registry supplies the Alt-Arrow
- *                  defaults, and a user-configured combo displaces them.
+ *                  workstream 4): the registry supplies the defaults
+ *                  (VS Code's Go Back and Go Forward keys: Alt+Arrow moves
+ *                  a table column, #202), and a user-configured combo
+ *                  displaces them.
  *                  The dispatch proof drives a real EditorView through
  *                  CodeMirror's own scope handler with real KeyboardEvents;
  *                  the observation point is the window.ipc preload seam the
@@ -42,12 +44,12 @@ interface RecordedInvoke {
 }
 
 describe("Configurable navigation shortcuts (review A8)", function () {
-  it("registers the Alt-Arrow defaults, with the macOS Ctrl-Arrow variants", function () {
+  it("registers VS Code's Go Back and Go Forward keys, with the macOS variants", function () {
     assert.deepStrictEqual(
       [defaultKeybindings["nav-history-back"], defaultKeybindings["nav-history-forward"]],
       [
-        { key: "Alt-ArrowLeft", mac: "Ctrl-ArrowLeft" },
-        { key: "Alt-ArrowRight", mac: "Ctrl-ArrowRight" },
+        { key: "Mod-Alt--", mac: "Ctrl--" },
+        { key: "Mod-Shift--", mac: "Ctrl-Shift--" },
       ],
     );
   });
@@ -112,10 +114,20 @@ describe("Configurable navigation shortcuts (review A8)", function () {
         .filter((command) => command === "navigate-back" || command === "navigate-forward");
     }
 
-    it("the default keymap navigates on Alt-ArrowLeft/Alt-ArrowRight", function () {
+    // A US layout gives Shift+- as the key "_".
+    const backKey: KeyboardEventInit = { key: "-", code: "Minus", ctrlKey: true, altKey: true };
+    const forwardKey: KeyboardEventInit = {
+      key: "_",
+      code: "Minus",
+      keyCode: 189,
+      ctrlKey: true,
+      shiftKey: true,
+    };
+
+    it("the default keymap navigates on Ctrl+Alt+- and Ctrl+Shift+-", function () {
       const view = createEditor();
-      assert.strictEqual(press(view, { key: "ArrowLeft", altKey: true }), true);
-      assert.strictEqual(press(view, { key: "ArrowRight", altKey: true }), true);
+      assert.strictEqual(press(view, backKey), true);
+      assert.strictEqual(press(view, forwardKey), true);
       assert.deepStrictEqual(navigationCommands(), ["navigate-back", "navigate-forward"]);
     });
 
@@ -129,11 +141,11 @@ describe("Configurable navigation shortcuts (review A8)", function () {
       assert.strictEqual(press(view, { key: "2", ctrlKey: true, altKey: true }), true);
       assert.deepStrictEqual(navigationCommands(), ["navigate-back", "navigate-forward"]);
 
-      // Excludes the broken always-Alt-Arrow implementation: with the
+      // Excludes the broken always-default implementation: with the
       // combos rebound, the old defaults must not issue history requests.
       recorded.splice(0);
-      press(view, { key: "ArrowLeft", altKey: true });
-      press(view, { key: "ArrowRight", altKey: true });
+      press(view, backKey);
+      press(view, forwardKey);
       assert.deepStrictEqual(navigationCommands(), []);
     });
   });

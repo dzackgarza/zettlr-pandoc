@@ -7,9 +7,14 @@ export interface QuartoBookChapter {
   position: number;
 }
 
+/**
+ * A row of the Book module. A part that a file names (`part-file`) is a
+ * document of the book: it has the title and the position of that file.
+ */
 export type QuartoBookOutlineItem =
   | ({ kind: "chapter" } & QuartoBookChapter)
-  | { kind: "part"; title: string; chapters: QuartoBookChapter[] };
+  | { kind: "part"; title: string; chapters: QuartoBookChapter[] }
+  | ({ kind: "part-file"; chapters: QuartoBookChapter[] } & QuartoBookChapter);
 
 export interface QuartoBookOutline {
   items: QuartoBookOutlineItem[];
@@ -33,17 +38,23 @@ export function buildQuartoBookOutline(
       return { kind: "chapter", ...chapter(item.path) };
     }
 
-    return {
-      kind: "part",
-      title: item.title,
-      chapters: item.chapters.map(chapter),
-    };
+    if (item.kind === "part") {
+      return { kind: "part", title: item.title, chapters: item.chapters.map(chapter) };
+    }
+
+    // The file of the part comes before the chapters of the part.
+    const partFile = chapter(item.path);
+    return { kind: "part-file", ...partFile, chapters: item.chapters.map(chapter) };
   });
 
   return {
     items,
-    orderedPaths: items.flatMap((item) =>
-      item.kind === "chapter" ? [item.path] : item.chapters.map((entry) => entry.path),
-    ),
+    orderedPaths: items.flatMap((item) => {
+      if (item.kind === "chapter") {
+        return [item.path];
+      }
+      const chapters = item.chapters.map((entry) => entry.path);
+      return item.kind === "part" ? chapters : [item.path, ...chapters];
+    }),
   };
 }

@@ -21,6 +21,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { createPatch } from "diff";
 import type { Browser, Locator, Page } from "playwright";
 import {
+  AGENT_API_AUTHORIZATION,
   attach,
   createFixture,
   delay,
@@ -69,8 +70,14 @@ function stringField(payload: unknown, field: string): string {
 
 function client(port: number): AgentClient {
   const base = `http://127.0.0.1:${port}`;
-  const request = async (route: string, options?: RequestInit): Promise<unknown> => {
-    const response = await fetch(`${base}${route}`, options);
+  const request = async (
+    route: string,
+    options: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  ): Promise<unknown> => {
+    const response = await fetch(`${base}${route}`, {
+      ...options,
+      headers: { ...AGENT_API_AUTHORIZATION, ...options.headers },
+    });
     const text = await response.text();
     const body = text === "" ? undefined : JSON.parse(text);
     if (!response.ok) {

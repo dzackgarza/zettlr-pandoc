@@ -3,11 +3,20 @@ const { DefinePlugin } = require("webpack");
 const path = require("path");
 const rules = require("./webpack.rules");
 const { gitCommitHash } = require("./scripts/get-git-hash.js");
+const { EXPORT_MATHJAX_FILES } = require("./scripts/export-mathjax.js");
 const isLocalPackage = process.env.ZETTLR_LOCAL_PACKAGE === "1";
 
 const config = {
-  // Main entry point: the file that runs in the main process
-  entry: "./source/main.ts",
+  entry: {
+    // The file that runs in the main process (`main` of package.json).
+    index: "./source/main.ts",
+    // The program of the worker thread that reads a citation database
+    // (BUNDLED_DATABASE_LOADER_THREAD). A worker thread loads a file of its
+    // own, so the program is a bundle beside the main one.
+    "database-loader-worker":
+      "./source/app/service-providers/citeproc/util/database-loader-worker.ts",
+  },
+  output: { filename: "[name].cjs" },
   mode: process.env.NODE_ENV === "production" ? "production" : "development",
   optimization: {
     // Local desktop rebuilds are launch artifacts, not distribution files.
@@ -28,26 +37,7 @@ const config = {
         { from: "static/csl-styles", to: "assets/csl-styles" },
         { from: "static/defaults", to: "assets/defaults" },
         { from: "static/completions", to: "assets/completions" },
-        {
-          from: "node_modules/@mathjax/src/bundle/tex-chtml.js",
-          to: "assets/defaults/mathjax-tex-chtml.js",
-        },
-        {
-          from: "node_modules/@mathjax/src/bundle/input/tex/extensions",
-          to: "assets/defaults/mathjax-tex-extensions",
-        },
-        {
-          from: "node_modules/@mathjax/mathjax-mhchem-font-extension",
-          to: "assets/defaults/mathjax-mhchem-font-extension",
-        },
-        {
-          from: "node_modules/@mathjax/mathjax-newcm-font/chtml",
-          to: "assets/defaults/mathjax-font",
-        },
-        {
-          from: "node_modules/@mathjax/src/bundle/sre",
-          to: "assets/defaults/mathjax-sre",
-        },
+        ...EXPORT_MATHJAX_FILES.map(({ from, to }) => ({ from, to: `assets/mathjax/${to}` })),
         { from: "static/lua-filter", to: "assets/lua-filter" },
         // The vendored TikZ pipeline (issue #14): filter, per-figure
         // template, and the styles tree the template \usepackage's.

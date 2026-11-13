@@ -9,7 +9,11 @@
  *
  * Description:     Implements a tooltip extension that displays tooltips with
  *                  pre-rendered citations upon hovering with the mouse over a
- *                  citation cluster in the text.
+ *                  citation cluster in the text. A cluster with a key of a
+ *                  reference family (`@fig-x`, `@thm:x`) is no bibliography
+ *                  citation, as for the citation renderer: the reference
+ *                  tooltip shows a resolved reference, and a mixed cluster
+ *                  has no tooltip.
  *
  * END HEADER
  */
@@ -18,12 +22,13 @@ import { syntaxTree } from "@codemirror/language";
 import { type EditorView, hoverTooltip, type Tooltip } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
+import { referenceFamilyOf } from "@dts/common/references";
+import { NODES, nodeToCiteItem } from "@dzack/pandoc-editor/parser/citation-parser";
 import type { SyntaxNode } from "@lezer/common";
 import type { CiteprocProviderIPCAPI } from "source/app/service-providers/citeproc";
 import { trans } from "source/common/i18n-renderer";
 import type { CitationDatabase } from "source/types/common/citeproc";
 import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
-import { NODES, nodeToCiteItem } from "../parser/citation-parser";
 import { configField } from "../util/configuration";
 
 const ipcRenderer = window.ipc;
@@ -50,8 +55,8 @@ async function fetchBibliography(
 }
 
 /**
- * If the user currently hovers over a footnote, this function returns the specs
- * to create a tooltip with the footnote ref's contents, else null.
+ * If the user currently hovers over a bibliography citation, this function
+ * returns the specs to create a tooltip with its bibliography, else null.
  */
 function citationTooltip(view: EditorView, pos: number, side: 1 | -1): Tooltip | null {
   let nodeAt: SyntaxNode | null = syntaxTree(view.state).resolve(pos, side);
@@ -61,6 +66,11 @@ function citationTooltip(view: EditorView, pos: number, side: 1 | -1): Tooltip |
   }
 
   if (nodeAt === null || nodeAt.type.name !== NODES.CITATION) {
+    return null;
+  }
+
+  const citation = nodeToCiteItem(nodeAt, view.state.sliceDoc());
+  if (citation.items.some((item) => referenceFamilyOf(item.id) !== undefined)) {
     return null;
   }
 
@@ -74,7 +84,6 @@ function citationTooltip(view: EditorView, pos: number, side: 1 | -1): Tooltip |
       content.textContent = trans("Loading…");
       dom.appendChild(content);
 
-      const citation = nodeToCiteItem(nodeAt, view.state.sliceDoc());
       const config = view.state.field(configField).metadata.library;
       const database = config === "" ? CITEPROC_MAIN_DB : config;
 

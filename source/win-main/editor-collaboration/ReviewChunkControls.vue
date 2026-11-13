@@ -1,6 +1,6 @@
 <template>
   <div
-    class="suggestion-chunk"
+    class="suggestion-chunk self-painted-controls"
     v-bind:data-chunk-id="card.suggestionId"
   >
     <cds-icon

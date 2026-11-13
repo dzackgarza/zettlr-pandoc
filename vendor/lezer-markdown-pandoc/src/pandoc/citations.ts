@@ -8,7 +8,7 @@
  * that revision). Behavioral acceptance is differential against Pandoc JSON.
  */
 
-import type { InlineParser, Element as MDElement } from '../markdown'
+import type { InlineParser, InlineContext, Element } from '../markdown'
 import { scanPandocAttributeList } from './attribute-syntax'
 
 // See https://github.com/bwiernik/schema/blob/ff67ae11347a4fb444ef839d96549540e9516cc1/schemas/input/csl-citation.json#L144 ff
@@ -341,6 +341,54 @@ export interface Citation {
   items: CiteItem[]
 }
 
+/**
+ * Whether Pandoc records the end of a string at `pos`, which refuses a
+ * textual citation there: `citeKey` runs `guard =<< notAfterString`.
+ *
+ * - `str` reads letters, numbers and each `.` that no `.` follows, then calls
+ *   `updateLastStrPos`. So `user@example.com` and `2.@key` end a string, and
+ *   `"@key"`, `pre-@key` and `a/@key` do not.
+ * - The `smart` extension reads three dots as an ellipsis, which is no
+ *   string. A run of k dots therefore ends a string iff k is no multiple
+ *   of 3: `x...@key` is a citation, `x....@key` is not.
+ * - `one`, `two` and `three` call `updateLastStrPos` after the closer of an
+ *   emphasis, so `*x*@key` is no citation. A `*` without an opener before it
+ *   is a symbol, and `x*@key` is a citation.
+ * - A citation is no string, so a key directly after a key is a citation.
+ *
+ * Reference: Pandoc commit f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * Text.Pandoc.Parsing.Citations `citeKey`, Text.Pandoc.Readers.Markdown
+ * `str`, `one`, `two`, `three`, `textualCite`.
+ */
+function endsString (ctx: InlineContext, pos: number): boolean {
+  const before = ctx.parts[ctx.parts.length - 1]
+  const touches = before !== undefined && before !== null && before.to === pos
+  if (touches && !('side' in before) && before.type === ctx.parser.getNodeType(NODES.CITATION)) {
+    return false
+  }
+  const char = ctx.slice(pos - 1, pos)
+  if (/[\p{L}\p{N}]/u.test(char)) {
+    return true
+  }
+  if (char === '.') {
+    let dots = 1
+    while (pos - dots > ctx.offset && ctx.slice(pos - dots - 1, pos - dots) === '.') {
+      dots++
+    }
+    return dots % 3 !== 0
+  }
+  if (!touches || !('side' in before)) {
+    return false
+  }
+  // An emphasis delimiter that can close (`Mark.Close`, 2) after one of its
+  // own type that can open (`Mark.Open`, 1).
+  if (before.type.resolve !== 'Emphasis' || (before.side & 2) === 0) {
+    return false
+  }
+  return ctx.parts.some(part => part !== null && part !== before && 'side' in part &&
+    part.type === before.type && part.to <= before.from && (part.side & 1) !== 0)
+}
+
 // Here follows the actual parser
 export const citationParser: InlineParser = {
   name: 'citations',
@@ -360,26 +408,10 @@ export const citationParser: InlineParser = {
 
     // Pandoc's `normalCite` begins directly at `[` and imposes no condition on
     // the preceding character, so constructs such as `` `code`[@key] `` are
-    // valid citations. The boundary restriction belongs only to textual
-    // `@key` / `-@key` recognition, where it prevents email-like false
-    // positives. Reference: Markdown.hs `cite`, `normalCite`, `textualCite`.
-    if (next !== CHAR.BRACKET_OPEN) {
-      const prevChar = ctx.char(pos - 1)
-      const validBefore = Number.isNaN(prevChar) || [
-        CHAR.BRACE_OPEN,
-        CHAR.BRACKET_OPEN,
-        CHAR.BRACKET_CLOSE,
-        CHAR.ASTERISK,
-        CHAR.UNDERSCORE,
-        CHAR.TILDE,
-        CHAR.LF,
-        CHAR.CR,
-        CHAR.TAB,
-        CHAR.SPACE
-      ].includes(prevChar)
-      if (!validBefore) {
-        return -1
-      }
+    // valid citations. A textual `@key` / `-@key` must not follow the end of
+    // a string (`endsString`).
+    if (next !== CHAR.BRACKET_OPEN && pos > ctx.offset && endsString(ctx, pos)) {
+      return -1
     }
 
     // Quick additional check to save us some headaches, because if `next` is a
@@ -402,7 +434,7 @@ export const citationParser: InlineParser = {
     // is by definition considered suffix.
 
     // We collect all (non-nesting) children in this array.
-    const parts: MDElement[] = []
+    const parts: Element[] = []
 
     // This is necessary, because even a citation with zero proper citekeys will
     // otherwise be detected as valid.
@@ -717,7 +749,7 @@ export const citationParser: InlineParser = {
         // In this branch, we only temporarliy collect all elements, since we do
         // not yet know if the bracket actually closes. If it doesn't, anything
         // until the citekey is still valid, but the rest must be thrown away.
-        const temporaryParts: MDElement[] = []
+        const temporaryParts: Element[] = []
 
         i++
         temporaryParts.push(ctx.elt(NODES.MARK, i, ++i))

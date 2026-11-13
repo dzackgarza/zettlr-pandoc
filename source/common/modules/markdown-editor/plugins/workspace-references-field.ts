@@ -45,7 +45,7 @@ import type {
   ReferenceOccurrence,
   Resolution,
 } from "@dts/common/references";
-import type { Citation } from "../parser/citation-parser";
+import type { Citation } from "@dzack/pandoc-editor/parser/citation-parser";
 
 /**
  * The complete typed reference view one editor needs to present references:

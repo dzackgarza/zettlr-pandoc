@@ -15,27 +15,21 @@
 
 import { type Diagnostic, forceLinting, forEachDiagnostic, setDiagnostics } from "@codemirror/lint";
 import { type EditorView } from "@codemirror/view";
+import { editMenuItems, editorCommandMenuItems } from "@common/commands/editing-menu-items";
 import { trans } from "@common/i18n-renderer";
 import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
 import { reportError } from "@common/util/error-reporting";
+import { showRefusal } from "@common/util/show-refusal";
 import { type SyntaxNode } from "@lezer/common";
 import { isProseCompletionPosition } from "../autocomplete/prose-dictionary";
-import {
-  applyBlockquote,
-  applyBold,
-  applyBulletList,
-  applyItalic,
-  applyOrderedList,
-  applyTaskList,
-  insertLink,
-} from "../commands/markdown";
 import {
   extractLTSpellcheckSuggestionsFrom,
   isLanguageToolMisspelling,
 } from "../diagnostics/language-tool-state";
-import { copyAsHTML, copyAsPlain, cut, paste, pasteAsPlain } from "../util/copy-paste-cut";
+import { copyAsHTML, pasteAsPlain } from "../util/copy-paste-cut";
+import { editorCommandItem, roleItem, tableSubmenu, viewItem } from "./menu-accelerator";
 import { getTransformSubmenu } from "./transform-items";
 
 const ipcRenderer = window.ipc;
@@ -73,7 +67,7 @@ export function proseCompletionMenuItem(view: EditorView, pos: number): AnyMenuI
           command: "add-prose-completion",
           payload: { entry: completionEntry },
         })
-        .catch((error) => reportError("Could not add prose completion entry", error));
+        .catch(showRefusal);
     },
   };
 }
@@ -252,127 +246,27 @@ export async function defaultMenu(
     { type: "separator" },
   );
 
+  const items = editorCommandMenuItems(trans);
+  const edit = editMenuItems(trans);
   const tpl: AnyMenuItem[] = [
-    {
-      label: trans("Bold"),
-      accelerator: "CmdOrCtrl+B",
-      type: "normal",
-      action() {
-        applyBold(view);
-      },
-    },
-    {
-      label: trans("Italic"),
-      accelerator: "CmdOrCtrl+I",
-      type: "normal",
-      action() {
-        applyItalic(view);
-      },
-    },
-    {
-      type: "separator",
-    },
-    {
-      label: trans("Insert link"),
-      accelerator: "CmdOrCtrl+K",
-      type: "normal",
-      action() {
-        insertLink(view);
-      },
-    },
-    {
-      label: trans("Insert unordered list"),
-      type: "normal",
-      action() {
-        applyBulletList(view);
-      },
-    },
-    {
-      label: trans("Insert numbered list"),
-      type: "normal",
-      action() {
-        applyOrderedList(view);
-      },
-    },
-    {
-      label: trans("Insert task list"),
-      accelerator: "CmdOrCtrl+T",
-      type: "normal",
-      action() {
-        applyTaskList(view);
-      },
-    },
-    {
-      label: trans("Insert blockquote"),
-      type: "normal",
-      action() {
-        applyBlockquote(view);
-      },
-    },
-    {
-      label: trans("Insert table"),
-      type: "normal",
-      action() {
-        view.dispatch(view.state.replaceSelection("| | |\n|-|-|\n| | |\n"));
-      },
-    },
-    {
-      type: "separator",
-    },
-    {
-      label: trans("Cut"),
-      accelerator: "CmdOrCtrl+X",
-      type: "normal",
-      action() {
-        cut(view);
-      },
-    },
-    {
-      label: trans("Copy"),
-      accelerator: "CmdOrCtrl+C",
-      type: "normal",
-      action() {
-        copyAsPlain(view);
-      },
-    },
-    {
-      label: trans("Copy as HTML"),
-      accelerator: "CmdOrCtrl+Alt+C",
-      type: "normal",
-      action() {
-        copyAsHTML(view);
-      },
-    },
-    {
-      label: trans("Paste"),
-      accelerator: "CmdOrCtrl+V",
-      type: "normal",
-      action() {
-        paste(view);
-      },
-    },
-    {
-      label: trans("Paste without style"),
-      accelerator: "CmdOrCtrl+Shift+V",
-      type: "normal",
-      action() {
-        pasteAsPlain(view);
-      },
-    },
-    {
-      type: "separator",
-    },
-    {
-      label: trans("Select all"),
-      accelerator: "CmdOrCtrl+A",
-      type: "normal",
-      action() {
-        view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
-      },
-    },
-    {
-      type: "separator",
-    },
+    editorCommandItem(view, items.bold),
+    editorCommandItem(view, items.italic),
+    { type: "separator" },
+    editorCommandItem(view, items.link),
+    editorCommandItem(view, items.bulletList),
+    editorCommandItem(view, items.orderedList),
+    editorCommandItem(view, items.taskList),
+    editorCommandItem(view, items.blockquote),
+    tableSubmenu(view),
+    { type: "separator" },
+    roleItem(view, edit.cut),
+    roleItem(view, edit.copy),
+    viewItem(view, edit.copyAsHtml, copyAsHTML),
+    roleItem(view, edit.paste),
+    viewItem(view, edit.pasteAsPlain, pasteAsPlain),
+    { type: "separator" },
+    roleItem(view, edit.selectAll),
+    { type: "separator" },
     getTransformSubmenu(view),
   ];
 

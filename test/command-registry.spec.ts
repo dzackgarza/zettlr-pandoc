@@ -65,14 +65,37 @@ describe("Registered commands", function () {
     );
   });
 
-  it("reports conflicts only between commands active in the same scope", function () {
+  it("reports each binding that fires for the same key, in each scope and spelling", function () {
+    // A key that the editor takes never reaches a window command, so an
+    // editor and a window binding of one key conflict too (#202).
     const shortcuts = createShortcutConfig();
     shortcuts.editor["annotate-selection"] = "Ctrl-Shift-1";
     shortcuts.editor["nav-history-back"] = "Ctrl-Shift-1";
     shortcuts.ui["next-tab"] = "Ctrl-Shift-1";
+    // CodeMirror reads an upper-case letter as the letter with Shift.
+    shortcuts.editor["md-bold"] = "Ctrl-Shift-y";
+    shortcuts.editor["md-italic"] = "Ctrl-Y";
 
-    assert.deepEqual(getCommandConflicts("annotate-selection", shortcuts), ["nav-history-back"]);
-    assert.deepEqual(getCommandConflicts("next-tab", shortcuts), []);
+    assert.deepEqual(getCommandConflicts("annotate-selection", shortcuts), [
+      "nav-history-back",
+      "next-tab",
+    ]);
+    assert.deepEqual(getCommandConflicts("next-tab", shortcuts), [
+      "annotate-selection",
+      "nav-history-back",
+    ]);
+    assert.deepEqual(getCommandConflicts("md-bold", shortcuts), ["md-italic"]);
+  });
+
+  it("gives no two commands one key in the default configuration", function () {
+    const shortcuts = createShortcutConfig();
+    const conflicts = Object.fromEntries(
+      commandRegistry
+        .all()
+        .map((command) => [command.id, getCommandConflicts(command.id, shortcuts)] as const)
+        .filter(([, others]) => others.length > 0),
+    );
+    assert.deepEqual(conflicts, {});
   });
 
   it("runs a configured selection command through the real editor keymap", function () {

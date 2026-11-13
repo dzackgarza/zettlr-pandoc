@@ -20,7 +20,13 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { type AgentClient, agentClient, delay, readAgentApiPort } from "../support/electron-app";
+import {
+  AGENT_API_TOKEN,
+  type AgentClient,
+  agentClient,
+  delay,
+  readAgentApiPort,
+} from "../support/electron-app";
 
 const execFile = promisify(execFileCallback);
 
@@ -135,6 +141,9 @@ describe("file delivery through the installed desktop launcher (#52)", function 
     delete child.XDG_DATA_HOME;
     delete child.XDG_CACHE_HOME;
     delete child.XDG_STATE_HOME;
+    // The launcher gets the token of the Agent API from ~/.envrc. A token
+    // of the shell that started this run must not reach the app.
+    delete child.ZETTLR_AGENT_API_TOKEN;
     return child;
   };
 
@@ -146,7 +155,7 @@ describe("file delivery through the installed desktop launcher (#52)", function 
         `A live Hyprland compositor is required for the installed-launcher proof: ${error.message}`,
       );
     });
-    for (const requiredCommand of ["kitty", "gio", "jq", "just"]) {
+    for (const requiredCommand of ["kitty", "gio", "jq", "just", "direnv"]) {
       await execFile("sh", ["-c", `command -v ${requiredCommand}`]).catch(() => {
         assert.fail(`Required command is unavailable: ${requiredCommand}`);
       });
@@ -219,6 +228,14 @@ describe("file delivery through the installed desktop launcher (#52)", function 
       ].join("\n"),
       "utf8",
     );
+
+    // The home of the author holds the token in ~/.envrc, allowed for direnv.
+    await writeFile(
+      path.join(testHome, ".envrc"),
+      `export ZETTLR_AGENT_API_TOKEN=${AGENT_API_TOKEN}\n`,
+      "utf8",
+    );
+    await execFile("direnv", ["allow", testHome], { env: environment() });
 
     const installation = await execFile(
       path.join(REPO_ROOT, "scripts", "install-desktop-launcher.sh"),

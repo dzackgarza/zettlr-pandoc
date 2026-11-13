@@ -24,24 +24,19 @@
     {{ autosaveIntro }}
   </p>
 
-  <p class="flex-buttons">
-    <button
-      v-bind:class="{ active: autosave === 'off' }"
-      v-on:click="autosave = 'off'"
-    >
-      {{ manualLabel }}
-    </button>
-    <button
-      v-bind:class="{ active: autosave !== 'off' }"
-      v-on:click="autosave = 'immediately'"
-    >
-      {{ autosaveLabel }}
-    </button>
+  <p class="box">
+    <RadioControl
+      v-model="autosave"
+      name="autosave"
+      v-bind:options="autoSaveChoices()"
+    ></RadioControl>
   </p>
 </template>
 
 <script setup lang="ts">
 import { trans } from "source/common/i18n-renderer";
+import { autoSaveChoices } from "source/common/util/setting-choices";
+import RadioControl from "source/common/vue/form/elements/RadioControl.vue";
 import { ref, watch } from "vue";
 
 const pageHeading = trans("Writing Markdown");
@@ -52,19 +47,12 @@ const rawLabel = trans("Raw Syntax");
 const autosaveIntro = trans(
   "Some people prefer an app automatically saving your work; others want to manually save. Which do you prefer?",
 );
-const manualLabel = trans("Save manually");
-const autosaveLabel = trans("Activate Autosave");
 
 const renderingMode = ref(window.config.get("display.renderingMode") as "preview" | "raw");
-const showWhitespace = ref(Boolean(window.config.get("editor.showWhitespace")));
 const autosave = ref(window.config.get("editor.autoSave") as "off" | "immediately" | "delayed");
 
 watch(renderingMode, () => {
   window.config.set("display.renderingMode", renderingMode.value);
-});
-
-watch(showWhitespace, () => {
-  window.config.set("editor.showWhitespace", showWhitespace.value);
 });
 
 watch(autosave, () => {

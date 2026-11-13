@@ -182,6 +182,25 @@
       v-bind:class="{ 'search-message-error': searchError !== undefined }"
     >{{ message }}</p>
 
+    <div
+      v-if="notSearched.length > 0"
+      class="search-not-searched"
+      data-search-not-searched
+    >
+      <p>{{ notSearchedPhrase }}</p>
+      <ul>
+        <li
+          v-for="file of notSearched"
+          v-bind:key="file.documentPath"
+          v-bind:data-path="file.documentPath"
+          v-bind:title="file.cause"
+        >
+          <span class="not-searched-name">{{ fileName(file.documentPath) }}</span>
+          <span class="not-searched-directory">{{ fileDirectory(file.documentPath) }}</span>
+        </li>
+      </ul>
+    </div>
+
     <RecycleScroller
       v-slot="{ item: row }"
       class="search-results"
@@ -277,12 +296,17 @@
     <AlertDialogRoot v-model:open="confirmingReplaceAll">
       <AlertDialogPortal>
         <AlertDialogOverlay class="search-dialog-backdrop"></AlertDialogOverlay>
-        <AlertDialogContent class="search-dialog">
+        <AlertDialogContent class="search-dialog self-painted-controls">
           <AlertDialogTitle class="search-dialog-title">{{ trans('Replace All') }}</AlertDialogTitle>
           <AlertDialogDescription
             class="search-dialog-body"
             data-search-confirm-message
           >{{ replaceAllQuestion }}</AlertDialogDescription>
+          <p
+            v-if="notSearched.length > 0"
+            class="search-dialog-body"
+            data-search-confirm-not-searched
+          >{{ notSearchedKeepText }}</p>
           <div class="search-dialog-actions">
             <AlertDialogCancel class="search-button">{{ trans('Cancel') }}</AlertDialogCancel>
             <AlertDialogAction
@@ -318,7 +342,10 @@
  *                  match while a replacement is typed. A row carries Replace
  *                  and Dismiss; the widget carries Replace All, which asks
  *                  first; the view's own actions refresh, clear, collapse
- *                  and undo the last replace.
+ *                  and undo the last replace. A file that the search
+ *                  could not read is named below the count, with the cause
+ *                  in its title, and the Replace All question says that
+ *                  such a file keeps its text.
  *
  *                  The provider owns matching and replacing. This decides
  *                  what to ask for and how to draw what comes back, and
@@ -331,6 +358,7 @@
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
+import { showUnsavedDocuments } from "@common/util/save-refusal-action";
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -349,6 +377,7 @@ import type {
   SearchProviderBroadcast,
   SearchProviderIPCAPI,
   SearchQuery,
+  UnsearchedFile,
 } from "source/app/service-providers/search";
 import {
   compileQuery,
@@ -397,6 +426,8 @@ const queryInput = ref<HTMLInputElement | null>(null);
 const searching = ref(false);
 const progress = ref(0);
 const searchError = ref<string | undefined>(undefined);
+/** The files that the search of the results did not read. */
+const notSearched = ref<UnsearchedFile[]>([]);
 const undoAvailable = ref(false);
 /** Whether a search has run at all: an untouched view says nothing. */
 const searched = ref(false);
@@ -459,9 +490,43 @@ const message = computed<string>(() => {
     return "";
   }
   if (matchCount.value === 0) {
-    return trans("No results found.");
+    return notSearched.value.length === 0
+      ? trans("No results found.")
+      : trans("No results in the files that were searched.");
   }
   return resultsPhrase(matchCount.value, visibleFiles.value.length);
+});
+
+const notSearchedFolders = computed(
+  () => notSearched.value.filter((entry) => entry.kind === "folder").length,
+);
+
+const notSearchedPhrase = computed(() => {
+  const count = notSearched.value.length;
+  if (notSearchedFolders.value === 0) {
+    return count === 1
+      ? trans("1 file was not searched:")
+      : trans("%s files were not searched:", String(count));
+  }
+  if (notSearchedFolders.value === count) {
+    return count === 1
+      ? trans("1 folder was not searched:")
+      : trans("%s folders were not searched:", String(count));
+  }
+  return trans("%s files and folders were not searched:", String(count));
+});
+
+const notSearchedKeepText = computed(() => {
+  const count = notSearched.value.length;
+  if (notSearchedFolders.value === 0) {
+    return count === 1
+      ? trans("1 file was not searched. It keeps its text.")
+      : trans("%s files were not searched. They keep their text.", String(count));
+  }
+  return trans(
+    "%s files and folders were not searched. Their files keep their text.",
+    String(count),
+  );
 });
 
 const replaceAllQuestion = computed(() => {
@@ -551,6 +616,7 @@ function runSearch(): void {
   dismissedFiles.clear();
   dismissedMatches.clear();
   collapsed.clear();
+  notSearched.value = [];
   searchError.value = undefined;
   progress.value = 0;
 
@@ -614,6 +680,7 @@ const stopListening = ipcRenderer.on(
     if (message.generation > seenGeneration) {
       seenGeneration = message.generation;
       windowStateStore.clearSearchResults();
+      notSearched.value = [];
     }
     switch (message.type) {
       case "search-result":
@@ -622,6 +689,10 @@ const stopListening = ipcRenderer.on(
         return;
       case "search-progress":
         progress.value = message.progress;
+        return;
+      case "search-unread":
+        progress.value = message.progress;
+        notSearched.value = [...notSearched.value, message.file];
         return;
       case "search-failed":
         windowStateStore.flushSearchResults();
@@ -641,7 +712,7 @@ const stopListening = ipcRenderer.on(
 function failureMessage(failure: SearchFailure): string {
   return failure.kind === "invalid-query"
     ? trans("Not a regular expression: %s", failure.message)
-    : trans("%s could not be read; the search stopped.", pathBasename(failure.documentPath));
+    : trans("The search stopped at %s: %s", pathBasename(failure.documentPath), failure.message);
 }
 
 /** One file's replace target, or one match's. */
@@ -673,6 +744,7 @@ function runReplace(targets: ReplaceTarget[]): void {
         return;
       }
       undoAvailable.value = true;
+      showUnsavedDocuments(outcome.unsaved);
       runSearch();
     })
     .catch((err) => {
@@ -717,6 +789,9 @@ function undoReplace(): void {
         return;
       }
       undoAvailable.value = false;
+      if (outcome.status === "applied") {
+        showUnsavedDocuments(outcome.unsaved);
+      }
       runSearch();
     })
     .catch((err) => {
@@ -954,6 +1029,48 @@ body div#search-view {
     }
   }
 
+  // The files that the search did not read. The list has a height limit,
+  // so a workspace with many such files leaves room for the results.
+  .search-not-searched {
+    flex: 0 0 auto;
+    max-height: 30%;
+    margin: 0 0 6px;
+    padding-left: 18px;
+    overflow-y: auto;
+    color: var(--annotation-danger, rgb(196, 60, 60));
+
+    p { margin: 0; }
+
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      height: 22px;
+      line-height: 22px;
+      white-space: pre;
+      // The smaller text of the directory has a lower baseline box: without
+      // this the row is higher than 22px and the list scrolls by one pixel.
+      overflow: hidden;
+    }
+
+    .not-searched-name { flex: 0 0 auto; font-weight: 600; }
+
+    .not-searched-directory {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 11px;
+      opacity: 0.7;
+    }
+  }
+
   .search-results {
     flex: 1 1 auto;
     min-height: 0;
@@ -1030,57 +1147,59 @@ body div#search-view {
     flex: 0 0 auto;
     gap: 0;
   }
+}
 
-  .search-dialog-backdrop {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.35);
-  }
+// The confirmation is a child of `body` (a reka-ui portal), so its rules
+// are not in the rule of the view.
+.search-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.35);
+}
 
-  .search-dialog {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    width: 340px;
-    max-width: calc(100vw - 32px);
-    padding: 16px;
-    border: 1px solid var(--chrome-border);
-    border-radius: 8px;
-    background-color: var(--chrome-surface);
-    color: inherit;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
-  }
+.search-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  padding: 16px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  background-color: var(--chrome-surface);
+  color: var(--chrome-text);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
 
-  .search-dialog-title { margin: 0; font-size: 13px; font-weight: 600; }
-  .search-dialog-body { margin: 0; opacity: 0.8; }
+.search-dialog-title { margin: 0; font-size: 13px; font-weight: 600; }
+.search-dialog-body { margin: 0; opacity: 0.8; }
 
-  .search-dialog-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 6px;
-  }
+.search-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
 
-  button.search-button {
-    appearance: none;
-    margin: 0;
-    padding: 5px 10px;
-    border: 1px solid var(--chrome-border);
-    border-radius: 6px;
-    background-color: var(--chrome-surface);
-    color: inherit;
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
+button.search-button {
+  appearance: none;
+  margin: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  background-color: var(--chrome-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 
-    &.search-button-primary {
-      border-color: transparent;
-      background-color: var(--chrome-row-accent);
-      color: var(--chrome-row-accent-contrast, white);
-    }
+  &.search-button-primary {
+    border-color: transparent;
+    background-color: var(--chrome-row-accent);
+    color: var(--chrome-row-accent-contrast, white);
   }
 }
 </style>

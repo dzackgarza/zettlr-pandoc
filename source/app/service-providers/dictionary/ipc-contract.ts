@@ -52,7 +52,7 @@ export type DictionaryProviderIPCContract = {
   };
   "open-dictionary-folder": {
     request: { payload?: undefined };
-    response: undefined;
+    response: void;
   };
   "get-prose-completions": {
     request: { payload?: undefined };

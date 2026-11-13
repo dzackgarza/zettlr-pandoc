@@ -13,44 +13,65 @@
  * END HEADER
  */
 
-import { extractASTNodes, markdownToAST } from "@common/modules/markdown-utils";
+import {
+  extractASTNodes,
+  markdownToAST,
+  type WikilinkFormat,
+} from "@common/modules/markdown-utils";
 import type {
   CitationNode,
-  YAMLFrontmatter,
   ZettelkastenLink,
   ZettelkastenTag,
 } from "@common/modules/markdown-utils/markdown-ast";
 import { extractReferencesFromAST } from "@common/pandoc-util/extract-references";
 import { countAll } from "@common/util/counter";
+import { documentFrontmatter } from "@common/util/document-frontmatter";
 import { documentTitleMetadataFromAST } from "@common/util/document-title-metadata";
 import type { MDFileDescriptor, YamlValue } from "@dts/common/fsal";
-import { parse as parseYAML, YAMLError } from "yaml";
 import { getAppServiceContainer, isAppServiceContainerReady } from "../../../app-service-container";
 import extractBOM from "./extract-bom";
 import extractFileId from "./extract-file-id";
 import { extractLinefeed } from "./extract-linefeed";
 
 /**
+ * The version of what the parser extracts. A change to what it extracts must
+ * move it, so that cached descriptors of another version are parsed again.
+ */
+const PARSER_VERSION = 8;
+
+/**
+ * A parser of Markdown files with the settings that decide what it extracts.
+ * A descriptor whose `parsedWith` is not the `identity` of the parser is
+ * parsed again.
+ */
+export interface MarkdownFileParser {
+  identity: string;
+  parse: (file: MDFileDescriptor, content: string) => void;
+}
+
+/**
  * Parses some Markdown `content` into the properties of the `file` descriptor.
  *
- * @param  {string}  idREPattern  The ID RegExp pattern as indicated by the user
- *
- * @returns {Function}            A parser that can then be used to parse files
+ * @param  {string}          idREPattern  The ID RegExp pattern of the settings
+ * @param  {WikilinkFormat}  linkFormat   How a wikilink names its document
  */
 export default function getMarkdownFileParser(
   idREPattern: string,
-): (file: MDFileDescriptor, content: string) => void {
-  return function parseMarkdownFile(file: MDFileDescriptor, content: string): void {
+  linkFormat: WikilinkFormat,
+): MarkdownFileParser {
+  const identity = JSON.stringify([PARSER_VERSION, idREPattern, linkFormat]);
+  const parse = function parseMarkdownFile(file: MDFileDescriptor, content: string): void {
+    file.parsedWith = identity;
     // First of all, determine all the things that have nothing to do with any
     // Markdown contents.
     file.bom = extractBOM(content);
     file.linefeed = extractLinefeed(content);
     file.id = extractFileId(file.name, content, idREPattern);
 
-    const ast = markdownToAST(content);
+    const ast = markdownToAST(content, null, linkFormat);
 
     const tags = extractASTNodes(ast, "ZettelkastenTag") as ZettelkastenTag[];
-    file.tags = tags.map((tag) => tag.value.toLowerCase());
+    file.tags = [...new Set(tags.map((tag) => tag.value.toLowerCase()))];
 
     const links = extractASTNodes(ast, "ZettelkastenLink") as ZettelkastenLink[];
     file.links = links.map((link) => link.target);
@@ -81,84 +102,61 @@ export default function getMarkdownFileParser(
     file.aliases = [];
     file.frontmatter = null;
 
-    const frontmatterNodes = extractASTNodes(ast, "YAMLFrontmatter") as YAMLFrontmatter[];
-    if (frontmatterNodes.length === 0) {
+    const frontmatter = documentFrontmatter(ast);
+    if (frontmatter === null) {
       return; // Nothing more to do
     }
+    file.frontmatter = frontmatter;
 
-    try {
-      // The core schema of `yaml` yields JSON-like values with string keys.
-      const frontmatter: YamlValue | undefined = parseYAML(frontmatterNodes[0].source);
-
-      if (frontmatter === null || frontmatter === undefined) {
-        // An empty frontmatter carries no title, aliases or tags.
-        file.frontmatter = null;
-        return;
-      }
-
-      if (typeof frontmatter !== "object" || Array.isArray(frontmatter)) {
-        // A scalar or a list frontmatter carries no title, aliases or tags.
-        file.frontmatter = {};
-        return;
-      }
-
-      file.frontmatter = frontmatter;
-
-      // Extract the frontmatter title if applicable
-      if ("title" in frontmatter && typeof frontmatter.title === "string") {
-        const title = frontmatter.title.trim();
-        if (title !== "") {
-          file.yamlTitle = title;
-        }
-      }
-
-      // Obsidian's `aliases`: one name or a list of names
-      if ("aliases" in frontmatter) {
-        const aliases: YamlValue[] = Array.isArray(frontmatter.aliases)
-          ? frontmatter.aliases
-          : [frontmatter.aliases];
-        file.aliases = aliases
-          .filter(
-            (alias): alias is string | number =>
-              typeof alias === "string" || typeof alias === "number",
-          )
-          .map((alias) => String(alias).trim())
-          .filter((alias) => alias !== "");
-      }
-
-      for (const prop of ["keywords", "tags"]) {
-        const declared = frontmatter[prop];
-        if (declared == null) {
-          continue;
-        }
-        // The user can just write "keywords: something", in which case it won't be
-        // an array, but a simple string (or even a number <.<). I am beginning to
-        // understand why programmers despise the YAML-format.
-        let keywords: YamlValue[];
-        if (typeof declared === "string") {
-          const keys = declared.split(",");
-          // The user may have split the tags by comma
-          keywords = keys.length > 1 ? keys.map((tag) => tag.trim()) : [declared];
-        } else if (Array.isArray(declared)) {
-          keywords = declared;
-        } else {
-          // It's likely a Number or a Boolean
-          keywords = [String(declared)];
-        }
-        frontmatter[prop] = keywords;
-
-        // If the user decides to use just numbers for the keywords (e.g. #1997),
-        // the YAML parser will obviously cast those to numbers, but we don't want
-        // this, so forcefully cast everything to string (see issue #1433).
-        const sanitizedKeywords = keywords.map(String).map((tag) => tag.toLowerCase());
-        file.tags.push(...sanitizedKeywords.filter((each) => !file.tags.includes(each)));
-      }
-    } catch (err) {
-      // Invalid YAML leaves the descriptor without frontmatter metadata; every
-      // other failure is a defect in this parser.
-      if (!(err instanceof YAMLError)) {
-        throw err;
+    // Extract the frontmatter title if applicable
+    if ("title" in frontmatter && typeof frontmatter.title === "string") {
+      const title = frontmatter.title.trim();
+      if (title !== "") {
+        file.yamlTitle = title;
       }
     }
+
+    // Obsidian's `aliases`: one name or a list of names
+    if ("aliases" in frontmatter) {
+      const aliases: YamlValue[] = Array.isArray(frontmatter.aliases)
+        ? frontmatter.aliases
+        : [frontmatter.aliases];
+      file.aliases = aliases
+        .filter(
+          (alias): alias is string | number =>
+            typeof alias === "string" || typeof alias === "number",
+        )
+        .map((alias) => String(alias).trim())
+        .filter((alias) => alias !== "");
+    }
+
+    for (const prop of ["keywords", "tags"]) {
+      const declared = frontmatter[prop];
+      if (declared == null) {
+        continue;
+      }
+      // The user can just write "keywords: something", in which case it won't be
+      // an array, but a simple string (or even a number <.<). I am beginning to
+      // understand why programmers despise the YAML-format.
+      let keywords: YamlValue[];
+      if (typeof declared === "string") {
+        const keys = declared.split(",");
+        // The user may have split the tags by comma
+        keywords = keys.length > 1 ? keys.map((tag) => tag.trim()) : [declared];
+      } else if (Array.isArray(declared)) {
+        keywords = declared;
+      } else {
+        // It's likely a Number or a Boolean
+        keywords = [String(declared)];
+      }
+      frontmatter[prop] = keywords;
+
+      // If the user decides to use just numbers for the keywords (e.g. #1997),
+      // the YAML parser will obviously cast those to numbers, but we don't want
+      // this, so forcefully cast everything to string (see issue #1433).
+      const sanitizedKeywords = keywords.map(String).map((tag) => tag.toLowerCase());
+      file.tags = [...new Set([...file.tags, ...sanitizedKeywords])];
+    }
   };
+  return { identity, parse };
 }

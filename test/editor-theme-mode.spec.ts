@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { useDarkModeEditor } from "source/common/modules/markdown-editor/theme/dark-mode";
+import { useDarkModeEditor } from "@dzack/pandoc-editor/theme/dark-mode";
 
 describe("Editor light/dark mode enum contract", function () {
   it("treats light and dark as explicit enum values, with match alone following the app", function () {

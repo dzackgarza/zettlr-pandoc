@@ -21,7 +21,7 @@ export const LATEX_EXT = [".tex", ".latex", ".sty", ".cls"];
 export const YAML_EXT = [".yaml", ".yml"];
 export const JSON_EXT = [".json"];
 export const CODE_EXT = [...LATEX_EXT, ...YAML_EXT, ...JSON_EXT, ".dic"];
-export const IMG_EXT = [".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".bmp", ".tiff"];
+export const IMG_EXT = [".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".bmp", ".tiff", ".tif"];
 export const PDF_EXT = [".pdf"];
 export const MS_OFFICE_EXT = [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"];
 export const OPEN_OFFICE_EXT = [".odt", ".ods", ".odp"];
@@ -50,7 +50,8 @@ export function hasMdOrCodeExt(p: string): boolean {
 
 /**
  * Checks if the provided `filePath` has a filename extension from the list of
- * `extensions`.
+ * `extensions`. The case of the path and of an extension does not count
+ * (`Paper.PDF` is a PDF), and an extension of a setting may omit its dot.
  *
  * @param   {string}    filePath    The file path in question
  * @param   {string[]}  extensions  The list of filename extensions to check
@@ -58,7 +59,12 @@ export function hasMdOrCodeExt(p: string): boolean {
  * @return  {boolean}               Whether the file has one of these extensions
  */
 export function hasExt(filePath: string, extensions: string[]): boolean {
-  return extensions.some((ext) => filePath.endsWith(ext));
+  const name = filePath.toLowerCase();
+  return extensions.some((ext) => {
+    const lower = ext.trim().toLowerCase();
+    const normalized = lower === "" || lower.startsWith(".") ? lower : `.${lower}`;
+    return normalized !== "" && name.endsWith(normalized);
+  });
 }
 
 /**

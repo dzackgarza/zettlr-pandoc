@@ -2,18 +2,71 @@
 // against a throwaway data directory and attach over CDP; keeping that in one
 // module is what stops the second spec from copying the first one's 300 lines.
 import { strict as assert } from "node:assert";
-import { type ChildProcess, spawn } from "node:child_process";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import {
+  chmod,
+  cp,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { type Browser, chromium, type Page } from "playwright";
+import { type Browser, chromium, type Locator, type Page } from "playwright";
 import { stringify } from "yaml";
 
 export const REPO_ROOT = path.resolve(process.cwd());
 
+/**
+ * The packaged binary of `just package`. A spec that starts it proves the
+ * current source only while the build is current, so this fails when the
+ * build is absent or when its stamp differs from the source fingerprint that
+ * the desktop launcher compares.
+ */
+export function currentPackagedBinary(): string {
+  const packagedDirectory = path.join(REPO_ROOT, "out", "Zettlr-Pandoc-linux-x64");
+  const binary = path.join(packagedDirectory, "zettlr-pandoc");
+  const stamp = path.join(packagedDirectory, ".source-fingerprint");
+  assert.ok(
+    existsSync(binary) && existsSync(stamp),
+    `No packaged build at ${packagedDirectory}. Run \`just package\` first.`,
+  );
+  const fingerprint = execFileSync(
+    path.join(REPO_ROOT, "scripts", "desktop", "zettlr-pandoc-source-fingerprint"),
+    [REPO_ROOT],
+    { encoding: "utf8" },
+  ).trim();
+  assert.equal(
+    readFileSync(stamp, "utf8").trim(),
+    fingerprint,
+    `The packaged build at ${packagedDirectory} is older than the source. Run \`just package\` first.`,
+  );
+  return binary;
+}
+
 export function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+/**
+ * Makes a watched file unreadable and gives it the modification time
+ * `changedAt`, so the app reads a change it cannot load. The watcher of the
+ * app (chokidar, `handler.js`) drops each event of a file that comes within
+ * 5 ms of the one before it, and it reports a change only when the
+ * modification time moved: the change of the mode alone is no change, and a
+ * time change 5 ms after it is lost. The two changes are therefore apart.
+ */
+export async function makeUnreadableAndNewer(filePath: string, changedAt: Date): Promise<void> {
+  await chmod(filePath, 0o000);
+  await delay(100);
+  await utimes(filePath, changedAt, changedAt);
 }
 
 export function requireInitialized<T>(value: T | undefined, message: string): T {
@@ -275,6 +328,48 @@ export async function hideDevServerOverlay(page: Page): Promise<void> {
   });
 }
 
+export interface SerializedMenuNode {
+  id?: string;
+  label?: string;
+  type?: string;
+  accelerator?: string | null;
+  submenu?: SerializedMenuNode[];
+}
+
+/** The application menu as the menu provider serialises it for this window. */
+export function readApplicationMenu(page: Page): Promise<SerializedMenuNode[]> {
+  return page.evaluate(
+    () =>
+      new Promise<SerializedMenuNode[]>((resolve) => {
+        window.ipc.on(
+          "menu-provider",
+          (_event: unknown, message: { command: string; payload: SerializedMenuNode[] }) => {
+            if (message.command === "application-menu") {
+              resolve(message.payload);
+            }
+          },
+        );
+        window.ipc.send("menu-provider", { command: "get-application-menu" });
+      }),
+  );
+}
+
+export function findMenuNode(
+  nodes: SerializedMenuNode[],
+  id: string,
+): SerializedMenuNode | undefined {
+  for (const node of nodes) {
+    if (node.id === id) {
+      return node;
+    }
+    const nested = node.submenu === undefined ? undefined : findMenuNode(node.submenu, id);
+    if (nested !== undefined) {
+      return nested;
+    }
+  }
+  return undefined;
+}
+
 /** The Agent API, as the specs drive it: JSON in, parsed JSON out. */
 export interface AgentClient {
   get: (route: string) => Promise<unknown>;
@@ -286,12 +381,23 @@ export interface AgentClient {
   ) => Promise<{ status: number; body: unknown }>;
 }
 
+/**
+ * The Agent API answers only a caller that sends the token of the app's
+ * environment. Each run has a token of its own, so a token of the shell
+ * that started the run decides nothing.
+ */
+export const AGENT_API_TOKEN = randomUUID();
+/** What a start of the app adds to its environment. */
+export const AGENT_API_ENVIRONMENT = { ZETTLR_AGENT_API_TOKEN: AGENT_API_TOKEN };
+/** The header that each request to the Agent API carries. */
+export const AGENT_API_AUTHORIZATION = { authorization: `Bearer ${AGENT_API_TOKEN}` };
+
 export function agentClient(port: number): AgentClient {
   const base = `http://127.0.0.1:${port}`;
   const post = async (route: string, body: unknown): Promise<Response> =>
     await fetch(`${base}${route}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...AGENT_API_AUTHORIZATION, "content-type": "application/json" },
       body: JSON.stringify(body),
     });
   const parse = async (response: Response): Promise<unknown> => {
@@ -308,7 +414,8 @@ export function agentClient(port: number): AgentClient {
     return parsed;
   };
   return {
-    get: async (route) => await require(await fetch(`${base}${route}`)),
+    get: async (route) =>
+      await require(await fetch(`${base}${route}`, { headers: AGENT_API_AUTHORIZATION })),
     post: async (route, body) => await require(await post(route, body)),
     postExpectingFailure: async (route, body) => {
       const response = await post(route, body);
@@ -364,9 +471,9 @@ export async function readAgentApiPort(
         Number.isInteger(port) && port > 0,
         `The Agent API port file holds no port: ${JSON.stringify(contents)}`,
       );
-      const response = await fetch(`http://127.0.0.1:${port}/v1/ping`).catch(
-        transientConnectionFailure,
-      );
+      const response = await fetch(`http://127.0.0.1:${port}/v1/ping`, {
+        headers: AGENT_API_AUTHORIZATION,
+      }).catch(transientConnectionFailure);
       if (response?.ok === true) {
         return port;
       }
@@ -404,9 +511,8 @@ export interface WorkspaceFixtureOptions {
 }
 
 /**
- * A fixture whose workspace root is a copy of an existing directory — the
- * shape a Quarto project needs, since the app offers the Book surface only
- * when a workspace ROOT is the project.
+ * A fixture whose workspace root is a copy of an existing directory, such as
+ * a Quarto project.
  */
 export async function createWorkspaceFixture(
   prefix: string,
@@ -471,6 +577,12 @@ async function writeFixtureState(
           openWorkspaces: [workspaceDirectory],
         },
         system: { checkForUpdates: false },
+        // The shipped default takes the theme of the host, so `darkMode`
+        // would decide nothing and a spec would see another theme on each
+        // machine. A fixture states its theme: light, or the `darkMode` of
+        // its own config.
+        autoDarkMode: "off",
+        darkMode: false,
         // The shipped default binds the Agent API to a fixed port, which a
         // fixture would take from whatever Zettlr the developer is running.
         // A spec that needs the API asks for it and gets a kernel-assigned
@@ -495,9 +607,19 @@ async function writeFixtureState(
   await writeFile(path.join(configDirectory, "documents.yaml"), stringify(documents), "utf8");
 }
 
+/**
+ * A version of `org.freedesktop.portal.FileChooser` that no portal has; the
+ * interface is at version 4.
+ */
+const NO_PORTAL_FILE_CHOOSER_VERSION = 1000;
+
 export interface LaunchOptions {
   /** Files delivered as literal application arguments on a cold start. */
   files?: string[];
+  /** Options of the application on its command line (`cli-provider.ts`). */
+  flags?: string[];
+  /** Variables set over the inherited environment of the app process. */
+  environment?: NodeJS.ProcessEnv;
 }
 
 export async function launchElectron(
@@ -511,30 +633,25 @@ export async function launchElectron(
     `--data-dir=${configDirectory}`,
     "--remote-debugging-port=0",
     "--disable-hardware-acceleration",
-    // Under xvfb DISPLAY names the virtual server, but Chromium prefers a
-    // Wayland compositor whenever WAYLAND_DISPLAY is set, and then the
-    // window opens on the developer's desktop. X11 is where the harness
-    // looks, the same switch the capture scenes pass.
+    // The run owns the X display (`just test-e2e`, `just test-e2e-file`):
+    // DISPLAY names the desktop's server or the virtual one of the run.
+    // Chromium prefers a Wayland compositor whenever WAYLAND_DISPLAY is
+    // set, and then the window opens on the developer's desktop. X11 is
+    // where the harness looks, the same switch the capture scenes pass.
     "--ozone-platform=x11",
+    // A file dialog goes to the desktop portal of the session when the
+    // portal has this version of the file chooser interface, and the
+    // portal draws it on the desktop of the author. No portal has the
+    // version below, so the app draws its own dialog on the display of
+    // the run, where a spec finds it (`native-dialog.ts`).
+    `--xdg-portal-required-version=${NO_PORTAL_FILE_CHOOSER_VERSION}`,
   ];
+  if (options.flags !== undefined) {
+    forgeArguments.push(...options.flags);
+  }
   if (options.files !== undefined) {
     forgeArguments.push(...options.files);
   }
-  const needsVirtualDisplay =
-    process.platform === "linux" &&
-    process.env.DISPLAY === undefined &&
-    process.env.WAYLAND_DISPLAY === undefined;
-  const executable = needsVirtualDisplay ? "xvfb-run" : forgeExecutable;
-  // xvfb-run's default screen is 640x480; a new window sizes itself from
-  // the screen, and the three panes' minimums need more than that.
-  const args = needsVirtualDisplay
-    ? [
-        "--auto-servernum",
-        "--server-args=-screen 0 1920x1080x24",
-        forgeExecutable,
-        ...forgeArguments,
-      ]
-    : forgeArguments;
 
   // Forge's dev server and logger need separate ports. Choose fresh loopback
   // ports for this launch; the application owns the subsequent bind and will
@@ -548,9 +665,11 @@ export async function launchElectron(
     ZETTLR_E2E: "1",
     ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
     ZETTLR_FORGE_LOGGER_PORT: String(loggerPort),
+    ...AGENT_API_ENVIRONMENT,
+    ...options.environment,
   };
 
-  return spawn(executable, args, {
+  return spawn(forgeExecutable, forgeArguments, {
     cwd: REPO_ROOT,
     detached: true,
     env: childEnvironment,
@@ -583,6 +702,8 @@ export interface RunningApp {
   appProcess: ChildProcess;
   browser: Browser;
   getOutput: () => string;
+  /** Where a spec connects again after it left the connection of `browser`. */
+  devToolsUrl: string;
 }
 
 export async function attach(
@@ -612,7 +733,12 @@ export async function attach(
     }
 
     attached = true;
-    return { appProcess, browser: connectedBrowser, getOutput: () => processOutput };
+    return {
+      appProcess,
+      browser: connectedBrowser,
+      getOutput: () => processOutput,
+      devToolsUrl,
+    };
   })();
 
   return await running.finally(async () => {
@@ -621,6 +747,51 @@ export async function attach(
       await stopProcess(appProcess);
     }
   });
+}
+
+/**
+ * Asks the app to quit, as File → Quit does. The page sends the request in a
+ * later task. A quit can close the page, and an evaluation whose page closes
+ * before its answer arrives rejects; this evaluation has answered by then.
+ */
+export async function requestQuit(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    setTimeout(() => {
+      window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu-quit" });
+    }, 100);
+  });
+}
+
+/**
+ * Asks the window of the page to close, as its close control does. The
+ * request goes in a later task of the page, for the reason of `requestQuit`.
+ * The window manager can refuse the close; the caller waits for what it
+ * expects.
+ */
+export async function requestWindowClose(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    setTimeout(() => {
+      window.ipc.send("window-controls", { command: "win-close" });
+    }, 100);
+  });
+}
+
+/**
+ * Clicks a control whose action closes its page, and waits for the close.
+ * Playwright stops each action of a page that closes before the action ends,
+ * so a click whose handler closes the page races that close. The page clicks
+ * the control in a later task, after the evaluation has answered.
+ */
+export async function clickToClose(page: Page, control: Locator): Promise<void> {
+  await control.waitFor({ state: "visible", timeout: 10_000 });
+  assert.ok(await control.isEnabled(), "the control that closes the page is enabled");
+  const closed = page.waitForEvent("close", { timeout: 10_000 });
+  await control.evaluate((element: HTMLElement) => {
+    setTimeout(() => {
+      element.click();
+    }, 100);
+  });
+  await closed;
 }
 
 export async function shutdown(

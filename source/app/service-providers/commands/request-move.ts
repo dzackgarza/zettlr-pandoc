@@ -15,6 +15,9 @@
 import { trans } from "@common/i18n-main";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import { runEachStep } from "source/app/util/run-each-step";
+import { systemErrorCause } from "source/app/util/system-error-cause";
+import { isAtOrInsideRoot } from "source/common/util/renderer-path-polyfill";
 import ZettlrCommand from "./zettlr-command";
 
 export default class RequestMove extends ZettlrCommand {
@@ -35,9 +38,9 @@ export default class RequestMove extends ZettlrCommand {
     const to = await this._app.fsal.getAnyDirectoryDescriptor(arg.to);
 
     if (to === undefined || from === undefined) {
-      // If findDir doesn't return anything then it's a file
-      this._app.log.error("Could not find the target directory for moving.");
-      return false;
+      throw new Error(
+        `Could not move ${arg.from} to ${arg.to}: ${from === undefined ? "the source" : "the target directory"} was not found.`,
+      );
     }
 
     // It can happen that the user begins to drag a file but then realizes they
@@ -49,7 +52,7 @@ export default class RequestMove extends ZettlrCommand {
     }
 
     // Let's check if the destination is a child of the source:
-    if (from.type === "directory" && to.path.startsWith(from.path)) {
+    if (from.type === "directory" && isAtOrInsideRoot(to.path, from.path)) {
       this._app.windows.prompt({
         type: "error",
         title: trans("Cannot move directory"),
@@ -73,26 +76,44 @@ export default class RequestMove extends ZettlrCommand {
     // A final check: If from is a file, and the file is modified, we cannot
     // move, lest we want to induce data loss, see issue #2347
     if (this._app.documents.isModified(arg.from)) {
-      this._app.log.error(
-        `[Application] Cannot move file ${arg.from} to ${arg.to}, since it is modified.`,
+      throw new Error(
+        trans("Cannot move %s: it has unsaved changes. Save the file, then move it.", from.name),
       );
-      return false;
     }
 
     // Now we can move the source to the target.
     const linksBefore = this._app.links.snapshot();
-    await this._app.fsal.rename(from.path, newPath);
-    // Notify the documents provider so it can exchange any files if necessary
-    if (await this._app.fsal.isFile(newPath)) {
-      await this._app.documents.hasMovedFile(from.path, newPath);
-    } else {
-      await this._app.documents.hasMovedDir(from.path, newPath);
-    }
+    await this._app.fsal.rename(from.path, newPath).catch((failure: NodeJS.ErrnoException) => {
+      throw new Error(
+        trans("Could not move %s to %s: %s.", from.name, to.name, systemErrorCause(failure)),
+        { cause: failure },
+      );
+    });
 
-    // Keep every wikilink pointing at the document it named before the move
+    // The source is at its new place. Each step that follows runs, also when
+    // the step before it failed: the links follow a document whose
+    // collaboration state could not.
     const move = { from: from.path, to: newPath };
-    const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
-    await this._app.links.retargetAfterMove(linksBefore, move, changedFiles, this._app.documents);
+    await runEachStep([
+      // Notify the documents provider so it can exchange any files if necessary
+      async () => {
+        if (await this._app.fsal.isFile(newPath)) {
+          await this._app.documents.hasMovedFile(from.path, newPath);
+        } else {
+          await this._app.documents.hasMovedDir(from.path, newPath);
+        }
+      },
+      // Keep every wikilink pointing at the document it named before the move
+      async () => {
+        const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
+        await this._app.links.retargetAfterMove(
+          linksBefore,
+          move,
+          changedFiles,
+          this._app.documents,
+        );
+      },
+    ]);
 
     return true;
   }

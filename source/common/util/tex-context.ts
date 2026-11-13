@@ -1,7 +1,26 @@
+import { texCommandDeclarationEntries } from "@dzack/tikz-render/tex-command-declarations";
+import type { Tree } from "@lezer/common";
 import YAML from "yaml";
+import { firstMetadataBlock, type MetadataBlockRange } from "./document-frontmatter";
 import type { TexstudioCommandIndex } from "./texstudio-command-index";
 
 export type TexDocumentKind = "markdown" | "latex" | "yaml";
+
+/**
+ * A document whose TeX the completion reads. A Markdown document carries its
+ * metadata block (`firstMetadataBlock` of its syntax tree), the block that
+ * Pandoc and the descriptor of the file read.
+ */
+export type TexDocument =
+  | { kind: "markdown"; source: string; metadata: MetadataBlockRange | null }
+  | { kind: "latex" | "yaml"; source: string };
+
+/** The TeX document of a text of `kind` and its syntax tree. */
+export function texDocument(source: string, kind: TexDocumentKind, tree: Tree): TexDocument {
+  return kind === "markdown"
+    ? { kind, source, metadata: firstMetadataBlock(tree) }
+    : { kind, source };
+}
 
 export interface TexMacroSource {
   path: string;
@@ -25,20 +44,14 @@ function stringList(value: unknown): string[] {
   return value.filter((entry): entry is string => typeof entry === "string");
 }
 
-function frontmatterObject(
-  source: string,
-  kind: TexDocumentKind,
-): Record<string, unknown> | undefined {
-  let yamlSource = source;
-  if (kind === "markdown") {
-    const match = /^(?:\uFEFF)?---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/u.exec(
-      source,
-    );
-    if (match === null) {
+function frontmatterObject(document: TexDocument): Record<string, unknown> | undefined {
+  let yamlSource = document.source;
+  if (document.kind === "markdown") {
+    if (document.metadata === null) {
       return undefined;
     }
-    yamlSource = match[1];
-  } else if (kind !== "yaml") {
+    yamlSource = document.source.slice(document.metadata.bodyFrom, document.metadata.bodyTo);
+  } else if (document.kind !== "yaml") {
     return undefined;
   }
 
@@ -52,15 +65,12 @@ function frontmatterObject(
   }
 }
 
-function explicitTexContext(
-  source: string,
-  kind: TexDocumentKind,
-): {
+function explicitTexContext(document: TexDocument): {
   packages: string[];
   classes: string[];
   macroSources: string[];
 } {
-  const root = frontmatterObject(source, kind);
+  const root = frontmatterObject(document);
   const tex = root?.tex;
   if (typeof tex !== "object" || tex === null || Array.isArray(tex)) {
     return { packages: [], classes: [], macroSources: [] };
@@ -73,8 +83,8 @@ function explicitTexContext(
   };
 }
 
-export function declaredTexMacroSources(source: string, kind: TexDocumentKind): string[] {
-  return explicitTexContext(source, kind).macroSources;
+export function declaredTexMacroSources(document: TexDocument): string[] {
+  return explicitTexContext(document).macroSources;
 }
 
 /**
@@ -129,27 +139,24 @@ function yamlHeaderIncludesSurface(source: string): string {
     .join("\n");
 }
 
-function maskMarkdownFrontmatter(source: string): string {
-  const match = /^(?:\uFEFF)?---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/u.exec(
-    source,
-  );
-  if (match === null) {
+function maskMarkdownFrontmatter(source: string, metadata: MetadataBlockRange | null): string {
+  if (metadata === null) {
     return source;
   }
-  const full = match[0];
-  const yaml = match[1];
-  const yamlOffset = full.indexOf(yaml);
-  const maskedFrontmatter =
-    maskNonNewlines(full.slice(0, yamlOffset)) +
-    yamlHeaderIncludesSurface(yaml) +
-    maskNonNewlines(full.slice(yamlOffset + yaml.length));
-  return maskedFrontmatter + source.slice(full.length);
+  const { from, to, bodyFrom, bodyTo } = metadata;
+  return (
+    source.slice(0, from) +
+    maskNonNewlines(source.slice(from, bodyFrom)) +
+    yamlHeaderIncludesSurface(source.slice(bodyFrom, bodyTo)) +
+    maskNonNewlines(source.slice(bodyTo, to)) +
+    source.slice(to)
+  );
 }
 
-export function markdownTexSurface(source: string): string {
+function markdownTexSurface(source: string, metadata: MetadataBlockRange | null): string {
   // Split only on LF so a CR in CRLF-loaded content remains at its original
   // document offset. Every masking operation below is length preserving.
-  const lines = maskMarkdownFrontmatter(source).split("\n");
+  const lines = maskMarkdownFrontmatter(source, metadata).split("\n");
   let fence: { marker: string; rawTex: boolean } | undefined;
   const retained = lines
     .map((line) => {
@@ -191,14 +198,14 @@ export function markdownTexSurface(source: string): string {
 }
 
 /** A same-length view of the source containing only TeX-significant regions. */
-export function texCommandSurface(source: string, kind: TexDocumentKind): string {
-  switch (kind) {
+export function texCommandSurface(document: TexDocument): string {
+  switch (document.kind) {
     case "markdown":
-      return stripTexComments(markdownTexSurface(source));
+      return stripTexComments(markdownTexSurface(document.source, document.metadata));
     case "yaml":
-      return stripTexComments(yamlHeaderIncludesSurface(source));
+      return stripTexComments(yamlHeaderIncludesSurface(document.source));
     case "latex":
-      return stripTexComments(source);
+      return stripTexComments(document.source);
   }
 }
 
@@ -261,15 +268,9 @@ function scanTexSource(source: string): {
     }
   }
 
-  const commandPatterns = [
-    /\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand|NewDocumentCommand|RenewDocumentCommand|ProvideDocumentCommand)\*?\s*\{\s*(\\[A-Za-z@]+)\s*\}/gu,
-    /\\(?:DeclareMathOperator|DeclareMathOperator\*)\s*\{\s*(\\[A-Za-z@]+)\s*\}/gu,
-    /\\(?:def|gdef|edef|xdef)\s*(\\[A-Za-z@]+)\b/gu,
-  ];
-  for (const pattern of commandPatterns) {
-    for (const match of uncommented.matchAll(pattern)) {
-      userCommands.add(match[1]);
-    }
+  // The one reader of TeX declarations, which the macro inventory uses too
+  for (const declaration of texCommandDeclarationEntries(uncommented)) {
+    userCommands.add(declaration.name);
   }
 
   return {
@@ -296,13 +297,12 @@ function classProviderName(name: string, index: TexstudioCommandIndex): string {
  */
 export function collectTexContext(
   index: TexstudioCommandIndex,
-  documentSource: string,
-  kind: TexDocumentKind,
+  document: TexDocument,
   macroSources: readonly TexMacroSource[] = [],
 ): TexContextDeclaration {
-  const visible = texCommandSurface(documentSource, kind);
+  const visible = texCommandSurface(document);
   const scanned = scanTexSource(visible);
-  const explicit = explicitTexContext(documentSource, kind);
+  const explicit = explicitTexContext(document);
   const packages = new Set<string>([
     ...scanned.packages.map(providerName),
     ...explicit.packages.map(providerName),

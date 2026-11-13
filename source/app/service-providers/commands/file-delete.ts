@@ -13,13 +13,22 @@
  */
 
 import { trans } from "@common/i18n-main";
+import type DocumentManager from "@providers/documents";
+import type FSAL from "@providers/fsal";
+import type LogProvider from "@providers/log";
 import { dialog, type MessageBoxOptions } from "electron";
 import path from "path";
-import type { AppServiceContainer } from "source/app/app-service-container";
 import ZettlrCommand from "./zettlr-command";
 
-export default class FileDelete extends ZettlrCommand {
-  constructor(app: AppServiceContainer) {
+/** The services that the command uses. */
+export interface FileDeleteServices {
+  log: Pick<LogProvider, "info">;
+  documents: Pick<DocumentManager, "closeDocumentsForDelete" | "setAsideStateOfDeleted">;
+  fsal: Pick<FSAL, "removeFile">;
+}
+
+export default class FileDelete extends ZettlrCommand<FileDeleteServices> {
+  constructor(app: FileDeleteServices) {
     super(app, "file-delete");
   }
 
@@ -45,11 +54,18 @@ export default class FileDelete extends ZettlrCommand {
       return false;
     }
 
-    // Ensure the file is closed before removing
-    await this._app.documents.closeFileEverywhere(arg.path);
+    // The file is closed before it is removed. A refused close keeps the
+    // file: its buffer and its review are in the open document.
+    if (!(await this._app.documents.closeDocumentsForDelete(arg.path))) {
+      throw new Error(
+        trans("%s was not deleted: the open document could not be closed.", fileName),
+      );
+    }
 
-    // Now, remove the file
     await this._app.fsal.removeFile(arg.path);
+    // The review state of the deleted document goes aside: a new file at
+    // the path does not get it.
+    await this._app.documents.setAsideStateOfDeleted(arg.path);
 
     this._app.log.info(`Removed file ${fileName}.`);
     return true;

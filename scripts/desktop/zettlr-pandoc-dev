@@ -64,8 +64,8 @@ for (( attempt = 0; attempt < 300; attempt++ )); do
 
   address=$(
     hyprctl clients -j |
-      jq -r --arg splash_class "$splash_class" \
-        'first(.[] | select(.class == $splash_class) | .address) // ""'
+      jq -r --arg splash_class "$splash_class" --argjson kitty_pid "$kitty_pid" \
+        'first(.[] | select(.class == $splash_class and .pid == $kitty_pid) | .address) // ""'
   )
   if [[ -n "$address" ]]; then
     break
@@ -83,8 +83,8 @@ if [[ -z "$address" ]]; then
   exit 1
 fi
 
-hyprctl --batch \
-  "dispatch setfloating address:$address ; dispatch resizewindowpixel exact 760 240,address:$address ; dispatch centerwindow" \
+hyprctl eval \
+  "local w = hl.get_window('address:$address'); hl.dispatch(hl.dsp.window.float({window=w, action='set'})); hl.dispatch(hl.dsp.window.resize({window=w, x=760, y=240, relative=false})); hl.dispatch(hl.dsp.window.center({window=w}))" \
   >/dev/null
 
 wait "$kitty_pid"

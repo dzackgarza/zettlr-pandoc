@@ -15,6 +15,13 @@
 import { trans } from "@common/i18n-main";
 import type { ConfigPath } from "./get-config-template";
 
+/**
+ * The range of `editor.fontSize` in pixels, which the rule of the setting and
+ * the zoom of the menu share. It is the range of VS Code's `editor.fontSize`
+ * (`EditorFontSize` in `src/vs/editor/common/config/editorOptions.ts`).
+ */
+export const EDITOR_FONT_SIZE = { min: 6, max: 100 } as const;
+
 // The defaults of these options live in the configuration template.
 const RULES = {
   darkMode: "required|boolean",
@@ -38,6 +45,7 @@ const RULES = {
   "zkn.idGen": "required|string|min:2",
   attachmentExtensions: "optional|array",
   debug: "required|boolean",
+  "editor.fontSize": `required|number|min:${EDITOR_FONT_SIZE.min}|max:${EDITOR_FONT_SIZE.max}`,
   "editor.indentUnit": "required|number|min:1|max:24",
   "editor.boldFormatting": "required|string|in:__,**",
   "editor.italicFormatting": "required|string|in:_,*",
@@ -47,6 +55,7 @@ const RULES = {
   "display.imageHeight": "required|number|min:1|max:100",
   "watchdog.stabilityThreshold": "optional|number|min:1|max:100000",
   "ui.recentFilesLimit": "required|number|min:1|max:1000",
+  "zotero.localServer": "required|string",
 } satisfies Partial<Record<ConfigPath, string>>;
 
 /**

@@ -9,6 +9,7 @@ import {
 } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
 import { buildMathJaxCompletionCatalogue } from "@common/util/mathtex-to-html";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import {
   __resetProseCompletionCacheForTests,
   proseDictionarySource,
@@ -21,7 +22,6 @@ import {
   __texConstructionsForTests,
   texConstructionSource,
 } from "source/common/modules/markdown-editor/autocomplete/tex-constructions";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 
 function contextFor(doc: string, pos = doc.length): CompletionContext {
   return new CompletionContext(
@@ -90,7 +90,7 @@ describe("LaTeX/TikZ completion sources", function () {
         };
       }
       if (channel === "tex-macro-commands") {
-        return ["\\CompilerOnly"];
+        return { commands: ["\\CompilerOnly"], notRead: [] };
       }
       throw new Error(`unexpected IPC ${channel}`);
     });

@@ -8,10 +8,12 @@ import { type Browser, chromium, type Page } from "playwright";
 import { stringify } from "yaml";
 import type { components } from "../../source/types/generated/agent-api";
 import {
+  AGENT_API_AUTHORIZATION,
+  AGENT_API_ENVIRONMENT,
   createFixture,
+  currentPackagedBinary,
   type Fixture,
   findEditorPage,
-  REPO_ROOT,
   readAgentApiPort,
   requireInitialized,
   shutdown,
@@ -62,14 +64,18 @@ describe("retained integration in packaged Electron", function () {
       "@book{Web26, author={Webster, Ben}, title={Spaces}, year={2026}}\n",
     );
     appProcess = spawn(
-      path.join(REPO_ROOT, "out/Zettlr-Pandoc-linux-x64/zettlr-pandoc"),
+      currentPackagedBinary(),
       [
         `--data-dir=${fixture.configDirectory}`,
         "--remote-debugging-port=0",
         "--no-sandbox",
         "--ozone-platform=x11",
       ],
-      { detached: true, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        detached: true,
+        env: { ...process.env, ...AGENT_API_ENVIRONMENT },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
     );
     appProcess.stdout?.on("data", (chunk: Buffer) => events.push(chunk.toString()));
     appProcess.stderr?.on("data", (chunk: Buffer) => events.push(chunk.toString()));
@@ -131,7 +137,7 @@ describe("retained integration in packaged Electron", function () {
     const editor = requireInitialized(page, "The editor must be running");
     const focusedDocumentId = async (): Promise<string | undefined> => {
       const context: components["schemas"]["EditorContext"] = await (
-        await fetch(`${api}/v1/context`)
+        await fetch(`${api}/v1/context`, { headers: AGENT_API_AUTHORIZATION })
       ).json();
       return context.focusedDocument?.documentId;
     };
@@ -146,13 +152,15 @@ describe("retained integration in packaged Electron", function () {
     };
     const submitted = await fetch(`${api}/v1/review-submissions`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...AGENT_API_AUTHORIZATION, "content-type": "application/json" },
       body: JSON.stringify(request),
     });
     assert.equal(submitted.status, 200, await submitted.clone().text());
     const result: Submitted = await submitted.json();
     const read: ReadDocument = await (
-      await fetch(`${api}/v1/documents/${result.documentId}?includeContent=true`)
+      await fetch(`${api}/v1/documents/${result.documentId}?includeContent=true`, {
+        headers: AGENT_API_AUTHORIZATION,
+      })
     ).json();
     assert.equal(read.content, proposed);
     assert.equal(await focusedDocumentId(), selected);
@@ -163,14 +171,14 @@ describe("retained integration in packaged Electron", function () {
     );
     const stale = await fetch(`${api}/v1/review-submissions`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...AGENT_API_AUTHORIZATION, "content-type": "application/json" },
       body: JSON.stringify({ ...request, clientRequestId: "packaged-stale" }),
     });
     assert.equal(stale.status, 412);
     assert.equal((await stale.json()).error.code, "BASELINE_MISMATCH");
     const replay = await fetch(`${api}/v1/review-submissions`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...AGENT_API_AUTHORIZATION, "content-type": "application/json" },
       body: JSON.stringify({ ...request, baseline: undefined }),
     });
     assert.equal(replay.status, 409);
@@ -178,7 +186,7 @@ describe("retained integration in packaged Electron", function () {
     const updatedChapter = chapter.replace("End of chapter.", "The chapter is complete.");
     const visible = await fetch(`${api}/v1/review-submissions`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...AGENT_API_AUTHORIZATION, "content-type": "application/json" },
       body: JSON.stringify({
         document: { uri: fixture.documentPath },
         patch: createPatch(fixture.documentPath, chapter, updatedChapter),

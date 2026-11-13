@@ -31,6 +31,7 @@ import { mkdtemp, readFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { promisify } from "util";
+import { runProbe } from "./visual/display-probe";
 
 const execFileAsync = promisify(execFile);
 
@@ -79,16 +80,9 @@ describe("Widget renderers under the visual-indent plugin (issue #15)", function
       `--tsconfig=${path.join(root, "tsconfig.json")}`,
       `--outfile=${path.join(outputDirectory, "widget-indent-visual-bundle.js")}`,
     ]);
-    await execFileAsync(
-      "xvfb-run",
-      [
-        "-a",
-        "node",
-        path.join(root, "test/editor-widget-indent-visual-capture.mjs"),
-        outputDirectory,
-      ],
-      { maxBuffer: 8 * 1024 * 1024 },
-    );
+    await runProbe(path.join(root, "test/editor-widget-indent-visual-capture.mjs"), [
+      outputDirectory,
+    ]);
     for (const scene of SCENES) {
       const raw = await readFile(path.join(outputDirectory, `${scene}.json`), "utf8");
       diagnostics.set(scene, JSON.parse(raw) as SceneDiagnostics);

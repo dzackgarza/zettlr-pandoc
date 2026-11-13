@@ -22,7 +22,7 @@ import { openScene, outputDirectory } from "./visual/scene.mjs";
 const here = import.meta.dirname;
 
 async function computeResponses() {
-  const { renderTikz } = await import("../packages/tikz-workbench/src/tikz-render.ts");
+  const { renderTikz } = await import("../packages/tikz-render/src/tikz-render.ts");
   const {
     SCENE_DOC,
     TEXTBOOK_MEDIUM_SCENE_DOC,
@@ -53,10 +53,11 @@ async function computeResponses() {
   // something it reads for itself; the harness states the one it is asking
   // for.
   const config = {
-    tikzAssetDir: path.join(here, "../packages/tikz-workbench/test/fixtures/tikz-data"),
+    tikzAssetDir: path.join(here, "../packages/tikz-render/test/fixtures/tikz-data"),
+    timeoutMs: 30_000,
     templatePath: path.join(
       here,
-      "../packages/tikz-workbench/test/fixtures/tikz-data/templates/standalone-tikz.tex",
+      "../packages/tikz-render/test/fixtures/tikz-data/templates/standalone-tikz.tex",
     ),
     cacheDir: path.join(outputDirectory, "tikz-cache"),
     env: process.env,
@@ -66,7 +67,11 @@ async function computeResponses() {
     const language = /^\\begin\{tikzcd\}/.test(source) ? "tikzcd" : "tikz";
     // The scene document is not a file on disk, which the request models the
     // same way the editor configuration does: the empty path.
-    const result = await renderTikz({ source, kind: "raw", language, docPath: "" }, config);
+    const result = await renderTikz(
+      { source, kind: "raw", language, docPath: "" },
+      config,
+      "preview",
+    );
     // Keyed as the page seam looks requests up: kind, language, source.
     responses[`raw\0${language}\0${source.trim()}`] = result;
   }

@@ -15,7 +15,7 @@
 import { type Completion } from "@codemirror/autocomplete";
 import { type EditorState, StateEffect, StateField } from "@codemirror/state";
 import { type EditorView } from "@codemirror/view";
-import { extractCitationNodes, nodeToCiteItem } from "../parser/citation-parser";
+import { extractCitationNodes, nodeToCiteItem } from "@dzack/pandoc-editor/parser/citation-parser";
 import { configField } from "../util/configuration";
 import { type AutocompletePlugin } from ".";
 

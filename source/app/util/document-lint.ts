@@ -3,8 +3,9 @@
 import path from "node:path";
 import { Text } from "@codemirror/state";
 import type { SourceLintDiagnostic } from "@common/util/source-lint-diagnostic";
-import type { WikilinkIndex } from "@common/util/wikilink-resolution";
-import type { TikzRenderConfig } from "tikz-workbench/src/tikz-render";
+import type { WikilinkReading } from "@common/util/wikilink-resolution";
+import type { FlowmarkLintFailureKind } from "@dts/common/flowmark-lint";
+import type { TikzRenderConfig } from "@dzack/tikz-render/tikz-render";
 import { lintMarkdownText } from "./flowmark-lint";
 import { buildFlowmarkLintContext, type FlowmarkReferenceContext } from "./flowmark-lint-context";
 
@@ -12,7 +13,7 @@ export interface DocumentLintSharedContext {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
   macroSources: readonly string[];
-  wikilinks?: WikilinkIndex;
+  wikilinks?: WikilinkReading;
   tikzRenderConfig: TikzRenderConfig;
   /** `editor.lint.flowmark.timeoutMs` from the app config. */
   flowmarkLintTimeoutMs: number;
@@ -21,7 +22,7 @@ export interface DocumentLintSharedContext {
 export interface CreateDocumentLintContextOptions {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
-  wikilinks?: WikilinkIndex;
+  wikilinks?: WikilinkReading;
   tikzRenderConfig: TikzRenderConfig;
   flowmarkLintTimeoutMs: number;
 }
@@ -43,6 +44,8 @@ export interface DocumentLintOutcome {
   diagnostics: DocumentLintDiagnostic[];
   /** False when Flowmark itself failed; the diagnostics then report that failure. */
   complete: boolean;
+  /** How the Flowmark process failed; absent for a complete outcome. */
+  failure?: { kind: FlowmarkLintFailureKind; message: string };
 }
 
 /** Omitting `bibliographies` lets Flowmark use the document's own `bibliography` metadata. */
@@ -140,6 +143,7 @@ export async function lintDocumentText(
 
   return {
     complete: flowmark.ok,
+    ...(flowmark.ok ? {} : { failure: { kind: flowmark.kind, message: flowmark.message } }),
     diagnostics: diagnostics.sort(
       (a, b) =>
         a.from - b.from ||

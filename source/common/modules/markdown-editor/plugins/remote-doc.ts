@@ -25,8 +25,11 @@ import { ChangeSet, type Extension, StateEffect } from "@codemirror/state";
 import { type EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 // This plugin implements remote callbacks that keep the editor's document in
 // sync with a central authority
+import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
+import { pathBasename } from "@common/util/renderer-path-polyfill";
 import serializeChangeSet from "@common/util/serialize-change-set";
+import showToast from "@common/util/show-toast";
 import type { SerializedUpdate } from "@dts/common/documents";
 import { configField } from "../util/configuration";
 
@@ -46,6 +49,11 @@ export type PushUpdateCallback = (
  * and the entire state must be reinitialized.
  */
 export const reloadStateEffect = StateEffect.define<boolean>();
+
+/** The time between an answered push and the push of the updates made since. */
+const NEXT_PUSH_DELAY = 100;
+/** The time between a rejected push and the next push of the same updates. */
+const REJECTED_PUSH_DELAY = 1000;
 
 /**
  * Call this function to retrieve an Extension that can be used to synchronize
@@ -71,10 +79,19 @@ export function hookDocumentAuthority(
     class {
       private isCurrentlyPushing: boolean;
       private pluginDestroyed: boolean;
+      /** The one scheduled push. An update pushes at once and leaves it. */
+      private scheduledPush: ReturnType<typeof setTimeout> | undefined;
+      /**
+       * Whether the author saw a rejection since the last accepted push. The
+       * message of a rejection names the temporary file of that write, so two
+       * rejections of one cause have different messages.
+       */
+      private rejectionShown: boolean;
 
       constructor(private readonly view: EditorView) {
         this.isCurrentlyPushing = false;
         this.pluginDestroyed = false;
+        this.rejectionShown = false;
 
         // Immediately enter a loop to pull updates to the document. The pull
         // method will create a Promise that links this plugin (and, by extension,
@@ -94,9 +111,15 @@ export function hookDocumentAuthority(
         }
       }
 
+      // The loop is the push loop of the CodeMirror collaboration example
+      // (https://codemirror.net/examples/collab/): one push at a time, and
+      // another push after each answer while updates are unsent. The authority
+      // of this application can reject a push (the review of the document could
+      // not be written). The updates stay unsent then, and the loop sends them
+      // again until the authority takes them.
       async push(): Promise<void> {
-        if (this.isCurrentlyPushing) {
-          return; // There's another push going on atm
+        if (this.isCurrentlyPushing || this.pluginDestroyed) {
+          return; // Another push is going on, or the editor is gone
         }
 
         const updates = sendableUpdates(this.view.state);
@@ -110,16 +133,49 @@ export function hookDocumentAuthority(
           return { clientID: u.clientID, changes: serializeChangeSet(u.changes) };
         });
 
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const success = await pushUpdates(filePath, version, serializedUpdates);
+        const delay = await pushUpdates(filePath, version, serializedUpdates).then(
+          () => {
+            this.rejectionShown = false;
+            return NEXT_PUSH_DELAY;
+          },
+          (err: Error) => {
+            this.showRejection(err);
+            return REJECTED_PUSH_DELAY;
+          },
+        );
 
         // Allow another push, if new updates have amassed during the push
         this.isCurrentlyPushing = false;
-        setTimeout(() => {
+        this.schedulePush(delay);
+      }
+
+      /** Tells the author one time why the document does not take the text. */
+      private showRejection(err: Error): void {
+        if (this.pluginDestroyed || this.rejectionShown) {
+          return;
+        }
+        this.rejectionShown = true;
+        reportError(`Pushing updates failed: ${err.message}`, err);
+        showToast(
+          trans(
+            "The document did not take the changes to %s. The editor sends them again until it does. Cause: %s",
+            pathBasename(filePath),
+            err.message,
+          ),
+          "error",
+        );
+      }
+
+      private schedulePush(delay: number): void {
+        if (this.pluginDestroyed || this.scheduledPush !== undefined) {
+          return;
+        }
+        this.scheduledPush = setTimeout(() => {
+          this.scheduledPush = undefined;
           this.push().catch((err) => {
             reportError(`Pushing updates failed: ${String(err.message)}`, err);
           });
-        }, 100);
+        }, delay);
       }
 
       async pull(): Promise<void> {
@@ -177,6 +233,7 @@ export function hookDocumentAuthority(
         // editor has been removed (hence, no dangling promises that will prevent
         // a smooth shutdown of the application)
         this.pluginDestroyed = true;
+        clearTimeout(this.scheduledPush);
       }
     },
   );

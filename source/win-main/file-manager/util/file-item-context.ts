@@ -12,15 +12,16 @@
  * END HEADER
  */
 
+import { commandAccelerator } from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
 import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
 import { reportError } from "@common/util/error-reporting";
 import { projectMembershipForPath } from "@common/util/explorer-ordering";
+import { revealInFileBrowser } from "@common/util/reveal-in-file-browser";
 import showToast from "@common/util/show-toast";
 import type { CodeFileDescriptor, MDFileDescriptor, OtherFileDescriptor } from "@dts/common/fsal";
-import type { WindowControlsIPCAPI } from "source/app/service-providers/windows";
 import { useConfigStore, useWorkspaceStore } from "source/pinia";
 import { ignoreMenuItems } from "./ignore-menu";
 
@@ -55,7 +56,7 @@ export function displayFileContext(
     {
       label: trans("Rename file"),
       id: "menu.rename_file",
-      accelerator: "CmdOrCtrl+R",
+      accelerator: commandAccelerator("rename-file", configStore.config.shortcuts),
       type: "normal",
     },
     {
@@ -66,7 +67,7 @@ export function displayFileContext(
     {
       label: trans("Delete file"),
       id: "menu.delete_file",
-      accelerator: "CmdOrCtrl+Backspace",
+      accelerator: commandAccelerator("delete-file", configStore.config.shortcuts),
       type: "normal",
     },
     {
@@ -104,7 +105,7 @@ export function displayFileContext(
 
   const membership =
     fileObject.type === "file"
-      ? projectMembershipForPath(fileObject.path, workspaceStore.rootDescriptors)
+      ? projectMembershipForPath(fileObject.path, workspaceStore.projectDirectories)
       : undefined;
   const canAddToQuartoBook =
     membership?.manifestKind === "quarto" && membership.status === "omitted";
@@ -143,10 +144,7 @@ export function displayFileContext(
         }
         break;
       case "menu.show_file":
-        ipcRenderer.send("window-controls", {
-          command: "show-item-in-folder",
-          payload: { itemPath: fileObject.path },
-        } as WindowControlsIPCAPI);
+        revealInFileBrowser({ path: fileObject.path });
         break;
       case "menu.add_to_quarto_book":
         if (membership?.manifestKind === "quarto" && membership.status === "omitted") {
@@ -167,16 +165,7 @@ export function displayFileContext(
             .then(() => {
               showToast(trans("Added %s to the Quarto book.", fileObject.name));
             })
-            .catch((err) => {
-              reportError("Could not add file to the Quarto book", err);
-              showToast(
-                trans(
-                  "Could not add the file to the Quarto book: %s",
-                  err instanceof Error ? err.message : String(err),
-                ),
-                "error",
-              );
-            });
+            .catch((err) => reportError("Could not add file to the Quarto book", err));
         }
         break;
     }

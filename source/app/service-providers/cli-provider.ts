@@ -24,7 +24,8 @@ export type CLISwitch =
   | "disable-hardware-acceleration"
   | "clear-cache"
   | "launch-minimized"
-  | "open-in-running-instance";
+  | "open-in-running-instance"
+  | "vue-devtools";
 
 /**
  * Returns what was passed to the zettlr executable for a known option.
@@ -52,6 +53,9 @@ export function getCLIArgument(key: CLIValueOption | CLISwitch): string | boolea
     }
     case "open-in-running-instance": {
       return process.argv.includes("--open-in-running-instance");
+    }
+    case "vue-devtools": {
+      return process.argv.includes("--vue-devtools");
     }
   }
 }
@@ -90,6 +94,9 @@ function showHelp(): void {
   console.log("-m  --launch-minimized                Start Zettlr mimimized to the tray/menu bar");
   console.log(
     "    --open-in-running-instance        Open the files in an already running Zettlr and exit; fail if none is running",
+  );
+  console.log(
+    "    --vue-devtools                    Download the Vue.js devtools browser extension and load it into each window",
   );
 }
 

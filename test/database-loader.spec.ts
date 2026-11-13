@@ -68,7 +68,9 @@ const dbTesters: Test[] = [
           type: "book",
         },
       },
-      bibtexAttachments: { 1: ["[redacted]"] },
+      // A citation names an entry by its key, and a relative attachment is
+      // beside the database.
+      bibtexAttachments: { "Skocpol1994:SRM": [path.join(os.tmpdir(), "[redacted]")] },
     },
   },
 ];

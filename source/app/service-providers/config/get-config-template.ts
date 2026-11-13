@@ -72,12 +72,6 @@ export type AgentApiConfig = {
    */
   port: number;
   /**
-   * Normalized Levenshtein similarity (0–1) at or above which two claims in
-   * one review submission count as sharing a description, and the submission
-   * is refused with DUPLICATE_CLAIM_DESCRIPTION.
-   */
-  claimDescriptionSimilarityThreshold: number;
-  /**
    * Read-only root exposed by the Agent API skills endpoint. `null` disables
    * that capability. The endpoint accepts only physical descendants and `.md`
    * files under this directory.
@@ -86,6 +80,17 @@ export type AgentApiConfig = {
 };
 
 export type ReferenceConfig = { authorityReportDebounceMs: number };
+
+export type ZoteroConfig = {
+  /**
+   * The origin of Zotero's local HTTP server: the address and the port of the
+   * Zotero preference `extensions.zotero.httpServer.port`. The local API, the
+   * local-write-api add-on and the JSON-RPC API of Better BibTeX answer there.
+   * The address is 127.0.0.1, not localhost: the network stack of Electron
+   * stopped resolving localhost there and answered ECONNREFUSED.
+   */
+  localServer: string;
+};
 
 export type ConfigOptions = {
   version: string;
@@ -96,6 +101,8 @@ export type ConfigOptions = {
   agentApi: AgentApiConfig;
   /** Workspace-reference extraction policy. */
   references: ReferenceConfig;
+  /** Where the app reaches Zotero. */
+  zotero: ZoteroConfig;
 
   darkMode: boolean;
   darkModeEditor: "match" | "light" | "dark";
@@ -163,6 +170,8 @@ export type ConfigOptions = {
     dataDir: string;
     /** Optional centralized figure source tree; empty uses FIGURES_SOURCE_DIR or ~/.pandoc/figures. */
     figuresDir: string;
+    /** The command that starts Visual TikZ Editor: a name on the PATH of the app, or a path. */
+    visualEditorCommand: string;
   };
   export: {
     dir: "temp" | "cwd" | "ask";
@@ -359,17 +368,17 @@ export type ConfigPath = Paths<ConfigOptions>;
 export type ConfigValue<P extends ConfigPath> = Get<ConfigOptions, P>;
 
 /**
- * The installed translation that best matches the system locale, or en-US
- * when the system locale is not a language tag.
+ * The translation of these directories that best matches the system locale,
+ * or en-US when the system locale is not a language tag.
  */
-export function systemAppLang(): string {
+export function systemAppLang(translationDirectories: string[]): string {
   const locale = app.getLocale();
   // bcp-47 sets the language to null for a tag that it cannot parse.
   const language = bcp47.parse(locale).language;
   if (language === null || language === undefined) {
     return "en-US";
   }
-  return getLanguageFile(locale).tag;
+  return getLanguageFile(locale, translationDirectories).tag;
 }
 
 /**
@@ -393,6 +402,8 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
     tikz: {
       dataDir: "",
       figuresDir: "",
+      // `just install-desktop` of visual-tikz-editor links this name into `~/.local/bin`.
+      visualEditorCommand: "visual-tikz-editor",
     },
     window: {
       // Only use native window appearance by default on macOS. If this value
@@ -608,11 +619,13 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
     agentApi: {
       enabled: true,
       port: 27412,
-      claimDescriptionSimilarityThreshold: 0.94,
       skillsDirectory: null,
     },
     references: {
       authorityReportDebounceMs: 500,
+    },
+    zotero: {
+      localServer: "http://127.0.0.1:23119",
     },
   };
 }

@@ -2,10 +2,10 @@
 
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
-import { renderMath } from "source/common/modules/markdown-editor/renderers/render-math";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { renderMath } from "@dzack/pandoc-editor/renderers/render-math";
+import { defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
 import { renderPandoc } from "source/common/modules/markdown-editor/renderers/render-pandoc-div-span";
-import { defaultLight, editorTheme } from "source/common/modules/markdown-editor/theme/editor";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { initializeMathJax } from "source/common/util/mathtex-to-html";
 

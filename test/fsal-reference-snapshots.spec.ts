@@ -71,6 +71,7 @@ function makeDescriptor(documentPath: string): MDFileDescriptor {
     creationtime: 0,
     linefeed: "\n",
     firstHeading: null,
+    firstSentence: null,
     yamlTitle: undefined,
     aliases: [],
     frontmatter: null,
@@ -79,7 +80,7 @@ function makeDescriptor(documentPath: string): MDFileDescriptor {
 }
 
 describe("FSAL saved reference snapshots", function () {
-  const parser = getMarkdownFileParser(ID_RE_PATTERN);
+  const parser = getMarkdownFileParser(ID_RE_PATTERN, "link|title");
 
   for (const relativePath of WORKSPACE_FILES) {
     it(`parseMarkdownFile extracts the exact reference snapshot of ${relativePath}`, function () {
@@ -94,7 +95,7 @@ describe("FSAL saved reference snapshots", function () {
       );
 
       const descriptor = makeDescriptor(documentPath);
-      parser(descriptor, content);
+      parser.parse(descriptor, content);
 
       assert.deepStrictEqual(descriptor.references, expected);
     });
@@ -104,7 +105,7 @@ describe("FSAL saved reference snapshots", function () {
     const documentPath = fixturePath(path.join("ProjectA", "Halphen_Surfaces.md"));
     const content = readFileSync(documentPath, "utf-8");
     const descriptor = makeDescriptor(documentPath);
-    parser(descriptor, content);
+    parser.parse(descriptor, content);
 
     // The existing citation surface must not change when reference
     // extraction joins the same parse: @Ols04 stays a citekey and never

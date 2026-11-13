@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { trans } from "@common/i18n-main";
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import {
@@ -31,6 +32,7 @@ import type { WorkspaceTextEdit } from "@dts/common/references";
 import type LogProvider from "@providers/log";
 import { app, ipcMain } from "electron";
 import path from "path";
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import type { MDFileDescriptor } from "source/types/common/fsal";
 import _ from "underscore";
 import type ConfigProvider from "../config";
@@ -144,13 +146,9 @@ export default class LinkProvider extends ProviderContract {
 
     // A file belongs to the innermost open workspace that contains it; a file
     // opened on its own is its own workspace.
-    const workspaces = [...this._config.get().app.openWorkspaces].sort(
-      (a, b) => b.length - a.length,
-    );
+    const workspaces = this._config.get().app.openWorkspaces;
     const rootFor = (filePath: string): string => {
-      return (
-        workspaces.find((root) => filePath.startsWith(root + path.sep)) ?? path.dirname(filePath)
-      );
+      return innermostRoot(filePath, workspaces) ?? path.dirname(filePath);
     };
 
     const links = new Map(descriptors.map((descriptor) => [descriptor.path, descriptor.links]));
@@ -236,7 +234,14 @@ export default class LinkProvider extends ProviderContract {
       const filePath = movedPath(sourcePath, move);
       const buffer = documents.readMarkdownBufferContent(filePath);
       const content = buffer !== undefined ? buffer : await this._fsal.readTextFile(filePath);
-      const replacements = retargetLinks(content, sourcePath, move, before.index, this._index);
+      const replacements = retargetLinks(
+        content,
+        sourcePath,
+        move,
+        before.index,
+        this._index,
+        this._config.get().zkn.linkFormat,
+      );
       if (replacements.length === 0) {
         continue;
       }
@@ -262,13 +267,28 @@ export default class LinkProvider extends ProviderContract {
         `[LinkProvider] ${result.documentPath} changed while its wikilinks were retargeted after ${move.from} moved to ${move.to}`,
       );
     }
-    await saveUpdatedBuffers(
+    const unsaved = await saveUpdatedBuffers(
       async (filePath) => await documents.saveFile(filePath),
       result.openBuffersUpdated,
     );
     for (const filePath of [...result.openBuffersUpdated, ...result.closedFilesWritten]) {
       this._logger.info(
         `[LinkProvider] Retargeted the wikilinks in ${filePath} after ${move.from} moved to ${move.to}`,
+      );
+    }
+    if (unsaved.length > 0) {
+      // The documents hold the new links; the author saves them when the
+      // files take a save again. The dispatcher shows this message.
+      throw new Error(
+        unsaved
+          .map(({ documentPath, refusal }) =>
+            trans(
+              "The links in %s follow the move, but the document is not saved: %s",
+              documentPath,
+              refusal.message,
+            ),
+          )
+          .join("\n"),
       );
     }
   }

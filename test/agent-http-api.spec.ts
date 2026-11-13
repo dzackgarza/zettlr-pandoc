@@ -31,33 +31,49 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import Ajv2020 from "ajv/dist/2020";
 import { strict as assert } from "assert";
 import { spawn } from "child_process";
+import { randomUUID } from "crypto";
 import { createPatch } from "diff";
 import {
+  chmodSync,
   existsSync,
+  constants as fsConstants,
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from "fs";
+import { access } from "fs/promises";
 import http from "http";
 import net from "net";
 import type { Document as OpenApiDefinition } from "openapi-backend";
 import os from "os";
 import path from "path";
 import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
-import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
+import AgentHTTPProvider, {
+  type AgentApiHost,
+  AgentApiTokenRequiredError,
+} from "source/app/service-providers/agent-api/http-server";
+import CiteprocProvider from "source/app/service-providers/citeproc";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
+import type FSAL from "source/app/service-providers/fsal";
+import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
+import {
+  type DirectoryListing,
+  readDirectoryRecursivelyFromDisk,
+} from "source/app/service-providers/fsal/util/read-directory";
 import LogProvider from "source/app/service-providers/log";
 import { SearchProvider } from "source/app/service-providers/search";
+import { createIgnoreFilter, EVERY_FILE_TYPE } from "source/common/util/ignore-rules";
 import { sha256Text } from "source/common/util/sha256";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { parse as parseYaml } from "yaml";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
+import { bootFsal } from "./fsal-seam";
 import { userData } from "./headless-electron-harness.cjs";
 
 // ============================================================================
@@ -106,6 +122,31 @@ const openApiDocument = parseYaml(
 };
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+/** The token that each provider of this spec is started with. */
+const API_TOKEN = randomUUID();
+/** The environment of a provider: the variable that the app reads its token from. */
+const TOKEN_ENVIRONMENT = { ZETTLR_AGENT_API_TOKEN: API_TOKEN };
+/** The header of a caller that holds the token. */
+const AUTHORIZED = { authorization: `Bearer ${API_TOKEN}` };
+
+/** The filter of a workspace without rules: every path that the FSAL can list. */
+const EVERY_PATH = createIgnoreFilter({
+  globalRules: [],
+  workspaceRules: new Map(),
+  showIgnored: true,
+  fileTypes: EVERY_FILE_TYPE,
+});
+
+/**
+ * The walk of the FSAL over a workspace of the scratch directory. The
+ * closed-file routes answer for exactly the ids this listing hands out, so a
+ * seam that reported one fixed name would let those tests pass against files
+ * that are not there and miss files that are.
+ */
+async function walkWorkspace(workspacePath: string) {
+  return await readDirectoryRecursivelyFromDisk(workspacePath, EVERY_PATH, new LogProvider());
+}
 
 /**
  * OpenAI publishes these constraints as prose, but it does not publish an
@@ -223,6 +264,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   let provider: DocumentManager;
   let httpProvider: AgentHTTPProvider;
   let documentLint: DocumentLintProvider;
+  /** `editor.lint.flowmark.timeoutMs` of the configuration of a test. */
+  let flowmarkTimeoutMs: number;
+  /** How many times the background lint queue ran empty. */
+  let lintDrains: number;
   let httpPort: number;
   let authoringHome: string;
   let figuresRoot: string;
@@ -234,6 +279,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   // exercise the no-workspace-open profile the app ships with.
   let openWorkspaces: string[] = [];
   const links = { index: new WikilinkIndex([]) };
+  /** The host of the provider of a test. */
+  let agentHost: AgentApiHost;
+  /** The walk of the workspace routes: the disk walker, or the real FSAL that a case boots. */
+  let walk: (directoryPath: string) => Promise<DirectoryListing> = walkWorkspace;
+  let fsal: FSAL | undefined;
 
   function descriptorFor(filePath: string): CodeFileDescriptor {
     const stat = statSync(filePath);
@@ -308,15 +358,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           writeFileSync(filePath, content, "utf8");
         },
         getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
+        // The folders of the documents, as the FSAL reads them from disk.
+        getAnyDirectoryDescriptor: async (dirPath: string) => await parseDirectory(dirPath),
         getFilesystemMetadata: async (_filePath: string) => ({ modtime: 0 }),
-        // A real walk of the scratch workspace. Closed-file routes answer for
-        // exactly the ids this listing hands out, so a seam that reported one
-        // fixed name would let those tests pass against files that are not
-        // there and miss files that are.
-        readDirectoryRecursively: async (workspacePath: string) =>
-          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
-            .filter((entry) => entry.isFile())
-            .map((entry) => path.join(entry.parentPath, entry.name)),
+        readDirectoryRecursively: async (directoryPath: string) => await walk(directoryPath),
       },
       citeproc: {
         synchronizeDatabases: async (_libraries: string[]) => {},
@@ -334,7 +379,21 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           checkboxChecked: false,
         }),
         getFirstMainWindow: () => undefined,
+        // The spec has no main window, so no window gets a message.
+        tellMainWindows: (
+          _windowIds: readonly string[],
+          _channel: string,
+          ..._args: readonly unknown[]
+        ) => {},
         getMainWindowKey: (_window: unknown) => activeWindowId,
+        // No operation of this spec asks the author for a file.
+        saveFile: async (_filePath: string): Promise<string | undefined> => {
+          throw new Error("This spec shows no save dialog");
+        },
+        // No operation of this spec opens a file with the desktop.
+        showErrorMessage: (_title: string, _message: string, _contents?: string) => {
+          throw new Error("This spec opens no file with the desktop");
+        },
       },
       // The manager drives the references provider's live overlay at its
       // mutation points (issue #53); this spec asserts the agent API, so
@@ -358,10 +417,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     return new SearchProvider(
       new LogProvider(),
       {
-        readDirectoryRecursively: async (workspacePath: string) =>
-          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
-            .filter((entry) => entry.isFile())
-            .map((entry) => path.join(entry.parentPath, entry.name)),
+        readDirectoryRecursively: async (directoryPath: string) => await walk(directoryPath),
         isFile: async (filePath: string) => statSync(filePath).isFile(),
         getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
         loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),
@@ -416,6 +472,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     options: {
       body?: string;
       headers?: Record<string, string>;
+      /** Send no token. */
+      anonymous?: true;
     } = {},
   ): Promise<{
     status: number;
@@ -429,9 +487,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           port: httpPort,
           path: pathname,
           method,
-          headers: {
-            ...options.headers,
-          },
+          headers:
+            options.anonymous === true
+              ? { ...options.headers }
+              : { ...AUTHORIZED, ...options.headers },
         },
         (res) => {
           let data = "";
@@ -455,7 +514,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     });
   }
 
-  function runReviewDiffCli(args: string[]): Promise<{
+  function runReviewDiffCli(
+    args: string[],
+    tokenEnvironment: NodeJS.ProcessEnv = TOKEN_ENVIRONMENT,
+  ): Promise<{
     code: number | null;
     stdout: string;
     stderr: string;
@@ -464,7 +526,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const child = spawn(
         process.execPath,
         [path.join(__dirname, "../scripts/desktop/zettlr-pandoc-review-diff"), ...args],
-        { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"] },
+        {
+          cwd: path.join(__dirname, ".."),
+          env: { ...process.env, ...tokenEnvironment },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
       );
       let stdout = "";
       let stderr = "";
@@ -536,23 +602,26 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         app: {
           openWorkspaces,
         },
+        zotero: { localServer: "http://127.0.0.1:23119" },
         agentApi: {
           enabled: true,
           // Kernel-assigned: the provider owns the bind and publishes the
           // actual port, so no reservation can race the listener.
           port: 0,
-          claimDescriptionSimilarityThreshold: 0.94,
           skillsDirectory: configuredSkillsDirectory,
         },
         tikz: {
-          dataDir: path.join(__dirname, "../packages/tikz-workbench/test/fixtures/tikz-data"),
+          dataDir: path.join(__dirname, "../packages/tikz-render/test/fixtures/tikz-data"),
           figuresDir: figuresRoot,
         },
-        editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+        zkn: { linkFormat: "link|title" as const },
+        editor: { lint: { flowmark: { timeoutMs: flowmarkTimeoutMs } } },
       }),
     };
     const lintUserData = path.join(authoringHome, "lint-user-data");
     mkdirSync(lintUserData);
+    flowmarkTimeoutMs = 60_000;
+    lintDrains = 0;
     documentLint = new DocumentLintProvider({
       log: new LogProvider(),
       config,
@@ -560,9 +629,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       homeDirectory: authoringHome,
       env: {},
       userDataDirectory: lintUserData,
+      onDrain: () => {
+        lintDrains += 1;
+      },
     });
     await documentLint.boot();
-    const agentHost = new (class {
+    agentHost = new (class {
       public get config() {
         return config;
       }
@@ -587,24 +659,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           const stats = lstatSync(absPath, { throwIfNoEntry: false });
           return stats !== undefined && stats.isDirectory();
         },
-        readDirectoryRecursively: async (workspacePath: string) =>
-          readdirSync(workspacePath, {
-            recursive: true,
-            withFileTypes: true,
-          }).map((entry) => path.join(entry.parentPath, entry.name)),
+        readDirectoryRecursively: async (directoryPath: string) => await walk(directoryPath),
       };
     })();
-    httpProvider = new AgentHTTPProvider(
-      new LogProvider(),
-      provider,
-      agentHost,
-      undefined,
-      undefined,
-      {
-        homeDirectory: authoringHome,
-        env: {},
-      },
-    );
+    httpProvider = new AgentHTTPProvider(new LogProvider(), provider, agentHost, {
+      homeDirectory: authoringHome,
+      env: TOKEN_ENVIRONMENT,
+    });
     await httpProvider.boot();
     httpPort = Number.parseInt(
       readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),
@@ -628,6 +689,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
     peerServers = [];
     saveDialogResponse = 2;
+    await fsal?.shutdown();
+    fsal = undefined;
+    walk = walkWorkspace;
     await httpProvider.shutdown();
     await documentLint.shutdown();
     await provider.shutdown();
@@ -770,16 +834,58 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
   });
 
-  it("rejects duplicate and near-duplicate claim descriptions", async function () {
-    const filePath = path.join(scratch, "duplicate-descriptions.md");
+  it("accepts one description on claims that change different text", async function () {
+    const filePath = path.join(scratch, "one-note-two-places.md");
+    const lines = Array.from({ length: 12 }, (_, index) => `Statement ${index + 1} holds.`);
+    const withLine = (source: readonly string[], index: number): string[] =>
+      source.map((line, at) => (at === index ? `${line} [@Nik80]` : line));
+    const middleLines = withLine(lines, 2);
+    const before = `${lines.join("\n")}\n`;
+    const middle = `${middleLines.join("\n")}\n`;
+    const after = `${withLine(middleLines, 9).join("\n")}\n`;
+    writeFileSync(filePath, before);
+    await openFile(filePath, before);
+    const description = "This sentence needs a citation.";
+
+    const response = await httpRequest("POST", "/v1/review-submissions", {
+      body: JSON.stringify({
+        document: { uri: filePath },
+        claims: [
+          { description, patch: createPatch(filePath, before, middle) },
+          { description, patch: createPatch(filePath, middle, after) },
+        ],
+        clientRequestId: "same-note-two-places",
+      }),
+    });
+
+    assert.equal(response.status, 200, response.body);
+    const result = parseAs(response.body, "ReviewSubmissionResponse");
+    const content = await httpRequest(
+      "GET",
+      `/v1/documents/${result.documentId}?includeContent=true`,
+    );
+    assert.equal(parseAs(content.body, "ReadDocumentResponse").content, after);
+    const packets = await httpRequest("GET", `/v1/reviews/${result.reviewId}?view=packets`);
+    assert.deepEqual(
+      parseAs(packets.body, "ReviewPacketsResponse").packets.map((packet) => packet.description),
+      [description, description],
+    );
+  });
+
+  it("rejects a claim that has the description of an earlier claim and changes its text", async function () {
+    const filePath = path.join(scratch, "duplicate-claims.md");
     const before = "Let V be a vector space.\nAssume the form is symmetric.\n";
     const middle = "Let V be a finite-dimensional vector space.\nAssume the form is symmetric.\n";
-    const after =
+    const again =
+      "Let V be a finite-dimensional real vector space.\nAssume the form is symmetric.\n";
+    const elsewhere =
       "Let V be a finite-dimensional vector space.\nAssume the form is symmetric and nondegenerate.\n";
     writeFileSync(filePath, before);
     const documentId = await openFile(filePath, before);
 
-    const exact = await httpRequest("POST", "/v1/review-submissions", {
+    // The second claim changes the words that the first claim wrote, and it
+    // has the description of the first claim up to case and whitespace.
+    const repeated = await httpRequest("POST", "/v1/review-submissions", {
       body: JSON.stringify({
         document: { uri: filePath },
         claims: [
@@ -789,58 +895,41 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           },
           {
             description: "  add   the missing hypothesis to THIS statement.  ",
-            patch: createPatch(filePath, middle, after),
+            patch: createPatch(filePath, middle, again),
           },
         ],
-        clientRequestId: "duplicate-description-exact",
+        clientRequestId: "duplicate-claim-same-text",
       }),
     });
-    assert.equal(exact.status, 400, exact.body);
-    const exactError = parseAs(exact.body, "AgentErrorResponse").error;
-    assert.equal(exactError.code, "DUPLICATE_CLAIM_DESCRIPTION");
-    assert.deepEqual(exactError.conflictingClaimIndices, [0, 1]);
-    assert.equal(exactError.descriptionSimilarity, 1);
+    assert.equal(repeated.status, 400, repeated.body);
+    const error = parseAs(repeated.body, "AgentErrorResponse").error;
+    assert.equal(error.code, "DUPLICATE_CLAIM");
+    assert.deepEqual(error.conflictingClaimIndices, [0, 1]);
 
-    const unchangedAfterExact = await httpRequest(
-      "GET",
-      `/v1/documents/${documentId}?includeContent=true`,
-    );
-    assert.equal(parseAs(unchangedAfterExact.body, "ReadDocumentResponse").content, before);
+    const unchanged = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
+    assert.equal(parseAs(unchanged.body, "ReadDocumentResponse").content, before);
 
-    const fuzzyDescriptions = [
-      "Correct this theorem statement by adding the missing hypothesis at this location.",
-      "Correct this theorem statement by adding a missing hypothesis at this location.",
-    ];
-    const fuzzy = await httpRequest("POST", `/v1/documents/${documentId}/proposals`, {
+    // The same two descriptions on two sentences are two claims.
+    const apart = await httpRequest("POST", `/v1/documents/${documentId}/proposals`, {
       body: JSON.stringify({
         baselineSha256: sha256Text(before),
         expectedReviewGeneration: 0,
         claims: [
           {
-            description: fuzzyDescriptions[0],
+            description: "Add the missing hypothesis to this statement.",
             patch: createPatch(filePath, before, middle),
           },
           {
-            description: fuzzyDescriptions[1],
-            patch: createPatch(filePath, middle, after),
+            description: "  add   the missing hypothesis to THIS statement.  ",
+            patch: createPatch(filePath, middle, elsewhere),
           },
         ],
-        clientRequestId: "duplicate-description-fuzzy",
+        clientRequestId: "duplicate-claim-other-text",
       }),
     });
-    assert.equal(fuzzy.status, 400, fuzzy.body);
-    const fuzzyError = parseAs(fuzzy.body, "AgentErrorResponse").error;
-    assert.equal(fuzzyError.code, "DUPLICATE_CLAIM_DESCRIPTION");
-    assert.deepEqual(fuzzyError.conflictingClaimIndices, [0, 1]);
-    assert.ok(fuzzyError.descriptionSimilarity !== undefined);
-    assert.ok(fuzzyError.descriptionSimilarity >= 0.94);
-    assert.ok(fuzzyError.descriptionSimilarity < 1);
-
-    const unchangedAfterFuzzy = await httpRequest(
-      "GET",
-      `/v1/documents/${documentId}?includeContent=true`,
-    );
-    assert.equal(parseAs(unchangedAfterFuzzy.body, "ReadDocumentResponse").content, before);
+    assert.equal(apart.status, 200, apart.body);
+    const changed = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
+    assert.equal(parseAs(changed.body, "ReadDocumentResponse").content, elsewhere);
   });
 
   it("fails enabled startup when the configured port is taken", async function () {
@@ -853,25 +942,30 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       });
     });
 
-    const collided = new AgentHTTPProvider(new LogProvider(), provider, {
-      config: {
-        get: () => ({
-          app: { openWorkspaces: [scratch] },
-          export: { cslLibrary: "" },
-          tikz: { dataDir: "", figuresDir: "" },
-          editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
-          agentApi: {
-            enabled: true,
-            port: takenPort,
-            claimDescriptionSimilarityThreshold: 0.94,
-            skillsDirectory: null,
-          },
-        }),
+    const collided = new AgentHTTPProvider(
+      new LogProvider(),
+      provider,
+      {
+        config: {
+          get: () => ({
+            app: { openWorkspaces: [scratch] },
+            export: { cslLibrary: "" },
+            tikz: { dataDir: "", figuresDir: "" },
+            editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+            zotero: { localServer: "http://127.0.0.1:23119" },
+            agentApi: {
+              enabled: true,
+              port: takenPort,
+              skillsDirectory: null,
+            },
+          }),
+        },
+        search: createSearch(),
+        documentLint,
+        links,
       },
-      search: createSearch(),
-      documentLint,
-      links,
-    });
+      { homeDirectory: authoringHome, env: TOKEN_ENVIRONMENT },
+    );
 
     try {
       await assert.rejects(
@@ -901,9 +995,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   });
 
   it("GET /openapi.yaml serves the OpenAPI specification without auth", async function () {
-    const response = await httpRequest("GET", "/openapi.yaml", {
-      headers: {}, // No auth header
-    });
+    const response = await httpRequest("GET", "/openapi.yaml", { anonymous: true });
     assert.equal(response.status, 200);
     assert.ok(response.body.includes("openapi:"));
     assert.ok(response.body.includes("Zettlr-Pandoc Editor Agent API"));
@@ -1004,8 +1096,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         securitySchemes?: NonNullable<OpenApiDefinition["components"]>["securitySchemes"];
       };
     };
-    assert.equal(withSecurity.security, undefined, "the API declares no authentication");
-    assert.equal(withSecurity.components.securitySchemes, undefined);
+    assert.deepEqual(withSecurity.security, [{ bearerToken: [] }]);
+    assert.deepEqual(withSecurity.components.securitySchemes, {
+      bearerToken: { type: "http", scheme: "bearer" },
+    });
   });
 
   it("marks every Custom GPT Action operation explicitly non-consequential", async function () {
@@ -1138,7 +1232,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // uncaught exception in the main process, not a failed request.
     const raw = await new Promise<string>((resolve, reject) => {
       const socket = net.connect(httpPort, "127.0.0.1", () => {
-        socket.write("GET http://[ HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+        socket.write(
+          `GET http://[ HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer ${API_TOKEN}\r\nConnection: close\r\n\r\n`,
+        );
       });
       let received = "";
       socket.on("data", (chunk: Buffer) => (received += chunk.toString("utf8")));
@@ -1162,30 +1258,140 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(body.instanceId.length > 0);
   });
 
-  it("preserves workspace walk failures in the HTTP error detail", async function () {
-    const invalidWorkspace = path.join(scratch, "not-a-directory");
-    writeFileSync(invalidWorkspace, "workspace path is a file\n", "utf8");
-    openWorkspaces = [invalidWorkspace];
+  it("names each folder whose content a workspace listing does not hold (#210)", async function () {
+    mkdirSync(path.join(scratch, "notes"));
+    writeFileSync(path.join(scratch, "notes", "genus.md"), "# Genus\n", "utf8");
+    const locked = path.join(scratch, "locked");
+    mkdirSync(locked);
+    writeFileSync(path.join(locked, "lattice.md"), "# Lattice\n", "utf8");
+    chmodSync(locked, 0o000);
+    const notListedOf = (body: string): string[] =>
+      (JSON.parse(body) as { notListed: Array<{ path: string; cause: string }> }).notListed.map(
+        (folder) => folder.path,
+      );
+    try {
+      const files = await httpRequest(
+        "GET",
+        `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=files`,
+      );
+      assert.equal(files.status, 200, files.body);
+      assert.deepEqual(
+        parseAs(files.body, "WorkspaceFilesResponse").files.map((file) =>
+          path.relative(scratch, file.path),
+        ),
+        ["notes/genus.md"],
+      );
+      assert.deepEqual(notListedOf(files.body), [locked]);
 
-    const response = await httpRequest(
-      "GET",
-      `/v1/workspaces?workspaceId=${encodeURIComponent(invalidWorkspace)}&include=files`,
-    );
-    assert.equal(response.status, 500);
-    const body = parseAs(response.body, "AgentErrorResponse");
-    assert.equal(body.error.code, "INTERNAL_ERROR");
-    assert.match(body.error.message, /ENOTDIR|not a directory/i);
-    assert.ok(body.error.message.includes(invalidWorkspace));
+      const documents = await httpRequest(
+        "GET",
+        `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=documents`,
+      );
+      assert.equal(documents.status, 200, documents.body);
+      assert.deepEqual(notListedOf(documents.body), [locked]);
 
-    const documents = await httpRequest(
-      "GET",
-      `/v1/workspaces?workspaceId=${encodeURIComponent(invalidWorkspace)}&include=documents`,
-    );
-    assert.equal(documents.status, 500);
-    const documentsBody = parseAs(documents.body, "AgentErrorResponse");
-    assert.equal(documentsBody.error.code, "INTERNAL_ERROR");
-    assert.match(documentsBody.error.message, /ENOTDIR|not a directory/i);
-    assert.ok(documentsBody.error.message.includes(invalidWorkspace));
+      const directories = await httpRequest(
+        "GET",
+        `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=directories`,
+      );
+      assert.equal(directories.status, 200, directories.body);
+      assert.deepEqual(
+        parseAs(directories.body, "WorkspaceDirectoriesResponse")
+          .directories.map((directory) => path.relative(scratch, directory.path))
+          .sort(),
+        ["locked", "notes"],
+      );
+      assert.deepEqual(notListedOf(directories.body), [locked]);
+
+      const everyWorkspace = await httpRequest("GET", "/v1/workspaces?include=files");
+      assert.equal(everyWorkspace.status, 200, everyWorkspace.body);
+      assert.deepEqual(notListedOf(everyWorkspace.body), [locked]);
+    } finally {
+      chmodSync(locked, 0o700);
+    }
+  });
+
+  /**
+   * The workspace listings of a workspace that the real FSAL holds, for each
+   * `include` that lists the paths of a workspace.
+   */
+  /** The listing of each `include` that names files: its status, its body and its files. */
+  async function listingsOfFsalWorkspace(root: string): Promise<
+    Array<{
+      status: number;
+      body: string;
+      files: Array<{ path: string }>;
+      notListed: Array<{ path: string; cause: string }>;
+    }>
+  > {
+    const booted = await bootFsal(root);
+    fsal = booted;
+    walk = async (directoryPath: string) => await booted.readDirectoryRecursively(directoryPath);
+    openWorkspaces = [root];
+    const listings = [];
+    for (const include of ["files", "documents"] as const) {
+      const response = await httpRequest(
+        "GET",
+        `/v1/workspaces?workspaceId=${encodeURIComponent(root)}&include=${include}`,
+      );
+      assert.equal(response.status, 200, response.body);
+      const body = JSON.parse(response.body) as Record<
+        typeof include,
+        Array<{ path: string }> | undefined
+      > & { notListed?: Array<{ path: string; cause: string }> };
+      const files = body[include];
+      assert.ok(files !== undefined, `the listing of ${include} names its ${include}`);
+      assert.ok(body.notListed !== undefined, `the listing of ${include} has notListed`);
+      listings.push({ ...response, files, notListed: body.notListed });
+    }
+    return listings;
+  }
+
+  it("names a workspace whose folder the filesystem does not let it examine (#210)", async function () {
+    // The parent has no search permission: a failed mount looks the same.
+    // The workspace stays open, and the FSAL holds it as missing (§24).
+    const parent = path.join(scratch, "mount");
+    const root = path.join(parent, "notes");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(path.join(root, "genus.md"), "# Genus\n", "utf8");
+    chmodSync(parent, 0o600);
+    try {
+      for (const listing of await listingsOfFsalWorkspace(root)) {
+        assert.deepEqual(listing.files, []);
+        assert.deepEqual(
+          listing.notListed.map((folder) => folder.path),
+          [root],
+        );
+      }
+    } finally {
+      chmodSync(parent, 0o700);
+    }
+  });
+
+  it("lists no file of a workspace whose rules file it cannot read (#210)", async function () {
+    // The unknown rules may hide any path: the listing gives none of them.
+    const root = path.join(scratch, "notes");
+    mkdirSync(path.join(root, "drafts"), { recursive: true });
+    writeFileSync(path.join(root, "genus.md"), "# Genus\n", "utf8");
+    writeFileSync(path.join(root, "drafts", "lattice.md"), "# Lattice\n", "utf8");
+    const rules = path.join(root, ".zettlrignore");
+    writeFileSync(rules, "drafts/\n", "utf8");
+    chmodSync(rules, 0o000);
+    try {
+      for (const listing of await listingsOfFsalWorkspace(root)) {
+        assert.deepEqual(
+          listing.files.map((file) => path.relative(root, file.path)),
+          [],
+          "a file that the rules may hide is not listed",
+        );
+        assert.deepEqual(
+          listing.notListed.map((folder) => folder.path),
+          [root],
+        );
+      }
+    } finally {
+      chmodSync(rules, 0o600);
+    }
   });
 
   it("GET /v1/capabilities reports supported features", async function () {
@@ -1226,11 +1432,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       version: "1.0.0",
     });
     await zoteroClient.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/zotero/mcp`)),
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/zotero/mcp`), {
+        requestInit: { headers: AUTHORIZED },
+      }),
     );
     try {
       const { tools } = await zoteroClient.listTools();
       assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+        "getZoteroExtractions",
         "importZoteroIdentifier",
         "importZoteroUrl",
         "searchZoteroItems",
@@ -1243,7 +1452,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       version: "1.0.0",
     });
     await client.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`), {
+        requestInit: { headers: AUTHORIZED },
+      }),
     );
     try {
       const { tools } = await client.listTools();
@@ -1369,6 +1580,23 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(capped.matchCount, 2);
     assert.equal(capped.truncated, true);
 
+    // A workspace inside another workspace: its files belong to it, so an
+    // include pattern is relative to it and it is the workspace of each hit.
+    const inner = path.join(scratch, "zeta");
+    const innerPath = path.join(inner, "foundations", "unimodular.md");
+    mkdirSync(path.dirname(innerPath), { recursive: true });
+    writeFileSync(innerPath, "a unimodular form\n");
+    openWorkspaces.push(inner);
+    const nested = parseAs(
+      (await httpRequest("GET", "/v1/workspace/search?text=unimodular&include=foundations/*.md"))
+        .body,
+      "WorkspaceSearchResponse",
+    );
+    assert.deepEqual(
+      nested.files.map((file) => [file.path, file.workspaceId]),
+      [[innerPath, inner]],
+    );
+
     const invalid = await httpRequest("GET", "/v1/workspace/search?text=(&regex=true");
     assert.equal(invalid.status, 400);
     assert.equal(parseAs(invalid.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
@@ -1385,6 +1613,56 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const refusal = parseAs(stalled.body, "AgentErrorResponse");
     assert.equal(refusal.error.code, "SEARCH_TIMEOUT");
     assert.ok(refusal.error.message.includes(stallPath), refusal.error.message);
+  });
+
+  it("GET /v1/workspace/search names a file that it could not read, and searches the other files", async function () {
+    const readablePath = path.join(scratch, "search-readable.md");
+    const unreadablePath = path.join(scratch, "search-unreadable.md");
+    writeFileSync(readablePath, "The genus of a lattice.\n", "utf8");
+    writeFileSync(unreadablePath, "The genus of a form.\n", "utf8");
+    chmodSync(unreadablePath, 0o000);
+
+    const found = await httpRequest("GET", "/v1/workspace/search?text=genus");
+    chmodSync(unreadablePath, 0o600);
+    assert.equal(found.status, 200, found.body);
+    const body = parseAs(found.body, "WorkspaceSearchResponse");
+    assert.deepEqual(
+      body.notSearched.map((file) => ({ path: file.path, name: file.name })),
+      [{ path: unreadablePath, name: "search-unreadable.md" }],
+      "the answer names the file that the search did not read",
+    );
+    assert.ok(body.notSearched[0].cause.length > 0, "the file has the cause of the read");
+    assert.deepEqual(
+      body.files.map((file) => file.path),
+      [readablePath],
+      "the file that can be read is searched",
+    );
+    assert.equal(body.matchCount, 1);
+  });
+
+  it("GET /v1/workspace/search names a folder that it could not list, and searches the other files (#210)", async function () {
+    const readablePath = path.join(scratch, "search-beside-locked.md");
+    const lockedFolder = path.join(scratch, "search-locked");
+    writeFileSync(readablePath, "The genus of a lattice.\n", "utf8");
+    mkdirSync(lockedFolder);
+    writeFileSync(path.join(lockedFolder, "form.md"), "The genus of a form.\n", "utf8");
+    chmodSync(lockedFolder, 0o000);
+
+    const found = await httpRequest("GET", "/v1/workspace/search?text=genus");
+    chmodSync(lockedFolder, 0o700);
+    assert.equal(found.status, 200, found.body);
+    const body = parseAs(found.body, "WorkspaceSearchResponse");
+    assert.deepEqual(
+      body.notSearched.map((entry) => ({ path: entry.path, name: entry.name, kind: entry.kind })),
+      [{ path: lockedFolder, name: "search-locked", kind: "folder" }],
+      "the answer names the folder whose files the search did not read",
+    );
+    assert.ok(body.notSearched[0].cause.length > 0, "the folder has the cause of the listing");
+    assert.deepEqual(
+      body.files.map((file) => file.path),
+      [readablePath],
+      "the file beside the folder is searched",
+    );
   });
 
   it("GET /v1/documents/{id} returns document metadata", async function () {
@@ -1412,27 +1690,411 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(etag.includes("sha256:"));
   });
 
-  it("accepts unauthenticated loopback requests", async function () {
-    const response = await new Promise<{
-      status: number;
-    }>((resolve, reject) => {
-      const req = http.request(
-        {
-          hostname: "127.0.0.1",
-          port: httpPort,
-          path: "/v1/context",
-          method: "GET",
-          // The application API intentionally has no authentication layer.
-        },
-        (res) => {
-          res.resume();
-          res.on("end", () => resolve({ status: res.statusCode ?? 0 }));
-        },
-      );
-      req.on("error", reject);
-      req.end();
+  it("reads an open document whose file was removed outside the app", async function () {
+    // The document has unsaved text, so it stays open after the removal
+    // of its file (§14); the caller reads the text that the author has.
+    const filePath = path.join(scratch, "removed.md");
+    const docId = await openInPane(filePath, "alpha\n");
+    await provider.applyWorkspaceTextEdits([
+      { documentPath: filePath, range: { from: 6, to: 6 }, insert: "beta\n" },
+    ]);
+    rmSync(filePath);
+
+    const response = await httpRequest("GET", `/v1/documents/${docId}?includeContent=true`);
+
+    assert.equal(response.status, 200, response.body);
+    const body = parseAs(response.body, "ReadDocumentResponse");
+    assert.equal(body.revision.sha256, sha256Text("alpha\nbeta\n"));
+  });
+
+  it("answers the metadata of a closed workspace document", async function () {
+    // The workspace listing gives the id of a closed file; its metadata
+    // describes the text that a read of the same id gives.
+    const filePath = path.join(scratch, "closed-metadata.md");
+    writeFileSync(filePath, "alpha\nbeta\n", "utf8");
+    const docId = provider.ensureDocumentId(filePath);
+
+    const response = await httpRequest("GET", `/v1/documents/${docId}`);
+
+    assert.equal(response.status, 200, response.body);
+    const summary = parseAs(response.body, "DocumentSummary");
+    assert.deepEqual(
+      {
+        path: summary.path,
+        type: summary.type,
+        dirty: summary.dirty,
+        revision: summary.revision,
+        lineCount: summary.lineCount,
+        byteLength: summary.byteLength,
+        views: summary.views,
+      },
+      {
+        path: filePath,
+        type: "markdown",
+        dirty: false,
+        revision: { sha256: sha256Text("alpha\nbeta\n") },
+        lineCount: 3,
+        byteLength: 11,
+        views: [],
+      },
+    );
+  });
+
+  it("answers that a closed document whose file was removed is not found", async function () {
+    const filePath = path.join(scratch, "closed-removed.md");
+    writeFileSync(filePath, "alpha\n", "utf8");
+    const docId = provider.ensureDocumentId(filePath);
+    rmSync(filePath);
+
+    const response = await httpRequest("GET", `/v1/documents/${docId}?includeContent=true`);
+
+    assert.equal(response.status, 404, response.body);
+    assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "DOCUMENT_NOT_FOUND");
+  });
+
+  it("answers that a closed document whose file cannot be read is unreadable, and names the file", async function () {
+    const filePath = path.join(scratch, "closed-unreadable.md");
+    writeFileSync(filePath, "alpha\n", "utf8");
+    const docId = provider.ensureDocumentId(filePath);
+    chmodSync(filePath, 0o000);
+
+    const response = await httpRequest("GET", `/v1/documents/${docId}?includeContent=true`);
+    chmodSync(filePath, 0o600);
+
+    assert.equal(response.status, 409, response.body);
+    const refusal = parseAs(response.body, "AgentErrorResponse").error;
+    assert.equal(refusal.code, "DOCUMENT_UNREADABLE");
+    assert.ok(refusal.message.includes(filePath), refusal.message);
+  });
+
+  describe("citation libraries that did not load (#210)", function () {
+    const LIBRARY = `@article{AW71,
+  title = {Degenerate {{Fibers}} and {{Stable Reduction}} of {{Curves}}},
+  author = {Artin, M. and Winters, G.},
+  year = 1971,
+  journal = {Topology},
+  volume = {10},
+  pages = {373--383},
+}
+`;
+    let citeproc: CiteprocProvider | undefined;
+    let libraryPath: string;
+    let absentLibrary: string;
+
+    beforeEach(function () {
+      libraryPath = path.join(authoringHome, "references.bib");
+      writeFileSync(libraryPath, LIBRARY);
+      absentLibrary = path.join(authoringHome, "unmounted", "references.bib");
     });
-    assert.equal(response.status, 200);
+
+    afterEach(async function () {
+      await citeproc?.shutdown();
+      citeproc = undefined;
+    });
+
+    /** Starts the API again, with a citation provider whose main library is `mainLibrary`. */
+    async function startWithMainLibrary(mainLibrary: string): Promise<CiteprocProvider> {
+      const started = new CiteprocProvider(
+        new LogProvider(),
+        {
+          on: () => {},
+          get: () => ({
+            appLang: "en-US",
+            export: {
+              cslLibrary: mainLibrary,
+              cslStyle: path.resolve("static", "csl-styles", "chicago-author-date.csl"),
+            },
+          }),
+        },
+        path.resolve("static", "csl-locales"),
+        DATABASE_LOADER_THREAD,
+      );
+      citeproc = started;
+      await started.boot();
+      await httpProvider.shutdown();
+      httpProvider = new AgentHTTPProvider(
+        new LogProvider(),
+        provider,
+        agentHost,
+        { homeDirectory: authoringHome, env: TOKEN_ENVIRONMENT },
+        started,
+      );
+      await httpProvider.boot();
+      httpPort = Number.parseInt(
+        readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),
+        10,
+      );
+      return started;
+    }
+
+    /** The error of the system for a read of a file that is not there. */
+    async function readFailure(file: string): Promise<string> {
+      const error: Error = await access(file, fsConstants.R_OK).then(
+        () => new Error(`${file} is readable`),
+        (cause: Error) => cause,
+      );
+      return error.message;
+    }
+
+    function postJson(pathname: string, body: JsonValue) {
+      return httpRequest("POST", pathname, {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it("names the main library and its cause on each route that needs it", async function () {
+      await startWithMainLibrary(absentLibrary);
+      const expected = { path: absentLibrary, cause: await readFailure(absentLibrary) };
+      const responses = {
+        items: await httpRequest("GET", "/v1/citations"),
+        item: await httpRequest("GET", "/v1/citations?citeKey=AW71"),
+        citation: await postJson("/v1/citations/render", {
+          mode: "citation",
+          citations: [{ id: "AW71" }],
+        }),
+        bibliography: await postJson("/v1/citations/render", {
+          mode: "bibliography",
+          citekeys: ["AW71"],
+        }),
+        zotero: await httpRequest("GET", "/v1/zotero/items?q=Artin"),
+      };
+      for (const [route, response] of Object.entries(responses)) {
+        assert.equal(response.status, 503, `${route}: ${response.body}`);
+        const { error } = parseAs(response.body, "AgentErrorResponse");
+        assert.equal(error.code, "CITATION_DATABASE_NOT_LOADED", route);
+        assert.deepEqual(error.database, expected, route);
+      }
+    });
+
+    it("refuses the main library when the settings name none", async function () {
+      await startWithMainLibrary("");
+      const response = await httpRequest("GET", "/v1/citations");
+      assert.equal(response.status, 503, response.body);
+      const { error } = parseAs(response.body, "AgentErrorResponse");
+      assert.equal(error.code, "CITATION_DATABASE_NOT_LOADED");
+      assert.equal(error.database, undefined);
+    });
+
+    it("lists each library that did not load beside the libraries that loaded", async function () {
+      const started = await startWithMainLibrary(libraryPath);
+      await started.synchronizeDatabases([absentLibrary]);
+      const cause = await readFailure(absentLibrary);
+
+      const listing = await httpRequest("GET", "/v1/citations?target=databases");
+      assert.equal(listing.status, 200, listing.body);
+      assert.deepEqual(parseAs(listing.body, "CitationDatabasesResponse"), {
+        databases: [{ path: libraryPath, type: "biblatex" }],
+        notLoaded: [{ path: absentLibrary, cause }],
+      });
+
+      const items = await httpRequest(
+        "GET",
+        `/v1/citations?database=${encodeURIComponent(absentLibrary)}`,
+      );
+      assert.equal(items.status, 503, items.body);
+      assert.deepEqual(parseAs(items.body, "AgentErrorResponse").error.database, {
+        path: absentLibrary,
+        cause,
+      });
+
+      const neverRead = path.join(authoringHome, "never-read.bib");
+      writeFileSync(neverRead, LIBRARY);
+      const unknown = await httpRequest(
+        "GET",
+        `/v1/citations?database=${encodeURIComponent(neverRead)}`,
+      );
+      assert.equal(unknown.status, 503, unknown.body);
+      const { error } = parseAs(unknown.body, "AgentErrorResponse");
+      assert.equal(error.code, "CITATION_DATABASE_NOT_LOADED");
+      assert.equal(error.database?.path, neverRead);
+    });
+
+    it("names the cite keys that a library does not hold", async function () {
+      await startWithMainLibrary(libraryPath);
+
+      const bibliography = await postJson("/v1/citations/render", {
+        mode: "bibliography",
+        citekeys: ["AW71"],
+      });
+      assert.equal(bibliography.status, 200, bibliography.body);
+      assert.equal(parseAs(bibliography.body, "RenderBibliographyResponse").entries.length, 1);
+
+      const withAMissingKey: Array<{ mode: string; [field: string]: JsonValue }> = [
+        { mode: "bibliography", citekeys: ["AW71", "Nobody99"] },
+        { mode: "citation", citations: [{ id: "AW71" }, { id: "Nobody99" }] },
+      ];
+      for (const body of withAMissingKey) {
+        const response = await postJson("/v1/citations/render", body);
+        assert.equal(response.status, 404, `${body.mode}: ${response.body}`);
+        const { error } = parseAs(response.body, "AgentErrorResponse");
+        assert.equal(error.code, "CITATION_NOT_FOUND", body.mode);
+        assert.deepEqual(error.missingCitekeys, ["Nobody99"], body.mode);
+      }
+
+      const empty = await postJson("/v1/citations/render", {
+        mode: "bibliography",
+        citekeys: [],
+      });
+      assert.equal(empty.status, 400, empty.body);
+      assert.equal(parseAs(empty.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
+    });
+  });
+
+  describe("the token of a caller (#72)", function () {
+    /** The providers that a test of this group made itself. */
+    const started: AgentHTTPProvider[] = [];
+
+    afterEach(async function () {
+      for (const startedProvider of started.splice(0)) {
+        await startedProvider.shutdown();
+      }
+    });
+
+    const WITHOUT_TOKEN: Array<{ method: string; route: string }> = [
+      { method: "GET", route: "/v1/workspaces" },
+      { method: "GET", route: "/v1/context" },
+      { method: "GET", route: "/v1/ping" },
+      { method: "GET", route: "/health" },
+      { method: "GET", route: "/v1/help" },
+      { method: "POST", route: "/mcp" },
+      { method: "POST", route: "/zotero/mcp" },
+      { method: "POST", route: "/openapi.json" },
+      { method: "GET", route: "/v1/no-such-route" },
+    ];
+
+    for (const { method, route } of WITHOUT_TOKEN) {
+      it(`refuses ${method} ${route} from a caller without the token`, async function () {
+        const response = await httpRequest(method, route, { anonymous: true });
+        assert.equal(response.status, 401, response.body);
+        assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "UNAUTHORIZED");
+        assert.equal(response.headers["www-authenticate"], "Bearer");
+      });
+    }
+
+    it("refuses a token that is not the token of the app", async function () {
+      const credentials = [
+        `Bearer ${randomUUID()}`,
+        `Bearer ${API_TOKEN}x`,
+        `Bearer ${API_TOKEN.slice(0, -1)}`,
+        "Bearer ",
+        `Basic ${API_TOKEN}`,
+        API_TOKEN,
+      ];
+      for (const authorization of credentials) {
+        const response = await httpRequest("GET", "/v1/workspaces", {
+          anonymous: true,
+          headers: { authorization },
+        });
+        assert.equal(response.status, 401, `${authorization.split(" ")[0]}: ${response.body}`);
+        assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "UNAUTHORIZED");
+      }
+    });
+
+    it("answers a caller that holds the token", async function () {
+      const response = await httpRequest("GET", "/v1/workspaces");
+      assert.equal(response.status, 200, response.body);
+      parseAs(response.body, "WorkspacesResponse");
+    });
+
+    it("changes nothing for a caller without the token", async function () {
+      const created = path.join(scratch, "from-a-stranger.md");
+      const response = await httpRequest("POST", "/v1/workspace/entries", {
+        anonymous: true,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: scratch,
+          path: "from-a-stranger.md",
+          kind: "file",
+          content: "# Not the author\n",
+        }),
+      });
+      assert.equal(response.status, 401, response.body);
+      assert.equal(existsSync(created), false);
+    });
+
+    it("does not tell a caller without the token where the token is", async function () {
+      const response = await httpRequest("GET", "/v1/workspaces", { anonymous: true });
+      assert.equal(response.status, 401);
+      for (const name of Object.keys(TOKEN_ENVIRONMENT)) {
+        assert.equal(response.body.includes(name), false);
+      }
+    });
+
+    it("serves the specification to a caller without the token", async function () {
+      const response = await httpRequest("GET", "/openapi.json", { anonymous: true });
+      assert.equal(response.status, 200, response.body);
+      const document = JSON.parse(response.body) as { security: Array<Record<string, string[]>> };
+      assert.deepEqual(document.security, [{ bearerToken: [] }]);
+    });
+
+    it("does not start an enabled API when its environment has no token", async function () {
+      for (const env of [{}, { ZETTLR_AGENT_API_TOKEN: "" }]) {
+        const unprotected = new AgentHTTPProvider(
+          new LogProvider(),
+          provider,
+          {
+            config: {
+              get: () => ({
+                app: { openWorkspaces: [scratch] },
+                export: { cslLibrary: "" },
+                tikz: { dataDir: "", figuresDir: "" },
+                editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+                zotero: { localServer: "http://127.0.0.1:23119" },
+                agentApi: { enabled: true, port: 0, skillsDirectory: null },
+              }),
+            },
+            search: createSearch(),
+            documentLint,
+            links,
+          },
+          { homeDirectory: authoringHome, env },
+        );
+        started.push(unprotected);
+        await assert.rejects(unprotected.boot(), AgentApiTokenRequiredError);
+        assert.equal(unprotected.isListening, false);
+      }
+    });
+  });
+
+  it("sends nothing from the external CLI when its environment has no token", async function () {
+    let requestCount = 0;
+    const peer = http.createServer((_request, response) => {
+      requestCount += 1;
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ protocolVersion: "1.0.0" }));
+    });
+    peerServers.push(peer);
+    await new Promise<void>((resolve) => {
+      peer.listen(0, "127.0.0.1", resolve);
+    });
+    const address = peer.address();
+    assert.ok(address !== null && typeof address !== "string");
+
+    const filePath = path.join(scratch, "no-token.md");
+    const patchPath = path.join(scratch, "no-token.diff");
+    writeFileSync(filePath, "before\n", "utf8");
+    writeFileSync(patchPath, "a non-empty proposition\n", "utf8");
+
+    const result = await runReviewDiffCli(
+      [
+        "--document",
+        filePath,
+        "--patch",
+        patchPath,
+        "--description",
+        "no token",
+        "--port",
+        String(address.port),
+      ],
+      { ZETTLR_AGENT_API_TOKEN: "" },
+    );
+    assert.equal(result.code, 2);
+    assert.equal(result.stdout, "");
+    const refusal = JSON.parse(result.stderr) as { ok: boolean; error: { code: string } };
+    assert.equal(refusal.ok, false);
+    assert.equal(refusal.error.code, "TOKEN_REQUIRED");
+    assert.equal(requestCount, 0);
   });
 
   it("submits a review through the standalone external CLI process without changing the selected tab", async function () {
@@ -1673,7 +2335,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const client = new Client({ name: "agent-http-api-spec", version: "1.0.0" });
     await client.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`), {
+        requestInit: { headers: AUTHORIZED },
+      }),
     );
     const call = async <N extends keyof AgentApiSchemas & string>(
       name: string,
@@ -1748,7 +2412,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       version: "1.0.0",
     });
     await client.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`), {
+        requestInit: { headers: AUTHORIZED },
+      }),
     );
     const call = async <N extends keyof AgentApiSchemas & string>(
       name: string,
@@ -2059,6 +2725,30 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
   });
 
+  it("answers PERSISTENCE_FAILED with the cause when the folder refuses a new entry (#210)", async function () {
+    const locked = path.join(scratch, "locked-folder");
+    mkdirSync(locked, { recursive: true });
+    chmodSync(locked, 0o555);
+    const refused = await Promise.all(
+      [
+        { kind: "file", path: "locked-folder/new.md", content: "# New\n" },
+        { kind: "folder", path: "locked-folder/sub" },
+      ].map((entry) =>
+        httpRequest("POST", "/v1/workspace/entries", {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ workspaceId: scratch, ...entry }),
+        }),
+      ),
+    );
+    chmodSync(locked, 0o755);
+    for (const response of refused) {
+      assert.equal(response.status, 500, response.body);
+      assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "PERSISTENCE_FAILED");
+    }
+    assert.equal(existsSync(path.join(locked, "new.md")), false);
+    assert.equal(existsSync(path.join(locked, "sub")), false);
+  });
+
   it("exposes the complete canonical macro inventory with source and MathJax metadata", async function () {
     const response = await httpRequest("GET", "/v1/macros");
     assert.equal(response.status, 200, response.body);
@@ -2084,6 +2774,45 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       filteredPayload.macros.map((macro) => macro.name),
       ["\\CompilerOnly"],
     );
+  });
+
+  it("names the macro sources that it cannot read, and a projection that it cannot use (#210)", async function () {
+    const macroRoot = path.join(authoringHome, ".pandoc", "styles", "macros");
+    const lockedFolder = path.join(macroRoot, "nested");
+    const lockedFile = path.join(macroRoot, "tier2.tex");
+    writeFileSync(lockedFile, "\\newcommand{\\QQ}{\\mathbb{Q}}\n");
+    chmodSync(lockedFolder, 0o000);
+    chmodSync(lockedFile, 0o000);
+    const partial = await httpRequest("GET", "/v1/macros");
+    chmodSync(lockedFolder, 0o755);
+    chmodSync(lockedFile, 0o644);
+    assert.equal(partial.status, 200, partial.body);
+    const payload = parseAs(partial.body, "MacroInventoryResponse");
+    assert.deepEqual(
+      payload.macros.map((macro) => macro.name),
+      ["\\Spec", "\\ZZ"],
+    );
+    assert.deepEqual(
+      payload.notRead.map((entry) => entry.path),
+      ["tier2.tex", "nested"],
+    );
+
+    chmodSync(macroRoot, 0o000);
+    const unreadableRoot = await httpRequest("GET", "/v1/macros");
+    chmodSync(macroRoot, 0o755);
+    assert.equal(unreadableRoot.status, 503, unreadableRoot.body);
+    assert.equal(
+      parseAs(unreadableRoot.body, "AgentErrorResponse").error.code,
+      "MACROS_UNAVAILABLE",
+    );
+
+    writeFileSync(
+      path.join(authoringHome, ".pandoc", "templates", "css", "mathjax-macros.json"),
+      '{"ZZ": ',
+    );
+    const malformed = await httpRequest("GET", "/v1/macros");
+    assert.equal(malformed.status, 503, malformed.body);
+    assert.equal(parseAs(malformed.body, "AgentErrorResponse").error.code, "MACROS_UNAVAILABLE");
   });
 
   it("lists only the configured skills subtree and reads any Markdown file through getHelp", async function () {
@@ -2159,6 +2888,39 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const disabled = await httpRequest("GET", "/help?resource=skills&action=list");
     assert.equal(disabled.status, 503, disabled.body);
     assert.equal(parseAs(disabled.body, "AgentErrorResponse").error.code, "SKILLS_NOT_CONFIGURED");
+  });
+
+  it("names a skill or a figure that the filesystem refuses to read (#210)", async function () {
+    const lockedFolder = path.join(skillsRoot, "proofs", "nested");
+    const lockedSkill = path.join(skillsRoot, "proofs", "proof-style.md");
+    const lockedFigure = path.join(figuresRoot, "diagrams", "main.tikz");
+    chmodSync(lockedFolder, 0o000);
+    chmodSync(lockedSkill, 0o000);
+    chmodSync(lockedFigure, 0o000);
+    const [listed, skillInFolder, skill, figure] = await Promise.all([
+      httpRequest("GET", "/help?resource=skills&action=list"),
+      httpRequest("GET", "/help?resource=skills&action=read&path=proofs%2Fnested%2Fnotes.md"),
+      httpRequest("GET", "/help?resource=skills&action=read&path=proofs%2Fproof-style.md"),
+      httpRequest("GET", "/v1/figures?action=read&path=diagrams%2Fmain.tikz"),
+    ]);
+    chmodSync(lockedFolder, 0o755);
+    chmodSync(lockedSkill, 0o644);
+    chmodSync(lockedFigure, 0o644);
+
+    assert.equal(listed.status, 200, listed.body);
+    const listPayload = parseAs(listed.body, "SkillsListResponse");
+    assert.deepEqual(
+      listPayload.entries.map((entry) => entry.path),
+      ["proofs", "SKILL.md", "proofs/nested", "proofs/proof-style.md"],
+    );
+    assert.deepEqual(
+      listPayload.notListed.map((entry) => entry.path),
+      ["proofs/nested"],
+    );
+    for (const response of [skillInFolder, skill, figure]) {
+      assert.equal(response.status, 409, response.body);
+      assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "FILE_UNREADABLE");
+    }
   });
 
   it("lists and reads text and binary files from the configured centralized figures directory", async function () {
@@ -2365,6 +3127,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const workspacePayload = parseAs(workspace.body, "LintResponse");
     // Every document was linted above, so the workspace reads them all from the cache.
     assert.deepEqual(workspacePayload.pending, []);
+    assert.deepEqual(workspacePayload.failed, []);
+    assert.equal(workspacePayload.queueStopped, undefined);
     assert.deepEqual(
       new Set(workspacePayload.documents.map((item) => item.path)),
       new Set([focusedPath, otherOpenPath, closedPath]),
@@ -2390,6 +3154,79 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       warningsPayload.documents[0].diagnostics.every(
         (diagnostic) => diagnostic.severity !== "info",
       ),
+    );
+  });
+
+  it("names each workspace document that Flowmark could not lint, with the kind of the failure", async function () {
+    const unlintedPath = path.join(scratch, "lint-unlinted.md");
+    writeFileSync(unlintedPath, "???\n", "utf8");
+    // No Flowmark process ends in this time.
+    flowmarkTimeoutMs = 1;
+    const route = `/v1/lint?scope=workspace&workspaceId=${encodeURIComponent(scratch)}`;
+
+    // The first request puts the document into the queue of the linter.
+    const queued = await httpRequest("GET", route);
+    assert.equal(queued.status, 200, queued.body);
+    const deadline = Date.now() + 60_000;
+    while (lintDrains === 0) {
+      assert.ok(Date.now() < deadline, "the run of the document did not end");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    const workspaceFiles = parseAs(
+      (
+        await httpRequest(
+          "GET",
+          `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=files`,
+        )
+      ).body,
+      "WorkspaceFilesResponse",
+    );
+    const answered = await httpRequest("GET", route);
+    assert.equal(answered.status, 200, answered.body);
+    const payload = parseAs(answered.body, "LintResponse");
+    assert.deepEqual(payload.pending, [], "a document whose run ended is not awaited");
+    assert.deepEqual(payload.documents, [], "a failed run is no result of the document");
+    assert.deepEqual(
+      payload.failed.map((item) => ({
+        documentId: item.documentId,
+        path: item.path,
+        name: item.name,
+        kind: item.kind,
+      })),
+      [
+        {
+          documentId: workspaceFiles.files.find((file) => file.path === unlintedPath)?.documentId,
+          path: unlintedPath,
+          name: "lint-unlinted.md",
+          kind: "flowmark-timeout",
+        },
+      ],
+      answered.body,
+    );
+    assert.equal(payload.queueStopped, undefined, "the queue runs");
+  });
+
+  it("names a workspace document whose file cannot be read, and answers for the other documents", async function () {
+    const readablePath = path.join(scratch, "lint-readable.md");
+    const unreadablePath = path.join(scratch, "lint-unreadable.md");
+    writeFileSync(readablePath, "# Lattices\n", "utf8");
+    writeFileSync(unreadablePath, "# Genera\n", "utf8");
+    chmodSync(unreadablePath, 0o000);
+    const route = `/v1/lint?scope=workspace&workspaceId=${encodeURIComponent(scratch)}`;
+
+    const answered = await httpRequest("GET", route);
+    assert.equal(answered.status, 200, answered.body);
+    const payload = parseAs(answered.body, "LintResponse");
+    assert.deepEqual(
+      payload.failed.map((item) => ({ path: item.path, name: item.name, kind: item.kind })),
+      [{ path: unreadablePath, name: "lint-unreadable.md", kind: "unreadable" }],
+      answered.body,
+    );
+    assert.deepEqual(
+      [...payload.documents, ...payload.pending].map((item) => item.path),
+      [readablePath],
+      "the document that can be read is linted or awaited",
     );
   });
 
@@ -2434,10 +3271,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
               export: { cslLibrary: "" },
               tikz: { dataDir: "", figuresDir: "" },
               editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+              zotero: { localServer: "http://127.0.0.1:23119" },
               agentApi: {
                 enabled: true,
                 port: lifecyclePort,
-                claimDescriptionSimilarityThreshold: 0.94,
                 skillsDirectory: null,
               },
             }),
@@ -2446,6 +3283,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           documentLint,
           links,
         },
+        { homeDirectory: authoringHome, env: TOKEN_ENVIRONMENT },
         undefined,
         DEADLINE_MS,
       );
@@ -2510,6 +3348,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const STALLED_REQUEST =
       "POST /v1/documents/doc-lifecycle/proposals HTTP/1.1\r\n" +
       "Host: 127.0.0.1\r\n" +
+      `Authorization: Bearer ${API_TOKEN}\r\n` +
       "Content-Type: application/json\r\n" +
       "Content-Length: 64\r\n" +
       "\r\n" +
@@ -2540,6 +3379,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             path: "/v1/documents/doc-lifecycle/proposals",
             method: "POST",
             headers: {
+              ...AUTHORIZED,
               "content-type": "application/json",
               "content-length": Buffer.byteLength(body),
             },
@@ -2604,7 +3444,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
       // And the server is still answering.
       const check = await connect();
-      check.write("GET /v1/ping HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+      check.write(
+        `GET /v1/ping HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer ${API_TOKEN}\r\nConnection: close\r\n\r\n`,
+      );
       const response = await readUntilClose(check);
       assert.match(response, /^HTTP\/1\.1 200 /);
     });

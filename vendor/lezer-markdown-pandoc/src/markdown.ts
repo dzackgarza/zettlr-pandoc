@@ -1,6 +1,7 @@
 import {Tree, TreeBuffer, NodeType, NodeProp, NodePropSource, TreeFragment, NodeSet, TreeCursor,
         Input, Parser, PartialParse, SyntaxNode, ParseWrapper} from "@lezer/common"
 import {styleTags, tags as t, Tag} from "@lezer/highlight"
+import {linesFrom} from "./pandoc/input-lines"
 
 class CompositeBlock {
   static create(type: number, value: number, from: number, parentHash: number, end: number) {
@@ -667,6 +668,21 @@ function lineEnd(text: string, pos: number) {
   return pos
 }
 
+// Pandoc's `setextHeader` parses the inlines of the heading line and then
+// requires a newline and the underline. An inline that the line opens and a
+// later line of the paragraph closes (inline math over the `=` line) consumes
+// that newline, so the line is no heading. The inlines are parsed over the
+// paragraph text up to its first blank line, the reach of an inline.
+function inlineRunsPastLine(cx: BlockContext, leaf: LeafBlock) {
+  let lineEnd = leaf.start + leaf.content.length
+  let text = leaf.content
+  for (let next of linesFrom(cx.input, lineEnd + 1)) {
+    if (next.text.trim() == "") break
+    text += "\n" + next.text
+  }
+  return cx.parser.parseInline(text, leaf.start).some(element => element.from < lineEnd && element.to > lineEnd)
+}
+
 class SetextHeadingParser implements LeafBlockParser {
   nextLine(cx: BlockContext, line: Line, leaf: LeafBlock) {
     // Pandoc's Markdown reader only admits a Setext heading when the heading
@@ -678,6 +694,7 @@ class SetextHeadingParser implements LeafBlockParser {
     let underline = line.depth < cx.stack.length ? -1 : isSetextUnderline(line)
     let next = line.next
     if (underline < 0) return false
+    if (cx.parser.pandocParagraphContinuation && inlineRunsPastLine(cx, leaf)) return false
     let underlineMark = elt(Type.HeaderMark, cx.lineStart + line.pos, cx.lineStart + underline)
     cx.nextLine()
     cx.addLeafElement(leaf, elt(next == 61 ? Type.SetextHeading1 : Type.SetextHeading2, leaf.start, cx.prevLineEnd(), [

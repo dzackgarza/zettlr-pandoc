@@ -116,6 +116,87 @@ describe("Quarto book manifest editor", function () {
     });
   });
 
+  describe("a part that a file names", function () {
+    let withPartFile: string;
+
+    beforeEach(async function () {
+      await writeFile(path.join(root, "first.md"), "# The first part\n");
+      withPartFile = source.replace("part: First", "part: first.md");
+    });
+
+    it("places a chapter after the file of a part at the start of that part", function () {
+      const edited = editQuartoBookSource(root, manifest, withPartFile, {
+        kind: "add-chapter",
+        chapterPath: "extra.md",
+        placement: { kind: "after-chapter", chapterPath: "first.md" },
+      });
+
+      assert.deepEqual(parseQuartoProject(root, edited).navigation, [
+        { kind: "chapter", path: path.join(root, "index.md") },
+        {
+          kind: "part-file",
+          path: path.join(root, "first.md"),
+          chapters: [path.join(root, "extra.md"), path.join(root, "chapters", "a.md")],
+        },
+      ]);
+    });
+
+    it("places a chapter before the file of a part before that part", function () {
+      const edited = editQuartoBookSource(root, manifest, withPartFile, {
+        kind: "add-chapter",
+        chapterPath: "extra.md",
+        placement: { kind: "before-chapter", chapterPath: "first.md" },
+      });
+
+      assert.deepEqual(
+        parseQuartoProject(root, edited).files.map((file) => path.relative(root, file)),
+        ["index.md", "extra.md", "first.md", path.join("chapters", "a.md")],
+      );
+    });
+
+    it("does not add the file of a part to the book a second time", function () {
+      assert.throws(
+        () =>
+          editQuartoBookSource(root, manifest, withPartFile, {
+            kind: "add-chapter",
+            chapterPath: "first.md",
+            placement: { kind: "book-end" },
+          }),
+        Error,
+      );
+      assert.throws(
+        () =>
+          editQuartoBookSource(root, manifest, withPartFile, {
+            kind: "add-part",
+            title: "Second",
+            chapterPath: "first.md",
+          }),
+        Error,
+      );
+    });
+
+    it("reads a part that has a file and no chapters, and gives it its first chapter", function () {
+      const partOnly = withPartFile.replace("      chapters:\n        - chapters/a.md\n", "");
+      assert.deepEqual(parseQuartoProject(root, partOnly).navigation.at(-1), {
+        kind: "part-file",
+        path: path.join(root, "first.md"),
+        chapters: [],
+      });
+
+      const edited = editQuartoBookSource(root, manifest, partOnly, {
+        kind: "add-chapter",
+        chapterPath: "extra.md",
+        placement: { kind: "part-end", partIndex: 1 },
+      });
+
+      assert.deepEqual(parseQuartoProject(root, edited).navigation.at(-1), {
+        kind: "part-file",
+        path: path.join(root, "first.md"),
+        chapters: [path.join(root, "extra.md")],
+      });
+    });
+  });
+
   it("rejects a chapter outside the Project root", function () {
     assert.throws(
       () =>

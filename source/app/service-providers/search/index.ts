@@ -14,16 +14,21 @@
  *                  authority, so what is matched is what the editor shows),
  *                  broadcasts what it finds file by file, and applies a
  *                  replace through the journaled workspace-edit transaction
- *                  the reference rename owns.
+ *                  the reference rename owns. A file that the filesystem
+ *                  refuses to read does not stop a search: the search reads
+ *                  the other files and names that file with the cause.
  *
  * END HEADER
  */
 
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
+import type { UnsavedDocument } from "@dts/common/documents";
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import { ipcMain } from "electron";
 import path from "path";
 import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
+import isErrnoException from "source/common/util/is-errno-exception";
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import vm from "vm";
 import type { ConfigOptions } from "../config/get-config-template";
 import type DocumentManager from "../documents";
@@ -68,14 +73,49 @@ export interface ReplaceTarget {
   ranges: Array<{ from: number; to: number }>;
 }
 
+/**
+ * A file that the search did not read, or a folder whose files it did not
+ * read because the filesystem refused its content, with the cause.
+ */
+export interface UnsearchedFile {
+  documentPath: string;
+  kind: "file" | "folder";
+  cause: string;
+}
+
+/** What a search has of one file: its text, the cause of no text, or no text type. */
+type SearchSource =
+  | { kind: "text"; source: string; replaceable: boolean }
+  | { kind: "not-searched"; cause: string }
+  | { kind: "no-text" };
+
+/** What the search of one file gave. */
+type FileSearchOutcome =
+  | { kind: "matches"; result: FileSearchResult }
+  | { kind: "no-matches" }
+  | { kind: "not-searched"; file: UnsearchedFile };
+
 /** A search run to completion for the agent API. */
 export type WorkspaceSearchOutcome =
-  | { status: "ok"; results: FileSearchResult[]; matchCount: number; truncated: boolean }
+  | {
+      status: "ok";
+      results: FileSearchResult[];
+      matchCount: number;
+      truncated: boolean;
+      /** The files and the folders that the search did not read. */
+      notSearched: UnsearchedFile[];
+    }
   | { status: "invalid-query"; message: string }
   | { status: "timeout"; documentPath: string };
 
 export type ReplaceOutcome =
-  | { status: "applied"; documentsChanged: string[]; matchesReplaced: number }
+  | {
+      status: "applied";
+      documentsChanged: string[];
+      matchesReplaced: number;
+      /** The open documents that hold the replace but whose save was refused. */
+      unsaved: UnsavedDocument[];
+    }
   | { status: "conflict"; documentPath: string };
 
 export type UndoReplaceOutcome = ReplaceOutcome | { status: "nothing-to-undo" };
@@ -107,19 +147,20 @@ export type SearchProviderIPCAPI = IPCMessage<SearchProviderIPCContract>;
  * Search view imports it to type its listener.
  */
 /**
- * Why a search could not run, or could not finish the files it queued. The
- * view reads these out where it would otherwise read out a result count, so
- * a search that read fewer files than it queued never counts as a search
- * that found nothing.
+ * Why a search could not run, or stopped before the end of its queue. The
+ * view reads these out where it would otherwise read out a result count. A
+ * file that the filesystem refuses to read is no failure of the search: it
+ * arrives as `search-unread`, and the search goes on.
  */
 export type SearchFailure =
   | { kind: "invalid-query"; message: string }
-  | { kind: "unreadable-file"; documentPath: string; message: string };
+  | { kind: "stopped"; documentPath: string; message: string };
 
 export type SearchProviderBroadcast =
   | { type: "search-end"; generation: number }
   | { type: "search-result"; generation: number; result: FileSearchResult; progress: number }
   | { type: "search-progress"; generation: number; progress: number }
+  | { type: "search-unread"; generation: number; file: UnsearchedFile; progress: number }
   | { type: "search-failed"; generation: number; failure: SearchFailure };
 
 export class SearchProvider implements ProviderContract {
@@ -210,6 +251,39 @@ export class SearchProvider implements ProviderContract {
     return await this._fsal.loadAnySupportedFile(absPath);
   }
 
+  /**
+   * What a search has of one file. An open Markdown document has the text of
+   * its buffer, also when its file cannot be read.
+   */
+  private async searchSource(absPath: string): Promise<SearchSource> {
+    const buffer = this._documents.readMarkdownBufferContent(absPath);
+    if (buffer !== undefined) {
+      return { kind: "text", source: buffer, replaceable: true };
+    }
+    return await this._fsal
+      .getDescriptorForAnySupportedFile(absPath)
+      .then(async (descriptor): Promise<SearchSource> => {
+        if (descriptor.type === "other") {
+          return { kind: "no-text" };
+        }
+        if (descriptor.readError !== undefined) {
+          return { kind: "not-searched", cause: descriptor.readError.message };
+        }
+        return {
+          kind: "text",
+          source: await this._fsal.loadAnySupportedFile(absPath),
+          replaceable: descriptor.type === "file",
+        };
+      })
+      .catch((error: unknown): SearchSource => {
+        // The filesystem refused the file between the listing and the read.
+        if (!isErrnoException(error)) {
+          throw error;
+        }
+        return { kind: "not-searched", cause: error.message };
+      });
+  }
+
   private cancelSearch(): void {
     // Letting the running read finish and dropping the queue is enough: the
     // generation on the next start is what silences anything still in flight.
@@ -247,11 +321,19 @@ export class SearchProvider implements ProviderContract {
       return 0;
     }
 
-    const queue = await this.filesToSearch(query, () => generation === this.searchGeneration);
-    if (queue === undefined) {
+    const files = await this.filesToSearch(query, () => generation === this.searchGeneration);
+    if (files === undefined) {
       return 0; // A newer request took ownership while this one enumerated the workspaces.
     }
-    this.fileSearchQueue = queue;
+    for (const folder of files.notListed) {
+      broadcastIPCMessage("search-provider", {
+        type: "search-unread",
+        generation,
+        file: folder,
+        progress: 0,
+      } satisfies SearchProviderBroadcast);
+    }
+    this.fileSearchQueue = files.queue;
     this.currentSearch = { pattern: compiled.pattern, generation };
     this.lastPattern = compiled.pattern;
     this.sumFilesToSearch = this.fileSearchQueue.length;
@@ -266,7 +348,9 @@ export class SearchProvider implements ProviderContract {
    * The files, the matching and the previews are the Search view's. Matching
    * one file runs under a deadline, because the pattern comes from outside
    * the app and a catastrophic regular expression would otherwise stall the
-   * main process. The search stops at maxMatches matches and says so.
+   * main process. The search stops at maxMatches matches and says so. A
+   * file that the filesystem refuses to read, and a folder that it refuses
+   * to list, is in `notSearched`.
    */
   public async searchWorkspace(
     query: SearchQuery,
@@ -281,18 +365,23 @@ export class SearchProvider implements ProviderContract {
       return { status: "invalid-query", message: compiled.message };
     }
 
-    const queue = await this.filesToSearch(query, () => true);
-    if (queue === undefined) {
+    const files = await this.filesToSearch(query, () => true);
+    if (files === undefined) {
       throw new Error("[Search Provider] A workspace search without a generation was superseded");
     }
     const results: FileSearchResult[] = [];
+    const notSearched: UnsearchedFile[] = [...files.notListed];
     let matchCount = 0;
-    for (const absPath of queue) {
-      const descriptor = await this._fsal.getDescriptorForAnySupportedFile(absPath);
-      if (descriptor.type === "other") {
+    for (const absPath of files.queue) {
+      const read = await this.searchSource(absPath);
+      if (read.kind === "no-text") {
         continue;
       }
-      const source = await this.readSource(absPath);
+      if (read.kind === "not-searched") {
+        notSearched.push({ documentPath: absPath, kind: "file", cause: read.cause });
+        continue;
+      }
+      const { source, replaceable } = read;
       let matches: SearchMatch[];
       try {
         // The same watchdog the single-document agent search runs under:
@@ -316,35 +405,46 @@ export class SearchProvider implements ProviderContract {
       results.push({
         documentPath: absPath,
         sourceHash: hashDocumentSource(source),
-        replaceable: descriptor.type === "file",
+        replaceable,
         matches: kept,
       });
       matchCount += kept.length;
       if (kept.length < matches.length) {
-        return { status: "ok", results, matchCount, truncated: true };
+        return { status: "ok", results, matchCount, truncated: true, notSearched };
       }
     }
-    return { status: "ok", results, matchCount, truncated: false };
+    return { status: "ok", results, matchCount, truncated: false, notSearched };
   }
 
   /**
    * The files a query admits, in workspace order and without duplicates:
    * every file under the open workspaces, then the open files, filtered by
-   * the query's globs. Undefined when isCurrent reports that a newer search
+   * the query's globs; and each folder of the workspaces whose content the
+   * filesystem refused. Undefined when isCurrent reports that a newer search
    * took over while the workspaces were walked.
    */
   private async filesToSearch(
     query: SearchQuery,
     isCurrent: () => boolean,
-  ): Promise<string[] | undefined> {
+  ): Promise<{ queue: string[]; notListed: UnsearchedFile[] } | undefined> {
     const { openWorkspaces, openFiles } = this._config.get().app;
     const roots = [...openWorkspaces];
-    const candidates = (
-      await Promise.all(roots.map(async (root) => await this._fsal.readDirectoryRecursively(root)))
-    ).flat();
+    const listings = await Promise.all(
+      roots.map(async (root) => await this._fsal.readDirectoryRecursively(root)),
+    );
     if (!isCurrent()) {
       return undefined;
     }
+    const candidates = listings.flatMap((listing) => listing.paths);
+    const notListed = listings.flatMap((listing) =>
+      listing.notListed.map(
+        (folder): UnsearchedFile => ({
+          documentPath: folder.path,
+          kind: "folder",
+          cause: folder.cause,
+        }),
+      ),
+    );
     const includesPath = compilePathFilter(query.include, query.exclude);
     const queue: string[] = [];
 
@@ -360,16 +460,16 @@ export class SearchProvider implements ProviderContract {
         queue.push(candidate);
       }
     }
-    return queue;
+    return { queue, notListed };
   }
 
   /**
-   * The path a glob is matched against: relative to the workspace root that
-   * holds the file, so `foundations/*.md` means what it says. A file outside
+   * The path a glob is matched against: relative to the innermost workspace
+   * root that holds the file, so `foundations/*.md` means what it says. A file outside
    * every root is matched by its own name.
    */
   private relativePath(absPath: string, roots: string[]): string {
-    const root = roots.find((candidate) => absPath.startsWith(`${candidate}${path.sep}`));
+    const root = innermostRoot(absPath, roots);
     const relative = root === undefined ? path.basename(absPath) : path.relative(root, absPath);
     return relative.split(path.sep).join("/");
   }
@@ -396,23 +496,30 @@ export class SearchProvider implements ProviderContract {
     }
 
     this.searchFile(nextFile, search.pattern)
-      .then((result) => {
+      .then((outcome) => {
         if (this.currentSearch?.generation !== search.generation) {
           return; // A newer search started; this belongs to the old query.
         }
         const progress =
           (this.sumFilesToSearch - this.fileSearchQueue.length) / this.sumFilesToSearch;
-        if (result === undefined) {
+        if (outcome.kind === "no-matches") {
           broadcastIPCMessage("search-provider", {
             type: "search-progress",
             generation: search.generation,
+            progress,
+          } satisfies SearchProviderBroadcast);
+        } else if (outcome.kind === "not-searched") {
+          broadcastIPCMessage("search-provider", {
+            type: "search-unread",
+            generation: search.generation,
+            file: outcome.file,
             progress,
           } satisfies SearchProviderBroadcast);
         } else {
           broadcastIPCMessage("search-provider", {
             type: "search-result",
             generation: search.generation,
-            result,
+            result: outcome.result,
             progress,
           } satisfies SearchProviderBroadcast);
         }
@@ -421,10 +528,8 @@ export class SearchProvider implements ProviderContract {
         if (this.currentSearch?.generation !== search.generation) {
           return; // A newer search started; this belongs to the old query.
         }
-        // A file that was queued and then could not be read means the result
-        // list no longer describes the workspace. Stop, and say which file:
-        // carrying on would report a count over the files that happened to
-        // be readable.
+        // No filesystem error: the search of this file failed in the app.
+        // Stop, and say at which file.
         this._logger.error(
           `[Search Provider] Could not search file ${nextFile}: ${String(err)}`,
           err,
@@ -433,7 +538,7 @@ export class SearchProvider implements ProviderContract {
         broadcastIPCMessage("search-provider", {
           type: "search-failed",
           generation: search.generation,
-          failure: { kind: "unreadable-file", documentPath: nextFile, message: String(err) },
+          failure: { kind: "stopped", documentPath: nextFile, message: String(err) },
         } satisfies SearchProviderBroadcast);
       })
       .finally(() => {
@@ -441,27 +546,30 @@ export class SearchProvider implements ProviderContract {
       });
   }
 
-  /** One file's matches, or undefined when it has none. */
-  private async searchFile(
-    absPath: string,
-    pattern: RegExp,
-  ): Promise<FileSearchResult | undefined> {
-    const descriptor = await this._fsal.getDescriptorForAnySupportedFile(absPath);
-    if (descriptor.type === "other") {
-      return undefined;
+  /** The matches of one file, or the cause when the search did not read it. */
+  private async searchFile(absPath: string, pattern: RegExp): Promise<FileSearchOutcome> {
+    const read = await this.searchSource(absPath);
+    if (read.kind === "no-text") {
+      return { kind: "no-matches" };
     }
-
-    const source = await this.readSource(absPath);
-    const matches = matchDocument(source, pattern);
+    if (read.kind === "not-searched") {
+      return {
+        kind: "not-searched",
+        file: { documentPath: absPath, kind: "file", cause: read.cause },
+      };
+    }
+    const matches = matchDocument(read.source, pattern);
     if (matches.length === 0) {
-      return undefined;
+      return { kind: "no-matches" };
     }
-
     return {
-      documentPath: absPath,
-      sourceHash: hashDocumentSource(source),
-      replaceable: descriptor.type === "file",
-      matches,
+      kind: "matches",
+      result: {
+        documentPath: absPath,
+        sourceHash: hashDocumentSource(read.source),
+        replaceable: read.replaceable,
+        matches,
+      },
     };
   }
 
@@ -522,7 +630,7 @@ export class SearchProvider implements ProviderContract {
     if (result.status === "conflict") {
       return { status: "conflict", documentPath: result.documentPath };
     }
-    await saveUpdatedBuffers(
+    const unsaved = await saveUpdatedBuffers(
       async (documentPath) => await this._documents.saveFile(documentPath),
       result.openBuffersUpdated,
     );
@@ -531,6 +639,7 @@ export class SearchProvider implements ProviderContract {
       status: "applied",
       documentsChanged: [...result.openBuffersUpdated, ...result.closedFilesWritten],
       matchesReplaced: edits.length,
+      unsaved,
     };
   }
 
@@ -548,7 +657,7 @@ export class SearchProvider implements ProviderContract {
     if (result.status === "conflict") {
       return { status: "conflict", documentPath: result.documentPath };
     }
-    await saveUpdatedBuffers(
+    const unsaved = await saveUpdatedBuffers(
       async (documentPath) => await this._documents.saveFile(documentPath),
       result.openBuffersUpdated,
     );
@@ -557,6 +666,7 @@ export class SearchProvider implements ProviderContract {
       status: "applied",
       documentsChanged: [...result.openBuffersUpdated, ...result.closedFilesWritten],
       matchesReplaced: pending.edits.length,
+      unsaved,
     };
   }
 }

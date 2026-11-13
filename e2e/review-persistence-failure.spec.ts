@@ -16,6 +16,15 @@
  *              chunk decision, an outstanding-review save, ordinary editor
  *              typing, and the detach a close performs.
  *
+ *              A refused close, load from disk or quit is not a dead end:
+ *              the refusal of a close offers the action "Close anyway",
+ *              which closes the document; the refusal of a load from disk
+ *              offers "Load from disk anyway", which loads the disk version;
+ *              and the refusal of a quit offers "Quit anyway", which ends
+ *              the quit. Each leaves the sidecar as it was last
+ *              written (#178). The message of a refused quit says what its
+ *              action does to the review (#210).
+ *
  *              What each one owes is the same: report the failure, claim
  *              nothing, destroy nothing, leave the previous sidecar valid, and
  *              work on the retry once the disk does. None of that is
@@ -28,10 +37,13 @@
 
 import { strict as assert } from "node:assert";
 import type { ChildProcess } from "node:child_process";
-import { chmod, mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { once } from "node:events";
+import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { createPatch } from "diff";
 import type { Browser, Page } from "playwright";
+import { sha256Text } from "../source/common/util/sha256";
 import {
   type AgentClient,
   agentClient,
@@ -40,10 +52,14 @@ import {
   delay,
   findEditorPage,
   hideDevServerOverlay,
+  preserveArtifacts,
   readAgentApiPort,
+  requestQuit,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
+
+const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-review-persistence-e2e-latest");
 
 /** The editor pane: every review control sits inside it, at its chunk or in the review bar. */
 const EDITOR = ".main-editor-wrapper .cm-editor";
@@ -58,6 +74,12 @@ const BASELINE = [
   "tail line",
   "",
 ].join("\n");
+
+/** A second document of the workspace. No pane shows it; a proposal loads it. */
+const PARKED = "# Genus\n\nTwo lattices in one genus are isometric over each localization.\n";
+const PARKED_REVISED = PARKED.replace("localization", "completion");
+const CLOSE_ACTION = "Close anyway";
+const QUIT_ACTION = "Quit anyway";
 
 /**
  * The real injection: the sidecar directory keeps its contents readable and
@@ -244,6 +266,7 @@ describe("a review that cannot be persisted", function () {
   let fixtureRoot: string | undefined;
   let sidecarDirectory: string | undefined;
   let documentPath: string | undefined;
+  let parkedPath: string | undefined;
   let browser: Browser | undefined;
   let appProcess: ChildProcess | undefined;
   let api: AgentClient | undefined;
@@ -251,6 +274,7 @@ describe("a review that cannot be persisted", function () {
   let reviewId: string | undefined;
   let getOutput: () => string = () => "";
   const rendererEvents: string[] = [];
+  const screenshots = new Map<string, Buffer>();
 
   before(async function () {
     const fixture = await createFixture("zettlr-review-persistence-", {
@@ -265,6 +289,8 @@ describe("a review that cannot be persisted", function () {
     });
     fixtureRoot = fixture.root;
     documentPath = fixture.documentPath;
+    parkedPath = path.join(path.dirname(fixture.documentPath), "parked.md");
+    await writeFile(parkedPath, PARKED, "utf8");
     sidecarDirectory = path.join(fixture.configDirectory, "review-sidecars");
     const running = await attach(fixture.configDirectory, rendererEvents, this.timeout());
     appProcess = running.appProcess;
@@ -282,9 +308,17 @@ describe("a review that cannot be persisted", function () {
       await allowSidecarWrites(sidecarDirectory);
     }
     await shutdown(browser, appProcess);
+    await preserveArtifacts(
+      ARTIFACT_DIRECTORY,
+      fixtureRoot,
+      getOutput(),
+      rendererEvents,
+      screenshots,
+    );
     if (fixtureRoot !== undefined) {
       await rm(fixtureRoot, { recursive: true, force: true });
     }
+    console.log(`E2E artifacts: ${ARTIFACT_DIRECTORY}`);
   });
 
   it("refuses a proposal it cannot persist, and opens no review", async function () {
@@ -510,6 +544,16 @@ describe("a review that cannot be persisted", function () {
       buffer.includes("refused-edit"),
       `the typed text stays in the buffer: a refused push destroys nothing.\n${buffer}`,
     );
+    const toast = activePage.locator("#zettlr-toast-container .zettlr-toast.error");
+    await toast.first().waitFor({ state: "visible", timeout: 30_000 });
+    const refusals = await toastMessages(activePage);
+    assert.equal(refusals.length, 1, `one error is shown: ${JSON.stringify(refusals)}`);
+    assert.ok(
+      refusals[0].includes(path.basename(activePath)),
+      `the error names the document: ${refusals[0]}`,
+    );
+    screenshots.set("push-refused.png", await activePage.screenshot());
+    await toast.first().locator('button[aria-label="Dismiss"]').click();
     assert.equal(
       await activePage
         .locator(`${EDITOR} .suggestion-chunk`)
@@ -519,11 +563,28 @@ describe("a review that cannot be persisted", function () {
       "the annotated chunk must still be rendered",
     );
 
-    // Retry on a fresh editor: a rejected push leaves this pane's sync loop
-    // holding its in-flight flag, so the unsent edit never goes out again from
-    // here. Closing and reopening is also what proves the sidecar written
-    // before the failure is still loadable — the review comes back from it.
+    // The editor sends the rejected update again. When the sidecar can be
+    // written, the authority takes the text that the author typed during the
+    // failure, and the save of that text succeeds.
     await allowSidecarWrites(directory);
+    await waitForWorkingText(activeApi, (text) => text.includes("refused-edit"), 30_000);
+    assert.deepEqual(
+      await activePage.evaluate(
+        async (pathInPage: string) =>
+          await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+        activePath,
+      ),
+      { ok: true },
+      "the text typed during the failure is saved",
+    );
+    assert.ok(
+      (await readFile(activePath, "utf8")).includes("refused-edit"),
+      "the file has the text that the authority rejected before",
+    );
+    assert.deepEqual(await toastMessages(activePage), [], "the accepted update shows no error");
+
+    // A close and a new editor prove that the review comes back from the
+    // sidecar that was written after the failure.
     await activePage.evaluate(
       async (pathInPage: string) =>
         await window.ipc.invoke("documents-provider", {
@@ -660,6 +721,195 @@ describe("a review that cannot be persisted", function () {
       Object.keys(await sidecarBytes(directory)).length,
       1,
       "the detached review must survive as its sidecar",
+    );
+  });
+
+  it("closes the document without the review when the author takes the action of the refusal", async function () {
+    const activeApi = requireInitialized(api, "the Agent API client must be initialized");
+    const activePage = requireInitialized(page, "the editor page must be initialized");
+    const activePath = requireInitialized(documentPath, "the document path must be initialized");
+    const directory = requireInitialized(sidecarDirectory, "the sidecar directory must be known");
+    const openInNewTab = async (): Promise<void> => {
+      await activePage.evaluate(
+        async (pathInPage: string) =>
+          await window.ipc.invoke("documents-provider", {
+            command: "open-file",
+            payload: { path: pathInPage, newTab: true },
+          }),
+        activePath,
+      );
+    };
+    const note = activePage.locator("input.suggestion-chunk-comment");
+    const tab = activePage.locator(`[role="tab"][data-path="${activePath}"]`);
+
+    // The last scenario left the document closed, with its review in the sidecar.
+    await openInNewTab();
+    await note.waitFor({ state: "visible", timeout: 30_000 });
+
+    await breakSidecarWrites(directory);
+    assert.equal(await closeFileInPane(activePage, activePath), false, "the close is refused");
+    const toast = activePage.locator("#zettlr-toast-container .zettlr-toast.error");
+    const action = toast.first().locator("[data-toast-action]");
+    await action.waitFor({ state: "visible", timeout: 30_000 });
+    assert.equal(await action.innerText(), CLOSE_ACTION);
+    screenshots.set("close-refused.png", await activePage.screenshot());
+
+    await action.click();
+    await tab.waitFor({ state: "detached", timeout: 30_000 });
+    assert.deepEqual(await openDocumentIds(activeApi), [], "the document is closed");
+    assert.deepEqual(
+      await toastMessages(activePage),
+      [],
+      "the action ends the refusal and raises no other message",
+    );
+    screenshots.set("closed-without-review.png", await activePage.screenshot());
+
+    // The sidecar is as the last write left it: the next load attaches the review.
+    await allowSidecarWrites(directory);
+    await openInNewTab();
+    await note.waitFor({ state: "visible", timeout: 30_000 });
+    assert.equal(await note.inputValue(), "needs a second look");
+    assert.equal(await closeFileInPane(activePage, activePath), true);
+    await tab.waitFor({ state: "detached", timeout: 30_000 });
+  });
+
+  it("offers the disk version without the review when the load of a changed file cannot save the review", async function () {
+    const activeApi = requireInitialized(api, "the Agent API client must be initialized");
+    const activePage = requireInitialized(page, "the editor page must be initialized");
+    const activePath = requireInitialized(documentPath, "the document path must be initialized");
+    const directory = requireInitialized(sidecarDirectory, "the sidecar directory must be known");
+    const note = activePage.locator("input.suggestion-chunk-comment");
+    const tab = activePage.locator(`[role="tab"][data-path="${activePath}"]`);
+
+    // The last scenario left the document closed, with its review in the sidecar.
+    await activePage.evaluate(
+      async (pathInPage: string) =>
+        await window.ipc.invoke("documents-provider", {
+          command: "open-file",
+          payload: { path: pathInPage, newTab: true },
+        }),
+      activePath,
+    );
+    await note.waitFor({ state: "visible", timeout: 30_000 });
+    const documentId = await openDocumentId(activeApi);
+
+    // Another program changes the file. The setting `alwaysReloadFiles` of
+    // the configuration template loads the disk version of a document
+    // without unsaved text, and that load cannot save the review.
+    await breakSidecarWrites(directory);
+    const external = `${BASELINE}\nA line that another program wrote.\n`;
+    await writeFile(activePath, external, "utf8");
+    const refusal = activePage.locator("#zettlr-toast-container .zettlr-toast.error");
+    const action = refusal.first().locator("[data-toast-action]");
+    await action.waitFor({ state: "visible", timeout: 30_000 });
+    screenshots.set("reload-refused.png", await activePage.screenshot());
+    assert.match(
+      await refusal.first().locator("span").first().innerText(),
+      /^persistence\.md: The review could not be saved, so the disk version was not loaded: ./,
+      "the message names the load that did not happen",
+    );
+    assert.equal(
+      await action.innerText(),
+      "Load from disk anyway",
+      "the action repeats the load that the author asked for",
+    );
+    assert.deepEqual(await openDocumentIds(activeApi), [documentId], "the document stays open");
+    assert.notEqual(
+      await workingText(activeApi),
+      external,
+      "the refused load keeps the editor text",
+    );
+
+    await action.click();
+    await activePage
+      .locator(".cm-content")
+      .filter({ hasText: "A line that another program wrote." })
+      .waitFor({ state: "visible", timeout: 30_000 });
+    assert.equal(await workingText(activeApi), external, "the action loads the disk version");
+    // The load attaches the sidecar to the new text of the file, and that
+    // attach writes the sidecar; the directory still refuses each write.
+    const unwritable = activePage
+      .locator("#zettlr-toast-container .zettlr-toast.error")
+      .filter({ hasText: "opened without its annotations and its review" });
+    await unwritable.waitFor({ state: "visible", timeout: 30_000 });
+    screenshots.set("loaded-without-review.png", await activePage.screenshot());
+    assert.equal(
+      (await toastMessages(activePage)).length,
+      1,
+      "the action ends the refusal; the attach that cannot write raises one message",
+    );
+    assert.match(
+      await unwritable.locator("span").first().innerText(),
+      /^persistence\.md opened without its annotations and its review\. Their file cannot be written: ./,
+      "the message names the write that failed, not a read",
+    );
+    assert.equal(
+      await unwritable.locator("[data-toast-action]").count(),
+      0,
+      "the file can be read, so the message offers no move of the file aside",
+    );
+    await unwritable.locator('[aria-label="Dismiss"]').click();
+
+    await allowSidecarWrites(directory);
+    assert.equal(await closeFileInPane(activePage, activePath), true);
+    await tab.waitFor({ state: "detached", timeout: 30_000 });
+  });
+
+  it("ends the quit without the review of a document that no pane shows, when the author takes the action", async function () {
+    const activeApi = requireInitialized(api, "the Agent API client must be initialized");
+    const activePage = requireInitialized(page, "the editor page must be initialized");
+    const running = requireInitialized(appProcess, "the app process must be running");
+    const directory = requireInitialized(sidecarDirectory, "the sidecar directory must be known");
+    const parked = requireInitialized(parkedPath, "the second document must be written");
+
+    await allowSidecarWrites(directory);
+    stringField(
+      await activeApi.post("/v1/review-submissions", {
+        document: { uri: parked },
+        baseline: { sha256: sha256Text(PARKED) },
+        clientRequestId: "persistence-parked-review",
+        claims: [
+          { description: "Name the completion", patch: patch(parked, PARKED, PARKED_REVISED) },
+        ],
+      }),
+      "reviewId",
+    );
+    assert.equal(
+      await activePage.locator(`[role="tab"][data-path="${parked}"]`).count(),
+      0,
+      "the proposal opens no tab: no pane shows the reviewed document",
+    );
+
+    await breakSidecarWrites(directory);
+    const exited = once(running, "exit");
+    await requestQuit(activePage);
+    const toast = activePage.locator("#zettlr-toast-container .zettlr-toast.error");
+    const action = toast.first().locator("[data-toast-action]");
+    await action.waitFor({ state: "visible", timeout: 30_000 });
+    const refusal = (await toast.first().locator("span").first().innerText()).split("\n");
+    assert.match(
+      refusal[0],
+      /^parked\.md: The review could not be saved, so the application did not quit: ./,
+      "the refused quit names the document that no pane shows and the quit that it stopped",
+    );
+    assert.deepEqual(
+      refusal.slice(1),
+      [
+        '"Quit anyway" quits. The review stays as it was last saved, and it returns when the document is opened.',
+      ],
+      "the message says what the action does to the review",
+    );
+    assert.equal(await action.innerText(), QUIT_ACTION);
+    assert.equal(running.exitCode, null, "the refused quit leaves the app running");
+    screenshots.set("quit-refused.png", await activePage.screenshot());
+
+    await action.click();
+    const outcome = await Promise.race([exited, delay(30_000).then(() => "still running")]);
+    assert.deepEqual(outcome, [0, null], "the action ends the app");
+    assert.equal(
+      await readFile(parked, "utf8"),
+      PARKED,
+      "the proposal was working text: the quit wrote none of it to the file",
     );
   });
 });

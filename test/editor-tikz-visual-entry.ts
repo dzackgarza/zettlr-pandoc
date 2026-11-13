@@ -9,19 +9,16 @@
 
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { defaultDark, defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
+import { markdownSyntaxHighlighter } from "@dzack/pandoc-editor/theme/syntax";
+import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tikz-render";
+import TikzPreviewPane from "@dzack/tikz-render/ui/TikzPreviewPane.vue";
 import { renderTikzFigures } from "source/common/modules/markdown-editor/renderers/render-tikz";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "source/common/modules/markdown-editor/theme/editor";
-import { markdownSyntaxHighlighter } from "source/common/modules/markdown-editor/theme/syntax";
 import { activeTikzBlock } from "source/common/modules/markdown-editor/tikz-block";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
-import { zettlrTikzWorkbenchHost } from "source/win-main/tikz-workbench-host";
-import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
-import TikzWorkbench from "tikz-workbench/src/ui/TikzWorkbench.vue";
+import { reportError } from "source/common/util/error-reporting";
+import makeValidUri from "source/common/util/make-valid-uri";
 import { createApp } from "vue";
 
 declare global {
@@ -59,10 +56,7 @@ async function mount(): Promise<void> {
   // The seam resolves from the harness-injected response map, keyed exactly
   // as the widget requests render (kind NUL language NUL source).
   const ipc = {
-    invoke: async (channel: string, message: { command: string; payload: TikzRenderRequest }) => {
-      if (channel === "quiver-macros") {
-        return { macros: {}, unsupported: [] };
-      }
+    invoke: async (_channel: string, message: { command: string; payload: TikzRenderRequest }) => {
       window.__tikzRequests.push(message.payload);
       // The driver obtains raw blocks from fixture text while CodeMirror hands
       // this page the parser-owned paragraph range. Their only admissible
@@ -113,21 +107,20 @@ async function mount(): Promise<void> {
     if (previewHost === null) {
       throw new Error("Live TikZ visual preview host is missing");
     }
-    createApp(TikzWorkbench, {
+    createApp(TikzPreviewPane, {
       target: {
         ...block,
         docPath: "",
         authoredSource: view.state.sliceDoc(block.sourceFrom, block.sourceTo),
       },
-      host: zettlrTikzWorkbenchHost(view),
-      requestedMode: block.language === "tikzcd" ? "quiver" : "tikz",
+      host: {
+        render: async (request: TikzRenderRequest) =>
+          await window.ipc.invoke("application", { command: "tikz-render", payload: request }),
+        figureUrl: (figure: { svgPath: string }) => makeValidUri(figure.svgPath),
+        reportError,
+      },
       theme: dark ? "dark" : "light",
     }).mount(previewHost);
-    // The visual corpus exercises the compiler-backed TikZ rendering surface;
-    // tikzcd correctly defaults to Quiver in production, so opt into TikZ here.
-    previewHost
-      .querySelector<HTMLButtonElement>(".tikz-live-preview-modes button:first-child")
-      ?.click();
   }
 
   // Wait until either the ordinary inline scene or the microlocal split has

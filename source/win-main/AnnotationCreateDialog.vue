@@ -5,7 +5,7 @@
       v-on:mousedown.self="cancel()"
     >
       <div
-        class="annotation-create-dialog"
+        class="annotation-create-dialog self-painted-controls"
         role="dialog"
         aria-modal="true"
         v-bind:aria-label="trans('AI Annotation')"
@@ -135,9 +135,11 @@ import { EditorView } from "@codemirror/view";
 import { trans } from "@common/i18n-renderer";
 import { md2html } from "@common/modules/markdown-utils";
 import { mapAnnotationThroughChanges } from "@common/util/annotation-anchors";
+import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { reportError } from "@common/util/error-reporting";
+import { remoteErrorMessage } from "@common/util/ipc-rejection";
+import { unrenderedPreviewHtml } from "@common/util/unrendered-preview";
 import type { AnnotationAnchor, TextAnnotation } from "@dts/common/annotation-domain";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type { AnnotationFailure } from "source/app/service-providers/documents/document-collaboration-application-service";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
@@ -194,6 +196,8 @@ async function save(): Promise<void> {
   const anchor = draftAnchor.value;
   saving.value = true;
   refusalMessage.value = null;
+  // A rejection of the request is shown in the dialog like a refusal: the
+  // author keeps the instruction and sees why nothing was saved.
   const result = await window.ipc
     .invoke("documents:create-annotation", {
       path: props.documentPath,
@@ -202,22 +206,32 @@ async function save(): Promise<void> {
       instruction: instruction.value.trim(),
       expectedAnnotationGeneration: props.annotationGeneration,
     })
+    .then(
+      (answer: TextAnnotation | AnnotationFailure) => answer,
+      (rejection: Error) => {
+        reportError(rejection);
+        refusalMessage.value = remoteErrorMessage(rejection);
+        return undefined;
+      },
+    )
     .finally(() => {
       saving.value = false;
     });
 
-  const failure = result as TextAnnotation | AnnotationFailure;
-  if ("ok" in failure && failure.ok === false) {
-    refusalMessage.value = failure.message;
+  if (result === undefined) {
     return;
   }
-  emit("saved", failure as TextAnnotation);
+  if ("ok" in result && result.ok === false) {
+    refusalMessage.value = result.message;
+    return;
+  }
+  emit("saved", result as TextAnnotation);
 }
 
 function handleInstructionKeydown(event: KeyboardEvent): void {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
-    save().catch((err) => reportError("Could not save the annotation", err));
+    void save();
   }
 }
 
@@ -242,14 +256,24 @@ onMounted(() => {
     ),
   });
 
-  md2html(props.quotedText, {
-    zknLinkFormat: "link|title",
-    onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
-  })
-    .then((html) => {
-      excerptHtml.value = html;
-    })
-    .catch((err) => reportError("Could not render the annotation excerpt", err));
+  // The excerpt cites from the bibliography of its document (#198).
+  documentCitationDatabase(props.documentPath)
+    .then(
+      async (library) =>
+        await md2html(props.quotedText, {
+          zknLinkFormat: "link|title",
+          onCitation: window.getCitationCallback(library),
+        }),
+    )
+    .then(
+      (html) => {
+        excerptHtml.value = html;
+      },
+      (failure: Error) => {
+        reportError("Could not render the annotation excerpt", failure);
+        excerptHtml.value = unrenderedPreviewHtml(props.quotedText, failure);
+      },
+    );
 
   instructionInput.value?.focus();
 });

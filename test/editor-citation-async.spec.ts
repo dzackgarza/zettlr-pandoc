@@ -4,8 +4,8 @@
 
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   __resetCitationRenderMemoForTests,
   renderCitations,
@@ -18,8 +18,13 @@ async function nextTurn(): Promise<void> {
 }
 
 describe("async citation widget rendering", function () {
-  const originalIpc = window.ipc;
+  // Read the seam when the suite runs: at file load no spec may have provided it yet
+  let originalIpc: typeof window.ipc;
   let view: EditorView | undefined;
+
+  before(function () {
+    originalIpc = window.ipc;
+  });
 
   afterEach(function () {
     view?.destroy();

@@ -19,15 +19,25 @@ import { promises as fs } from "fs";
 import path from "path";
 import writeFileAtomic from "write-file-atomic";
 import YAML from "yaml";
-import type LogProvider from "../../log";
+import type { LogDetails } from "../../log";
 import type { DatabaseRecord } from "..";
 import extractBibTexAttachments from "./extract-bibtex-attachments";
+
+/**
+ * The log of a load. The log provider is one; a load on a thread gives one
+ * that sends each call to the owner of the thread.
+ */
+export interface LoaderLog {
+  info: (message: string, details?: LogDetails) => void;
+  warning: (message: string, details?: LogDetails) => void;
+  error: (message: string, details?: LogDetails) => void;
+}
 
 /**
  * Bump when the cached record's shape or the parser producing it changes:
  * a version mismatch is a cache miss, never an error.
  */
-const BIB_CACHE_VERSION = 1;
+const BIB_CACHE_VERSION = 2;
 
 /** What a .bib parse costs is what this file exists to avoid re-paying. */
 interface BibCacheFile {
@@ -52,7 +62,7 @@ async function readBibCache(
   cacheDir: string,
   databasePath: string,
   sourceSha256: string,
-  logger?: LogProvider,
+  logger?: LoaderLog,
 ): Promise<DatabaseRecord | undefined> {
   let raw: string;
   try {
@@ -100,7 +110,7 @@ async function writeBibCache(
   databasePath: string,
   sourceSha256: string,
   record: DatabaseRecord,
-  logger?: LogProvider,
+  logger?: LoaderLog,
 ): Promise<void> {
   const payload: BibCacheFile = {
     version: BIB_CACHE_VERSION,
@@ -128,7 +138,7 @@ async function writeBibCache(
  */
 export async function loadDatabase(
   databasePath: string,
-  logger?: LogProvider,
+  logger?: LoaderLog,
   cacheDir?: string,
 ): Promise<DatabaseRecord> {
   const filenameExtension = path.extname(databasePath).toLowerCase();
@@ -183,7 +193,7 @@ export async function loadDatabase(
  *
  * @return  {Promise<DatabaseRecord>}                The record
  */
-async function loadJSON(databasePath: string, logger?: LogProvider): Promise<DatabaseRecord> {
+async function loadJSON(databasePath: string, logger?: LoaderLog): Promise<DatabaseRecord> {
   const record: DatabaseRecord = {
     path: databasePath,
     type: "csl",
@@ -246,7 +256,7 @@ async function loadJSON(databasePath: string, logger?: LogProvider): Promise<Dat
  *
  * @return  {Promise<DatabaseRecord>}                The record
  */
-async function loadYAML(databasePath: string, logger?: LogProvider): Promise<DatabaseRecord> {
+async function loadYAML(databasePath: string, logger?: LoaderLog): Promise<DatabaseRecord> {
   const record: DatabaseRecord = {
     path: databasePath,
     type: "csl",
@@ -288,7 +298,7 @@ async function loadYAML(databasePath: string, logger?: LogProvider): Promise<Dat
 async function loadBibTeX(
   databasePath: string,
   data: string,
-  logger?: LogProvider,
+  logger?: LoaderLog,
 ): Promise<DatabaseRecord> {
   const record: DatabaseRecord = {
     path: databasePath,
@@ -302,11 +312,10 @@ async function loadBibTeX(
   }
 
   // If we're here, we had a BibTex library --> extract the attachments
-  const attachments = extractBibTexAttachments(data, path.dirname(databasePath));
-  record.bibtexAttachments = attachments;
+  record.bibtexAttachments = extractBibTexAttachments(data, path.dirname(databasePath), logger);
 
   logger?.info(
-    `BibTeX database loaded, ${Object.keys(record.cslData).length} items; ${record.bibtexAttachments.length} attachments found.`,
+    `BibTeX database loaded, ${Object.keys(record.cslData).length} items; ${Object.values(record.bibtexAttachments).filter((files) => files !== false).length} entries with attachments.`,
   );
 
   return record;
@@ -322,7 +331,7 @@ async function loadBibTeX(
 async function loadBibLaTeX(
   databasePath: string,
   data: string,
-  logger?: LogProvider,
+  logger?: LoaderLog,
 ): Promise<DatabaseRecord> {
   const record: DatabaseRecord = {
     path: databasePath,
@@ -345,22 +354,10 @@ async function loadBibLaTeX(
     record.cslData[key] = item as CSLItem;
   }
 
-  // Now we also have to extract file fields (if they have been exported). The
-  // BibLaTeX parser counts it as an unexpected field, accessible from
-  // bib.entries[idx].unexpected_fields.file
-  for (const [key, item] of Object.entries(bib.entries)) {
-    if (!("unexpected_fields" in item)) {
-      record.bibtexAttachments[key] = false;
-      continue;
-    }
-
-    if (typeof item.unexpected_fields?.file !== "string") {
-      record.bibtexAttachments[key] = false;
-      continue;
-    }
-
-    record.bibtexAttachments[key] = [item.unexpected_fields.file];
-  }
+  // The BibLaTeX parser reads the `file` field as LaTeX text, which changes
+  // its escapes, and keys an entry by its position. The attachments come from
+  // the source text, by citation key.
+  record.bibtexAttachments = extractBibTexAttachments(data, path.dirname(databasePath), logger);
 
   logger?.info(`BibLaTeX database loaded, ${Object.keys(record.cslData).length} items.`);
 

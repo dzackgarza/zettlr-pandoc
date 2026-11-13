@@ -28,12 +28,12 @@
 import { forceParsing } from "@codemirror/language";
 import { EditorState, type Extension } from "@codemirror/state";
 import { type Decoration, EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
 import CSL from "citeproc";
 import { readFileSync } from "fs";
 import path from "path";
 import { extractPandocCitations } from "source/app/service-providers/references/pandoc-citations";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   type EditorWorkspaceReferences,
   referencePresentationField,

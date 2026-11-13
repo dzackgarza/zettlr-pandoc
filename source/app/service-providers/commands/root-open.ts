@@ -15,10 +15,8 @@
 import { trans } from "@common/i18n-main";
 import { CODE_EXT, MD_EXT } from "@common/util/file-extention-checks";
 import { ignorePath } from "@common/util/ignore-path";
-import isErrnoException from "@common/util/is-errno-exception";
 import { type DirDescriptor } from "@dts/common/fsal";
 import { app } from "electron";
-import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import ZettlrCommand from "./zettlr-command";
 
@@ -58,8 +56,14 @@ export default class RootOpen extends ZettlrCommand {
   private async openFiles(): Promise<string[]> {
     // The user wants to open another file or directory.
     const filter = [
-      { name: trans("Markdown Files"), extensions: MD_EXT.map((x) => x.slice(1)) },
-      { name: trans("Code Files"), extensions: CODE_EXT.map((x) => x.slice(1)) },
+      {
+        name: trans("Markdown Files"),
+        extensions: MD_EXT.map((x) => x.slice(1)),
+      },
+      {
+        name: trans("Code Files"),
+        extensions: CODE_EXT.map((x) => x.slice(1)),
+      },
     ];
 
     return await this._app.windows.askFile(filter, true);
@@ -71,24 +75,24 @@ export default class RootOpen extends ZettlrCommand {
    * @return  {Promise<string>[]}  The selected paths
    */
   private async openWorkspaces(): Promise<string[]> {
-    // TODO: Move this to a command
-    // The user wants to open another file or directory.
-    const ret = await this._app.windows.askDir(trans("Open workspace"), null);
+    return await this._app.windows.askDir(trans("Open workspace"), null);
+  }
 
-    for (const workspace of ret) {
-      const isDir = await this._app.fsal.isDir(workspace);
-      if (!isDir || ignorePath(workspace) || workspace === app.getPath("home")) {
-        // We cannot add this dir, because it is in the list of ignored directories.
-        this._app.log.error(`The chosen workspace "${workspace}" is on the ignore list.`);
-        this._app.windows.prompt({
-          type: "error",
-          title: trans("Cannot open workpace"),
-          message: trans('Cannot open workspace "%s".', path.basename(workspace)),
-        });
-      }
+  /**
+   * Why a folder cannot be a workspace, or undefined when it can be one.
+   *
+   * @param   {string}  folder  The absolute path of the folder
+   *
+   * @return  {string|undefined}  The cause of the refusal
+   */
+  private workspaceRefusal(folder: string): string | undefined {
+    if (folder === app.getPath("home")) {
+      return trans("the home folder cannot be a workspace");
     }
-
-    return ret;
+    if (ignorePath(folder)) {
+      return trans("the app hides a folder of its path");
+    }
+    return undefined;
   }
 
   /**
@@ -120,10 +124,17 @@ export default class RootOpen extends ZettlrCommand {
         : this._app.documents.windowKeys()[0];
 
     const leafId = this._app.documents.leafIds(winKey)[0];
+    const refusals: string[] = [];
 
     for (const absPath of pathlist) {
       const isFile = await this._app.fsal.isFile(absPath);
       const isDir = await this._app.fsal.isDir(absPath);
+      if (!isFile && !isDir) throw new Error(`Cannot open missing path: ${absPath}`);
+      const refusal = isDir ? this.workspaceRefusal(absPath) : undefined;
+      if (refusal !== undefined) {
+        refusals.push(trans("Could not open %s: %s.", absPath, refusal));
+        continue;
+      }
       // First check if this thing is already added. If so, simply write
       // the existing file/dir into the newFile/newDir vars. They will be
       // opened accordingly.
@@ -144,10 +155,7 @@ export default class RootOpen extends ZettlrCommand {
         // automatically load it if it was a directory.
         const addedToConfig = this._app.config.addPath(absPath);
         if (!addedToConfig) {
-          this._app.log.error(
-            `Could not open root ${absPath} because it was an ignored directory/file.`,
-          );
-          continue;
+          throw new Error(`Could not open ignored root: ${absPath}`);
         }
         rootsChanged = true;
 
@@ -160,16 +168,14 @@ export default class RootOpen extends ZettlrCommand {
           const file = await this._app.fsal.getDescriptorForAnySupportedFile(absPath);
           if (file !== undefined && file.type !== "other") {
             await this._app.documents.openFile(winKey, leafId, file.path, true);
+          } else {
+            throw new Error(`Could not load document: ${absPath}`);
           }
         } catch (err) {
-          // Something went wrong, so remove the path again.
+          // Something went wrong, so remove the path again. The command
+          // dispatcher shows the cause in the window.
           this._app.config.removePath(absPath);
-          this._app.log.error(`Could not open root ${absPath}`, err);
-          // Only a filesystem error is a state the user can act on.
-          if (!isErrnoException(err)) {
-            throw err;
-          }
-          this._app.windows.reportFSError("Could not open new root", err);
+          throw err;
         }
       }
     }
@@ -188,6 +194,11 @@ export default class RootOpen extends ZettlrCommand {
     // config as this call needs them.
     if (rootsChanged) {
       await this._app.documents.synchronizeDatabases();
+    }
+
+    // The other paths are open; the dispatcher shows each refused folder.
+    if (refusals.length > 0) {
+      throw new Error(refusals.join("\n"));
     }
   }
 }

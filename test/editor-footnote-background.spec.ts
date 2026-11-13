@@ -18,8 +18,8 @@
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { footnoteBackground } from "source/common/modules/markdown-editor/plugins/footnote-background";
 
 describe("Footnote body background", function () {

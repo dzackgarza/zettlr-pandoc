@@ -30,6 +30,7 @@ import { type Completion, CompletionContext } from "@codemirror/autocomplete";
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { readFileSync } from "fs";
 import path from "path";
 import {
@@ -51,7 +52,6 @@ import { files } from "source/common/modules/markdown-editor/autocomplete/files"
 import { headings } from "source/common/modules/markdown-editor/autocomplete/headings";
 import { snippets } from "source/common/modules/markdown-editor/autocomplete/snippets";
 import { tags } from "source/common/modules/markdown-editor/autocomplete/tags";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import {

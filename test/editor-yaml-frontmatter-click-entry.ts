@@ -1,8 +1,8 @@
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
 import { renderYamlFrontmatter } from "source/common/modules/markdown-editor/renderers/render-yaml-frontmatter";
-import { defaultLight, editorTheme } from "source/common/modules/markdown-editor/theme/editor";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 
 const doc = `---

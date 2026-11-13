@@ -123,12 +123,23 @@ export enum DP_EVENTS {
  */
 export type SaveRefusalReason =
   | "disk-changed"
+  // The file could not be read, so the save could not compare it with the
+  // review. Nothing was written.
+  | "disk-unreadable"
+  // The provider holds no text of the document. Nothing was written.
+  | "not-loaded"
   // The disk write itself failed (permissions, a full disk, a removed
-  // directory). The buffer keeps the text.
+  // directory). The buffer keeps the text, and the document stays modified.
   | "write-failed"
+  // The file has the text. The application could not read the file or its
+  // citation libraries again after the write.
+  | "saved-not-refreshed"
   // The review could not be written through, so the close was aborted and
   // the document is still open with its review intact.
-  | "review-not-persisted";
+  | "review-not-persisted"
+  // The author answered a close prompt with "discard" and the discard
+  // failed. The close was aborted and the document keeps its text.
+  | "discard-failed";
 
 export interface SaveRefusal {
   reason: SaveRefusalReason;
@@ -138,9 +149,25 @@ export interface SaveRefusal {
 /**
  * A save either wrote the file or refused with a reason. Deliberately not a bare
  * boolean: `false` is what let the save gate fail silently at the IPC boundary,
- * leaving the renderer to log "falsy result" with no cause.
+ * leaving the renderer to log "falsy result" with no cause. Each refusal has
+ * a reason and a message that names the cause.
  */
-export type SaveFileResult = { ok: true } | { ok: false; refusal?: SaveRefusal };
+export type SaveFileResult = { ok: true } | { ok: false; refusal: SaveRefusal };
+
+/**
+ * An open document that a workspace edit changed and whose save was
+ * refused. The document holds the edit; its file does not.
+ */
+export interface UnsavedDocument {
+  documentPath: string;
+  refusal: SaveRefusal;
+}
+
+/**
+ * The action of the author that a refusal stopped: the close of a document
+ * or of a window, a reload of a document from disk, or a quit.
+ */
+export type RefusedAction = "close" | "reload" | "quit";
 
 /**
  * Broadcast on SAVE_REFUSED_CHANNEL when a save the user did not initiate from
@@ -148,7 +175,18 @@ export type SaveFileResult = { ok: true } | { ok: false; refusal?: SaveRefusal }
  * no renderer promise to hand the result back to. Without this the prompt simply
  * closes and the window stays open with nothing explaining why.
  */
-export type SaveRefusedBroadcast = { filePath: string; refusal?: SaveRefusal };
+export type SaveRefusedBroadcast = {
+  filePath: string;
+  refusal: SaveRefusal;
+  /**
+   * Set when the refusal stopped a close, a reload or a quit: the document
+   * whose collaboration state could not be written or whose unsaved text
+   * could not be discarded, and the action that was stopped. The window
+   * offers the `close-without-review` command for the document, which
+   * repeats that action without the state.
+   */
+  refused?: { documentId: string; action: RefusedAction };
+};
 
 export const SAVE_REFUSED_CHANNEL = "save-refused";
 
@@ -160,6 +198,16 @@ export const SAVE_REFUSED_CHANNEL = "save-refused";
 export type RemoteChangeKeptBroadcast = { filePath: string; unsavedChanges: boolean };
 
 export const REMOTE_CHANGE_KEPT_CHANNEL = "remote-change-kept";
+
+/**
+ * Broadcast on FILE_REMOVED_KEPT_CHANNEL when the file of a loaded document
+ * with unsaved text was removed and the document stayed open with that
+ * text. `saveWritesFile` is false for a document with a review: its save
+ * compares the file with the review and is refused while no file is there.
+ */
+export type FileRemovedKeptBroadcast = { filePath: string; saveWritesFile: boolean };
+
+export const FILE_REMOVED_KEPT_CHANNEL = "file-removed-kept";
 
 /** Opaque `ChangeSet.toJSON()` payload; only `ChangeSet.fromJSON` reads it. */
 export type SerializedChanges = readonly (number | readonly (number | string)[])[];

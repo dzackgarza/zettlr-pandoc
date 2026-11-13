@@ -18,7 +18,13 @@ import { promises as fs, createWriteStream as writeStream } from "fs";
 import path from "path";
 import { rimraf } from "rimraf";
 import sanitize from "sanitize-filename";
-import type { ExporterAPI, ExporterOptions, ExporterOutput, ExporterPlugin } from "./types";
+import type {
+  ExporterAPI,
+  ExporterOptions,
+  ExporterOutput,
+  ExporterPlugin,
+  MinimalFile,
+} from "./types";
 
 const ASSETS_FOLDER_NAME = "assets";
 
@@ -47,10 +53,9 @@ export const plugin: ExporterPlugin = async function (
   const targetPath = path.join(options.targetDirectory, title + ext);
   try {
     output.targetFile = await makeTextbundle(
-      sourceFiles[0],
+      options.sourceFiles[0],
       targetPath,
       options.profile.writer === "textpack",
-      path.basename(sourceFiles[0]),
     );
   } catch (err: unknown) {
     output.code = 1;
@@ -67,18 +72,16 @@ export const plugin: ExporterPlugin = async function (
 /**
  * Creates a textbundle and returns the path to the created folder/file.
  *
- * @param   {string}           sourceFile        The source file to be packed
- * @param   {string}           targetFile        The target path
- * @param   {boolean}          textpack          Whether to create a textpack
- * @param   {string}           overrideFilename  An optional property to override the source file name in the info.json
+ * @param   {MinimalFile}      source      The document to be packed
+ * @param   {string}           targetFile  The target path
+ * @param   {boolean}          textpack    Whether to create a textpack
  *
- * @return  {Promise<string>}                    Resolves with a path to the file.
+ * @return  {Promise<string>}              Resolves with a path to the file.
  */
 async function makeTextbundle(
-  sourceFile: string,
+  source: MinimalFile,
   targetFile: string,
-  textpack: boolean = false,
-  overrideFilename?: string,
+  textpack: boolean,
 ): Promise<string> {
   /*
    * We have to do the following (in order):
@@ -105,12 +108,14 @@ async function makeTextbundle(
     await fs.mkdir(targetFile);
   }
 
-  const dirName = path.dirname(sourceFile);
+  // The images of a document are relative to its folder. The text can be
+  // in another file: the unsaved text of the document.
+  const dirName = path.dirname(source.path);
   const imgRE = /!\[.*?\]\(([^)]+)\)/g;
   const imagesToCopy: string[] = [];
 
   // Read in the file and replace image paths, if applicable
-  let content = await fs.readFile(sourceFile, "utf8");
+  let content = await fs.readFile(source.textFile, "utf8");
   content = content.replace(imgRE, (match: string, url: string) => {
     const absPath = path.resolve(dirName, url);
 
@@ -146,7 +151,7 @@ async function makeTextbundle(
         version: 2,
         type: "net.daringfireball.markdown",
         creatorIdentifier: "com.zettlr.app",
-        sourceURL: overrideFilename ?? sourceFile,
+        sourceURL: path.basename(source.path),
       },
       undefined,
       4,

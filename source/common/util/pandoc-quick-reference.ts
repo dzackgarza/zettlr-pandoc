@@ -5,6 +5,13 @@
  * surface cannot silently drift apart.
  */
 
+import {
+  type CommandId,
+  commandRegistry,
+  getConfiguredShortcut,
+  type ShortcutConfig,
+} from "@common/commands/command-registry";
+
 export const PANDOC_CITATION_EXAMPLES = [
   { kind: "parenthetical", syntax: "[@Ols04]" },
   { kind: "narrative", syntax: "@Ols04 says …" },
@@ -194,16 +201,38 @@ export interface ReferenceAuthoringTopic {
   title: string;
   /** The one-line user-facing description */
   detail: string;
-  /** The affordance that invokes it: a syntax token, shortcut, or gesture */
-  syntax: string;
+  /**
+   * The affordance that invokes it: a syntax token or a gesture, or the
+   * registered command whose configured key invokes it (#202).
+   */
+  syntax: string | { command: CommandId };
+}
+
+/**
+ * The affordance of a topic as the help shows it: the syntax token, or the
+ * key that the configuration gives the command. A command without a key is
+ * named by its label, which the command launcher lists.
+ */
+export function referenceTopicSyntax(
+  topic: ReferenceAuthoringTopic,
+  shortcuts: ShortcutConfig,
+): string {
+  if (typeof topic.syntax === "string") {
+    return topic.syntax;
+  }
+  const command = commandRegistry.get(topic.syntax.command);
+  if (command === undefined) {
+    throw new Error(`No command is registered with id "${topic.syntax.command}".`);
+  }
+  return getConfiguredShortcut(command.id, shortcuts) ?? command.label;
 }
 
 /**
  * The reference-authoring capabilities the quick help documents.
  *
  * CONTRACT (locked red by test/pandoc-quick-help-references.spec.ts): the
- * editor now SHIPS combined @ completion, hover target previews, Mod-P
- * definition search, Mod-Click navigation with per-pane Back/Forward
+ * editor now SHIPS combined @ completion, hover target previews, the
+ * definition search of the command launcher, Mod-Click navigation with per-pane Back/Forward
  * history, workspace rename, and Project-membership warnings — so the help
  * must document each of them, and the footer claim that cross-reference
  * autocomplete and target previews "are not currently available" (plus the
@@ -228,7 +257,7 @@ export const PANDOC_REFERENCE_AUTHORING_TOPICS: readonly ReferenceAuthoringTopic
     kind: "definition-search",
     title: "Find reference targets",
     detail: "Search reference targets and jump to the selected one.",
-    syntax: "Mod-P",
+    syntax: { command: "open-command-launcher" },
   },
   {
     kind: "navigation",

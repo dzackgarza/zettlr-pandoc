@@ -15,15 +15,13 @@
 import safeAssign from "@common/util/safe-assign";
 // Import the interfaces that we need
 import type { MDFileDescriptor } from "@dts/common/fsal";
-import type { SearchResult, SearchTerm } from "@dts/common/search";
 import { promises as fs } from "fs";
 import path from "path";
 import { getAppServiceContainer, isAppServiceContainerReady } from "../../app-service-container";
 import type FSALCache from "./fsal-cache";
+import type { MarkdownFileParser } from "./util/file-parser";
 import { getFilesystemMetadata } from "./util/get-fs-metadata";
-import searchFile from "./util/search-file";
-
-export const PARSER_VERSION = 2;
+import { readFileText } from "./util/read-file-text";
 
 /**
  * Applies a cached file, saving time where the file is not being parsed.
@@ -54,7 +52,7 @@ async function cacheFile(origFile: MDFileDescriptor, cacheAdapter: FSALCache): P
 export async function parse(
   filePath: string,
   cache: FSALCache | null,
-  parser: (file: MDFileDescriptor, content: string) => void,
+  parser: MarkdownFileParser,
 ): Promise<MDFileDescriptor> {
   // First of all, prepare the file descriptor
   let file: MDFileDescriptor = {
@@ -76,7 +74,7 @@ export async function parse(
     linefeed: "\n",
     firstHeading: null,
     firstSentence: null,
-    parserVersion: PARSER_VERSION,
+    parsedWith: undefined,
     yamlTitle: undefined,
     aliases: [],
     frontmatter: null, // May contain frontmatter variables
@@ -121,7 +119,7 @@ export async function parse(
       cachedFile !== undefined &&
       cachedFile.modtime === file.modtime &&
       cachedFile.type === "file" &&
-      cachedFile.parserVersion === PARSER_VERSION
+      cachedFile.parsedWith === parser.identity
     ) {
       file = applyCache(cachedFile, file);
       hasCache = true;
@@ -130,31 +128,20 @@ export async function parse(
 
   if (!hasCache) {
     // Read in the file, parse the contents and make sure to cache the file
-    let content = await fs.readFile(filePath, { encoding: "utf8" });
-    parser(file, content);
+    const content = await readFileText(filePath);
+    if (typeof content !== "string") {
+      // A file without text is not cached: the next request reads it again.
+      file.readError = content;
+      await cache?.del(file.path);
+      return file;
+    }
+    parser.parse(file, content);
     if (cache !== null) {
       await cacheFile(file, cache);
     }
   }
 
   return file;
-}
-
-/**
- * Searches the file associated with the file descriptor
- *
- * @param   {MDFileDescriptor}  fileObject  The corresponding file descriptor
- * @param   {SearchTerm[]}      terms       The (already compiled) search terms
- *
- * @return  {Promise<SearchResult[]>}       Resolves with search results
- */
-export async function search(
-  fileObject: MDFileDescriptor,
-  terms: SearchTerm[],
-): Promise<SearchResult[]> {
-  // Initialise the content variables (needed to check for NOT operators)
-  let cnt = await fs.readFile(fileObject.path, { encoding: "utf8" });
-  return searchFile(fileObject, terms, cnt);
 }
 
 /**

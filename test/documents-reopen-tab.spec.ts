@@ -29,7 +29,7 @@ describe("Documents-provider closed tabs", () => {
     root = await mkdtemp(path.join(tmpdir(), "zettlr-reopen-tab-"));
     await writeFile(path.join(root, "first.md"), "First\n");
     await writeFile(path.join(root, "second.md"), "Second\n");
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
   });
 
   afterEach(async () => {

@@ -8,8 +8,8 @@ import { toggleComment } from "@codemirror/commands";
 import { forceParsing, syntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
-import { markdownSyntaxHighlighter } from "source/common/modules/markdown-editor/theme/syntax";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { markdownSyntaxHighlighter } from "@dzack/pandoc-editor/theme/syntax";
 
 function innerNodeName(state: EditorState, source: string, token: string): string {
   const pos = source.indexOf(token);

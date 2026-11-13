@@ -19,14 +19,15 @@ import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
 import { reportError } from "@common/util/error-reporting";
+import { revealInFileBrowser } from "@common/util/reveal-in-file-browser";
 import { shortenUrlVisually } from "@common/util/shorten-url-visually";
 import { type SyntaxNode } from "@lezer/common";
-import type { WindowControlsIPCAPI } from "source/app/service-providers/windows";
 import makeValidUri from "source/common/util/make-valid-uri";
 import { pathDirname } from "source/common/util/renderer-path-polyfill";
 import { configField } from "../util/configuration";
 import { findReferenceForLinkLabel, removeMarkdownLink } from "../util/links";
 import openMarkdownLink from "../util/open-markdown-link";
+import { referenceLabelItems } from "./reference-label-item";
 
 const ipcRenderer = window.ipc;
 
@@ -146,6 +147,12 @@ export function linkImageMenu(
       id: "copy-img-to-clipboard",
       enabled: isFileLink,
       type: "normal",
+      action() {
+        // The dispatcher shows a refusal in this window.
+        ipcRenderer
+          .invoke("application", { command: "copy-img-to-clipboard", payload: validAbsoluteURI })
+          .catch((err: Error) => reportError(err));
+      },
     },
     {
       label: trans("Open image"),
@@ -161,13 +168,18 @@ export function linkImageMenu(
       enabled: isFileLink,
       type: "normal",
       action() {
-        ipcRenderer.send("window-controls", {
-          command: "show-item-in-folder",
-          payload: { itemPath: validAbsoluteURI },
-        } as WindowControlsIPCAPI);
+        revealInFileBrowser({ uri: validAbsoluteURI });
       },
     },
   ];
 
-  showPopupMenu(coords, isLink ? linkTpl : imgTpl);
+  if (isLink) {
+    showPopupMenu(coords, linkTpl);
+    return;
+  }
+
+  // An image is a figure: a position inside its source offers a label.
+  const labelItems = referenceLabelItems(view, node.from + 1);
+  const separator: AnyMenuItem[] = labelItems.length > 0 ? [{ type: "separator" }] : [];
+  showPopupMenu(coords, [...labelItems, ...separator, ...imgTpl]);
 }

@@ -15,29 +15,11 @@
  * END HEADER
  */
 
-import { constants as FSConstants, promises as fs } from "fs";
+import { pathExists } from "@providers/fsal/util/fs";
+import { constants as FSConstants } from "fs";
 import { DateTime } from "luxon";
 import path from "path";
 import isDir from "source/common/util/is-dir";
-
-/**
- * Checks if a given absolute path exists on disk. This does not care about
- * whether it's a folder or file.
- *
- * @param   {string}  absPath  The absolute path to check
- * @param   {number}  mode     The mode to check. Defaults to R_OK.
- *                             (Must be constants from `fs.constants`)
- *
- * @return  {boolean}           Whether the path exists.
- */
-async function pathExists(absPath: string, mode = FSConstants.R_OK): Promise<boolean> {
-  try {
-    await fs.access(absPath, mode);
-    return true;
-  } catch (err) {
-    return false;
-  }
-}
 
 /**
  * Disambiguates the provided filepath using a time-based strategy, until a
@@ -51,7 +33,7 @@ async function pathExists(absPath: string, mode = FSConstants.R_OK): Promise<boo
  * @return  {Promise<string>}            The disambiguated name.
  */
 export async function disambiguateFile(filepath: string): Promise<string> {
-  if (!(await pathExists(filepath))) {
+  if (!(await pathExists(filepath, FSConstants.F_OK))) {
     return filepath;
   }
 
@@ -73,7 +55,12 @@ export async function disambiguateFile(filepath: string): Promise<string> {
   };
 
   let dateOffset = genSuffix(offsetSeconds);
-  while (await pathExists(path.join(dirpath, `${filenameBase}-${dateOffset}${extname}`))) {
+  while (
+    await pathExists(
+      path.join(dirpath, `${filenameBase}-${dateOffset}${extname}`),
+      FSConstants.F_OK,
+    )
+  ) {
     offsetSeconds++;
     dateOffset = genSuffix(offsetSeconds);
   }

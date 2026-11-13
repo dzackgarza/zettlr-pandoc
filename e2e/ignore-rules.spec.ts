@@ -19,9 +19,11 @@ import {
   createFixture,
   delay,
   findEditorPage,
+  findMenuNode,
   hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
+  readApplicationMenu,
   shutdown,
 } from "./support/electron-app";
 
@@ -87,6 +89,16 @@ describe("assembled app: gitignore rules filter the workspace", function () {
     await activePage()
       .locator(MENU_ITEM("explorer-edit-ignore-rules"))
       .waitFor({ state: "visible", timeout: 10_000 });
+  }
+
+  /** Flips "Turn the filters off" in the file filter window and saves. */
+  async function toggleFiltersOff(): Promise<void> {
+    await openHeaderMenu();
+    await activePage().locator(MENU_ITEM("explorer-edit-ignore-rules")).click();
+    await activePage().locator(DIALOG).waitFor({ state: "visible", timeout: 10_000 });
+    await activePage().locator(`${DIALOG} [data-ignore-rules-show-ignored]`).click();
+    await activePage().locator(`${DIALOG} [data-ignore-rules-save]`).click();
+    await activePage().locator(DIALOG).waitFor({ state: "detached", timeout: 10_000 });
   }
 
   async function openContextMenu(relativePath: string): Promise<void> {
@@ -230,8 +242,7 @@ describe("assembled app: gitignore rules filter the workspace", function () {
   });
 
   it("turns the filters off everywhere and dims the matches, and shows one again from its context menu", async function () {
-    await openHeaderMenu();
-    await activePage().locator(MENU_ITEM("explorer-show-ignored")).click();
+    await toggleFiltersOff();
     await assertListed([
       "AGENTS.md",
       "scripts",
@@ -265,8 +276,7 @@ describe("assembled app: gitignore rules filter the workspace", function () {
     await activePage().locator(MENU_ITEM("menu.unignore_path")).click();
     await waitForRulesFile("CONTRIBUTING.md\n");
 
-    await openHeaderMenu();
-    await activePage().locator(MENU_ITEM("explorer-show-ignored")).click();
+    await toggleFiltersOff();
     await assertNotListed(["AGENTS.md", "scripts", "coble/CONTRIBUTING.md", "coble/references"]);
     await assertListed(["coble/drafts", "coble/drafts/old.md"]);
     await waitForApiFiles(["coble/drafts/old.md", "coble/notes.md", "index.md"]);
@@ -294,5 +304,154 @@ describe("assembled app: gitignore rules filter the workspace", function () {
       "coble/notes.md",
       "index.md",
     ]);
+  });
+
+  it("names the file name search in the application menu apart from the file filters", async function () {
+    const menu = await readApplicationMenu(activePage());
+    assert.equal(findMenuNode(menu, "menu.filter_files")?.label, "Search files");
+    assert.equal(findMenuNode(menu, "menu.edit_ignore_rules")?.label, "Edit file filters…");
+  });
+
+  it("opens the file filter window from Advanced → File Treatment in Preferences", async function () {
+    await activePage().evaluate(async () => {
+      await window.ipc.invoke("application", {
+        command: "open-preferences",
+        payload: { group: 0, fieldsetTitle: "File Treatment" },
+      });
+    });
+    const deadline = Date.now() + 20_000;
+    let preferences: Page | undefined;
+    while (preferences === undefined && Date.now() < deadline) {
+      preferences = browser
+        ?.contexts()
+        .flatMap((context) => context.pages())
+        .find((candidate) => candidate.url().includes("/preferences/"));
+      await delay(100);
+    }
+    assert.ok(preferences !== undefined, "the Preferences window opens");
+    const button = preferences.locator(
+      '[data-form-fieldset-title="File Treatment"] button:has-text("Edit file filters…")',
+    );
+    await button.waitFor({ state: "visible", timeout: 20_000 });
+    screenshots.set("preferences-file-treatment.png", await preferences.screenshot());
+    await button.click();
+    await activePage().locator(DIALOG).waitFor({ state: "visible", timeout: 10_000 });
+    await preferences.close();
+    await activePage().keyboard.press("Escape");
+    await activePage().locator(DIALOG).waitFor({ state: "detached", timeout: 10_000 });
+  });
+
+  it("lists a file type once the window includes it, until a rule in the same window hides it", async function () {
+    await writeFile(path.join(workspace, "coble", "proof.tex"), "\\section{Proof}\n", "utf8");
+    await row("coble/notes.md").waitFor({ state: "visible", timeout: 15_000 });
+    assert.equal(await row("coble/proof.tex").count(), 0, "the default file types are Markdown");
+
+    await openHeaderMenu();
+    await activePage().locator(MENU_ITEM("explorer-edit-ignore-rules")).click();
+    await activePage().locator(DIALOG).waitFor({ state: "visible", timeout: 10_000 });
+    const include = activePage().locator(`${DIALOG} [data-ignore-rules-include]`);
+    await include.fill(`${await include.inputValue()}\n.tex`);
+    screenshots.set("file-filter-window.png", await activePage().screenshot());
+    await activePage().locator(`${DIALOG} [data-ignore-rules-save]`).click();
+    await activePage().locator(DIALOG).waitFor({ state: "detached", timeout: 10_000 });
+    await assertListed(["coble/proof.tex"]);
+
+    await openHeaderMenu();
+    await activePage().locator(MENU_ITEM("explorer-edit-ignore-rules")).click();
+    await activePage().locator(DIALOG).waitFor({ state: "visible", timeout: 10_000 });
+    const globalRules = activePage().locator(`${DIALOG} [data-ignore-rules-global]`);
+    await globalRules.fill(`${await globalRules.inputValue()}\n*.tex`);
+    await activePage().locator(`${DIALOG} [data-ignore-rules-save]`).click();
+    await activePage().locator(DIALOG).waitFor({ state: "detached", timeout: 10_000 });
+
+    await assertNotListed(["coble/proof.tex"]);
+    await assertListed(["coble/notes.md"]);
+    screenshots.set("tex-hidden-by-rule.png", await activePage().screenshot());
+  });
+
+  it("offers the file filter window, not Unhide, for a file that only its type hides", async function () {
+    await writeFile(path.join(workspace, "coble", "data.zip"), "", "utf8");
+    await row("coble/notes.md").waitFor({ state: "visible", timeout: 15_000 });
+    assert.equal(await row("coble/data.zip").count(), 0, "no setting lists a .zip file");
+
+    await toggleFiltersOff();
+    await assertListed(["coble/data.zip"]);
+    assert.ok(
+      await row("coble/data.zip").evaluate((element) => element.classList.contains("is-ignored")),
+      "the file is marked as hidden",
+    );
+    await openContextMenu("coble/data.zip");
+    assert.equal(
+      await activePage().locator(MENU_ITEM("menu.unignore_path")).count(),
+      0,
+      "no rule hides the file, so no rule can show it",
+    );
+    screenshots.set("context-menu-hidden-type.png", await activePage().screenshot());
+    await activePage().locator(MENU_ITEM("menu.edit_ignore_rules")).click();
+    await activePage().locator(DIALOG).waitFor({ state: "visible", timeout: 10_000 });
+    // The menu that opened the window is gone, so Escape belongs to the window.
+    await activePage().keyboard.press("Escape");
+    await activePage().locator(DIALOG).waitFor({ state: "detached", timeout: 10_000 });
+
+    await toggleFiltersOff();
+    await assertNotListed(["coble/data.zip"]);
+  });
+
+  it("keeps an open document open and saving after a rule hides it", async function () {
+    const documentPath = path.join(workspace, "index.md");
+    const tab = activePage().locator(
+      `.document-tablist-wrapper [data-path=${JSON.stringify(documentPath)}]`,
+    );
+    await tab.waitFor({ state: "visible", timeout: 10_000 });
+
+    await openContextMenu("index.md");
+    await activePage().locator(MENU_ITEM("menu.ignore_path")).click();
+    await waitForRulesFile("CONTRIBUTING.md\n/index.md\n");
+    await assertNotListed(["index.md"]);
+    await waitForApiFiles([
+      "AGENTS.md",
+      "coble/AGENTS.md",
+      "coble/drafts/old.md",
+      "coble/notes.md",
+    ]);
+
+    await tab.waitFor({ state: "visible", timeout: 10_000 });
+    const editor = activePage().locator(".cm-content");
+    await editor.click();
+    await activePage().keyboard.press("ControlOrMeta+End");
+    await activePage().keyboard.type("Hidden but open.");
+    // The editor sends typed text to the main process in batches; the save
+    // writes what the main process holds.
+    assert.ok(api !== undefined, "The Agent API must be reachable");
+    const documents = (await api.get("/v1/documents")) as {
+      documents: Array<{ documentId: string; path: string }>;
+    };
+    const opened = documents.documents.find((document) => document.path === documentPath);
+    assert.ok(opened !== undefined, "the hidden document is still an open document");
+    const deadline = Date.now() + 15_000;
+    let held = "";
+    while (Date.now() < deadline) {
+      held = (
+        (await api.get(`/v1/documents/${opened.documentId}?includeContent=true&side=working`)) as {
+          content: string;
+        }
+      ).content;
+      if (held === "# Index\nHidden but open.") {
+        break;
+      }
+      await delay(100);
+    }
+    assert.equal(held, "# Index\nHidden but open.");
+    // The IPC call that the save-file shortcut makes: CDP key events do not
+    // run the main-process menu accelerators.
+    assert.deepEqual(
+      await activePage().evaluate(
+        async (pathInPage) => await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+        documentPath,
+      ),
+      { ok: true },
+    );
+    assert.equal(await readFile(documentPath, "utf8"), "# Index\nHidden but open.");
+    screenshots.set("hidden-document-open.png", await activePage().screenshot());
   });
 });

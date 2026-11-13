@@ -129,7 +129,8 @@ export function parseChildren<T extends { children: ASTNode[] } & MDNode>(
     // NOTE: We have to account for "gaps" where a node has children that do not
     // completely cover the node's contents. In that case, we have to add text
     // nodes that just contain those strings.
-    if (currentChild.from > currentIndex && !EMPTY_NODES.has(node.name)) {
+    const gapBefore = currentChild.from > currentIndex && !EMPTY_NODES.has(node.name);
+    if (gapBefore) {
       const gap = markdown.substring(currentIndex, currentChild.from);
       const onlyWhitespace = /^(\s*)/m.exec(gap);
       const whitespaceBefore = onlyWhitespace !== null ? onlyWhitespace[1] : "";
@@ -151,7 +152,13 @@ export function parseChildren<T extends { children: ASTNode[] } & MDNode>(
       astNode.attributes = parseAttributeNode(astNode.attributes, currentChild, markdown);
       astNode.attributeRange = { from: currentChild.from, to: currentChild.to };
     } else {
-      astNode.children.push(parseNode(currentChild, markdown));
+      const child = parseNode(currentChild, markdown);
+      if (gapBefore) {
+        // The text node of the gap holds the whitespace before the child, so
+        // the child does not hold it a second time.
+        child.whitespaceBefore = "";
+      }
+      astNode.children.push(child);
     }
 
     currentIndex = currentChild.to; // Must happen before the nextSibling assignment

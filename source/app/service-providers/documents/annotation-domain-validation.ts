@@ -154,7 +154,6 @@ const validateAnnotationSetShape = annotationSetAjv.compile<AnnotationSet>(Annot
 export type AnnotationDomainValidationCode =
   | "ANNOTATION_SCHEMA_INVALID"
   | "DUPLICATE_ANNOTATION_ID"
-  | "DUPLICATE_ANNOTATION_INSTRUCTION"
   | "INVALID_ANNOTATION_INSTRUCTION"
   | "INVALID_ANNOTATION_FIRST_MESSAGE"
   | "DUPLICATE_ANNOTATION_MESSAGE_ID"
@@ -171,15 +170,6 @@ export class AnnotationDomainValidationError extends Error {
     super(issue.message);
     this.name = "AnnotationDomainValidationError";
   }
-}
-
-/**
- * Annotation reasons are user-facing prose, not identifiers. Treat Unicode,
- * casing, and runs of whitespace as presentation differences, so trivially
- * restyled copies cannot become distinct annotations.
- */
-export function normalizeAnnotationInstruction(instruction: string): string {
-  return instruction.normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("en-US");
 }
 
 /** Called only after validateAnnotationSetShape rejected a value, so Ajv has recorded why. */
@@ -207,7 +197,6 @@ export function annotationSetValidationIssue(
   const annotationIds = new Set<string>();
   const messageIds = new Set<string>();
   const actionIds = new Set<string>();
-  const instructionOwners = new Map<string, string>();
 
   for (const annotation of value.items) {
     if (annotationIds.has(annotation.annotationId)) {
@@ -228,25 +217,13 @@ export function annotationSetValidationIssue(
       };
     }
 
-    const normalizedInstruction = normalizeAnnotationInstruction(first.text);
-    if (normalizedInstruction === "") {
+    if (first.text.trim() === "") {
       return {
         code: "INVALID_ANNOTATION_INSTRUCTION",
         message: `Annotation ${annotation.annotationId} has an empty first instruction.`,
         annotationIds: [annotation.annotationId],
       };
     }
-    const existing = instructionOwners.get(normalizedInstruction);
-    if (existing !== undefined) {
-      return {
-        code: "DUPLICATE_ANNOTATION_INSTRUCTION",
-        message:
-          `Annotations ${existing} and ${annotation.annotationId} have the same creation instruction. ` +
-          "Give each annotation a different instruction.",
-        annotationIds: [existing, annotation.annotationId],
-      };
-    }
-    instructionOwners.set(normalizedInstruction, annotation.annotationId);
 
     for (const message of annotation.messages) {
       if (messageIds.has(message.messageId)) {

@@ -42,14 +42,9 @@ export default class TrayProvider extends ProviderContract {
     super();
     this._tray = null;
 
-    if (!checkedEnvironment().tray.supported) {
-      this._config.set("system.leaveAppRunning", false);
-    }
-
     this._config.on("update", (option?: string) => {
       if (option === "system.leaveAppRunning") {
-        // even if the tray should not be shown, since we start in Tray we need to show it anyway
-        if (this._config.get("system.leaveAppRunning") === true) {
+        if (this._windows.keepsSessionRunning()) {
           this.add();
         } else {
           this._removeTray();
@@ -60,21 +55,11 @@ export default class TrayProvider extends ProviderContract {
 
   async boot(): Promise<void> {
     this._logger.verbose("Tray provider booting up ...");
-    let addToTray: boolean = this._config.get("system.leaveAppRunning");
-    const shouldStartMinimized = getCLIArgument("launch-minimized");
-    const traySupported = checkedEnvironment().tray.supported;
-
-    if (shouldStartMinimized && !addToTray && traySupported) {
-      this._logger.info(
-        "[Tray Provider] Detected the --launch-minimized flag. Will override the tray setting.",
-      );
-      // The user has indicated via CLI flag that they want to start the app
-      // minimized, so we require the corresponding setting to be set
-      this._config.set("system.leaveAppRunning", true);
-      addToTray = true;
+    if (getCLIArgument("launch-minimized") && checkedEnvironment().tray.supported) {
+      this._logger.info("[Tray Provider] Detected the --launch-minimized flag. Starting in tray.");
     }
 
-    if (addToTray) {
+    if (this._windows.keepsSessionRunning()) {
       this.add();
     }
   }
@@ -121,9 +106,7 @@ export default class TrayProvider extends ProviderContract {
    * @memberof TrayProvider
    */
   public add(): void {
-    const leaveAppRunning: boolean = this._config.get("system.leaveAppRunning");
-
-    if (!leaveAppRunning) {
+    if (!this._windows.keepsSessionRunning()) {
       return; // No need to add a tray.
     }
 
@@ -155,13 +138,13 @@ export default class TrayProvider extends ProviderContract {
     this._tray = new Tray(iconPath, this._config.get().uuid);
 
     this._tray.on("click", () => {
-      this._windows.activateFromTray();
+      this._windows.activate();
     });
 
     const menu: MenuItemConstructorOptions[] = [
       {
         label: trans("Show Zettlr"),
-        click: () => this._windows.activateFromTray(),
+        click: () => this._windows.activate(),
         type: "normal",
       },
       { label: "", type: "separator" },

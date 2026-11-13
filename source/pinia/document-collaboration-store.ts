@@ -16,7 +16,9 @@
  *                  first (ensureSession), and every subsequent change
  *                  reaches every caller through the same
  *                  DP_EVENTS.DOCUMENT_COLLABORATION broadcast this store is
- *                  the sole listener for.
+ *                  the sole listener for. The answer to a read never
+ *                  replaces the session of a broadcast that arrived after
+ *                  the store sent that read.
  *
  *                  The workspace panel also asks this store for one merged
  *                  projection spanning loaded workspace paths, including
@@ -43,11 +45,17 @@
 
 import { reportError } from "@common/util/error-reporting";
 import type { AnnotationMessage, TextAnnotation } from "@dts/common/annotation-domain";
-import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
+import type {
+  DocumentCollaborationSession,
+  OwnerlessCollaborationFile,
+  UnreadableCollaborationFile,
+  WorkspaceCollaborationListing,
+} from "@dts/common/document-collaboration";
 import { DP_EVENTS } from "@dts/common/documents";
 import { defineStore } from "pinia";
 import type {
   AnnotationLifecycleIpcInput,
+  BulkAnnotationIpcInput,
   DocumentsUpdateContext,
 } from "source/app/service-providers/documents";
 import type {
@@ -67,19 +75,45 @@ import type {
 import {
   type AnnotationCardView,
   buildAnnotationCards,
+  buildSuggestionNavigatorRows,
+  type SuggestionNavigatorView,
   unresolvedCollaborationCount,
 } from "source/win-main/sidebar/annotations/annotation-panel-model";
 import _ from "underscore";
-import { computed, reactive, ref, watch } from "vue";
+import { computed, markRaw, ref, shallowReactive } from "vue";
 
 const ipcRenderer = window.ipc;
 
+/**
+ * The outcome of one document of a workspace-wide bulk action: the answer of
+ * the main process, or the rejection of its request.
+ */
+export type WorkspaceBulkOutcome<Result> =
+  | { path: string; result: Result }
+  | { path: string; rejection: Error };
+
 export const useDocumentCollaborationStore = defineStore("document-collaboration", () => {
-  const sessionsByDocumentPath = reactive<Record<string, DocumentCollaborationSession>>({});
-  const cardsByDocumentPath = reactive<Record<string, AnnotationCardView[]>>({});
+  // A session is a snapshot of the main process: the store replaces it and
+  // never changes it in place. The map is therefore shallow, and a reader
+  // follows the entry of its document only. A deep reactive map makes a
+  // proxy of each annotation that a view reads, and a change of one session
+  // is then work for the readers of each session (#126).
+  const sessionsByDocumentPath = shallowReactive<Record<string, DocumentCollaborationSession>>({});
+  // What the views derive from one session, built at the first request for
+  // it. The key is the session object: a new session of a document has no
+  // value here, and the value of a session goes away with the session.
+  const cardsBySession = new WeakMap<DocumentCollaborationSession, AnnotationCardView[]>();
+  const suggestionRowsBySession = new WeakMap<
+    DocumentCollaborationSession,
+    SuggestionNavigatorView[]
+  >();
   const selectedAnnotationId = ref<string | null>(null);
   const showResolved = ref(false);
   const workspaceDocumentPaths = ref<string[]>([]);
+  /** The files of collaboration state that the application could not read. */
+  const unreadableFiles = ref<UnreadableCollaborationFile[]>([]);
+  /** The files of collaboration state whose document has no file. */
+  const ownerlessFiles = ref<OwnerlessCollaborationFile[]>([]);
   const workspacePathSet = new Set<string>();
   let workspaceRefreshGeneration = 0;
 
@@ -96,14 +130,46 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     ),
   );
 
-  function updateCardsForSession(
-    documentPath: string,
-    session: DocumentCollaborationSession,
-  ): void {
-    cardsByDocumentPath[documentPath] = buildAnnotationCards(
-      session.annotations.items,
-      session.workingText,
+  /**
+   * Makes a session the session of its document. The annotation set that
+   * the store has stays the same object when the new set is equal to it:
+   * each editor of the document draws its annotations again for a new set,
+   * and the broadcast of typed text carries an equal one.
+   */
+  function setSession(documentPath: string, session: DocumentCollaborationSession): void {
+    const shown = sessionsByDocumentPath[documentPath];
+    sessionsByDocumentPath[documentPath] = markRaw(
+      shown !== undefined && _.isEqual(shown.annotations, session.annotations)
+        ? { ...session, annotations: shown.annotations }
+        : session,
     );
+  }
+
+  function dropSession(documentPath: string): void {
+    delete sessionsByDocumentPath[documentPath];
+  }
+
+  // The main process sends a session on two channels: the broadcast of a
+  // change and the answer to a read. A read is not instant in the main
+  // process (the workspace read takes the live sessions and then lists the
+  // sidecars on disk), so its answer can arrive after the broadcast of a
+  // later change. Each source has a time on one count: a read has the time
+  // at which the store sent it, a broadcast the time at which it arrived.
+  // The newest source of a path owns the cache entry of that path. A
+  // broadcast that arrives while a read is open is thus kept: the read saw
+  // that change or an older state, and each later change of an open
+  // document has a broadcast of its own.
+  let sourceClock = 0;
+  const newestSourceByPath = new Map<string, number>();
+
+  /** Gives a path to a source, unless a newer source has it. */
+  function ownsPath(documentPath: string, sourceTime: number): boolean {
+    const newestSource = newestSourceByPath.get(documentPath);
+    if (newestSource !== undefined && newestSource > sourceTime) {
+      return false;
+    }
+    newestSourceByPath.set(documentPath, sourceTime);
+    return true;
   }
 
   // Fetches in flight, keyed by path. Two panes mounting on the same
@@ -116,42 +182,20 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     (_event, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
       const { event, context } = payload;
       if (event === DP_EVENTS.DOCUMENT_COLLABORATION && context.filePath !== undefined) {
-        // ponytail: a broadcast is trusted to be newer than whatever is
-        // cached, with no generation comparison against a fetch that might
-        // still be in flight for the same path. The read path that fetch
-        // resolves through does no disk I/O, while every mutation that can
-        // produce a broadcast writes the sidecar first — so a fetch issued
-        // around the same time as a mutation resolves before that mutation's
-        // broadcast in practice. Add a per-half generation guard here if a
-        // real out-of-order arrival is ever observed.
         if (context.collaborationSession !== undefined) {
-          sessionsByDocumentPath[context.filePath] = context.collaborationSession;
-          updateCardsForSession(context.filePath, context.collaborationSession);
+          newestSourceByPath.set(context.filePath, ++sourceClock);
+          setSession(context.filePath, context.collaborationSession);
         }
       } else if (event === DP_EVENTS.CLOSE_FILE && context.filePath !== undefined) {
         // Workspace panel state outlives editor panes. A closed workspace
         // document keeps its last authoritative snapshot until the next
         // workspace refresh projects its persisted sidecar.
         if (!workspacePathSet.has(context.filePath)) {
-          delete sessionsByDocumentPath[context.filePath];
-          delete cardsByDocumentPath[context.filePath];
+          dropSession(context.filePath);
         }
         pendingFetches.delete(context.filePath);
       }
     },
-  );
-
-  // Precompute cards in the background whenever sessionsByDocumentPath updates
-  watch(
-    sessionsByDocumentPath,
-    (sessions) => {
-      for (const [path, session] of Object.entries(sessions)) {
-        if (session !== undefined) {
-          updateCardsForSession(path, session);
-        }
-      }
-    },
-    { deep: true },
   );
 
   /**
@@ -170,15 +214,15 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     if (inFlight !== undefined) {
       return await inFlight;
     }
+    const sentAt = ++sourceClock;
     const fetch = ipcRenderer
       .invoke("documents-provider", {
         command: "get-collaboration-session",
         payload: { path: documentPath },
       })
       .then((session: DocumentCollaborationSession | undefined) => {
-        if (session !== undefined) {
-          sessionsByDocumentPath[documentPath] = session;
-          updateCardsForSession(documentPath, session);
+        if (session !== undefined && ownsPath(documentPath, sentAt)) {
+          setSession(documentPath, session);
         }
       })
       .catch((err: unknown) => {
@@ -201,6 +245,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
    * "reload review" operation. The authoritative session read is that reload.
    */
   async function refreshSession(documentPath: string): Promise<void> {
+    const sentAt = ++sourceClock;
     let session = (await ipcRenderer.invoke("documents-provider", {
       command: "get-collaboration-session",
       payload: { path: documentPath },
@@ -209,20 +254,50 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       const detached = (await ipcRenderer.invoke("documents-provider", {
         command: "get-workspace-collaboration-sessions",
         payload: { paths: [documentPath] },
-      })) as DocumentCollaborationSession[];
-      session = detached.find((candidate) => candidate.documentPath === documentPath);
+      })) as WorkspaceCollaborationListing;
+      session = detached.sessions.find((candidate) => candidate.documentPath === documentPath);
     }
-    if (session === undefined) {
-      Reflect.deleteProperty(sessionsByDocumentPath, documentPath);
-      Reflect.deleteProperty(cardsByDocumentPath, documentPath);
+    if (!ownsPath(documentPath, sentAt)) {
       return;
     }
-    sessionsByDocumentPath[documentPath] = session;
-    updateCardsForSession(documentPath, session);
+    if (session === undefined) {
+      dropSession(documentPath);
+      return;
+    }
+    setSession(documentPath, session);
   }
 
   function isStaleReviewFailure(result: ReviewFailure): boolean {
     return result.code === "REVISION_MISMATCH" || result.code === "REVIEW_GENERATION_MISMATCH";
+  }
+
+  function isStaleAnnotationFailure(result: AnnotationFailure): boolean {
+    return result.code === "ANNOTATION_GENERATION_MISMATCH";
+  }
+
+  /** The one shape a bulk annotation success has no field of. */
+  function isRefusal(result: unknown): result is AnnotationFailure {
+    return (
+      typeof result === "object" && result !== null && (result as { ok?: unknown }).ok === false
+    );
+  }
+
+  /**
+   * Optimistic annotation mutations recover internally from one stale
+   * snapshot: re-read the provider-owned session, rebuild the fence, and
+   * retry once. A second refusal is a real concurrent conflict and is
+   * returned to the UI. The twin of withFreshReviewRetry above.
+   */
+  async function withFreshAnnotationRetry<Response>(
+    documentPath: string,
+    attempt: () => Promise<Response | AnnotationFailure>,
+  ): Promise<Response | AnnotationFailure> {
+    const first = await attempt();
+    if (!isRefusal(first) || !isStaleAnnotationFailure(first)) {
+      return first;
+    }
+    await refreshSession(documentPath);
+    return await attempt();
   }
 
   /**
@@ -248,6 +323,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
    */
   async function refreshWorkspaceSessions(paths: readonly string[]): Promise<void> {
     const refreshGeneration = ++workspaceRefreshGeneration;
+    const sentAt = ++sourceClock;
     const uniquePaths = [...new Set(paths)];
     workspaceDocumentPaths.value = uniquePaths;
     workspacePathSet.clear();
@@ -255,48 +331,85 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       workspacePathSet.add(path);
     }
 
-    const sessions = (await ipcRenderer.invoke("documents-provider", {
+    const { sessions, unreadable, ownerless } = (await ipcRenderer.invoke("documents-provider", {
       command: "get-workspace-collaboration-sessions",
       payload: { paths: uniquePaths },
-    })) as DocumentCollaborationSession[];
+    })) as WorkspaceCollaborationListing;
     if (refreshGeneration !== workspaceRefreshGeneration) {
       return;
+    }
+    if (!_.isEqual(unreadableFiles.value, unreadable)) {
+      unreadableFiles.value = unreadable;
+    }
+    if (!_.isEqual(ownerlessFiles.value, ownerless)) {
+      ownerlessFiles.value = ownerless;
     }
     const returned = new Set(sessions.map((session) => session.documentPath));
 
     for (const path of uniquePaths) {
-      if (!returned.has(path)) {
-        delete sessionsByDocumentPath[path];
-        delete cardsByDocumentPath[path];
+      if (!returned.has(path) && ownsPath(path, sentAt)) {
+        dropSession(path);
       }
     }
     for (const session of sessions) {
+      if (!ownsPath(session.documentPath, sentAt)) {
+        continue;
+      }
       // An equal session stays the same object: each editor of the document
       // watches it, and a new object is a change to each of them.
       if (_.isEqual(sessionsByDocumentPath[session.documentPath], session)) {
         continue;
       }
-      sessionsByDocumentPath[session.documentPath] = session;
-      updateCardsForSession(session.documentPath, session);
+      setSession(session.documentPath, session);
     }
+  }
+
+  /**
+   * Move a file of collaboration state out of the way of its document, then
+   * read the workspace again. The file is one that could not be read or one
+   * whose document has no file. Answers where the file is.
+   */
+  async function setAsideCollaborationFile(file: string): Promise<string> {
+    const aside = (await ipcRenderer.invoke("documents-provider", {
+      command: "set-aside-collaboration-sidecar",
+      payload: { file },
+    })) as string;
+    await refreshWorkspaceSessions(workspaceDocumentPaths.value);
+    return aside;
   }
 
   function getSession(documentPath: string): DocumentCollaborationSession | undefined {
     return sessionsByDocumentPath[documentPath];
   }
 
+  /** The annotation cards of a document: one array for one session. */
   function getCards(documentPath: string): AnnotationCardView[] {
-    const cached = cardsByDocumentPath[documentPath];
-    if (cached !== undefined) {
-      return cached;
-    }
     const session = sessionsByDocumentPath[documentPath];
-    if (session !== undefined) {
-      const computedCards = buildAnnotationCards(session.annotations.items, session.workingText);
-      cardsByDocumentPath[documentPath] = computedCards;
-      return computedCards;
+    if (session === undefined) {
+      return [];
     }
-    return [];
+    const built = cardsBySession.get(session);
+    if (built !== undefined) {
+      return built;
+    }
+    const cards = buildAnnotationCards(session.annotations.items, session.workingText);
+    cardsBySession.set(session, cards);
+    return cards;
+  }
+
+  /** The review rows of a document in the Annotations view: one array for one session. */
+  function getSuggestionRows(documentPath: string): SuggestionNavigatorView[] {
+    const session = sessionsByDocumentPath[documentPath];
+    if (session?.review === undefined) {
+      return [];
+    }
+    const built = suggestionRowsBySession.get(session);
+    if (built !== undefined) {
+      return built;
+    }
+    const rows = buildSuggestionNavigatorRows(session.review);
+    suggestionRowsBySession.set(session, rows);
+    return rows;
   }
 
   /** Mark one annotation active in editor locator rendering, or clear it. */
@@ -331,6 +444,23 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     return {
       path: documentPath,
       annotationId,
+      expectedAnnotationGeneration: session.annotations.generation,
+    };
+  }
+
+  /**
+   * The fence of a bulk annotation move: which document, and the generation
+   * of the panel snapshot that asked for the batch. No annotationId — the
+   * batch names its targets itself (acted-open for resolve, resolved for
+   * cleanup), so the fence is the only thing that can go stale.
+   */
+  function bulkAnnotationFence(documentPath: string): BulkAnnotationIpcInput {
+    const session = sessionsByDocumentPath[documentPath];
+    if (session === undefined) {
+      throw new Error(`No collaboration session is cached for ${documentPath}`);
+    }
+    return {
+      path: documentPath,
       expectedAnnotationGeneration: session.annotations.generation,
     };
   }
@@ -399,6 +529,70 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       from,
       to,
     });
+  }
+
+  /**
+   * Resolve EVERY open annotation of one document in one batch — acted or
+   * not. The bulk move the panel's Resolve all control sends.
+   */
+  async function resolveOpenAnnotations(
+    documentPath: string,
+  ): Promise<{ resolved: TextAnnotation[] } | AnnotationFailure> {
+    const result = await withFreshAnnotationRetry<{ resolved: TextAnnotation[] }>(
+      documentPath,
+      async () =>
+        ipcRenderer.invoke("documents:resolve-acted-annotations", {
+          ...bulkAnnotationFence(documentPath),
+          scope: "open",
+        }),
+    );
+    await refreshSession(documentPath);
+    return result;
+  }
+
+  /** Delete every resolved annotation of one document, in one batch. */
+  async function deleteResolvedAnnotations(
+    documentPath: string,
+  ): Promise<{ deleted: TextAnnotation[] } | AnnotationFailure> {
+    const result = await withFreshAnnotationRetry<{ deleted: TextAnnotation[] }>(
+      documentPath,
+      async () =>
+        ipcRenderer.invoke(
+          "documents:clear-resolved-annotations",
+          bulkAnnotationFence(documentPath),
+        ),
+    );
+    await refreshSession(documentPath);
+    return result;
+  }
+
+  /**
+   * Workspace-wide Resolve all: every document of the panel's projection
+   * that still has open threads, one batch each. A document whose batch the
+   * main process rejects does not stop the others; its entry carries the
+   * rejection, so the caller shows each refusal with its document.
+   */
+  async function resolveOpenAnnotationsWorkspace(): Promise<
+    Array<WorkspaceBulkOutcome<{ resolved: TextAnnotation[] } | AnnotationFailure>>
+  > {
+    const targets = workspaceSessions.value
+      .filter((session) =>
+        session.annotations.items.some((annotation) => annotation.state === "open"),
+      )
+      .map((session) => session.documentPath);
+    const outcomes: Array<
+      WorkspaceBulkOutcome<{ resolved: TextAnnotation[] } | AnnotationFailure>
+    > = [];
+    for (const path of targets) {
+      outcomes.push(
+        await resolveOpenAnnotations(path).then(
+          (result) => ({ path, result }),
+          (rejection: Error) => ({ path, rejection }),
+        ),
+      );
+    }
+    await refreshWorkspaceSessions(workspaceDocumentPaths.value);
+    return outcomes;
   }
 
   /**
@@ -499,7 +693,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   }
 
   async function acceptAllWorkspaceReviews(): Promise<
-    Array<{ path: string; result: AcceptAllChunksResponse | ReviewFailure }>
+    Array<WorkspaceBulkOutcome<AcceptAllChunksResponse | ReviewFailure>>
   > {
     const targets = workspaceSessions.value
       .filter(
@@ -509,19 +703,23 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
           session.review.suggestions.length > 0,
       )
       .map((session) => session.documentPath);
-    const results: Array<{ path: string; result: AcceptAllChunksResponse | ReviewFailure }> = [];
+    const results: Array<WorkspaceBulkOutcome<AcceptAllChunksResponse | ReviewFailure>> = [];
     for (const path of targets) {
-      const result = await withFreshReviewRetry(
-        path,
-        async () =>
-          (await ipcRenderer.invoke("documents:accept-all-workspace-review-chunks", {
-            path,
-            ...reviewFence(path),
-          })) as AcceptAllChunksResponse | ReviewFailure,
+      results.push(
+        await withFreshReviewRetry(
+          path,
+          async () =>
+            (await ipcRenderer.invoke("documents:accept-all-workspace-review-chunks", {
+              path,
+              ...reviewFence(path),
+            })) as AcceptAllChunksResponse | ReviewFailure,
+        ).then(
+          (result) => ({ path, result }),
+          (rejection: Error) => ({ path, rejection }),
+        ),
       );
-      results.push({ path, result });
     }
-    const failures = results.filter(({ result }) => !result.ok);
+    const failures = results.filter((entry) => "result" in entry && !entry.result.ok);
     if (failures.length > 0) {
       reportError("[documentCollaborationStore] Accept all failed", failures);
     }
@@ -599,16 +797,19 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
 
   return {
     sessionsByDocumentPath,
-    cardsByDocumentPath,
     workspaceDocumentPaths,
     workspaceSessions,
     workspaceUnresolvedCount,
+    unreadableFiles,
+    ownerlessFiles,
+    setAsideCollaborationFile,
     selectedAnnotationId,
     showResolved,
     ensureSession,
     refreshWorkspaceSessions,
     getSession,
     getCards,
+    getSuggestionRows,
     selectAnnotation,
     toggleShowResolved,
     addAnnotationMessage,
@@ -616,6 +817,9 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     reopenAnnotation,
     deleteAnnotation,
     reattachAnnotation,
+    resolveOpenAnnotations,
+    deleteResolvedAnnotations,
+    resolveOpenAnnotationsWorkspace,
     decideReviewChunk,
     commentReviewChunk,
     acceptAllReviewChunks,

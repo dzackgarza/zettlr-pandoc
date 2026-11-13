@@ -7,58 +7,40 @@
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     This command attempts to open a PDF using Zotero or
- *                  the provided BibTex attachments, if applicable.
- *                  It will fall back to any attachment, in case there
- *                  is no PDF available (such as Blogposts, which only
- *                  provide snapshots).
+ * Description:     This command opens the first attachment file that the
+ *                  library names for a cite key and that is on disk, or
+ *                  else the first PDF that Zotero has for the key. When
+ *                  neither gives a file, it throws with the cause.
  *
  * END HEADER
  */
 
 import { trans } from "@common/i18n-main";
-import {
-  getBibliographyForDescriptor as getBibliography,
-  resolveProjectForDescriptor,
-} from "@common/util/get-bibliography-for-descriptor";
-import { showNativeNotification } from "@common/util/show-notification";
-import type { CitationDatabase } from "@dts/common/citeproc";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
-import type { MDFileDescriptor, ProjectSettings } from "@dts/common/fsal";
-import { shell } from "electron";
+import { hasPDFExt } from "@common/util/file-extention-checks";
+import type CiteprocProvider from "@providers/citeproc";
+import type DocumentManager from "@providers/documents";
+import type FSAL from "@providers/fsal";
+import type LogProvider from "@providers/log";
 import ky from "ky";
-import path from "path";
-import type { AppServiceContainer } from "source/app/app-service-container";
+import { documentBibliography } from "source/app/util/document-bibliographies";
+import { openPath } from "source/app/util/open-path";
 import ZettlrCommand from "./zettlr-command";
 
-/**
- * Describes an error returned from the JSON RPC API from BetterBibTex.
- */
-class JSONRPCAPIError extends Error {}
-
-/**
- * Describes an error when the JSON RPC API returns an empty result set.
- */
-class NoResultsError extends Error {}
-
-// This function overwrites the getBibliographyForDescriptor function to ensure
-// the library is always absolute. We have to do it this ridiculously since the
-// function is called in both main and renderer processes, and we still have the
-// issue that path-browserify is entirely unusable.
-function getBibliographyForDescriptor(
-  descriptor: MDFileDescriptor,
-  project: ProjectSettings | null,
-): CitationDatabase {
-  const library = getBibliography(descriptor, project);
-  const resolveLibrary = (filename: string): string =>
-    filename !== CITEPROC_MAIN_DB && !path.isAbsolute(filename)
-      ? path.resolve(descriptor.dir, filename)
-      : filename;
-  return Array.isArray(library) ? library.map(resolveLibrary) : resolveLibrary(library);
+/** The services that the command uses. */
+export interface OpenAttachmentServices {
+  log: Pick<LogProvider, "warning">;
+  documents: Pick<DocumentManager, "readDocumentText">;
+  fsal: Pick<FSAL, "getAnyDirectoryDescriptor">;
+  citeproc: Pick<
+    CiteprocProvider,
+    "loadDatabases" | "hasBibTexAttachments" | "getBibTexAttachments"
+  >;
+  /** The origin of the Zotero local server. */
+  config: { get: () => { zotero: { localServer: string } } };
 }
 
-export default class OpenAttachment extends ZettlrCommand {
-  constructor(app: AppServiceContainer) {
+export default class OpenAttachment extends ZettlrCommand<OpenAttachmentServices> {
+  constructor(app: OpenAttachmentServices) {
     super(app, "open-attachment");
   }
 
@@ -73,130 +55,113 @@ export default class OpenAttachment extends ZettlrCommand {
       return false;
     }
 
-    const descriptor = await this._app.fsal.getDescriptorFor(arg.filePath);
-    if (descriptor === undefined || descriptor.type !== "file") {
-      return false;
-    }
-    const project = await resolveProjectForDescriptor(
-      descriptor,
-      new Map(),
-      async (dirPath) => await this._app.fsal.getAnyDirectoryDescriptor(dirPath),
-    );
-    const library = getBibliographyForDescriptor(descriptor, project);
+    // The libraries of the document, as the editor that shows the citation
+    // has them (#198).
+    const text = await this._app.documents.readDocumentText(arg.filePath);
+    const { database: library } = await documentBibliography(this._app.fsal, arg.filePath, text);
+    await this._app.citeproc.loadDatabases(library);
 
-    let appearsToHaveNoAttachments = false;
+    let libraryNamesNoFile = false;
 
     // First let's see if we've got BibTex attachments, so we can
     // circumvent the Zotero thing directly
     if (this._app.citeproc.hasBibTexAttachments(library)) {
       const attachments = this._app.citeproc.getBibTexAttachments(library, arg.citekey);
-      if (attachments === false || attachments.length === 0) {
-        appearsToHaveNoAttachments = true;
+      if (attachments === false) {
+        libraryNamesNoFile = true;
+      } else if (attachments.length === 0) {
+        // The library names files for this key, and none is on disk. Zotero
+        // knows where its files are, so the query below is the next source.
+        this._app.log.warning(
+          `No attachment file that the library names for ${arg.citekey} is on disk. Asking Zotero.`,
+        );
       } else {
-        const potentialError = await shell.openPath(attachments[0]);
-        if (potentialError !== "") {
-          this._app.log.warning("Error during opening of BibTex attachment", potentialError);
-          return false;
-        }
+        // A refusal names the file; the dispatcher shows it.
+        await openPath(attachments[0]);
         return true;
       }
     }
 
-    // Thanks to @retorquere, we can query the better bibtex JSON RPC
-    // api to retrieve a full list of all attachments.
-    try {
-      // NOTE: We have replaced localhost with 127.0.0.1 since at some point
-      // either got or Electron stopped resolving localhost there, resulting in
-      // ECONNREFUSED errors. I have no idea how that happened, but it works now.
-      const res = await ky
-        .post("http://127.0.0.1:23119/better-bibtex/json-rpc", {
-          json: {
-            jsonrpc: "2.0",
-            method: "item.attachments",
-            // NOTE: The second parameter means that we wish to search across all
-            // libraries (not just the user library, but all groups, too). This
-            // allows Zettlr to retrieve items that have been exported from a
-            // group library, too.
-            // See BBT docs: https://retorque.re/zotero-better-bibtex/exporting/json-rpc/index.html
-            // See issue #5647
-            params: [arg.citekey, "*"],
-          },
-        })
-        .json();
+    // The library names files for the key, but none is on disk, or the
+    // library names none: Zotero knows the PDFs of its items.
+    const pdf = await this.zoteroPdf(arg.citekey).catch((rejection: Error) => {
+      const cause = libraryNamesNoFile
+        ? trans("the library names no file for it, and %s", rejection.message)
+        : rejection.message;
+      throw new Error(trans("Could not open an attachment of %s: %s.", arg.citekey, cause));
+    });
 
-      if (typeof res !== "object") {
-        throw new JSONRPCAPIError(`Result object had a wrong type: ${typeof res}`);
-      }
-      if (res === null) {
-        throw new JSONRPCAPIError("Result was null");
-      }
+    // A refusal names the file; the dispatcher shows it.
+    await openPath(pdf);
+    return true;
+  }
 
-      if ("error" in res) {
-        const { message } = res.error as { message: string; code: number };
-        throw new JSONRPCAPIError(message);
-      }
+  /**
+   * The first PDF that Zotero has for a cite key, through the JSON-RPC API of
+   * Better BibTeX. It rejects with the cause when Zotero does not answer,
+   * answers an error, or has no PDF for the key.
+   *
+   * @param   {string}  citekey  The cite key
+   *
+   * @return  {Promise<string>}  The path of the PDF
+   */
+  private async zoteroPdf(citekey: string): Promise<string> {
+    // The JSON-RPC API of Better BibTeX, on Zotero's local server.
+    const endpoint = new URL("/better-bibtex/json-rpc", this._app.config.get().zotero.localServer);
+    const res: unknown = await ky
+      .post(endpoint, {
+        json: {
+          jsonrpc: "2.0",
+          method: "item.attachments",
+          // NOTE: The second parameter means that we wish to search across all
+          // libraries (not just the user library, but all groups, too). This
+          // allows Zettlr to retrieve items that have been exported from a
+          // group library, too.
+          // See BBT docs: https://retorque.re/zotero-better-bibtex/exporting/json-rpc/index.html
+          // See issue #5647
+          params: [citekey, "*"],
+        },
+      })
+      .json()
+      .catch((err: Error) => {
+        const reason = err.cause instanceof Error ? err.cause.message : err.message;
+        throw new Error(trans("Zotero did not answer at %s: %s", endpoint.href, reason));
+      });
 
-      if (
-        !("result" in res) ||
-        !Array.isArray(res.result) ||
-        !res.result.every((r) => "path" in r && "open" in r)
-      ) {
-        throw new JSONRPCAPIError(
-          "Result was malformed: `result` was either not present or had an unexpected structure.",
-        );
-      }
-
-      const result = res.result as Array<{ open: string; path: string }>;
-
-      // First, filter by PDF files, then map to the path strings.
-      const pdfAttachments = result
-        .filter((elem) => elem.path.toLowerCase().endsWith(".pdf"))
-        .map((elem) => elem.path);
-
-      if (pdfAttachments.length === 0) {
-        throw new NoResultsError("Citation key does not have any PDF attachments.");
-      } else if (pdfAttachments.length > 1) {
-        // Warn the user so that they can see in the logs what's going on if the
-        // attachment opener consistently opens the wrong one.
-        this._app.log.warning(
-          "There was more than one PDF attachment. Opening only the first one.",
-          pdfAttachments,
-        );
-      }
-
-      const potentialError = await shell.openPath(pdfAttachments[0]);
-      if (potentialError !== "") {
-        throw new Error(potentialError);
-      }
-      return true;
-    } catch (err: unknown) {
-      if (appearsToHaveNoAttachments || err instanceof NoResultsError) {
-        // Citekey appears not to have any attachments
-        const msg = trans(
-          "The reference with key %s does not appear to have attachments.",
-          arg.citekey,
-        );
-        this._app.log.info(msg);
-        showNativeNotification(msg);
-      } else if (err instanceof JSONRPCAPIError) {
-        // The BBT JSON RPC API has reported an error or gave us malformed output
-        this._app.log.error(`Error fetching attachments for ${arg.citekey}: ${err.message}`, err);
-        showNativeNotification(
-          trans(
-            "Could not open attachment for key %s. Check the logs for more information.",
-            arg.citekey,
-          ),
-        );
-      } else if (err instanceof Error) {
-        // This could be an error in the fetching stage
-        this._app.log.error(`Could not open attachment: ${err.message}`, err);
-        showNativeNotification(trans("Could not open attachment. Is Zotero running?"));
-      } else {
-        // Something else went wrong
-        this._app.log.error(`Unknown error when opening attachment for ${arg.citekey}`);
-        showNativeNotification(trans("Could not open attachment. Is Zotero running?"));
-      }
-      return false;
+    if (typeof res !== "object" || res === null) {
+      throw new Error(trans("Better BibTeX gave no answer object"));
     }
+    if ("error" in res) {
+      const error = res.error;
+      const message =
+        typeof error === "object" && error !== null && "message" in error
+          ? String(error.message)
+          : JSON.stringify(error);
+      throw new Error(trans("Zotero answered: %s", message));
+    }
+    if (
+      !("result" in res) ||
+      !Array.isArray(res.result) ||
+      !res.result.every(
+        (r: unknown) =>
+          typeof r === "object" && r !== null && "path" in r && typeof r.path === "string",
+      )
+    ) {
+      throw new Error(trans("Better BibTeX gave an answer without a list of attachments"));
+    }
+
+    const result = res.result as Array<{ path: string }>;
+    const pdfAttachments = result.filter((elem) => hasPDFExt(elem.path)).map((elem) => elem.path);
+    if (pdfAttachments.length === 0) {
+      throw new Error(trans("Zotero has no PDF for it"));
+    }
+    if (pdfAttachments.length > 1) {
+      // The log shows which one opens when the opener opens the wrong one.
+      this._app.log.warning(
+        "There was more than one PDF attachment. Opening only the first one.",
+        pdfAttachments,
+      );
+    }
+    return pdfAttachments[0];
   }
 }

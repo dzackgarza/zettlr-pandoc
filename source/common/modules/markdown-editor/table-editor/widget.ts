@@ -19,19 +19,22 @@ import type { Rect } from "@codemirror/view";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
+import { WIDGET_LINE_STYLE_RESET_CLASS } from "@dzack/pandoc-editor/renderers/base-renderer";
+import {
+  incrementalNodeDecorations,
+  type SourceRange,
+} from "@dzack/pandoc-editor/util/incremental-node-decorations";
+import { previewSuppressionChanged } from "@dzack/pandoc-editor/util/range-in-preview-suppression";
 import type { SyntaxNode } from "@lezer/common";
 import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
 import type { Table, TableCell, TableRow } from "../../markdown-utils/markdown-ast";
 import { parseTableNode } from "../../markdown-utils/markdown-ast/parse-table-node";
 import { nodeToHTML } from "../../markdown-utils/markdown-to-html";
 import { getReviewChunks, reviewSuggestionsInRange } from "../plugins/review-chunks";
-import { WIDGET_LINE_STYLE_RESET_CLASS } from "../renderers/base-renderer";
 import { type CitationRequest, requestRenderedCitation } from "../renderers/render-citations";
 import { configField } from "../util/configuration";
 import { documentText } from "../util/document-text";
-import { incrementalNodeDecorations, type SourceRange } from "../util/incremental-node-decorations";
 import openMarkdownLink from "../util/open-markdown-link";
-import { previewSuppressionChanged } from "../util/range-in-preview-suppression";
 import { getCoordinatesForRange } from "./commands/util";
 import { displayTableContextMenu } from "./context-menu";
 import { createSubviewForCell, hiddenSpanField } from "./subview";

@@ -85,6 +85,22 @@ describe("editor-local reference numbering", function () {
     assert.equal(numbers.get("fig:standalone-b"), "2.2.1");
   });
 
+  it("numbers a document of a Project inside another Project in the inner Project", function () {
+    const numbers = referenceDisplayNumbers(
+      resolutions(
+        definition("fig:outer", "fig", "/work/book/chapter-1.md", 10),
+        definition("fig:inner", "fig", "/work/book/part2/ch.md", 10),
+      ),
+      [
+        { rootPath: "/work/book", files: ["chapter-1.md"] },
+        { rootPath: "/work/book/part2", files: ["ch.md"] },
+      ],
+    );
+
+    assert.equal(numbers.get("fig:outer"), "1.1.1");
+    assert.equal(numbers.get("fig:inner"), "2.1.1");
+  });
+
   it("does not assign a display number to ambiguous duplicate keys", function () {
     const duplicate: Resolution = {
       status: "duplicate",

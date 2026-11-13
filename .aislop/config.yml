@@ -20,4 +20,4 @@ rules:
   # this one print/logging rule is an owner-level policy decision, categorically
   # different from an agent suppressing findings to dodge a gate. Rules that
   # catch genuine slop are left ON.
-  ai-slop/python-print-debug: 'off'
+  ai-slop/python-print-debug: "off"

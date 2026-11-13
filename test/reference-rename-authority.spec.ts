@@ -26,6 +26,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import DocumentManager from "source/app/service-providers/documents";
+import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import LogProvider from "source/app/service-providers/log";
 import ReferenceProvider from "source/app/service-providers/references";
 import type { ReferenceRenamePreview } from "source/common/pandoc-util/compute-reference-edits";
@@ -74,6 +75,7 @@ function descriptorFor(filePath: string): MDFileDescriptor {
     creationtime: stat.birthtimeMs,
     linefeed: "\n",
     firstHeading: null,
+    firstSentence: null,
     yamlTitle: undefined,
     aliases: [],
     frontmatter: null,
@@ -130,8 +132,13 @@ async function createScratchBoundary(): Promise<ScratchBoundary> {
       getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
       loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, "utf-8"),
       getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
+      // The folders of the documents, as the FSAL reads them from disk.
+      getAnyDirectoryDescriptor: async (dirPath: string) => await parseDirectory(dirPath),
       getFilesystemMetadata: async (filePath: string) => ({ modtime: statSync(filePath).mtimeMs }),
-      readDirectoryRecursively: async (_workspacePath: string) => [definitionPath, occurrencePath],
+      readDirectoryRecursively: async (_workspacePath: string) => ({
+        paths: [definitionPath, occurrencePath],
+        notListed: [],
+      }),
       testAccess: async (_filePath: string) => true,
       writeTextFile: async (filePath: string, content: string) => {
         writeFileSync(filePath, content, "utf-8");
@@ -150,7 +157,21 @@ async function createScratchBoundary(): Promise<ScratchBoundary> {
     windows: {
       askSaveChanges: async (_detail?: string) => ({ response: 0, checkboxChecked: false }),
       getFirstMainWindow: () => undefined,
+      // The spec has no main window, so no window gets a message.
+      tellMainWindows: (
+        _windowIds: readonly string[],
+        _channel: string,
+        ..._args: readonly unknown[]
+      ) => {},
       getMainWindowKey: (_window: unknown) => "",
+      // No operation of this spec asks the author for a file.
+      saveFile: async (_filePath: string): Promise<string | undefined> => {
+        throw new Error("This spec shows no save dialog");
+      },
+      // No operation of this spec opens a file with the desktop.
+      showErrorMessage: (_title: string, _message: string, _contents?: string) => {
+        throw new Error("This spec opens no file with the desktop");
+      },
     },
     references: {
       reportAuthorityBuffer: (filePath: string, immediate?: boolean) => {

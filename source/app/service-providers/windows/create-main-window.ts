@@ -20,6 +20,7 @@ import type DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
 import { BrowserWindow, type BrowserWindowConstructorOptions, dialog } from "electron";
 import attachLogger from "./attach-logger";
+import recoverRenderer from "./recover-renderer";
 import setWindowChrome from "./set-window-chrome";
 import type { WindowPosition } from "./types";
 
@@ -74,6 +75,7 @@ export default function createMainWindow(
 
   // Implement main process logging
   attachLogger(logger, window, `Main Window (${windowId})`);
+  recoverRenderer(logger, window);
 
   // (Windows/Linux only) Listen to browser navigation events, and go back/
   // forward in the document manager's history accordingly. This is not

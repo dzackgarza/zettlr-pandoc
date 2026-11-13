@@ -18,18 +18,14 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-main";
-import type {
-  EditorCommandName,
-  InsertTablePayload,
-  ShortcutName,
-} from "@dts/common/shortcut-names";
-import type { BaseWindow, BrowserWindow, MenuItemConstructorOptions } from "electron";
 import {
-  defaultKeybindings,
-  type EditorShortcutName,
-} from "source/common/modules/markdown-editor/keymaps/shortcuts";
-import { cmShortcutToElectron, getDefaultKeybinding } from "source/common/util/shortcuts";
+  type EditorCommandMenuItem,
+  editorCommandMenuItems,
+  tableMenu,
+} from "@common/commands/editing-menu-items";
+import { trans } from "@common/i18n-main";
+import type { InsertTablePayload, ShortcutName } from "@dts/common/shortcut-names";
+import type { BaseWindow, BrowserWindow, MenuItemConstructorOptions } from "electron";
 import type { MenuCommands, MenuConfig } from "./menu-dependencies";
 
 /** Electron types the focused window as possibly undefined; at runtime the provider also passes null. */
@@ -61,34 +57,29 @@ export function sendShortcut(
   }
 }
 
-/** The Electron accelerator of an editor shortcut's default binding, if it has one. */
-function editorAccelerator(name: EditorShortcutName): string | undefined {
-  return cmShortcutToElectron(getDefaultKeybinding(name, defaultKeybindings));
-}
-
-/** One Insert or Format item: its click sends the editor command it names. */
-function editorCommandItem(
-  id: string,
-  label: string,
-  command: EditorCommandName,
-  shortcut?: EditorShortcutName,
-): MenuItemConstructorOptions {
+/**
+ * One Insert or Format item: its click sends the editor command it names. Its
+ * key is the key of the registered command of the item (`menuItems`).
+ */
+function editorCommandItem({
+  id,
+  label,
+  command,
+}: EditorCommandMenuItem): MenuItemConstructorOptions {
   return {
     id,
     label,
-    accelerator: shortcut === undefined ? undefined : editorAccelerator(shortcut),
     click: (_item, focusedWindow) => {
       sendShortcut(focusedWindow, command);
     },
   };
 }
 
-/** The "Command launcher…" item of the View menu: the window-level Ctrl+P. */
-export function commandLauncherItem(accelerator: string): MenuItemConstructorOptions {
+/** The "Command launcher…" item of the View menu. */
+export function commandLauncherItem(): MenuItemConstructorOptions {
   return {
     id: "menu.command_launcher",
     label: trans("Command launcher…"),
-    accelerator,
     click: (_item, focusedWindow) => {
       sendShortcut(focusedWindow, "open-command-launcher");
     },
@@ -96,11 +87,10 @@ export function commandLauncherItem(accelerator: string): MenuItemConstructorOpt
 }
 
 /** The "Go to file…" item of the View menu: opens the launcher's workspace-file view. */
-export function fileLauncherItem(accelerator: string): MenuItemConstructorOptions {
+export function fileLauncherItem(): MenuItemConstructorOptions {
   return {
     id: "menu.file_launcher",
     label: trans("Go to file…"),
-    accelerator,
     click: (_item, focusedWindow) => {
       sendShortcut(focusedWindow, "open-file-launcher");
     },
@@ -183,41 +173,30 @@ export function authoringSourceItems(config: MenuConfig): MenuItemConstructorOpt
   }));
 }
 
-const TABLE_SIZES = [2, 3, 4] as const;
-
 /** The Insert menu: links, images, tables, footnotes, comments, Pandoc blocks, task lists. */
 export function insertMenu(): MenuItemConstructorOptions {
-  const tableSizes: MenuItemConstructorOptions[] = [];
-  for (const rows of TABLE_SIZES) {
-    for (const cols of TABLE_SIZES) {
-      tableSizes.push({
-        id: `menu.insert_table_${rows}x${cols}`,
-        label: trans("%s rows × %s columns", rows, cols),
-        click: (_item, focusedWindow) => {
-          sendShortcut(focusedWindow, "insert-table", { rows, cols });
-        },
-      });
-    }
-  }
+  const items = editorCommandMenuItems(trans);
+  const table = tableMenu(trans);
 
   return {
     id: "insert-menu",
     label: trans("Insert"),
     submenu: [
-      editorCommandItem("menu.insert_link", trans("Link"), "markdownLink", "md-insert-link"),
-      editorCommandItem("menu.insert_image", trans("Image"), "markdownImage", "md-insert-image"),
+      editorCommandItem(items.link),
+      editorCommandItem(items.image),
       {
-        id: "menu.insert_table",
-        label: trans("Table"),
-        submenu: tableSizes,
+        id: table.id,
+        label: table.label,
+        submenu: table.sizes.map(({ id, label, rows, cols }) => ({
+          id,
+          label,
+          click: (_item, focusedWindow) => {
+            sendShortcut(focusedWindow, "insert-table", { rows, cols });
+          },
+        })),
       },
-      editorCommandItem(
-        "menu.insert_footnote",
-        trans("Footnote"),
-        "insertFootnote",
-        "md-insert-footnote",
-      ),
-      editorCommandItem("menu.insert_comment", trans("Comment"), "markdownComment", "md-comment"),
+      editorCommandItem(items.footnote),
+      editorCommandItem(items.comment),
       { type: "separator" },
       {
         id: "menu.insert_pandoc_div",
@@ -234,24 +213,20 @@ export function insertMenu(): MenuItemConstructorOptions {
         },
       },
       { type: "separator" },
-      editorCommandItem(
-        "menu.insert_task_list",
-        trans("Task list"),
-        "markdownMakeTaskList",
-        "md-task-list",
-      ),
+      editorCommandItem(items.taskList),
     ],
   };
 }
 
 /** The Format menu: headings, inline marks, lists and block quotes. */
 export function formatMenu(): MenuItemConstructorOptions {
+  const items = editorCommandMenuItems(trans);
   const headings: MenuItemConstructorOptions[] = ([1, 2, 3, 4, 5, 6] as const).map((level) =>
-    editorCommandItem(
-      `menu.format_heading_${level}`,
-      trans("Heading %s", level),
-      `markdownHeading${level}`,
-    ),
+    editorCommandItem({
+      id: `menu.format_heading_${level}`,
+      label: trans("Heading %s", level),
+      command: `markdownHeading${level}`,
+    }),
   );
 
   return {
@@ -260,18 +235,14 @@ export function formatMenu(): MenuItemConstructorOptions {
     submenu: [
       ...headings,
       { type: "separator" },
-      editorCommandItem("menu.format_bold", trans("Bold"), "markdownBold", "md-bold"),
-      editorCommandItem("menu.format_italic", trans("Italic"), "markdownItalic", "md-italic"),
-      editorCommandItem("menu.format_code", trans("Code"), "markdownCode"),
-      editorCommandItem(
-        "menu.format_strikethrough",
-        trans("Strikethrough"),
-        "markdownStrikethrough",
-      ),
+      editorCommandItem(items.bold),
+      editorCommandItem(items.italic),
+      editorCommandItem(items.code),
+      editorCommandItem(items.strikethrough),
       { type: "separator" },
-      editorCommandItem("menu.format_bullet_list", trans("Bullet list"), "markdownBulletList"),
-      editorCommandItem("menu.format_ordered_list", trans("Numbered list"), "markdownOrderedList"),
-      editorCommandItem("menu.format_blockquote", trans("Block quote"), "markdownBlockquote"),
+      editorCommandItem(items.bulletList),
+      editorCommandItem(items.orderedList),
+      editorCommandItem(items.blockquote),
       { type: "separator" },
       {
         id: "menu.fix_all_document",

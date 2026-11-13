@@ -11,19 +11,16 @@
  * END HEADER
  */
 
-import { lstatSync } from "fs";
+import { statPath } from "./examine-path";
 
 /**
- * Checks if a given path is a valid directory
+ * Checks if a given path is a directory. A symbolic link is not a directory.
  * @param  {string}  p The path to check
  *
- * @return {boolean}   True, if p is valid and also a directory
+ * @return {boolean}   True if a directory is at the path, false if something
+ *                     else or nothing is there
+ * @throws {Error}     If the filesystem could not examine the path
  */
 export default function isDir(p: string): boolean {
-  try {
-    let s = lstatSync(p);
-    return s.isDirectory();
-  } catch (err) {
-    return false;
-  }
+  return statPath(p, false)?.isDirectory() === true;
 }

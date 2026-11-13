@@ -22,15 +22,12 @@
 import "./headless-electron-harness.cjs";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
 import path from "path";
-import CiteprocProvider, {
-  type CiteprocConfig,
-  type CiteprocErrorDisplay,
-} from "source/app/service-providers/citeproc";
+import CiteprocProvider, { type CiteprocConfig } from "source/app/service-providers/citeproc";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import LogProvider from "source/app/service-providers/log";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   __resetCitationRenderMemoForTests,
   renderCitations,
@@ -51,6 +48,7 @@ import {
   installCitationIpcFromCallback,
   settleCitationWidgets,
 } from "./citation-widget-test-helper";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
 
@@ -76,6 +74,7 @@ describe("Quarto editor citation resolution and startup race", function () {
     yamlTitle: undefined,
     aliases: [],
     firstHeading: null,
+    firstSentence: null,
     frontmatter: null,
     bom: "",
     linefeed: "\n",
@@ -96,9 +95,12 @@ describe("Quarto editor citation resolution and startup race", function () {
       on: () => {},
       get: () => ({ appLang: "en-US", export: { cslLibrary: "", cslStyle: CHICAGO_STYLE } }),
     };
-    const windows: CiteprocErrorDisplay = { showErrorMessage: () => {} };
-
-    citeproc = new CiteprocProvider(log, config, windows);
+    citeproc = new CiteprocProvider(
+      log,
+      config,
+      path.resolve("static", "csl-locales"),
+      DATABASE_LOADER_THREAD,
+    );
     await citeproc.boot();
     await citeproc.synchronizeDatabases([
       path.join(ROOT, "references.bib"),

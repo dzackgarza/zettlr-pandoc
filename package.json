@@ -33,12 +33,12 @@
     "update:csl": "node scripts/update-csl.mjs",
     "update:citation": "node scripts/update-citation.mjs",
     "coverage": "nyc --reporter=lcov mocha --check-coverage",
-    "test": "mocha --inline-diffs --require ./test/setup.js",
+    "test": "scripts/run-unit-tests.sh --inline-diffs --require ./test/setup.js",
     "test-gui": "cross-env NODE_ENV=develop node scripts/test-gui/index.mjs",
     "lint:po": "node scripts/lint-po.mjs",
     "shortcut:install": "node scripts/develop-shortcut.mjs install",
     "shortcut:uninstall": "node scripts/develop-shortcut.mjs uninstall",
-    "typecheck": "vue-tsc --noEmit && bun run --cwd packages/tikz-workbench typecheck",
+    "typecheck": "vue-tsc --noEmit",
     "build:pandoc-parser": "node vendor/lezer-markdown-pandoc/build.js",
     "generate:pandoc-reference-data": "node scripts/generate-pandoc-parser-reference-data.mjs",
     "check:pandoc-reference-data": "node scripts/generate-pandoc-parser-reference-data.mjs --check",
@@ -117,7 +117,6 @@
     "d3": "^7.9.0",
     "diff": "^9.0.0",
     "dompurify": "^3.4.16",
-    "fast-levenshtein": "^3.0.0",
     "fzf": "^0.5.2",
     "gemoji": "^8.1.0",
     "gettext-parser": "^9.1.1",
@@ -145,7 +144,6 @@
     "sanitize-filename": "^1.6.4",
     "semver": "^7.8.5",
     "shell-quote": "^1.11.0",
-    "tikz-workbench": "workspace:*",
     "tippy.js": "^6.3.7",
     "underscore": "^1.13.8",
     "unified": "^11.0.5",
@@ -155,7 +153,11 @@
     "w3c-keyname": "^2.2.8",
     "write-file-atomic": "7",
     "yaml": "^2.9.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@dzack/pandoc-editor": "workspace:*",
+    "@dzack/tikz-render": "workspace:*",
+    "entities": "^8.0.0",
+    "@dzack/external-process": "workspace:*"
   },
   "optionalDependencies": {
     "fsevents": "^2.3.3"
@@ -180,7 +182,6 @@
     "@marijn/buildtool": "^0.1.6",
     "@types/archiver": "^8.0.0",
     "@types/d3": "^7.4.3",
-    "@types/fast-levenshtein": "^0.0.4",
     "@types/gettext-parser": "^9.0.0",
     "@types/luxon": "^3.7.6",
     "@types/md5": "^2.3.6",
@@ -227,7 +228,8 @@
     "@tikz-editor/lang-tikz@0.5.1": "patches/@tikz-editor%2Flang-tikz@0.5.1.patch",
     "@tikz-editor/lezer-tikz@0.5.1": "patches/@tikz-editor%2Flezer-tikz@0.5.1.patch",
     "@codemirror/view@6.43.9": "patches/@codemirror%2Fview@6.43.9.patch",
-    "@codemirror/collab@6.1.1": "patches/@codemirror%2Fcollab@6.1.1.patch"
+    "@codemirror/collab@6.1.1": "patches/@codemirror%2Fcollab@6.1.1.patch",
+    "commander@11.1.0": "patches/commander@11.1.0.patch"
   },
   "workspaces": [
     "packages/*"

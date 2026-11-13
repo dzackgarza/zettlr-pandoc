@@ -1,7 +1,7 @@
 import { strict as assert } from "assert";
+import { documentTitle } from "source/common/util/document-title";
 import { documentTitleMetadata } from "source/common/util/document-title-metadata";
 import type { MDFileDescriptor } from "source/types/common/fsal";
-import { getSemanticDescriptorTitle } from "source/win-main/util/get-document-title";
 
 function descriptor(path = "/tmp/title.md"): MDFileDescriptor {
   return {
@@ -58,33 +58,50 @@ describe("document title metadata", function () {
     file.firstSentence = metadata.firstSentence;
 
     assert.equal(file.firstHeading, "Lattice Folding");
-    assert.equal(getSemanticDescriptorTitle(file), "Lattice Folding");
+    assert.equal(documentTitle(file), "Lattice Folding");
   });
 
-  it("does not treat display-math Setext artifacts as authored headings", function () {
-    const file = descriptor();
-    const metadata = documentTitleMetadata(
-      [
-        "A prose sentence before the calculation.",
-        "",
-        "$$",
-        "G_A =",
-        "\\begin{pmatrix}",
-        "4 & -2 \\\\",
-        "-2 & 4",
-        "\\end{pmatrix}",
-        "=",
-        "G_B",
-        "$$",
-      ].join("\n"),
-    );
-    file.firstHeading = metadata.firstHeading;
-    file.firstSentence = metadata.firstSentence;
+  // A line `=` in display math is no Setext underline (#203)
+  for (const [open, close] of [
+    ["$$", "$$"],
+    ["\\[", "\\]"],
+  ]) {
+    it(`does not take a display equation in ${open} ${close} for a heading`, function () {
+      const file = descriptor();
+      const metadata = documentTitleMetadata(
+        [
+          "A prose sentence before the calculation.",
+          "",
+          open,
+          "G_A =",
+          "\\begin{pmatrix}",
+          "4 & -2 \\\\",
+          "-2 & 4",
+          "\\end{pmatrix}",
+          "=",
+          "G_B",
+          close,
+        ].join("\n"),
+      );
+      file.firstHeading = metadata.firstHeading;
+      file.firstSentence = metadata.firstSentence;
 
-    assert.equal(file.firstHeading, null);
-    assert.equal(file.firstSentence, "A prose sentence before the calculation.");
-    assert.equal(getSemanticDescriptorTitle(file), "A prose sentence before the calculation.");
-  });
+      assert.equal(file.firstHeading, null);
+      assert.equal(file.firstSentence, "A prose sentence before the calculation.");
+      assert.equal(documentTitle(file), "A prose sentence before the calculation.");
+    });
+  }
+
+  // Pandoc reads `Title $$a$$` over `===` as a heading with display math (#203)
+  for (const [open, close] of [
+    ["$$", "$$"],
+    ["\\[", "\\]"],
+  ]) {
+    it(`takes a Setext heading with display math in ${open} ${close} for a heading`, function () {
+      const metadata = documentTitleMetadata(`Title ${open}a${close}\n===\n\nBody.\n`);
+      assert.equal(metadata.firstHeading, "Title");
+    });
+  }
 
   it("prefers YAML title over the first heading", function () {
     const file = descriptor();
@@ -95,7 +112,7 @@ describe("document title metadata", function () {
 
     assert.equal(file.yamlTitle, "YAML Wins");
     assert.equal(file.firstHeading, "Heading Loses");
-    assert.equal(getSemanticDescriptorTitle(file), "YAML Wins");
+    assert.equal(documentTitle(file), "YAML Wins");
   });
 
   it("falls back to prose only up to the first math region when there is no heading", function () {
@@ -108,7 +125,7 @@ describe("document title metadata", function () {
 
     assert.equal(file.firstHeading, null);
     assert.equal(file.firstSentence, "A useful description before");
-    assert.equal(getSemanticDescriptorTitle(file), "A useful description before");
+    assert.equal(documentTitle(file), "A useful description before");
   });
 
   it("uses the first sentence when there is no heading and no early math", function () {
@@ -120,6 +137,6 @@ describe("document title metadata", function () {
     file.firstSentence = metadata.firstSentence;
 
     assert.equal(file.firstSentence, "The first sentence is enough.");
-    assert.equal(getSemanticDescriptorTitle(file), "The first sentence is enough.");
+    assert.equal(documentTitle(file), "The first sentence is enough.");
   });
 });

@@ -86,6 +86,22 @@ export interface ReviewTransitionError {
   message: string;
 }
 
+/**
+ * Two claims of one submission that are one claim. The identity of a claim
+ * is its description and the text it changes: one description on two ranges
+ * is two claims, and one description on one range is one claim given twice.
+ */
+export interface DuplicateClaimError {
+  ok: false;
+  code: "DUPLICATE_CLAIM";
+  message: string;
+  /** The zero-based positions of the two claims in the submission. */
+  conflictingClaimIndices: [number, number];
+}
+
+/** Why a proposal committed nothing. */
+export type ProposalRefusal = { ok: false; code: string; message: string } | DuplicateClaimError;
+
 export interface RetractionError {
   ok: false;
   code: "PACKET_NOT_RETRACTABLE";
@@ -265,15 +281,15 @@ function hunkStartLines(before: string, after: string): number[] {
 }
 
 /**
- * The one suggestion a claim becomes: the shortest span that covers the
- * claim's change, found by trimming the text the two sides share at either
- * end (the pre-pass of every Myers diff, e.g. jsdiff's and CodeMirror's
- * `findDiff` in @codemirror/view domchange.ts). A claim is one hunk
- * (applyClaimSequence refuses any other), so the claim's description
- * justifies exactly the change the reviewer keeps or undoes, and a later
- * claim on the same line still owns only its own characters.
+ * The change of one claim: the shortest span that covers it, found by
+ * trimming the text the two sides share at either end (the pre-pass of every
+ * Myers diff, e.g. jsdiff's and CodeMirror's `findDiff` in @codemirror/view
+ * domchange.ts).
  */
-function suggestionForClaim(before: string, after: string, packetId: string): ReviewSuggestion {
+function claimChange(
+  before: string,
+  after: string,
+): { from: number; removedText: string; addedLength: number } {
   const shorter = Math.min(before.length, after.length);
   let prefix = 0;
   while (prefix < shorter && before[prefix] === after[prefix]) {
@@ -286,8 +302,21 @@ function suggestionForClaim(before: string, after: string, packetId: string): Re
   ) {
     suffix += 1;
   }
-  const removedText = before.slice(prefix, before.length - suffix);
-  const addedLength = after.length - suffix - prefix;
+  return {
+    from: prefix,
+    removedText: before.slice(prefix, before.length - suffix),
+    addedLength: after.length - suffix - prefix,
+  };
+}
+
+/**
+ * The one suggestion a claim becomes: the span of its change. A claim is one
+ * hunk (applyClaimSequence refuses any other), so the claim's description
+ * justifies exactly the change the reviewer keeps or undoes, and a later
+ * claim on the same line still owns only its own characters.
+ */
+function suggestionForClaim(before: string, after: string, packetId: string): ReviewSuggestion {
+  const { from: prefix, removedText, addedLength } = claimChange(before, after);
   return {
     suggestionId: randomUUID(),
     packetId,
@@ -547,6 +576,21 @@ function isAcceptableHeader(fileName: string, documentPath: string): boolean {
   return path.resolve(`/${stripped}`) === path.resolve(documentPath);
 }
 
+/**
+ * The text of a claim in the document as the claims after it left it, with
+ * the description that decides whether a later claim is the same claim.
+ */
+interface ClaimTarget {
+  from: number;
+  to: number;
+  description: string;
+}
+
+/** Case, whitespace and Unicode compatibility forms do not make a new description. */
+function normalizeClaimDescription(description: string): string {
+  return description.normalize("NFKC").toLocaleLowerCase("en-US").replace(/\s+/gu, "");
+}
+
 /** One validated, applied claim: its inputs plus the text it produced. */
 interface AppliedClaimStep {
   patch: string;
@@ -662,16 +706,21 @@ export function diagnoseHunkFailure(text: string, patch: StructuredPatch): strin
  * All-or-nothing: the first claim that fails invalidates the whole sequence.
  * Claim k applies with zero fuzz to the text claim k-1 produced and must
  * change it; error messages name the failing claim by its 1-based position.
+ *
+ * A claim that has the description of an earlier claim and changes the text
+ * of that claim, or text next to it, is that claim given twice. The same
+ * description on text elsewhere is another claim.
  */
 export function applyClaimSequence(
   startText: string,
   documentPath: string,
   claims: readonly ClaimInput[],
-): { ok: true; steps: AppliedClaimStep[] } | ReviewTransitionError {
+): { ok: true; steps: AppliedClaimStep[] } | ReviewTransitionError | DuplicateClaimError {
   if (claims.length === 0) {
     throw new Error("applyClaimSequence requires at least one claim");
   }
   const steps: AppliedClaimStep[] = [];
+  const targets: ClaimTarget[] = [];
   let text = startText;
   for (let i = 0; i < claims.length; i++) {
     const label = claims.length === 1 ? "The patch" : `Claim ${i + 1}'s patch`;
@@ -722,6 +771,32 @@ export function applyClaimSequence(
           `Split it into ${hunkStarts.length} claims, one per hunk, each with its own description.`,
       };
     }
+    const { from, removedText, addedLength } = claimChange(text, textAfter);
+    const change = ChangeSet.of(
+      { from, to: from + removedText.length, insert: textAfter.slice(from, from + addedLength) },
+      text.length,
+    );
+    const description = normalizeClaimDescription(claims[i].description);
+    const earlier = targets.findIndex(
+      (target) =>
+        target.description === description && change.touchesRange(target.from, target.to) !== false,
+    );
+    if (earlier !== -1) {
+      return {
+        ok: false,
+        code: "DUPLICATE_CLAIM",
+        message:
+          `Claim ${i + 1} has the description of claim ${earlier + 1} and changes the same text. ` +
+          "Make the two changes one claim, or describe what each claim changes. " +
+          "One description on changes to different text is accepted.",
+        conflictingClaimIndices: [earlier, i],
+      };
+    }
+    for (const target of targets) {
+      target.from = change.mapPos(target.from, -1);
+      target.to = change.mapPos(target.to, 1);
+    }
+    targets.push({ from, to: from + addedLength, description });
     steps.push({
       patch: claims[i].patch,
       description: claims[i].description,
@@ -749,7 +824,7 @@ export function prepareProposalSubmission(input: {
   claims: readonly ClaimInput[];
   clientRequestId: string;
   requestFingerprint: string;
-}): ReviewMutationPlan<SubmitProposalResponse> | ReviewTransitionError {
+}): ReviewMutationPlan<SubmitProposalResponse> | ReviewTransitionError | DuplicateClaimError {
   if (input.review !== undefined && input.review.invalidated) {
     return {
       ok: false,

@@ -26,6 +26,7 @@ import type { AgentApiComponents } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import Ajv2020 from "ajv/dist/2020";
 import { strict as assert } from "assert";
+import { randomUUID } from "crypto";
 import { createPatch } from "diff";
 import {
   mkdirSync,
@@ -42,10 +43,15 @@ import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
+import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
+import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import LogProvider from "source/app/service-providers/log";
 import { SearchProvider } from "source/app/service-providers/search";
 import { parse as parseYaml } from "yaml";
 import { userData } from "./headless-electron-harness.cjs";
+
+/** The token that the provider of this spec is started with. */
+const API_TOKEN = randomUUID();
 
 // ============================================================================
 // Schema conformance — validates every response against the OpenAPI document
@@ -155,11 +161,15 @@ describe("Annotation Agent API (/v1/annotations)", function () {
           writeFileSync(filePath, content, "utf8");
         },
         getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
+        // The folders of the documents, as the FSAL reads them from disk.
+        getAnyDirectoryDescriptor: async (dirPath: string) => await parseDirectory(dirPath),
         getFilesystemMetadata: async (_filePath: string) => ({ modtime: 0 }),
-        readDirectoryRecursively: async (workspacePath: string) =>
-          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
+        readDirectoryRecursively: async (workspacePath: string) => ({
+          paths: readdirSync(workspacePath, { recursive: true, withFileTypes: true })
             .filter((entry) => entry.isFile())
             .map((entry) => path.join(entry.parentPath, entry.name)),
+          notListed: [],
+        }),
       },
       citeproc: { synchronizeDatabases: async (_libraries: string[]) => {} },
       recentDocs: {
@@ -173,7 +183,21 @@ describe("Annotation Agent API (/v1/annotations)", function () {
           checkboxChecked: false,
         }),
         getFirstMainWindow: () => undefined,
+        // The spec has no main window, so no window gets a message.
+        tellMainWindows: (
+          _windowIds: readonly string[],
+          _channel: string,
+          ..._args: readonly unknown[]
+        ) => {},
         getMainWindowKey: (_window: unknown) => activeWindowId,
+        // No operation of this spec asks the author for a file.
+        saveFile: async (_filePath: string): Promise<string | undefined> => {
+          throw new Error("This spec shows no save dialog");
+        },
+        // No operation of this spec opens a file with the desktop.
+        showErrorMessage: (_title: string, _message: string, _contents?: string) => {
+          throw new Error("This spec opens no file with the desktop");
+        },
       },
       references: {
         reportAuthorityBuffer: (_filePath: string) => {},
@@ -194,10 +218,12 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     return new SearchProvider(
       new LogProvider(),
       {
-        readDirectoryRecursively: async (workspacePath: string) =>
-          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
+        readDirectoryRecursively: async (workspacePath: string) => ({
+          paths: readdirSync(workspacePath, { recursive: true, withFileTypes: true })
             .filter((entry) => entry.isFile())
             .map((entry) => path.join(entry.parentPath, entry.name)),
+          notListed: [],
+        }),
         isFile: async (filePath: string) => statSync(filePath).isFile(),
         getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
         loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),
@@ -228,7 +254,11 @@ describe("Annotation Agent API (/v1/annotations)", function () {
           port: httpPort,
           path: pathname,
           method,
-          headers: { "Content-Type": "application/json", ...options.headers },
+          headers: {
+            authorization: `Bearer ${API_TOKEN}`,
+            "Content-Type": "application/json",
+            ...options.headers,
+          },
         },
         (res) => {
           let data = "";
@@ -276,8 +306,29 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     });
   }
 
+  /** The sidecar files that a case made unreadable; afterEach removes them. */
+  let unreadableSidecars: string[] = [];
+
+  /**
+   * Gives the document one annotation and closes it, then writes its sidecar
+   * as a later version of the application writes it: this version has no
+   * reader for that schema. Answers the document id.
+   */
+  async function closeWithUnreadableSidecar(filePath: string, content: string): Promise<string> {
+    const documentId = await openFile(filePath, content);
+    const created = await provider.createAnnotation(documentId, "owner", 0, 4, "Later.", 0);
+    assert.ok("annotationId" in created);
+    await provider.closeFileEverywhere(filePath);
+    const file = collaborationSidecarFilePath(path.join(userData, "review-sidecars"), filePath);
+    const written: { version: number } = JSON.parse(readFileSync(file, "utf8"));
+    writeFileSync(file, JSON.stringify({ ...written, version: written.version + 1 }), "utf8");
+    unreadableSidecars.push(file);
+    return documentId;
+  }
+
   beforeEach(async function () {
     scratch = mkdtempSync(path.join(os.tmpdir(), "zettlr-annotation-api-"));
+    unreadableSidecars = [];
     openWorkspaces = [scratch];
 
     provider = await createProvider();
@@ -287,15 +338,16 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         export: { cslLibrary: "" },
         tikz: { dataDir: "", figuresDir: "" },
         editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+        zkn: { linkFormat: "link|title" as const },
+        zotero: { localServer: "http://127.0.0.1:23119" },
         agentApi: {
           enabled: true,
           port: 0,
-          claimDescriptionSimilarityThreshold: 0.94,
           skillsDirectory: null,
         },
       }),
     };
-    httpProvider = new AgentHTTPProvider(new LogProvider(), provider, {
+    const agentHost = {
       config,
       links: { index: new WikilinkIndex([]) },
       search: createSearch(),
@@ -307,6 +359,10 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         env: {},
         userDataDirectory: scratch,
       }),
+    };
+    httpProvider = new AgentHTTPProvider(new LogProvider(), provider, agentHost, {
+      homeDirectory: scratch,
+      env: { ZETTLR_AGENT_API_TOKEN: API_TOKEN },
     });
     await httpProvider.boot();
     httpPort = Number.parseInt(
@@ -319,6 +375,9 @@ describe("Annotation Agent API (/v1/annotations)", function () {
   afterEach(async function () {
     await httpProvider.shutdown();
     await provider.shutdown();
+    for (const file of unreadableSidecars) {
+      rmSync(file, { force: true });
+    }
     rmSync(scratch, { recursive: true, force: true });
   });
 
@@ -420,6 +479,63 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     assert.equal(missing.status, 404);
     const error = parseAs(missing.body, "AgentErrorResponse");
     assert.equal(error.error.code, "ANNOTATION_NOT_FOUND");
+  });
+
+  it("answers an annotation of an open document while the sidecar of another document cannot be read", async function () {
+    await closeWithUnreadableSidecar(
+      path.join(scratch, "later.md"),
+      "Written by a later version.\n",
+    );
+    const content = "The genus of a lattice is a finite set of classes.\n";
+    const documentId = await openFile(path.join(scratch, "genus.md"), content);
+    const created = await provider.createAnnotation(documentId, "owner", 4, 9, "Define it.", 0);
+    assert.ok("annotationId" in created);
+
+    const detail = await httpRequest("GET", `/v1/annotations/${created.annotationId}`);
+    assert.equal(detail.status, 200);
+    assert.equal(parseAs(detail.body, "AnnotationResponse").target.quotedText, "genus");
+
+    const reply = await postMessage(created.annotationId, {
+      text: "The genus is the set of lattices locally isometric to it.",
+      clientRequestId: randomUUID(),
+      expectedAnnotationGeneration: parseAs(detail.body, "AnnotationResponse").annotationGeneration,
+    });
+    assert.equal(reply.status, 200, reply.body);
+    const [annotation] = provider.annotationQueries.getAnnotations(documentId).items;
+    assert.equal(
+      annotation.messages.at(-1)?.text,
+      "The genus is the set of lattices locally isometric to it.",
+    );
+  });
+
+  it("refuses the annotation listing while a sidecar cannot be read", async function () {
+    await closeWithUnreadableSidecar(
+      path.join(scratch, "later.md"),
+      "Written by a later version.\n",
+    );
+    const documentId = await openFile(path.join(scratch, "open.md"), "An open document.\n");
+    await provider.createAnnotation(documentId, "owner", 0, 2, "Open note.", 0);
+
+    const listing = await httpRequest("GET", "/v1/annotations");
+    assert.equal(listing.status, 409);
+    assert.equal(
+      parseAs(listing.body, "AgentErrorResponse").error.code,
+      "COLLABORATION_STATE_UNREADABLE",
+    );
+  });
+
+  it("refuses the text of a closed document whose sidecar cannot be read", async function () {
+    const documentId = await closeWithUnreadableSidecar(
+      path.join(scratch, "later.md"),
+      "Written by a later version.\n",
+    );
+
+    const read = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
+    assert.equal(read.status, 409);
+    assert.equal(
+      parseAs(read.body, "AgentErrorResponse").error.code,
+      "COLLABORATION_STATE_UNREADABLE",
+    );
   });
 
   it("filters GET /v1/annotations by state", async function () {

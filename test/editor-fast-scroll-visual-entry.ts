@@ -1,12 +1,12 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
-import { backgroundLayers } from "source/common/modules/markdown-editor/plugins/code-background";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { backgroundLayers } from "@dzack/pandoc-editor/plugins/code-background";
+import { softwrapVisualIndent } from "@dzack/pandoc-editor/plugins/visual-indent";
+import { defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
 import { footnoteBackground } from "source/common/modules/markdown-editor/plugins/footnote-background";
 import { tagClasses } from "source/common/modules/markdown-editor/plugins/tag-classes";
-import { softwrapVisualIndent } from "source/common/modules/markdown-editor/plugins/visual-indent";
 import { renderers } from "source/common/modules/markdown-editor/renderers";
-import { defaultLight, editorTheme } from "source/common/modules/markdown-editor/theme/editor";
 import {
   configField,
   getDefaultConfig,

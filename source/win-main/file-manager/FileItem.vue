@@ -15,10 +15,14 @@
         active: activeFile !== undefined && item.path === activeFile.path,
         'has-meta-info': fileMeta,
         directory: item.type === 'directory',
-        'is-ignored': isIgnored
+        'is-ignored': isIgnored,
+        'is-unreadable': readError !== undefined
       }"
       v-bind:data-id="item.type === 'file' ? item.id : ''"
       v-bind:data-path="item.path"
+      v-bind:data-read-error="readError?.code"
+      v-bind:data-metadata-problem="metadataProblemSources(item)"
+      v-bind:title="readErrorTitle"
       v-bind:data-filename="getFilename"
       v-bind:draggable="isDraggable"
       v-on:click.stop="requestSelection"
@@ -35,14 +39,35 @@
           shape="blocks-group"
           class="is-solid"
         ></cds-icon>
+        <cds-icon
+          v-if="readErrorTitle !== undefined"
+          v-bind:aria-label="readErrorTitle"
+          shape="warning-standard"
+          class="is-solid read-error-icon"
+        ></cds-icon>
         <input
           v-if="nameEditing"
           ref="nameEditingInput"
           type="text"
-          v-bind:value="item.name"
+          v-model="fieldText"
           v-on:keyup.enter="finishNameEditing(($event.target as HTMLInputElement).value)"
           v-on:keyup.esc="nameEditing = false"
-          v-on:blur="nameEditing = false"
+          v-on:blur="onNameFieldBlur($event, () => (nameEditing = false))"
+          v-on:click.stop=""
+        >
+        <!-- A row of the list has a fixed height, so the name field of a
+        new file or folder takes the place of the name of its folder. -->
+        <input
+          v-else-if="operationType !== undefined"
+          ref="newObjectInput"
+          class="filename-input"
+          type="text"
+          v-model="fieldText"
+          v-bind:placeholder="filenameInputPlaceholder"
+          v-on:keyup.enter="finishOperation(($event.target as HTMLInputElement).value)"
+          v-on:keyup.esc="operationType = undefined"
+          v-on:keydown.stop=""
+          v-on:blur="onNameFieldBlur($event, () => (operationType = undefined))"
           v-on:click.stop=""
         >
         <span v-else>
@@ -171,7 +196,6 @@ import formatDate from "@common/util/format-date";
 import formatSize from "@common/util/format-size";
 import localiseNumber from "@common/util/localise-number";
 import { type AnyDescriptor, type MDFileDescriptor } from "@dts/common/fsal";
-import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import {
   useConfigStore,
   useIgnoreRulesStore,
@@ -181,10 +205,18 @@ import {
 } from "source/pinia";
 import { computed, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 import getDocumentTitle from "../util/get-document-title";
-import { eventsChangeChildren } from "./util/events-change-children";
+import { followChildren } from "./util/follow-children";
 import { useItemComposable } from "./util/item-composable";
+import { onNameFieldBlur } from "./util/name-field-blur";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
 import PopoverFileProps from "./util/PopoverFileProps.vue";
+import {
+  metadataProblemSentence,
+  metadataProblemSources,
+  metadataProblemsOf,
+  readErrorOf,
+  readErrorSentence,
+} from "./util/read-error";
 
 const props = defineProps<{
   activeFile: AnyDescriptor | undefined;
@@ -193,11 +225,7 @@ const props = defineProps<{
   windowId: string;
 }>();
 
-const emit = defineEmits<{
-  (e: "begin-dragging"): void;
-  (e: "create-file"): void;
-  (e: "create-dir"): void;
-}>();
+const emit = defineEmits<(e: "begin-dragging") => void>();
 
 const ipcRenderer = window.ipc;
 
@@ -216,11 +244,24 @@ const isIgnored = computed(() => {
   );
 });
 
+/** Why the text of this file could not be read; undefined for a file that was read. */
+const readError = computed(() => readErrorOf(props.item));
+/** Each cause that the application could not read this item for; undefined without one. */
+const readErrorTitle = computed(() => {
+  const causes = [
+    ...(readError.value === undefined ? [] : [readErrorSentence(readError.value)]),
+    ...metadataProblemsOf(props.item).map(metadataProblemSentence),
+  ];
+  return causes.length === 0 ? undefined : causes.join("\n");
+});
+
 const shouldCountChars = computed(() => configStore.config.editor.countChars);
 const writingTargets = computed(() => windowStateStore.writingTargets);
 
 const displayText = ref<HTMLDivElement | null>(null);
 const nameEditingInput = ref<HTMLInputElement | null>(null);
+const newObjectInput = ref<HTMLInputElement | null>(null);
+const filenameInputPlaceholder = trans("Enter a name");
 
 const children = ref<AnyDescriptor[]>([]);
 
@@ -234,17 +275,13 @@ async function fetchChildren(): Promise<void> {
 let stopFsalListener: (() => void) | undefined;
 
 onMounted(async () => {
-  stopFsalListener = ipcRenderer.on("fsal-events", (_, events: FSALEventPayload[]) => {
-    // A batch that pertains to a direct child of this item needs handling.
-    // We'll make it easy and simply re-fetch the list of children, once.
-    if (eventsChangeChildren(events, props.item.path)) {
-      fetchChildren().catch((err) =>
-        reportError(
-          `[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`,
-          err,
-        ),
-      );
-    }
+  stopFsalListener = followChildren(props.item.path, () => {
+    fetchChildren().catch((err) =>
+      reportError(
+        `[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`,
+        err,
+      ),
+    );
   });
 
   if (props.item.type === "directory") {
@@ -260,14 +297,23 @@ const {
   nameEditing,
   showPopover,
   operationType,
+  fieldText,
   onDragHandler,
   handleContextMenu,
   requestSelection,
   finishNameEditing,
+  finishOperation,
   isDirectory,
   selectedFile,
   updateObject,
-} = useItemComposable(props.item, displayText, props.windowId, nameEditingInput);
+} = useItemComposable(
+  props.item,
+  displayText,
+  props.windowId,
+  nameEditingInput,
+  newObjectInput,
+  "list",
+);
 
 // We have to explicitly transform ALL properties to computed ones for
 // the reactivity in conjunction with the recycle-scroller.
@@ -280,7 +326,7 @@ const basename = computed(() => {
     owner?.type === "directory"
       ? effectiveExplorerDisplayForDirectory(
           owner,
-          workspaceStore.rootDescriptors,
+          workspaceStore.projectDirectories,
           configStore.config.fileNameDisplay,
         )
       : configStore.config.fileNameDisplay;
@@ -290,7 +336,7 @@ const basename = computed(() => {
 const projectMembership = computed(() =>
   props.item.type === "directory"
     ? undefined
-    : projectMembershipForPath(props.item.path, workspaceStore.rootDescriptors),
+    : projectMembershipForPath(props.item.path, workspaceStore.projectDirectories),
 );
 
 const projectMembershipLabel = computed(() => {
@@ -450,16 +496,6 @@ const tagsWithColor = computed<Array<{ name: string; color: string | undefined }
   });
 });
 
-watch(operationType, () => {
-  if (operationType.value === "createFile") {
-    emit("create-file");
-    operationType.value = undefined;
-  } else if (operationType.value === "createDir") {
-    emit("create-dir");
-    operationType.value = undefined;
-  }
-});
-
 // I have no idea why passing this as a Ref to the composable doesn't work, but
 // this way it does.
 watch(toRef(props, "item"), function (value) {
@@ -502,6 +538,7 @@ body {
 
       &.has-meta-info { height: 70px; }
       &.is-ignored { opacity: 0.58; }
+      .read-error-icon { color: var(--accent-orange); }
 
       // The meta information div in the extended file list
       div.meta-info {

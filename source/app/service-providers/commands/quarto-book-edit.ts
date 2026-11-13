@@ -1,6 +1,7 @@
 import type { ProjectSettings } from "@dts/common/fsal";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import { editQuartoBookManifest, type QuartoBookEdit } from "source/app/util/quarto-book-editor";
+import { trans } from "source/common/i18n-main";
 import ZettlrCommand from "./zettlr-command";
 
 export interface QuartoBookEditRequest {
@@ -24,12 +25,32 @@ export default class QuartoBookEditCommand extends ZettlrCommand {
       throw new Error(`${arg.rootPath} is not a Quarto book project`);
     }
 
+    // The edit reads the manifest from disk. Unsaved text of the manifest in
+    // an editor is text of the author that the edit would not hold, and a
+    // later save of that text would undo the edit.
+    if (this._app.documents.isModified(project.manifest.path)) {
+      throw new Error(
+        trans(
+          "The Quarto book file %s has unsaved changes in an editor. Save or discard them, then change the book again.",
+          project.manifest.path,
+        ),
+      );
+    }
     await editQuartoBookManifest(dir.path, project.manifest.path, arg.edit);
     await this._app.fsal.refreshQuartoProject(dir);
 
     const refreshed = dir.settings.project;
     if (refreshed?.manifest.kind !== "quarto") {
-      throw new Error(`Couldn't reload the Quarto book after saving changes`);
+      const problem = dir.metadataProblems.find((candidate) => candidate.source === "manifest");
+      throw new Error(
+        problem === undefined
+          ? trans("The Quarto book file of %s no longer describes a book.", dir.path)
+          : trans(
+              "The Quarto book file %s could not be used after the change: %s",
+              problem.path,
+              problem.message,
+            ),
+      );
     }
     return refreshed;
   }

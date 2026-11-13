@@ -88,9 +88,9 @@
 
 import { reportError } from "@common/util/error-reporting";
 import { pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
+import { revealInFileBrowser } from "@common/util/reveal-in-file-browser";
 import type { LeafNodeJSON, OpenDocument } from "@dts/common/documents";
 import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
-import type { WindowControlsIPCAPI } from "source/app/service-providers/windows";
 import { trans } from "source/common/i18n-renderer";
 import type { AnyMenuItem } from "source/common/modules/window-register/application-menu-helper";
 import showPopupMenu from "source/common/modules/window-register/application-menu-helper";
@@ -98,7 +98,8 @@ import { useDocumentTreeStore } from "source/pinia";
 import { useWorkspaceStore } from "source/pinia/workspace-store";
 import tippy from "tippy.js";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { closeFile } from "./file-manager/util/item-composable";
+import { closeRoots } from "./file-manager/util/item-composable";
+import { openRowRenameField } from "./file-manager/util/name-fields";
 import { displayTabbarContext } from "./tabs-context";
 import { getSemanticDocumentTitle } from "./util/get-document-title";
 
@@ -195,8 +196,16 @@ onMounted(() => {
         } as DocumentManagerIPCAPI)
         .catch((e) => reportError(e));
     } else if (shortcut === "rename-file") {
-      // Renaming via shortcut (= Cmd/Ctrl+R) works via a tooltip underneath
-      // the corresponding filetab. First, make sure the container is visible
+      if (currentIdx < 0) {
+        return;
+      }
+      // The key asks for the name in the field of the row of the document,
+      // as the context menu of the row does (#202). A document whose row the
+      // file manager does not show asks in a popup under its tab.
+      const renamed = openFiles.value[currentIdx].path;
+      if (openRowRenameField(renamed, pathBasename(renamed))) {
+        return;
+      }
       scrollActiveFileIntoView();
 
       const containerElement = container.value?.querySelector(".active");
@@ -419,33 +428,25 @@ function handleContextMenu(event: MouseEvent, doc: OpenDocument): void {
       label: trans("Close other tabs"),
       type: "normal",
       action() {
-        for (const openFile of openFiles.value) {
-          if (openFile.path === descriptor.path) {
-            continue;
-          }
-
-          ipcRenderer
-            .invoke("documents-provider", {
-              command: "close-file",
-              payload: { path: openFile.path, leafId: props.leafId, windowId: props.windowId },
-            } satisfies DocumentManagerIPCAPI)
-            .catch((e) => reportError(e));
-        }
+        ipcRenderer
+          .invoke("documents-provider", {
+            command: "close-other-tabs",
+            payload: { path: descriptor.path, leafId: props.leafId, windowId: props.windowId },
+          } satisfies DocumentManagerIPCAPI)
+          .catch((e) => reportError(e));
       },
     },
     {
+      id: "menu.tabs_close_all",
       label: trans("Close all tabs"),
       type: "normal",
-      enabled: !doc.pinned,
       action() {
-        for (const openFile of openFiles.value) {
-          ipcRenderer
-            .invoke("documents-provider", {
-              command: "close-file",
-              payload: { path: openFile.path, leafId: props.leafId, windowId: props.windowId },
-            } satisfies DocumentManagerIPCAPI)
-            .catch((e) => reportError(e));
-        }
+        ipcRenderer
+          .invoke("documents-provider", {
+            command: "close-all-tabs",
+            payload: { leafId: props.leafId, windowId: props.windowId },
+          } satisfies DocumentManagerIPCAPI)
+          .catch((e) => reportError(e));
       },
     },
     {
@@ -516,10 +517,7 @@ function handleContextMenu(event: MouseEvent, doc: OpenDocument): void {
           : trans("Reveal in File Browser"),
       type: "normal",
       action() {
-        ipcRenderer.send("window-controls", {
-          command: "show-item-in-folder",
-          payload: { itemPath: descriptor.path },
-        } satisfies WindowControlsIPCAPI);
+        revealInFileBrowser({ path: descriptor.path });
       },
     },
     {
@@ -540,7 +538,7 @@ function handleContextMenu(event: MouseEvent, doc: OpenDocument): void {
       type: "normal",
       enabled: workspaceStore.rootDescriptors.includes(descriptor),
       action() {
-        closeFile(descriptor.path);
+        closeRoots([descriptor.path]);
       },
     },
   ];

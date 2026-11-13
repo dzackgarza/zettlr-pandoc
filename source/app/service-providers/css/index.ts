@@ -19,6 +19,8 @@ import { app, ipcMain } from "electron";
 import EventEmitter from "events";
 import { promises as fs } from "fs";
 import path from "path";
+import { refusedAs } from "../../util/authored-file-error";
+import { writeTextFile } from "../fsal/util/write-text-file";
 import ProviderContract from "../provider-contract";
 
 export default class CssProvider extends ProviderContract {
@@ -71,12 +73,14 @@ export default class CssProvider extends ProviderContract {
   }
 
   /**
-   * Retrieves the content of the custom CSS file
+   * Retrieves the content of the custom CSS file. Rejects with an
+   * `AuthoredFileError` when the file system refuses the read.
    * @return {string} The custom CSS
    */
   async get(): Promise<string> {
-    const file = await fs.readFile(this._filePath, { encoding: "utf8" });
-    return file;
+    return await fs
+      .readFile(this._filePath, { encoding: "utf8" })
+      .catch(refusedAs("read", this._filePath));
   }
 
   /**
@@ -88,26 +92,17 @@ export default class CssProvider extends ProviderContract {
   }
 
   /**
-   * Writes new data to the custom CSS file, and returns if the call succeeded.
+   * Writes new data to the custom CSS file and tells the windows. Rejects
+   * with an `AuthoredFileError` when the file system refuses the write.
    * @param {string} newContent The new contents
-   * @return {boolean} Whether or not the call succeeded.
    */
-  async set(newContent: string): Promise<boolean> {
-    try {
-      await fs.writeFile(this._filePath, newContent, { encoding: "utf8" });
-      this._emitter.emit("update", this._filePath);
-      broadcastIpcMessage("css-provider", {
-        command: "get-custom-css-path",
-        payload: this._filePath,
-      });
-      broadcastIpcMessage("css-provider", { command: "custom-css-updated" });
-      return true;
-    } catch (err) {
-      this._logger.error(
-        `[CSS Provider] Could not set custom css: ${err instanceof Error ? err.message : String(err)}`,
-        err,
-      );
-      return false;
-    }
+  async set(newContent: string): Promise<void> {
+    await writeTextFile(this._filePath, newContent).catch(refusedAs("save", this._filePath));
+    this._emitter.emit("update", this._filePath);
+    broadcastIpcMessage("css-provider", {
+      command: "get-custom-css-path",
+      payload: this._filePath,
+    });
+    broadcastIpcMessage("css-provider", { command: "custom-css-updated" });
   }
 }

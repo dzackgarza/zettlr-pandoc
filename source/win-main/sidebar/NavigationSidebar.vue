@@ -93,6 +93,7 @@
 
 import type { ProjectNavigationItem } from "@dts/common/fsal";
 import type { SidebarSectionId } from "@dts/common/sidebar-views";
+import { projectRootForPath } from "source/common/util/explorer-ordering";
 import {
   useConfigStore,
   useDocumentTreeStore,
@@ -146,30 +147,21 @@ const view = computed(() => sidebarView(configStore.config.ui.sidebarView));
 
 const activeFilePath = computed(() => documentTreeStore.lastLeafActiveFile?.path);
 
-/** The Quarto project whose root contains the active document, if any. */
+/** The Project of the active document, when that Project is a Quarto book. */
 const book = computed<{ path: string; navigation: ProjectNavigationItem[] } | undefined>(() => {
   const activePath = activeFilePath.value;
   if (activePath === undefined) {
     return undefined;
   }
-  for (const rootDescriptor of workspaceStore.rootDescriptors) {
-    if (
-      rootDescriptor.type !== "directory" ||
-      rootDescriptor.settings.project?.manifest.kind !== "quarto"
-    ) {
-      continue;
-    }
-    if (activePath.startsWith(rootDescriptor.path)) {
-      return {
-        path: rootDescriptor.path,
-        navigation: rootDescriptor.settings.project.manifest.navigation,
-      };
-    }
+  const directory = projectRootForPath(activePath, workspaceStore.projectDirectories);
+  const manifest = directory?.settings.project?.manifest;
+  if (directory === undefined || manifest?.kind !== "quarto") {
+    return undefined;
   }
-  return undefined;
+  return { path: directory.path, navigation: manifest.navigation };
 });
 
-/** The Explorer's sections; Book only while a Quarto root holds the active file. */
+/** The Explorer's sections; Book only while the active file is in a Quarto book. */
 const explorerSections = computed(() =>
   sidebarView("explorer")
     .sections.filter((id) => id !== "book" || book.value !== undefined)
@@ -187,7 +179,7 @@ const explorerCounts = computed<Partial<Record<SidebarSectionId, number>>>(() =>
 /** Opens the drawer on the target's view, expands its section, and puts the focus where asked. */
 async function reveal(target: RevealTarget): Promise<void> {
   configStore.setConfigValue("ui.sidebarView", target.view);
-  configStore.setConfigValue("window.fileManagerVisible", true);
+  windowStateStore.setPaneVisible("window.fileManagerVisible", true);
   await nextTick();
   if (target.section !== undefined) {
     const container =

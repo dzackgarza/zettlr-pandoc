@@ -195,7 +195,7 @@
                 v-bind:key="topic.kind"
                 class="topic"
               >
-                <code class="topic-syntax">{{ topic.syntax }}</code>
+                <code class="topic-syntax">{{ topicSyntax(topic) }}</code>
                 <div>
                   <h3>{{ trans(topic.title) }}</h3>
                   <p>{{ trans(topic.detail) }}</p>
@@ -225,12 +225,20 @@ import {
   PANDOC_CROSS_REFERENCE_EXAMPLES,
   PANDOC_REFERENCE_AUTHORING_TOPICS,
   PANDOC_REFERENCE_MODIFIERS,
+  type ReferenceAuthoringTopic,
+  referenceTopicSyntax,
   THEOREM_DIV_EXAMPLES,
   type TheoremDivExample,
 } from "@common/util/pandoc-quick-reference";
+import { useConfigStore } from "source/pinia";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 const emit = defineEmits<(event: "close") => void>();
+const configStore = useConfigStore();
+
+function topicSyntax(topic: ReferenceAuthoringTopic): string {
+  return referenceTopicSyntax(topic, configStore.config.shortcuts);
+}
 const dialog = ref<HTMLElement | null>(null);
 
 // The searchable-help filter (issue #1, review A2 / US-06): every section
@@ -276,7 +284,7 @@ const referenceAuthoringTopics = computed(() =>
   filterHelpEntries(PANDOC_REFERENCE_AUTHORING_TOPICS, filterQuery.value, (topic) => [
     trans(topic.title),
     trans(topic.detail),
-    topic.syntax,
+    topicSyntax(topic),
   ]),
 );
 

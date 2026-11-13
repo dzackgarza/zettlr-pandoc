@@ -17,9 +17,10 @@ import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
 import { reportError } from "@common/util/error-reporting";
+import { revealInFileBrowser } from "@common/util/reveal-in-file-browser";
 import type { DirDescriptor } from "@dts/common/fsal";
-import type { WindowControlsIPCAPI } from "source/app/service-providers/windows";
 import { useConfigStore } from "source/pinia";
+import { explorerViewItems, handleExplorerMenuChoice } from "./explorer-view-menu";
 import { ignoreMenuItems } from "./ignore-menu";
 
 const ipcRenderer = window.ipc;
@@ -41,6 +42,10 @@ export function displayDirContext(
       type: "normal",
     },
     ...ignoreMenuItems(dirObject),
+    {
+      type: "separator",
+    },
+    ...explorerViewItems(dirObject),
     {
       type: "separator",
     },
@@ -130,27 +135,21 @@ export function displayDirContext(
   const point = { x: event.clientX, y: event.clientY };
   showPopupMenu(point, template, (clickedID) => {
     callback(clickedID); // TODO
+    handleExplorerMenuChoice(dirObject, clickedID, el);
     switch (clickedID) {
       case "menu.copy_path":
         navigator.clipboard.writeText(dirObject.path).catch((err) => reportError(err));
         break;
       case "gui.attachments_open_dir":
-        ipcRenderer.send("window-controls", {
-          command: "show-item-in-folder",
-          payload: { itemPath: dirObject.path },
-        } as WindowControlsIPCAPI);
-        break;
-      case "menu.project_build":
-        ipcRenderer.send("message", {
-          command: "dir-project-export",
-          content: { path: dirObject.path },
-        });
+        revealInFileBrowser({ path: dirObject.path });
         break;
       case "menu.rescan_dir":
-        ipcRenderer.send("message", {
-          command: "rescan-dir",
-          content: { path: dirObject.path },
-        });
+        ipcRenderer
+          .invoke("application", {
+            command: "rescan-dir",
+            payload: { path: dirObject.path },
+          })
+          .catch((err) => reportError(err));
     }
   });
 }

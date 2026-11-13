@@ -13,32 +13,51 @@
  * END HEADER
  */
 
+import { spawn } from "node:child_process";
+import { trans } from "@common/i18n-main";
 import { reportError } from "@common/util/error-reporting";
-import { app, shell } from "electron";
+import { app, type WebContents } from "electron";
 import type LogProvider from "../service-providers/log";
+import { filePathOfUri } from "./file-uri-path";
+import { openExternal, openPath } from "./open-path";
+import { showRefusalInWindow } from "./show-refusal-in-window";
+import { systemErrorCause } from "./system-error-cause";
 
 /**
- * Takes an URL and decides if we should open it externally (web browser,
- * default application, etc.), and does so.
+ * Opens the target of a navigation that the window does not make itself: a
+ * PDF at a page in Okular, a file with the application of the desktop, and
+ * an address in the browser of the desktop. A refusal is shown in the window
+ * that navigated.
  *
- * @param   {string}  url  The URL to check.
+ * @param   {string}       url     The URL of the navigation.
+ * @param   {WebContents}  window  The window that navigated.
  */
-function maybeOpenExternal(url: string): void {
+function openOutside(url: string, window: WebContents): void {
   if (url.startsWith("safe-file://")) {
-    // will-navigate assumes an URL and will pass an encoded URI, so we have to
-    // make sure to decode the url so that %28 becomes ( again.
-    const unencoded = decodeURIComponent(url).substring(12);
-    // On Windows, it likes to add a third slash at the beginning (because
-    // unlike UNIX, absolute paths start with a letter, not a slash)
-    const leadingSlash = unencoded.startsWith("/") && process.platform === "win32";
-    const realPath = leadingSlash ? unencoded.substring(1) : unencoded;
-    // We need to remove the protocol to ensure shell.openPath works.
-    shell.openPath(realPath).catch((err) => {
-      reportError(`[Window Manager] Could not open path ${realPath}: ${err.message}.`);
+    const filePath = filePathOfUri(url);
+    const page = new URL(url).hash.match(/^#page=([1-9]\d*)$/);
+    if (page !== null) {
+      const viewer = spawn("okular", ["--page", page[1], filePath], {
+        detached: true,
+        stdio: "ignore",
+      });
+      viewer.on("error", (err) => {
+        const refusal = new Error(trans("Could not open %s: %s.", filePath, systemErrorCause(err)));
+        reportError(`[Window Manager] ${refusal.message}`);
+        showRefusalInWindow(window, "open-link", refusal);
+      });
+      viewer.unref();
+      return;
+    }
+    // The path of the file goes to the desktop.
+    openPath(filePath).catch((err: Error) => {
+      reportError(`[Window Manager] ${err.message}`);
+      showRefusalInWindow(window, "open-link", err);
     });
   } else {
-    shell.openExternal(url).catch((err) => {
-      reportError(`[Window Manager] Could not open URL ${url}: ${err.message}.`);
+    openExternal(url).catch((err: Error) => {
+      reportError(`[Window Manager] ${err.message}`);
+      showRefusalInWindow(window, "open-link", err);
     });
   }
 }
@@ -82,7 +101,7 @@ export function attachAppNavigationHandlers(log: LogProvider): void {
       // into a shell command to open in an actual browser, not within our own
       // browser windows.
       event.preventDefault();
-      maybeOpenExternal(url);
+      openOutside(url, webContents);
     });
   });
 }

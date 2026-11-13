@@ -9,9 +9,9 @@ jobs:
       issues: read
     with:
       tier: test-ci
-      profile: 'bun'
-      setup_recipe: 'setup-ci'
-      infra_ref: 'main'
+      profile: "bun"
+      setup_recipe: "setup-ci"
+      infra_ref: "main"
       setup_cache_paths: |
         ~/texlive
         ~/ci-downloads
@@ -27,7 +27,7 @@ jobs:
       pull-requests: read
     with:
       gate: deterministic-diff
-      profile: 'bun'
+      profile: "bun"
   delegation-conformance:
     uses: dzackgarza/ai-review-ci/.github/workflows/_gates.yml@main
     permissions:
@@ -37,7 +37,7 @@ jobs:
       pull-requests: read
     with:
       gate: delegation-conformance
-      profile: 'bun'
+      profile: "bun"
   qc-doctor:
     uses: dzackgarza/ai-review-ci/.github/workflows/_gates.yml@main
     permissions:
@@ -49,7 +49,7 @@ jobs:
       pull-requests: read
     with:
       gate: qc-doctor
-      profile: 'bun'
+      profile: "bun"
   pr-description-checklist:
     uses: dzackgarza/ai-review-ci/.github/workflows/_gates.yml@main
     permissions:
@@ -59,4 +59,4 @@ jobs:
       issues: read
     with:
       gate: pr-description-checklist
-      profile: 'bun'
+      profile: "bun"

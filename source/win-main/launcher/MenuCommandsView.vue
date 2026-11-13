@@ -47,6 +47,8 @@
           v-bind:data-file-path="row.kind === 'file' ? row.path : undefined"
           v-bind:data-export-profile="row.kind === 'export-profile' ? row.profile.name : undefined"
           v-bind:data-just-recipe="row.kind === 'just-recipe' ? row.name : undefined"
+          v-bind:data-just-repository="row.kind === 'just-unlisted' ? row.repoRoot : undefined"
+          v-bind:title="row.kind === 'just-unlisted' ? row.cause : undefined"
           v-bind:data-preference-model="row.kind === 'preference' ? row.model : undefined"
           v-on:run="emit('run', row)"
         >
@@ -117,8 +119,14 @@ interface ComboboxHandle {
 
 const combobox = ref<ComboboxHandle | null>(null);
 
-/** A menu leaf reports its own enablement; every other row is always runnable. */
+/**
+ * A menu leaf reports its own enablement, and a repository without listed
+ * recipes runs nothing; every other row is always runnable.
+ */
 function isDisabled(row: LauncherRowModel): boolean {
+  if (row.kind === "just-unlisted") {
+    return true;
+  }
   return (row.kind === "menu-leaf" || row.kind === "menu-group") && !row.enabled;
 }
 

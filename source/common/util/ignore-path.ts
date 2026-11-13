@@ -39,7 +39,7 @@ const WATCHDOG_IGNORE_PATHS: string[] = [
 // not appear in the UI, however, they should still
 // be watched for changes. Will be converted
 // to a RegExp object
-const IGNORE_PATHS: string[] = [
+export const IGNORE_PATHS: string[] = [
   "\\.ztr-directory", // Zettlr project settings
   ...WATCHDOG_IGNORE_PATHS,
 ];

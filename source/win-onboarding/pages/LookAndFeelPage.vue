@@ -68,7 +68,6 @@ const darkModeScheduleOptions = {
 
 const darkMode = ref(Boolean(window.config.get("darkMode")));
 const darkModeSchedule = ref(window.config.get("autoDarkMode") as "off" | "system" | "schedule");
-const leaveRunningInNotificationArea = ref(Boolean(window.config.get("system.leaveAppRunning")));
 
 watch(darkMode, () => {
   window.config.set("darkMode", darkMode.value);
@@ -76,10 +75,6 @@ watch(darkMode, () => {
 
 watch(darkModeSchedule, () => {
   window.config.set("autoDarkMode", darkModeSchedule.value);
-});
-
-watch(leaveRunningInNotificationArea, () => {
-  window.config.set("system.leaveAppRunning", leaveRunningInNotificationArea.value);
 });
 </script>
 

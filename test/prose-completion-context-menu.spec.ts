@@ -4,9 +4,9 @@ import { strict as assert } from "node:assert";
 import "./provision-renderer-window-seams";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import type { DictionaryProviderIPCContract } from "source/app/service-providers/dictionary/ipc-contract";
 import { proseCompletionMenuItem } from "source/common/modules/markdown-editor/context-menu/default-menu";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 
 // default-menu.ts intentionally captures the preload bridge once at module
 // evaluation. Other specs may replace window.ipc wholesale later, so retain

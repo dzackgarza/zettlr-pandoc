@@ -18,6 +18,7 @@
 import { trans } from "@common/i18n-main";
 import PersistentDataContainer from "@common/modules/persistent-data-container";
 import { DP_EVENTS } from "@dts/common/documents";
+import type { Cloneable, IpcArgument } from "@dts/common/ipc";
 import type { PreferenceNavigationTarget } from "@dts/common/preferences";
 import { getCLIArgument } from "@providers/cli-provider";
 import type ConfigProvider from "@providers/config";
@@ -25,10 +26,11 @@ import type DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
 import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
 import * as bcp47 from "bcp-47";
-import { app, BrowserWindow, type FileFilter, ipcMain, screen, shell } from "electron";
+import { app, BrowserWindow, type FileFilter, ipcMain, screen } from "electron";
 import EventEmitter from "events";
 import path from "path";
 import { checkedEnvironment } from "source/app/util/environment-check";
+import { showStoreWriteFailure } from "source/app/util/show-store-write-failure";
 import type { PasteModalResult } from "../commands/save-image-from-clipboard";
 import createAboutWindow from "./create-about-window";
 import createAssetsWindow from "./create-assets-window";
@@ -51,6 +53,7 @@ import shouldCloseAllDialog from "./dialog/should-close-all";
 import shouldOverwriteFileDialog from "./dialog/should-overwrite-file";
 import shouldReplaceFileDialog from "./dialog/should-replace-file";
 import mapFSError from "./map-fs-error";
+import tellMainWindows from "./tell-main-windows";
 import type { WindowPosition } from "./types";
 
 // 'request-files' and 'close-all' carry no command property: each channel
@@ -85,7 +88,6 @@ export type WindowControlsIPCAPI = IPCAPI<{
   selectAll: unknown;
   "inspect-element": { x: number; y: number };
   "drag-start": { filePath: string };
-  "show-item-in-folder": { itemPath: string };
 }>;
 
 export default class WindowProvider extends ProviderContract {
@@ -107,6 +109,7 @@ export default class WindowProvider extends ProviderContract {
   private readonly _stateContainer: PersistentDataContainer<Record<string, WindowPosition>>;
   private readonly _hasRTLLocale: boolean;
   private suppressWindowOpening: boolean;
+  private readonly _launchedMinimized: boolean;
   private readonly _emitter: EventEmitter;
   private readonly _lastMainWindow: { windowId: string | undefined };
 
@@ -132,13 +135,19 @@ export default class WindowProvider extends ProviderContract {
     this._projectProperties = new Map();
     this._windowState = new Map();
     this._configFile = path.join(app.getPath("userData"), "window_state.yml");
-    this._stateContainer = new PersistentDataContainer(this._configFile, "yaml", 1000);
+    this._stateContainer = new PersistentDataContainer(
+      this._configFile,
+      "yaml",
+      (filePath, failure) => {
+        showStoreWriteFailure(this._logger, this, filePath, failure);
+      },
+    );
     this._lastMainWindow = { windowId: undefined };
 
-    // If the corresponding CLI flag is passed, we should suppress opening of
-    // any windows until the user has manually activated the app by utilizing
-    // the tray menu.
-    this.suppressWindowOpening = getCLIArgument("launch-minimized");
+    // A start with `--launch-minimized` opens no window until the author asks
+    // for one (`activate`).
+    this._launchedMinimized = getCLIArgument("launch-minimized");
+    this.suppressWindowOpening = this._launchedMinimized;
 
     // Detect whether we have an RTL locale for correct traffic light positions.
     const schema = bcp47.parse(app.getLocale());
@@ -225,23 +234,6 @@ export default class WindowProvider extends ProviderContract {
                 err,
               ),
             );
-          break;
-        case "show-item-in-folder":
-          let { itemPath } = payload;
-          if (itemPath.startsWith("safe-file://")) {
-            itemPath = itemPath.replace("safe-file://", "");
-          } else if (itemPath.startsWith("file://")) {
-            itemPath = itemPath.replace("file://", "");
-          }
-
-          // Due to the colons in the drive letters on Windows, the pathname will
-          // look like this: /C:/Users/Documents/test.jpg
-          // See: https://github.com/Zettlr/Zettlr/issues/5489
-          if (/^\/[A-Z]:/i.test(itemPath)) {
-            itemPath = itemPath.slice(1);
-          }
-
-          shell.showItemInFolder(decodeURIComponent(itemPath));
           break;
       }
     });
@@ -398,7 +390,7 @@ export default class WindowProvider extends ProviderContract {
       }
 
       const nWindows = Object.values(this._mainWindows).length; // BrowserWindow.getAllWindows().length
-      const leaveAppRunning = this._config.get().system.leaveAppRunning;
+      const leaveAppRunning = this.keepsSessionRunning();
 
       // If this is the last window open on Windows or Linux, the user intention
       // is to quit the app. To prevent the document manager from removing the
@@ -408,13 +400,14 @@ export default class WindowProvider extends ProviderContract {
       // documents manager about it so that it keeps the document in the config.
       if (nWindows === 1 && process.platform !== "darwin") {
         if (!leaveAppRunning) {
-          if (!this._documents.isClean()) {
+          if (this._documents.settlesBeforeQuit()) {
             // Keep the window alive while the quit prompt is open. Letting the
             // close proceed fires window-all-closed -> a second app.quit() ->
             // a second stacked prompt, and Cancel on the prompt would leave
-            // the app running with no window. Once the prompt resolves, the
-            // re-issued quit finds the documents clean, this branch no longer
-            // prevents, and the close goes through.
+            // the app running with no window. Once the quit has nothing left
+            // to settle, this branch no longer prevents, and the close goes
+            // through. A document that holds an undecided proposal stays
+            // modified and is nothing to settle: its sidecar has its text.
             event.preventDefault();
           }
           app.quit();
@@ -428,10 +421,14 @@ export default class WindowProvider extends ProviderContract {
       // changes shows the save-or-discard prompt first. askUserToCloseWindow drops the
       // window itself once answered, so the close it then permits comes back
       // through here with nothing left to ask about.
+      // What repeats this close after the documents provider refused it.
+      const closeAgain = async (): Promise<void> => {
+        window.close();
+      };
       if (!this._documents.isClean(key)) {
         event.preventDefault();
         this._documents
-          .askUserToCloseWindow(key)
+          .askUserToCloseWindow(key, closeAgain)
           .then((canCloseWindow) => {
             if (canCloseWindow) {
               documentCloseReady = true;
@@ -444,10 +441,12 @@ export default class WindowProvider extends ProviderContract {
       } else {
         event.preventDefault();
         this._documents
-          .closeWindow(key)
-          .then(() => {
-            documentCloseReady = true;
-            window.close();
+          .closeWindow(key, closeAgain)
+          .then((closed) => {
+            if (closed) {
+              documentCloseReady = true;
+              window.close();
+            }
           })
           .catch((err) => {
             this._logger.error("[WindowManager] Could not close clean window", err);
@@ -644,11 +643,24 @@ export default class WindowProvider extends ProviderContract {
   }
 
   /**
-   * This function gets called from the tray provider to signal to the window
-   * provider that the user is ready to "activate" the app. Only gets called
-   * once per program run.
+   * Whether the session stays in the notification area when its last window
+   * closes: the setting `system.leaveAppRunning` of the author, or a start
+   * with `--launch-minimized`. The option holds for its own start and is not
+   * a setting. A desktop without a notification area keeps no session.
    */
-  public activateFromTray(): void {
+  public keepsSessionRunning(): boolean {
+    return (
+      checkedEnvironment().tray.supported &&
+      (this._config.get("system.leaveAppRunning") || this._launchedMinimized)
+    );
+  }
+
+  /**
+   * The author asks for the window of the session: a click on the tray icon
+   * or a second start of the application. After a start in the notification
+   * area this opens the windows of the session.
+   */
+  public activate(): void {
     this.suppressWindowOpening = false;
     this.syncMainWindows(); // Ensure all main windows are there
     this.showAnyWindow(); // Ensure at least one window is actually visible
@@ -735,6 +747,24 @@ export default class WindowProvider extends ProviderContract {
       throw new Error(`No main window ${windowId}`);
     }
     window.webContents.send("jump-to-line", { filePath, line });
+  }
+
+  /**
+   * Sends a message to the main windows `windowIds` that have a working
+   * renderer. When none of them has one, the main window that the author
+   * used last gets the message.
+   */
+  tellMainWindows<A extends readonly IpcArgument[]>(
+    windowIds: readonly string[],
+    channel: string,
+    ...args: A & Cloneable<A>
+  ): void {
+    tellMainWindows(
+      windowIds.map((windowId) => this._mainWindows[windowId]),
+      this.getFirstMainWindow(),
+      channel,
+      ...args,
+    );
   }
 
   /**
@@ -985,31 +1015,30 @@ export default class WindowProvider extends ProviderContract {
   }
 
   /**
-   * Opens the print window with the given file
+   * Opens the print window with the given file. A print window of another
+   * file closes, and a new window opens for this one.
    *
    * @param   {string}  filePath  The file to load
    */
   showPrintWindow(filePath: string): void {
-    if (this._printWindow === null) {
-      const conf = this._retrieveWindowPosition("print", null);
-      this._printWindow = createPrintWindow(this._logger, this._config, filePath, conf);
-      this._hookWindowResize(this._printWindow, "print");
-      this._printWindowFile = filePath;
-
-      // Dereference the window as soon as it is closed
-      this._printWindow.on("closed", () => {
+    if (this._printWindow !== null && this._printWindowFile === filePath) {
+      this._makeVisible(this._printWindow);
+      return;
+    }
+    // `close()` is asynchronous: the old window emits `closed` after the new
+    // one exists, so its handler releases only its own window.
+    this._printWindow?.close();
+    const conf = this._retrieveWindowPosition("print", null);
+    const printWindow = createPrintWindow(this._logger, this._config, filePath, conf);
+    this._hookWindowResize(printWindow, "print");
+    this._printWindow = printWindow;
+    this._printWindowFile = filePath;
+    printWindow.on("closed", () => {
+      if (this._printWindow === printWindow) {
         this._printWindow = null;
         this._printWindowFile = undefined;
-      });
-    } else if (this._printWindowFile === filePath) {
-      this._makeVisible(this._printWindow);
-    } else {
-      // There is a print window, but a different file was requested.
-      // In this case, close the current print window and call this function
-      // again so that the first if is executed
-      this._printWindow.close();
-      this.showPrintWindow(filePath);
-    }
+      }
+    });
   }
 
   /**

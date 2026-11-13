@@ -1,5 +1,11 @@
 # Launch the MathJax-rendering fork spike.
 bun := "bun"
+
+# The package manager that package.json declares. bun 1.4 installs a second
+# copy of the vendored @lezer/markdown under @codemirror/lang-markdown from
+# the same lockfile, and CodeMirror then rejects the parser of the app
+# (test/pandoc-lezer-fork-integration.spec.ts).
+package_manager := `jq -r .packageManager package.json`
 zettlr_agent_tunnel_service := "openai-tunnel-zettlr-pandoc.service"
 
 # ai-review-ci contract consumed by doctor and the shared workflow triggers.
@@ -15,22 +21,9 @@ ai_review_ci_default_branch := "develop"
 default:
     @just --list
 
-# Edit and compile one .tikz or .tikzcd file in the standalone TikZ workbench.
-[no-cd]
-tikz-standalone file="":
-    {{bun}} run "{{justfile_directory()}}/packages/tikz-workbench/standalone/server.ts" "{{file}}"
-
-# Rebuild the pinned source-aware TikZ editor and local MathJax assets.
-update-tikz-editor-vendor:
-    {{bun}} run "{{justfile_directory()}}/packages/tikz-workbench/scripts/update-tikz-editor-vendor.mjs"
-
-# Rebuild the pinned Quiver fork and its local KaTeX distribution.
-update-quiver-vendor:
-    {{bun}} run "{{justfile_directory()}}/packages/tikz-workbench/scripts/update-quiver-vendor.mjs"
-
 [private]
 sync-dependencies:
-    {{bun}} install --frozen-lockfile
+    {{bun}} x {{package_manager}} install --frozen-lockfile
 
 # Install the repo-owned Hyprland desktop launcher into ~/.local.
 install-desktop-launcher:
@@ -40,10 +33,18 @@ install-desktop-launcher:
 install-systemd-tunnel:
     bash "{{justfile_directory()}}/scripts/install-systemd-tunnel.sh"
 
-# Enable and start the Agent API tunnel service.
+# Install the system unit that restarts the tunnel after resume (needs sudo).
+install-systemd-tunnel-resume:
+    sudo install -m 0644 "{{justfile_directory()}}/scripts/systemd/openai-tunnel-zettlr-pandoc-resume@.service" /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable "openai-tunnel-zettlr-pandoc-resume@$(id -un).service"
+
+# Enable the Agent API tunnel service and start it from the installed unit.
+# A tunnel that runs is started again, so a changed unit takes effect.
 start-systemd-tunnel:
     systemctl --user daemon-reload
-    systemctl --user enable --now "{{zettlr_agent_tunnel_service}}"
+    systemctl --user enable "{{zettlr_agent_tunnel_service}}"
+    systemctl --user restart "{{zettlr_agent_tunnel_service}}"
 
 # Stop and disable the Agent API tunnel service.
 stop-systemd-tunnel:
@@ -63,8 +64,9 @@ launch: sync-dependencies
     {{bun}} run start
 
 # Launch the desktop app in develop mode with the normal user configuration.
-# Extra arguments are file paths handed to Electron (electron-forge forwards
-# app arguments after `--`). [positional-arguments] exposes them as "$@" so
+# Extra arguments are file paths and app options handed to Electron
+# (electron-forge forwards app arguments after `--`); `--vue-devtools` loads
+# the Vue.js devtools extension. [positional-arguments] exposes them as "$@" so
 # paths containing spaces survive; bare {{args}} interpolation would word-split.
 [positional-arguments]
 launch-desktop *files: sync-dependencies
@@ -122,12 +124,46 @@ run-packaged:
 # repository-wide spec glob. Usage: just test-file test/example.spec.ts
 test-file file: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "{{file}}"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "{{file}}"
 
+# The unit-test launcher removes its temp directory at exit; an assembled-app
+# spec keeps its artifacts in the system temp directory, as under `test-e2e`.
 # Run one assembled-app spec with enough time for Electron to boot.
 test-e2e-file file: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "{{file}}"
+    @just _e2e-run "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --timeout 180000 "{{file}}"
+
+# Run a command in the environment of an e2e run. The run owns its X
+# display, its session bus and its loopback.
+#
+# The display is the one of the environment, or one virtual display for the
+# whole command when the environment has none. An assembled-app spec starts
+# the app with `--ozone-platform=x11`, through Forge or as the packaged
+# binary itself, and each start finds the display in `DISPLAY`. The default
+# screen of xvfb-run is 640x480; a new window sizes itself from the screen,
+# and the three panes need more than that.
+#
+# The session bus has no services (`scripts/e2e-session-bus.conf`): a desktop
+# notification of the app of a run does not reach the desktop of the author.
+#
+# The loopback is a network namespace with `lo` and no other interface. An
+# app of the run binds its ports there: a process of the host, such as the
+# desktop app of the author on the default Agent API port, takes no port
+# from the run, and the run reaches no service of the host and no network
+# (#215). The hosted runner permits the namespace after `just setup-ci`.
+# The namespace has the user of the run; the command starts without the
+# capabilities that set up `lo`.
+[private]
+[positional-arguments]
+_e2e-run +command:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    run=(dbus-run-session --config-file="{{justfile_directory()}}/scripts/e2e-session-bus.conf" --)
+    if [[ -z "${DISPLAY:-}" ]]; then
+      run+=(xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24')
+    fi
+    exec unshare --user --map-current-user --net --keep-caps -- \
+      bash -c 'ip link set lo up && exec setpriv --inh-caps=-all --ambient-caps=-all -- "$@"' e2e-run "${run[@]}" "$@"
 
 # Install or upgrade the flowmark and flowmark-lint commands from Flowmark's main branch.
 install-flowmark:
@@ -136,7 +172,7 @@ install-flowmark:
 # Run the focused workspace-reference test suite.
 test-references: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/rename-preview-summary.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/export-quoted-inputs.spec.ts" "test/documents-provider-navigation.spec.ts" "test/preflight-crossref.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-search.spec.ts"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/rename-preview-summary.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/export-quoted-inputs.spec.ts" "test/documents-provider-navigation.spec.ts" "test/preflight-crossref.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-search.spec.ts"
 
 # Run the reference UI suite: the references-provider Electron shell spec
 # (Phase 3b) plus the Chromium probe specs (Mod-P search overlay incl. the
@@ -145,12 +181,12 @@ test-references: sync-dependencies
 # Mirrors test-file's invocation with the longer timeout the xvfb probes need.
 test-reference-ui: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/reference-provider-shell.spec.ts" "test/reference-search-overlay.spec.ts" "test/reference-navigation.spec.ts" "test/reference-create-label.spec.ts" "test/reference-rename-preview.spec.ts" "test/reference-error-surface.spec.ts"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/reference-provider-shell.spec.ts" "test/reference-search-overlay.spec.ts" "test/reference-navigation.spec.ts" "test/reference-create-label.spec.ts" "test/reference-rename-preview.spec.ts" "test/reference-error-surface.spec.ts"
 
 # Run the annotations panel animation performance and layout isolation spec.
 test-annotations-animation: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/annotations-panel-animation.spec.ts"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/annotations-panel-animation.spec.ts"
 
 # Cross-repository proof: ordered Project inputs through the companion
 # pandoc-config compile-pandoc-project recipe (issue #1). Hard-bails when the
@@ -162,30 +198,30 @@ test-pandoc-config-integration:
 # Run the format and lint services against the installed Flowmark commands.
 test-flowmark-integration: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "test/flowmark-format-integration.ts"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "test/flowmark-format-integration.ts"
 
 # Run the Zotero operations against the running Zotero, its local-write-api add-on and the Better BibTeX export.
 test-zotero-integration: sync-dependencies
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/zotero-agent-api-integration.ts"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/zotero-agent-api-integration.ts"
 
 # Run the repository test suite. The guard executes before Mocha can start.
 test: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --timeout 120000 --inline-diffs
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --timeout 120000 --inline-diffs
 
 # Run the assembled Electron app against its isolated document workspace.
 # Portable: runs on hosted CI and locally alike.
 test-e2e:
-    {{bun}} install --frozen-lockfile
+    {{bun}} x {{package_manager}} install --frozen-lockfile
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    {{bun}} run test:e2e
+    @just _e2e-run {{bun}} run test:e2e
 
 # Run the workstation-owned desktop-launcher proofs (e2e/desktop/). These
 # drive the installed desktop entry through a live Hyprland compositor and
 # the packaged binary from `just package`; they assert those preconditions
 # loudly instead of skipping, so they run in the local push gate, not CI.
 test-e2e-desktop:
-    {{bun}} install --frozen-lockfile
+    {{bun}} x {{package_manager}} install --frozen-lockfile
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     {{bun}} run test:e2e:desktop
 
@@ -207,14 +243,15 @@ test-push:
 
 [private]
 test-ci:
-    {{bun}} install --frozen-lockfile
-    bash "{{justfile_directory()}}/scripts/configure-electron-sandbox-ci.sh"
+    {{bun}} x {{package_manager}} install --frozen-lockfile
+    node -e "require('electron')"
+    bash "{{justfile_directory()}}/scripts/configure-electron-sandbox-ci.sh" "{{justfile_directory()}}/node_modules/electron/dist"
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-ci
 
 # The scheduled QC run dispatches this tier: the whole-tree debt audit.
 [private]
 ambient:
-    {{bun}} install --frozen-lockfile
+    {{bun}} x {{package_manager}} install --frozen-lockfile
     @just -f ~/ai-review-ci/justfiles/bun.just -d . ambient
 
 [private]

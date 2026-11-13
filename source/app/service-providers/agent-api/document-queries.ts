@@ -14,7 +14,9 @@
  */
 
 import { Text } from "@codemirror/state";
-import { hasErrnoCode } from "@common/util/is-errno-exception";
+import { hasMarkdownExt } from "@common/util/file-extention-checks";
+import isErrnoException, { hasErrnoCode } from "@common/util/is-errno-exception";
+import { isAtOrInsideRoot } from "@common/util/renderer-path-polyfill";
 import { sha256Text } from "@common/util/sha256";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type {
@@ -23,6 +25,7 @@ import type {
   DocumentSummary,
   EditorContext,
   EditorViewSummary,
+  FolderNotListed,
   ReadDocumentResponse,
   ReadSide,
   SearchDocumentRequest,
@@ -34,6 +37,7 @@ import type {
   WorkspaceEntryCreateRequest,
   WorkspaceEntryResponse,
   WorkspaceFileEntry,
+  WorkspaceFilesResponse,
 } from "@dts/common/agent-api";
 import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
 import { DocumentType } from "@dts/common/documents";
@@ -42,7 +46,13 @@ import type {
   CollaborationApplicationService,
   ReviewQueryPort,
 } from "@providers/documents/document-collaboration-application-service";
-import { normalizeText, reviewReferenceText } from "@providers/documents/review-diff-store";
+import {
+  normalizeText,
+  type ReviewStatus,
+  reviewReferenceText,
+  reviewStatus,
+} from "@providers/documents/review-diff-store";
+import type { DirectoryListing } from "@providers/fsal/util/read-directory";
 import type LogProvider from "@providers/log";
 import fs from "fs";
 import path from "path";
@@ -52,6 +62,17 @@ import vm from "vm";
 const SEARCH_CONTEXT_DEFAULT = 3;
 export const SEARCH_DEADLINE_MS = 1000;
 export const MAX_SEARCH_HITS = 1000;
+
+/**
+ * The file of a closed document refuses its read (`EACCES`, `EIO`). The
+ * Agent API answers 409 `DOCUMENT_UNREADABLE` with this message.
+ */
+export class DocumentUnreadableError extends Error {
+  constructor(filePath: string, cause: NodeJS.ErrnoException) {
+    super(`Cannot read ${filePath}: ${cause.message}`, { cause });
+    this.name = "DocumentUnreadableError";
+  }
+}
 
 export class SearchPatternError extends Error {
   constructor(cause?: unknown) {
@@ -116,7 +137,7 @@ export interface AgentDocumentQueryHost {
    */
   fsal?: {
     isDir: (absPath: string) => Promise<boolean>;
-    readDirectoryRecursively: (directoryPath: string) => Promise<string[]>;
+    readDirectoryRecursively: (directoryPath: string) => Promise<DirectoryListing>;
     createDir: (dirPath: string) => Promise<void>;
     createFile: (filePath: string, content: string) => Promise<void>;
   };
@@ -161,12 +182,42 @@ interface LocatedAnnotation {
   workingText: string;
 }
 
+/** A document with annotation state: its live state when loaded, its sidecar when closed. */
+interface AnnotationDocument {
+  documentId: string;
+  open: boolean;
+  workingText: string;
+  annotations: AnnotationSet;
+}
+
+/** The annotation with the id among the documents, located. */
+function locateAnnotation(
+  documents: AnnotationDocument[],
+  annotationId: string,
+): LocatedAnnotation | undefined {
+  for (const located of documents) {
+    const found = located.annotations.items.find((item) => item.annotationId === annotationId);
+    if (found !== undefined) {
+      return {
+        documentId: located.documentId,
+        annotation: found,
+        annotationGeneration: located.annotations.generation,
+        workingText: located.workingText,
+      };
+    }
+  }
+  return undefined;
+}
+
 /** A document's working text, and the text its review started from. */
 interface DocumentText {
   attached: boolean;
   working: string;
   reference: string;
   reviewGeneration: number;
+  /** Where the working text is: a loaded buffer, the sidecar of a closed document, its file. */
+  origin: "buffer" | "sidecar" | "file";
+  review: ReviewStatus | undefined;
 }
 
 /**
@@ -377,56 +428,36 @@ export default class AgentDocumentQueries {
    * need, since neither carries a documentId.
    */
   public async findAnnotationQuery(annotationId: string): Promise<LocatedAnnotation | undefined> {
-    for (const located of await this._annotationDocuments()) {
-      const found = located.annotations.items.find((item) => item.annotationId === annotationId);
-      if (found !== undefined) {
-        return {
-          documentId: located.documentId,
-          annotation: found,
-          annotationGeneration: located.annotations.generation,
-          workingText: located.workingText,
-        };
-      }
-    }
-    return undefined;
+    // An annotation of a loaded document is found without a read of the
+    // sidecars, so a sidecar that cannot be read refuses no lookup of it.
+    return (
+      locateAnnotation(this._loadedAnnotationDocuments(), annotationId) ??
+      locateAnnotation(await this._closedAnnotationDocuments(), annotationId)
+    );
+  }
+
+  /** The annotation documents that are loaded, with their live state. */
+  private _loadedAnnotationDocuments(): AnnotationDocument[] {
+    return this.documents.loadedDocuments.map((document) => ({
+      documentId: document.documentId,
+      open: true,
+      workingText: document.document.toString(),
+      annotations: this.annotations.getAnnotations(document.documentId),
+    }));
   }
 
   /**
-   * Every document that has annotation state, open or closed — the merged
-   * projection behind the annotations routes. Open documents read their live
-   * state; closed documents read the sidecar that carries exactly what the
-   * UI workspace panel shows for them.
-   *
-   * A sidecar outside every configured workspace is not served: the sidecar
-   * directory is keyed by path hash, not provenance, and a workspace removed
-   * since the sidecar was written must not leak into an agent's answer.
+   * The annotation documents that are closed, from their sidecars. Rejects
+   * with CollaborationSidecarUnreadableError while a sidecar cannot be read:
+   * the answer would not be the complete set.
    */
-  private async _annotationDocuments(): Promise<
-    Array<{
-      documentId: string;
-      open: boolean;
-      workingText: string;
-      annotations: AnnotationSet;
-    }>
-  > {
-    const documents: Array<{
-      documentId: string;
-      open: boolean;
-      workingText: string;
-      annotations: AnnotationSet;
-    }> = [];
-    const detachedPaths = new Set<string>();
-    for (const document of this.documents.loadedDocuments) {
-      documents.push({
-        documentId: document.documentId,
-        open: true,
-        workingText: document.document.toString(),
-        annotations: this.annotations.getAnnotations(document.documentId),
-      });
-      detachedPaths.add(path.resolve(document.filePath));
-    }
+  private async _closedAnnotationDocuments(): Promise<AnnotationDocument[]> {
+    const loadedPaths = new Set(
+      this.documents.loadedDocuments.map((document) => path.resolve(document.filePath)),
+    );
+    const documents: AnnotationDocument[] = [];
     for (const sidecar of await this.annotations.listCollaborationSidecars()) {
-      if (detachedPaths.has(path.resolve(sidecar.documentPath))) {
+      if (loadedPaths.has(path.resolve(sidecar.documentPath))) {
         continue;
       }
       if (!(await this.isOpenable(sidecar.documentPath))) {
@@ -440,6 +471,20 @@ export default class AgentDocumentQueries {
       });
     }
     return documents;
+  }
+
+  /**
+   * Every document that has annotation state, open or closed — the merged
+   * projection behind the annotations routes. Open documents read their live
+   * state; closed documents read the sidecar that carries exactly what the
+   * UI workspace panel shows for them.
+   *
+   * A sidecar outside every configured workspace is not served: the sidecar
+   * directory is keyed by path hash, not provenance, and a workspace removed
+   * since the sidecar was written must not leak into an agent's answer.
+   */
+  private async _annotationDocuments(): Promise<AnnotationDocument[]> {
+    return [...this._loadedAnnotationDocuments(), ...(await this._closedAnnotationDocuments())];
   }
 
   /**
@@ -466,20 +511,15 @@ export default class AgentDocumentQueries {
       if (!(await this.isOpenable(filePath))) {
         return undefined;
       }
-      const sidecar = await this.annotations
-        .listCollaborationSidecars()
-        .then((sidecars) =>
-          sidecars.find(
-            (candidate) => path.resolve(candidate.documentPath) === path.resolve(filePath),
-          ),
-        );
-      if (sidecar !== undefined) {
-        return {
-          open: false,
-          workingText: sidecar.workingText,
-          annotations: sidecar.annotations,
-        };
+      const sidecar = await this.reviews.readSidecar(filePath);
+      if (sidecar === undefined) {
+        return undefined;
       }
+      return {
+        open: false,
+        workingText: sidecar.workingText,
+        annotations: sidecar.annotations,
+      };
     }
     // The id may have been minted for a closed document this manager has
     // never seen open (a workspace listing hands those out). Scan the
@@ -570,19 +610,21 @@ export default class AgentDocumentQueries {
   }
 
   /**
-   * Every file a workspace holds, flat, open or not. Undefined when
-   * `workspacePath` names no configured workspace, so the route can answer 404
-   * rather than an empty listing.
+   * Every file a workspace holds, flat, open or not, and each folder whose
+   * content the listing does not hold. Undefined when `workspacePath` names
+   * no configured workspace, so the route can answer 404 rather than an empty
+   * listing.
    */
   public async listWorkspaceFilesByWorkspace(
     workspacePath: string,
-  ): Promise<WorkspaceFileEntry[] | undefined> {
+  ): Promise<WorkspaceFilesResponse | undefined> {
     if (!this.app.config.get().app.openWorkspaces.includes(workspacePath)) {
       return undefined;
     }
     const files: WorkspaceFileEntry[] = [];
     const wikilinks = this.app.links.index;
-    for (const filePath of await this.documents.getFilesForWorkspace(workspacePath)) {
+    const listing = await this.documents.getFilesForWorkspace(workspacePath);
+    for (const filePath of listing.files) {
       files.push({
         documentId: this.documents.ensureDocumentId(filePath),
         path: filePath,
@@ -592,35 +634,40 @@ export default class AgentDocumentQueries {
         ...(wikilinks.has(filePath) ? { linkTarget: wikilinks.canonical(filePath) } : {}),
       });
     }
-    return files;
+    return { files, notListed: listing.notListed };
   }
 
   /**
-   * Every file across every configured workspace, flat, open or not. The
-   * orientation projection behind `getContext`; the per-workspace
-   * `include=files` listing shares its entry shape.
+   * Every file across every configured workspace, flat, open or not, and each
+   * folder whose content the listing does not hold. The per-workspace
+   * `include=files` listing shares its shape.
    */
-  public async listWorkspaceFiles(): Promise<WorkspaceFileEntry[]> {
-    const files: WorkspaceFileEntry[] = [];
+  public async listWorkspaceFiles(): Promise<WorkspaceFilesResponse> {
+    const listing: WorkspaceFilesResponse = { files: [], notListed: [] };
     for (const workspacePath of this.app.config.get().app.openWorkspaces) {
-      const workspaceFiles = await this.listWorkspaceFilesByWorkspace(workspacePath);
-      if (workspaceFiles !== undefined) {
-        files.push(...workspaceFiles);
+      const workspaceListing = await this.listWorkspaceFilesByWorkspace(workspacePath);
+      if (workspaceListing !== undefined) {
+        listing.files.push(...workspaceListing.files);
+        listing.notListed.push(...workspaceListing.notListed);
       }
     }
-    return files;
+    return listing;
   }
 
   public async listWorkspaceDocuments(
     workspacePath: string,
     query: string | undefined,
-  ): Promise<{ workspaceId: string; documents: WorkspaceDocumentEntry[] } | undefined> {
+  ): Promise<
+    | { workspaceId: string; documents: WorkspaceDocumentEntry[]; notListed: FolderNotListed[] }
+    | undefined
+  > {
     if (!this.app.config.get().app.openWorkspaces.includes(workspacePath)) {
       return undefined;
     }
     const normalizedQuery = query === undefined ? "" : query.toLowerCase().trim();
     const documents: WorkspaceDocumentEntry[] = [];
-    for (const documentPath of await this.documents.getFilesForWorkspace(workspacePath)) {
+    const listing = await this.documents.getFilesForWorkspace(workspacePath);
+    for (const documentPath of listing.files) {
       const documentId = this.documents.ensureDocumentId(documentPath);
       if (normalizedQuery.length > 0 && !documentPath.toLowerCase().includes(normalizedQuery)) {
         continue;
@@ -639,7 +686,7 @@ export default class AgentDocumentQueries {
           : { ...summary, workspaceId: workspacePath, loaded: true },
       );
     }
-    return { workspaceId: workspacePath, documents };
+    return { workspaceId: workspacePath, documents, notListed: listing.notListed };
   }
 
   /**
@@ -668,6 +715,8 @@ export default class AgentDocumentQueries {
         reference:
           review === undefined ? working : reviewReferenceText(review.suggestions, working),
         reviewGeneration: review?.generation ?? 0,
+        origin: "buffer",
+        review: this.reviews.getStatus(documentId),
       };
     }
     const sidecar = await this.reviews.readSidecar(filePath);
@@ -681,14 +730,77 @@ export default class AgentDocumentQueries {
             ? working
             : reviewReferenceText(sidecar.review.suggestions, working),
         reviewGeneration: sidecar.review?.generation ?? 0,
+        origin: "sidecar",
+        review: sidecar.review === null ? undefined : reviewStatus(sidecar.review),
       };
     }
-    const working = normalizeText(await this.documents.readSupportedFile(filePath));
+    const disk = await this.diskText(filePath);
+    if (disk === undefined) {
+      return undefined;
+    }
+    const working = normalizeText(disk);
     return {
       attached: false,
       working,
       reference: working,
       reviewGeneration: 0,
+      origin: "file",
+      review: undefined,
+    };
+  }
+
+  /**
+   * The text of a file. A file that is gone has no text; a file that the
+   * filesystem refuses to read is a state of the author's file.
+   */
+  private async diskText(filePath: string): Promise<string | undefined> {
+    return await this.documents.readSupportedFile(filePath).catch((error: unknown) => {
+      if (hasErrnoCode(error, "ENOENT", "ENOTDIR")) {
+        return undefined;
+      }
+      if (isErrnoException(error)) {
+        throw new DocumentUnreadableError(filePath, error);
+      }
+      throw error;
+    });
+  }
+
+  /**
+   * The metadata of a document, open or closed: the summary of a loaded
+   * document, and for a closed workspace file the summary of the text that
+   * a read of the same id gives.
+   */
+  public async describeDocument(
+    documentId: string,
+  ): Promise<DocumentSummary | "OUTSIDE_WORKSPACE" | undefined> {
+    const loaded = await this.getDocumentSummary(documentId);
+    if (loaded !== undefined) {
+      return loaded;
+    }
+    const filePath = this.documents.getDocumentPath(documentId);
+    if (filePath === undefined) {
+      return undefined;
+    }
+    const resolved = await this.documentText(documentId);
+    if (resolved === undefined || resolved === "OUTSIDE_WORKSPACE") {
+      return resolved;
+    }
+    const { working, origin, review } = resolved;
+    // The sidecar of a closed document holds text that the file may not have.
+    const disk = origin === "sidecar" ? await this.diskText(filePath) : working;
+    const dirty = disk === undefined || normalizeText(disk) !== working;
+    return {
+      documentId,
+      uri: `safe-file://${filePath}`,
+      path: filePath,
+      name: path.basename(filePath),
+      type: hasMarkdownExt(filePath) ? "markdown" : "code",
+      dirty,
+      revision: { sha256: sha256Text(working) },
+      lineCount: working.split("\n").length,
+      byteLength: Buffer.byteLength(working, "utf8"),
+      views: [],
+      review,
     };
   }
 
@@ -777,6 +889,7 @@ export default class AgentDocumentQueries {
    * root. A folder whose name the ignore rules hide does not enter the walk
    * (`readDirectoryRecursively`), so the listing is the same set the file
    * manager shows. The workspace root itself is not a child and is not listed.
+   * A folder whose content the walk does not hold is in `notListed`.
    */
   public async listWorkspaceDirectories(
     workspacePath: string,
@@ -788,9 +901,9 @@ export default class AgentDocumentQueries {
     if (fsal === undefined) {
       throw new Error("The workspace directory listing has no filesystem access");
     }
-    const allPaths = await fsal.readDirectoryRecursively(workspacePath);
+    const listing = await fsal.readDirectoryRecursively(workspacePath);
     const directories: WorkspaceDirectoryEntry[] = [];
-    for (const candidate of allPaths) {
+    for (const candidate of listing.paths) {
       if (candidate === workspacePath || !(await fsal.isDir(candidate))) {
         continue;
       }
@@ -801,7 +914,7 @@ export default class AgentDocumentQueries {
         parent: path.dirname(candidate),
       });
     }
-    return { workspaceId: workspacePath, directories };
+    return { workspaceId: workspacePath, directories, notListed: listing.notListed };
   }
 
   /**
@@ -892,6 +1005,15 @@ export default class AgentDocumentQueries {
           message: `An entry already exists at ${targetPath}`,
         };
       }
+      // The filesystem refused the creation: a folder without write
+      // permission, a full disk, a read-only mount.
+      if (isErrnoException(error)) {
+        return {
+          ok: false,
+          code: "PERSISTENCE_FAILED",
+          message: `The ${request.kind} ${targetPath} was not created: ${error.message}`,
+        };
+      }
       throw error;
     }
 
@@ -908,9 +1030,8 @@ export default class AgentDocumentQueries {
 
   /**
    * The configured workspace that contains `absPath`, or undefined. Both sides
-   * are realpath'd so a symlinked workspace root compares against a symlinked
-   * target; a destination that does not exist yet canonicalizes through its
-   * existing parent.
+   * are canonical (`canonicalPath`), so a symlinked workspace root compares
+   * against a symlinked target.
    */
   private async containingWorkspace(absPath: string): Promise<string | undefined> {
     for (const workspacePath of this.app.config.get().app.openWorkspaces) {
@@ -935,34 +1056,40 @@ export default class AgentDocumentQueries {
   }
 
   private async isOpenableInWorkspace(filePath: string, workspacePath: string): Promise<boolean> {
-    let canonicalFilePath: string;
-    try {
-      canonicalFilePath = await fs.promises.realpath(filePath);
-    } catch {
-      return false;
-    }
-
+    const canonicalFilePath = await canonicalPath(filePath);
     let canonicalWorkspacePath: string;
     try {
       canonicalWorkspacePath = await fs.promises.realpath(workspacePath);
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT" && code !== "ENOTDIR") {
+      if (!hasErrnoCode(error, "ENOENT", "ENOTDIR")) {
         throw error;
       }
       this.log.warning(
         `[AgentHTTPProvider] Configured workspace ${workspacePath} could not be resolved ` +
-          `(${code}); treating it as not containing ${filePath}. The workspace is ` +
-          "probably deleted or unmounted.",
+          `(${(error as NodeJS.ErrnoException).code}); treating it as not containing ` +
+          `${filePath}. The workspace is probably deleted or unmounted.`,
       );
       return false;
     }
-    const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
-    return (
-      relativePath === "" ||
-      (!relativePath.startsWith(`..${path.sep}`) &&
-        relativePath !== ".." &&
-        !path.isAbsolute(relativePath))
-    );
+    return isAtOrInsideRoot(canonicalFilePath, canonicalWorkspacePath);
+  }
+}
+
+/**
+ * The path of `filePath` with each symbolic link resolved. A path that does
+ * not exist (a removed file that a document still holds, a new entry) is
+ * the real path of its nearest existing folder joined with the rest of the
+ * path. Each other failure of the filesystem rejects.
+ */
+export async function canonicalPath(filePath: string): Promise<string> {
+  const absolute = path.resolve(filePath);
+  try {
+    return await fs.promises.realpath(absolute);
+  } catch (error) {
+    const parent = path.dirname(absolute);
+    if (!hasErrnoCode(error, "ENOENT", "ENOTDIR") || parent === absolute) {
+      throw error;
+    }
+    return path.join(await canonicalPath(parent), path.basename(absolute));
   }
 }

@@ -15,25 +15,22 @@
 
 import { trans } from "@common/i18n-main";
 import type { EnvironmentInfo } from "@dts/common/environment";
-import { app, ipcMain } from "electron";
-// Developer tools
-import installExtension, { VUEJS_DEVTOOLS } from "electron-devtools-installer";
-import path from "path";
-import {
-  projectQuiverMacros,
-  type QuiverMacrosIPCResponse,
-} from "tikz-workbench/src/quiver-macros";
 import {
   resolveTikzTemplatePath,
   type TikzCompletionIPCResponse,
   tikzTemplateCompletions,
-} from "tikz-workbench/src/tikz-render";
+} from "@dzack/tikz-render/tikz-render";
+import { app, ipcMain } from "electron";
+// Developer tools
+import installExtension, { VUEJS_DEVTOOLS } from "electron-devtools-installer";
+import path from "path";
 import {
   AppServiceContainer,
   getAppServiceContainer,
   isAppServiceContainerReady,
   setAppServiceContainer,
 } from "./app-service-container";
+import { getCLIArgument } from "./service-providers/cli-provider";
 import { attachAppNavigationHandlers } from "./util/attach-app-navigation-handlers";
 // Helper/Utility functions
 import registerCustomProtocols from "./util/custom-protocols";
@@ -53,7 +50,7 @@ import resolveTimespanMs from "./util/resolve-timespan-ms";
  */
 export type MathJaxMacrosIPCResponse = Awaited<ReturnType<typeof loadCanonicalMathJaxMacros>>;
 export type TexMacroCommandsIPCResponse = Awaited<ReturnType<typeof loadCanonicalTexMacroCommands>>;
-export type { QuiverMacrosIPCResponse, TikzCompletionIPCResponse };
+export type { TikzCompletionIPCResponse };
 
 // Statistics: Record the uptime of the application
 let upTimestamp: number;
@@ -99,19 +96,16 @@ export async function bootApplication(): Promise<AppServiceContainer> {
     appServiceContainer.lrt.settleTask(flowmarkTask, new Error(reason));
   });
 
-  // Before we begin, let's load the Vue.js DevTools for debugging
-  if (!app.isPackaged) {
-    try {
-      // Load Vue developer extension
-      log.info("Installing developer extensions ...");
-      const extension = await installExtension(VUEJS_DEVTOOLS);
-      log.info(`Added extension: ${extension.name} v${extension.version}`);
-    } catch (err: unknown) {
-      log.error(
-        `Could not install extension: ${err instanceof Error ? err.message : "unknown error"}`,
-        err,
-      );
-    }
+  // The Vue.js devtools are a browser extension that the app gets from the
+  // network. Its content script puts an inline script into each frame of a
+  // window, and a frame that has the content security policy of the window
+  // refuses that script with a console error (#183). The app therefore loads
+  // the extension only for a start that asks for it, and that start fails
+  // when the extension cannot be loaded.
+  if (getCLIArgument("vue-devtools")) {
+    log.info("Installing the Vue.js devtools extension ...");
+    const extension = await installExtension(VUEJS_DEVTOOLS);
+    log.info(`Added extension: ${extension.name} v${extension.version}`);
   }
 
   registerCustomProtocols(log);
@@ -127,14 +121,16 @@ export async function bootApplication(): Promise<AppServiceContainer> {
     return await loadCanonicalMathJaxMacros(app.getPath("home"));
   });
   ipcMain.handle("tex-macro-commands", async (): Promise<TexMacroCommandsIPCResponse> => {
-    return await loadCanonicalTexMacroCommands(app.getPath("home"));
+    const vocabulary = await loadCanonicalTexMacroCommands(app.getPath("home"));
+    // The completion list has the commands of the readable sources; the log
+    // names each source whose commands it does not have.
+    for (const source of vocabulary.notRead) {
+      log.warning(`[Macros] The completion list has no command of ${source.path}: ${source.cause}`);
+    }
+    return vocabulary;
   });
   ipcMain.handle("tikz-completion-commands", (): TikzCompletionIPCResponse => {
     return tikzTemplateCompletions(resolveTikzTemplatePath(app.getPath("home")));
-  });
-  ipcMain.handle("quiver-macros", async (): Promise<QuiverMacrosIPCResponse> => {
-    const macros = await loadCanonicalMathJaxMacros(app.getPath("home"));
-    return projectQuiverMacros(macros, resolveTikzTemplatePath(app.getPath("home")));
   });
 
   // Now boot up the service container

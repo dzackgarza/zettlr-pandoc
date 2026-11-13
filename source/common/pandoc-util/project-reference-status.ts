@@ -16,7 +16,7 @@
  *
  * - 'same-file' when definitionPath === activeDocumentPath; this always wins,
  *   regardless of Project membership.
- * - The ACTIVE Project is the root whose rootPath contains
+ * - The ACTIVE Project is the innermost root whose rootPath contains
  *   activeDocumentPath. Containment is path-segment-safe: /w/ProjectA never
  *   contains /w/ProjectAB/x.md. An active document inside a root activates
  *   that root even when the document itself is omitted from the root's
@@ -84,7 +84,7 @@ import type {
   ProjectRootSpec,
   ReferenceCompletionEntry,
 } from "../../types/common/references";
-import { isInsideRoot } from "../util/renderer-path-polyfill";
+import { innermostRoot } from "../util/renderer-path-polyfill";
 
 /**
  * How a status-carrying completion entry may be inserted: plainly, not at
@@ -110,18 +110,22 @@ function projectRelativePath(documentPath: string, rootPath: string): string {
 }
 
 /**
- * The root containing `documentPath`, if any.
+ * The Project of a document: the innermost root that holds it, if any.
  *
  * @param   {string}             documentPath  The document's absolute path
  * @param   {ProjectRootSpec[]}  projectRoots  Every visible Project root
  *
  * @return  {ProjectRootSpec|undefined}        The containing root
  */
-function containingRoot(
+export function containingRoot(
   documentPath: string,
-  projectRoots: ProjectRootSpec[],
+  projectRoots: readonly ProjectRootSpec[],
 ): ProjectRootSpec | undefined {
-  return projectRoots.find((root) => isInsideRoot(documentPath, root.rootPath));
+  const rootPath = innermostRoot(
+    documentPath,
+    projectRoots.map((root) => root.rootPath),
+  );
+  return projectRoots.find((root) => root.rootPath === rootPath);
 }
 
 /**

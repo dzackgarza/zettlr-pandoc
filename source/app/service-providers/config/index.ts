@@ -14,7 +14,9 @@
  */
 
 import { loadData, trans } from "@common/i18n-main";
-import PersistentDataContainer from "@common/modules/persistent-data-container";
+import PersistentDataContainer, {
+  type StoreWriteFailureHandler,
+} from "@common/modules/persistent-data-container";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import enumDictFiles from "@common/util/enum-dict-files";
 import { reportError } from "@common/util/error-reporting";
@@ -38,6 +40,7 @@ import {
   systemAppLang,
 } from "./get-config-template";
 import { showOnboardingWindow } from "./onboarding-window";
+import { consolidateRootPaths, rootPathsOnDisk } from "./root-paths";
 
 const ZETTLR_VERSION = app.getVersion();
 
@@ -99,6 +102,8 @@ const guardOptions = {
     ["window.vibrancy", false],
     ["watchdog.activatePolling", false],
     ["zkn.idRE", false],
+    // The FSAL reads the links of each file with it at the start
+    ["zkn.linkFormat", false],
   ]),
   // The following options additionally require a clearing of the cache
   clearCache: new Map<string, boolean>([["zkn.idRE", false]]),
@@ -158,20 +163,25 @@ export default class ConfigProvider extends ProviderContract {
 
   /**
    * Preset sane defaults, then load the config and perform a system check.
-   * @param {Zettlr} parent Parent Zettlr object.
+   * @param {string[]} translationDirectories The directories of the translations; the interface language of the template is one of them.
+   * @param {StoreWriteFailureHandler} onWriteFailure What happens when a write of config.json fails.
    */
-  constructor(private readonly _logger: LogProvider) {
+  constructor(
+    private readonly _logger: LogProvider,
+    translationDirectories: string[],
+    onWriteFailure: StoreWriteFailureHandler,
+  ) {
     super();
     this.configFile = path.join(app.getPath("userData"), "config.json");
 
     this._emitter = new EventEmitter(); // Initiate the emitter
 
-    this.config = getConfigTemplate(systemAppLang());
+    this.config = getConfigTemplate(systemAppLang(translationDirectories));
     this._rules = validationRules();
     this._firstStart = false; // Only true if a config file has been created
     this._newVersion = false; // True if the last read config had a different version
 
-    this._container = new PersistentDataContainer(this.configFile, "json");
+    this._container = new PersistentDataContainer(this.configFile, "json", onWriteFailure);
 
     // Listen for renderer events. These must be synchronous.
     ipcMain.on("config-provider", (event, message) => {
@@ -363,19 +373,14 @@ export default class ConfigProvider extends ProviderContract {
     this.config.app.openWorkspaces = [...new Set(this.config.app.openWorkspaces)];
 
     // Check for the existence of the files and folders
-    for (const file of this.config.app.openFiles) {
-      if (!isFile(file)) {
-        const idx = this.config.app.openFiles.indexOf(file);
-        this.config.app.openFiles.splice(idx, 1);
-      }
-    }
-
-    for (const workspace of this.config.app.openWorkspaces) {
-      if (!isDir(workspace)) {
-        const idx = this.config.app.openWorkspaces.indexOf(workspace);
-        this.config.app.openWorkspaces.splice(idx, 1);
-      }
-    }
+    const onDisk = rootPathsOnDisk(this.config.app, (rootPath, error) => {
+      this._logger.error(
+        `[Config Provider] Could not examine the root path ${rootPath}. It stays in the configuration: ${error.message}`,
+        error,
+      );
+    });
+    this.config.app.openFiles = onDisk.openFiles;
+    this.config.app.openWorkspaces = onDisk.openWorkspaces;
 
     // Now sort the paths.
     this.sortPaths();
@@ -393,38 +398,11 @@ export default class ConfigProvider extends ProviderContract {
   }
 
   /**
-   * This function ensures that all root paths are consolidated, i.e., have no
-   * overlaps. In other words, this function will remove any root paths that are
-   * contained by any of the other roots. This will help prevent any
-   * inconsistencies when a root file is part of a loaded workspace, or some
-   * workspace is loaded as part of another workspace.
+   * Removes each open file that an open workspace holds: the workspace lists
+   * it already. A workspace inside another workspace stays open.
    */
   private consolidateRootPaths(): void {
-    const { openFiles, openWorkspaces } = this.config.app;
-
-    // First, check if any of the open files are part of any of the workspaces.
-    for (const openFile of openFiles) {
-      for (const workspace of openWorkspaces) {
-        if (openFile.startsWith(workspace)) {
-          openFiles.splice(openFiles.indexOf(openFile), 1);
-        }
-      }
-    }
-
-    // Second, check if any open workspaces are subdirectories of any other
-    // workspace.
-    for (const workspace of openWorkspaces) {
-      for (const otherWorkspace of openWorkspaces) {
-        if (workspace === otherWorkspace) {
-          continue;
-        }
-
-        if (workspace.startsWith(otherWorkspace)) {
-          openWorkspaces.slice(openWorkspaces.indexOf(workspace), 1);
-        }
-      }
-    }
-
+    const { openFiles, openWorkspaces } = consolidateRootPaths(this.config.app);
     this.config.app.openFiles = openFiles;
     this.config.app.openWorkspaces = openWorkspaces;
     this._container.set(this.config); // Persist changes

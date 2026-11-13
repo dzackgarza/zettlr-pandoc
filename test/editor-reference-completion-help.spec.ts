@@ -26,6 +26,7 @@ import { type Completion, CompletionContext } from "@codemirror/autocomplete";
 import { forceParsing } from "@codemirror/language";
 import { EditorState, type StateEffect } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
 import { readFileSync } from "fs";
 import path from "path";
@@ -34,7 +35,6 @@ import {
   referencesUpdate,
 } from "source/common/modules/markdown-editor/autocomplete/at-symbols";
 import { citekeyUpdate } from "source/common/modules/markdown-editor/autocomplete/citations";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { openPandocQuickHelpEffect } from "source/common/modules/markdown-editor/plugins/pandoc-quick-help-effect";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { extractReferences } from "source/common/pandoc-util/extract-references";

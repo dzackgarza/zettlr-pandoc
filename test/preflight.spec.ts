@@ -1,8 +1,10 @@
 import assert from "assert";
 import { ChildProcess } from "child_process";
 import { subscribe, unsubscribe } from "diagnostics_channel";
+import { mkdtemp, rm } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
 import {
-  commandResolves,
   findMissingRequirements,
   preflight,
   REQUIRED_COMMANDS,
@@ -13,11 +15,6 @@ import {
 type ChannelMessage = Parameters<Parameters<typeof subscribe>[1]>[0];
 
 describe("Startup preflight", function () {
-  it("resolves a present command and rejects a missing one", async function () {
-    assert.strictEqual(await commandResolves("pandoc"), true);
-    assert.strictEqual(await commandResolves("zzz-definitely-not-a-real-command-xyz"), false);
-  });
-
   it("reports every missing command and path, and nothing that is present", async function () {
     const missing = await findMissingRequirements(
       [
@@ -25,6 +22,7 @@ describe("Startup preflight", function () {
         { command: "zzz-not-a-real-tool", purpose: "absent tool" },
       ],
       [{ target: "/definitely/not/a/real/path/xyz", purpose: "absent file" }],
+      process.env,
     );
     assert.strictEqual(missing.length, 2);
     assert.ok(missing.some((m) => m.includes("zzz-not-a-real-tool")));
@@ -42,6 +40,7 @@ describe("Startup preflight", function () {
       (code) => {
         exitCode = code;
       },
+      process.env,
       [{ command: "zzz-not-a-real-tool", purpose: "absent tool" }],
       [],
     );
@@ -61,6 +60,7 @@ describe("Startup preflight", function () {
       () => {
         exited = true;
       },
+      process.env,
       [{ command: "pandoc", purpose: "present" }],
       [],
     );
@@ -73,7 +73,7 @@ describe("Startup preflight", function () {
     this.timeout(10_000);
     // Integration check: the actual required set must resolve in this
     // environment (documents what the app hard-requires at boot).
-    const missing = await findMissingRequirements(REQUIRED_COMMANDS, requiredPaths());
+    const missing = await findMissingRequirements(REQUIRED_COMMANDS, requiredPaths(), process.env);
     assert.deepStrictEqual(missing, []);
   });
 
@@ -88,13 +88,18 @@ describe("Startup preflight", function () {
       () => {
         failed = true;
       },
+      process.env,
     );
     assert.strictEqual(ok, true);
     assert.strictEqual(failed, false);
   });
 
-  it("the production preflight starts every tool check before one of them ends", async function () {
-    this.timeout(10_000);
+  it("the production preflight starts every tool one time, each before one of them ends", async function () {
+    this.timeout(30_000);
+    // A PATH that no probe of this process has seen: the probes of a PATH
+    // that found their tool are kept (probeTool).
+    const unseen = await mkdtemp(path.join(tmpdir(), "zettlr-preflight-path-"));
+    const env = { ...process.env, PATH: `${unseen}:${String(process.env.PATH)}` };
     // Node publishes each started process on its `child_process` diagnostics
     // channel (https://nodejs.org/api/diagnostics_channel.html#child-process).
     // The channel message comes before the process has its command name.
@@ -112,21 +117,19 @@ describe("Startup preflight", function () {
         await preflight(
           () => {},
           () => {},
+          env,
         ),
         true,
       );
     } finally {
       unsubscribe("child_process", record);
+      await rm(unseen, { recursive: true });
     }
     const order = events.map(({ kind, tool }) => `${kind} ${tool.spawnfile}`);
 
-    // The presence check of each required command, then the two version
-    // reads of the pandoc-crossref compatibility gate.
-    const checks = [
-      ...REQUIRED_COMMANDS.map(({ command }) => command),
-      "pandoc-crossref",
-      "pandoc",
-    ];
+    // The probe of each required command. The pandoc-crossref compatibility
+    // gate reads the version outputs of the same probes.
+    const checks = REQUIRED_COMMANDS.map(({ command }) => command);
     assert.deepStrictEqual(
       order.slice(0, checks.length),
       checks.map((command) => `start ${command}`),

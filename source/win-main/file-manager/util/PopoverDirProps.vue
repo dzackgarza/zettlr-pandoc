@@ -2,6 +2,12 @@
   <PopoverWrapper v-bind:target="target" v-on:close="emit('close')">
     <div id="dir-props">
       <h4>{{ props.directory.name }}</h4>
+      <ul v-if="metadataProblems.length > 0" class="metadata-problems">
+        <li v-for="sentence, idx in metadataProblems" v-bind:key="idx">
+          <cds-icon shape="warning-standard" solid role="presentation"></cds-icon>
+          <span>{{ sentence }}</span>
+        </li>
+      </ul>
       <div class="properties-info-container">
         <div><span>{{ createdLabel }}: {{ creationTime }}</span></div>
         <div>
@@ -30,10 +36,7 @@
         <SelectControl
           v-model="sortingType"
           v-bind:inline="true"
-          v-bind:options="{
-            name: sortByNameLabel,
-            time: sortByTimeLabel
-          }"
+          v-bind:options="sortOptions"
         ></SelectControl>
         <SelectControl
           v-model="sortingDirection"
@@ -44,10 +47,28 @@
           }"
         ></SelectControl>
       </div>
+      <TextControl
+        v-if="sortingType === 'metadata'"
+        v-model="metadataKey"
+        name="dir-props-metadata-key"
+        v-bind:label="metadataFieldLabel"
+        placeholder="date"
+        v-on:confirm="commitMetadataKey"
+      ></TextControl>
+      <ButtonControl
+        v-if="sortingType === 'metadata'"
+        id="dir-props-metadata-apply"
+        v-bind:label="applyLabel"
+        v-on:click="commitMetadataKey"
+      ></ButtonControl>
       <hr>
       <div id="dir-props-project">
         <!-- Project options -->
-        <template v-if="isQuartoProject">
+        <!--
+          A binding whose manifest gives no book is still a binding: the
+          author removes it here.
+        -->
+        <template v-if="isQuartoProject || boundManifest !== null">
           <span>{{ quartoProjectLabel }}: {{ boundManifest ?? DIRECTORY_MANIFEST }}</span>
           <ButtonControl
             v-if="boundManifest !== null"
@@ -158,7 +179,18 @@ import type {
 import type { DirSettingsCommandAPI } from "source/app/service-providers/commands/dir-settings";
 import type { RequestFilesIPCAPI } from "source/app/service-providers/windows";
 import { useConfigStore } from "source/pinia";
-import { computed, onBeforeMount, ref, toRef, watch } from "vue";
+import { computed, ref, toRef, watch } from "vue";
+import {
+  choiceForDirectory,
+  type Direction,
+  directionForDirectory,
+  type SortChoice,
+  setDirection,
+  setMetadataKey,
+  setSort,
+  sortChoiceLabels,
+} from "./explorer-view-menu";
+import { metadataProblemSentence, metadataProblemsOf } from "./read-error";
 
 /** Where Quarto looks for a book's manifest when nothing says otherwise. */
 const DIRECTORY_MANIFEST = "_quarto.yml";
@@ -199,8 +231,8 @@ const quartoProjectLabel = trans("Quarto book");
 const bindManifestLabel = trans("Quarto book file");
 const selectManifestLabel = trans("Select book file…");
 const unbindManifestLabel = trans("Unbind");
-const sortByNameLabel = trans("Sort by name");
-const sortByTimeLabel = trans("Sort by time");
+const metadataFieldLabel = trans("Metadata field");
+const applyLabel = trans("Apply");
 const ascendingLabel = trans("ascending");
 const descendingLabel = trans("descending");
 
@@ -287,13 +319,19 @@ const props = defineProps<{
 
 const emit = defineEmits<(e: "close") => void>();
 
-const sortingType = ref<"name" | "time">("name");
-const sortingDirection = ref<"up" | "down">("up");
+const sortingType = ref<SortChoice>(choiceForDirectory(props.directory));
+const sortingDirection = ref<Direction>(directionForDirectory(props.directory));
+const sortOptions = computed(() => Object.fromEntries(sortChoiceLabels(props.directory)));
+const metadataKey = ref<string>(metadataKeyOf(props.directory));
 const isProject = ref<boolean>(props.directory.settings.project !== null);
 const isQuartoProject = computed(
   () => props.directory.settings.project?.manifest.kind === "quarto",
 );
 const boundManifest = computed(() => props.directory.settings.quartoManifest);
+/** The settings file or the manifest of the folder that could not be used. */
+const metadataProblems = computed(() =>
+  metadataProblemsOf(props.directory).map(metadataProblemSentence),
+);
 const manifestBinding = ref<string>(props.directory.settings.quartoManifest ?? "");
 
 const creationTime = computed(() => {
@@ -323,30 +361,33 @@ const formattedWordCount = computed(() => {
   return trans("%s words", localiseNumber(totalWords));
 });
 
-watch(sortingType, updateSorting);
-watch(sortingDirection, updateSorting);
+watch(sortingType, updateSort);
+watch(sortingDirection, updateDirection);
 watch(isProject, updateProject);
 watch(toRef(props, "directory"), () => {
-  setSorting();
+  showSavedSorting();
+  metadataKey.value = metadataKeyOf(props.directory);
   isProject.value = props.directory.settings.project !== null;
   manifestBinding.value = props.directory.settings.quartoManifest ?? "";
 });
 
-onBeforeMount(setSorting);
+/**
+ * The front matter field that orders the folder, or the field that the editor
+ * suggests when the folder has none.
+ */
+function metadataKeyOf(directory: DirDescriptor): string {
+  return choiceForDirectory(directory) === "metadata"
+    ? directory.settings.explorer.sortMetadataKey
+    : "date";
+}
 
 /**
- * Presets the sorting value with the sorting of the directory descriptor prop.
+ * Shows the sorting that the folder has. A change that the application
+ * refused leaves the folder as it was, and the controls show that.
  */
-function setSorting(): void {
-  const [type, direction] = props.directory.settings.sorting.split("-");
-  // This legacy popover exposes only the historical name/time pair. Extended
-  // Explorer orderings are managed by the visible Explorer controls; opening
-  // Properties must not coerce one of those methods back to a legacy value.
-  if (type !== "name" && type !== "time") {
-    return;
-  }
-  sortingType.value = type;
-  sortingDirection.value = direction === "down" ? "down" : "up";
+function showSavedSorting(): void {
+  sortingType.value = choiceForDirectory(props.directory);
+  sortingDirection.value = directionForDirectory(props.directory);
 }
 
 function openProjectPreferences(): void {
@@ -383,16 +424,34 @@ function updateColor(color: string | null): void {
     .catch((e) => reportError(e));
 }
 
-function updateSorting(): void {
-  ipcRenderer
-    .invoke("application", {
-      command: "dir-sort",
-      payload: {
-        path: props.directory.path,
-        sorting: `${sortingType.value}-${sortingDirection.value}`,
-      },
-    })
-    .catch((e) => reportError(e));
+/**
+ * Sorts the folder by the choice of the control. The controls of a folder
+ * that already has that sorting ask for nothing: they show a state, and only
+ * a choice of the author is a change. The metadata choice waits for its
+ * field.
+ */
+function updateSort(choice: SortChoice): void {
+  if (choice === choiceForDirectory(props.directory) || choice === "metadata") {
+    return;
+  }
+  setSort(props.directory, choice).then(showSavedSorting);
+}
+
+/** Reverses the folder. Its sort and its metadata field stay. */
+function updateDirection(direction: Direction): void {
+  if (direction === directionForDirectory(props.directory)) {
+    return;
+  }
+  setDirection(props.directory, direction).then(showSavedSorting);
+}
+
+/** Sorts the folder by the front matter field of the editor. */
+function commitMetadataKey(): void {
+  const key = metadataKey.value.trim();
+  if (key === "") {
+    return;
+  }
+  setMetadataKey(props.directory, key).then(showSavedSorting);
 }
 
 /**
@@ -448,13 +507,13 @@ function sendBinding(manifest: string | null): void {
         showToast(describeBindingRejection(outcome.reason), "error");
       }
     })
-    .catch((err) => surfaceBindingFailure(err));
+    .catch((err) => reportError(err));
 }
 
 /**
- * Reports a binding that never reached the application. The gesture's whole
- * point is a visible outcome, so a failed call says so where the user is
- * looking, not only in the console.
+ * Reports a manifest picker that failed. The gesture's whole point is a
+ * visible outcome, so a failed call says so where the user is looking, not
+ * only in the console.
  *
  * @param  {unknown}  err  The error the call rejected with
  */
@@ -499,15 +558,24 @@ function updateProject(): void {
         command: "dir-new-project",
         payload: { path: props.directory.path },
       })
-      .catch((e) => reportError(e));
+      .catch((e) => projectChangeRefused(e));
   } else {
     ipcRenderer
       .invoke("application", {
         command: "dir-remove-project",
         payload: { path: props.directory.path },
       })
-      .catch((e) => reportError(e));
+      .catch((e) => projectChangeRefused(e));
   }
+}
+
+/**
+ * The dispatcher shows the refusal. The switch shows whether the folder is a
+ * Project.
+ */
+function projectChangeRefused(err: unknown): void {
+  reportError(err);
+  isProject.value = props.directory.settings.project !== null;
 }
 </script>
 
@@ -531,6 +599,26 @@ body {
 
     // A binding is a path, and a path has nowhere to wrap.
     #dir-props-project span { overflow-wrap: anywhere; }
+
+    .metadata-problems {
+      list-style: none;
+      margin: 0 0 10px;
+      padding: 0;
+
+      li {
+        display: flex;
+        gap: 6px;
+        align-items: flex-start;
+        margin-bottom: 4px;
+        // The sentence holds a path and the message of the filesystem.
+        overflow-wrap: anywhere;
+      }
+
+      cds-icon {
+        flex: none;
+        color: var(--accent-orange);
+      }
+    }
 
     .form-control {
       padding: 5px 0;

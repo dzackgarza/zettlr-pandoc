@@ -17,6 +17,7 @@
 
 // Installs process-wide test doubles; it must load before the modules that read them.
 import "./headless-electron-harness.cjs";
+import { createShortcutConfig } from "@common/commands/command-registry";
 import { strict as assert } from "assert";
 import {
   BrowserWindow,
@@ -24,7 +25,10 @@ import {
   MenuItem,
   type MenuItemConstructorOptions,
 } from "electron";
-import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
+import { mkdtemp, rm, unlink, writeFile } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
+import LogProvider from "source/app/service-providers/log";
 import getDarwinMenu from "source/app/service-providers/menu/menu.darwin";
 import getWin32Menu from "source/app/service-providers/menu/menu.win32";
 import type {
@@ -35,12 +39,10 @@ import type {
   MenuRecentDocuments,
   MenuWindows,
 } from "source/app/service-providers/menu/menu-dependencies";
+import { withRegisteredAccelerators } from "source/app/service-providers/menu/registered-accelerators";
+import RecentDocumentsProvider from "source/app/service-providers/recent-docs";
+import { bootDocumentManager } from "./documents-provider-seam";
 import { sentMessagesFor } from "./headless-electron-harness.cjs";
-
-Object.defineProperty(globalThis, "__UPDATES_DISABLED__", {
-  configurable: true,
-  value: "0",
-});
 
 type MenuBuilder = typeof getWin32Menu;
 type Send = unknown[];
@@ -48,7 +50,6 @@ type Send = unknown[];
 class TestMenuConfig implements MenuConfig {
   get(): {
     editor: { fontSize: number; snippetsFile: string; quickTexFile: string };
-    shortcuts: { ui: ConfigOptions["shortcuts"]["ui"] };
   };
 
   get(key: "system.zoomBehavior" | "darkMode" | "fileMeta" | "debug"): unknown;
@@ -60,8 +61,6 @@ class TestMenuConfig implements MenuConfig {
           snippetsFile: "/tmp/snippets.code-snippets",
           quickTexFile: "/tmp/quicktex_dict.vim",
         },
-        // No custom UI shortcuts: the menu falls back to its own defaults.
-        shortcuts: { ui: { "next-tab": "", "previous-tab": "", "filter-files": "" } },
       };
     }
     return key === "system.zoomBehavior" ? "editor" : false;
@@ -118,6 +117,9 @@ function clickMenuItem(
   const windows: MenuWindows = {
     showAboutWindow: () => {},
     showDefaultsWindow: () => {},
+    showErrorMessage: (title: string, message: string) => {
+      throw new Error(`The menu item opened the error window "${title}": ${message}`);
+    },
     showLogWindow: () => {},
     showPreferences: () => {},
     showTagManager: () => {},
@@ -127,15 +129,19 @@ function clickMenuItem(
     openFile: async () => false,
   };
 
-  const template = getMenu(
-    logger,
-    config,
-    recentDocs,
-    commands,
-    windows,
-    documents,
-    () => false,
-    () => {},
+  // The menu provider gives each item the key of its registered command.
+  const template = withRegisteredAccelerators(
+    getMenu(
+      logger,
+      config,
+      recentDocs,
+      commands,
+      windows,
+      documents,
+      () => false,
+      () => {},
+    ),
+    createShortcutConfig(),
   );
   const item = findItem(template, id);
   assert.ok(item !== undefined, `the menu must expose ${id}`);
@@ -168,7 +174,7 @@ describe("File ▸ Previous/Next file menu navigation", function () {
         sent: [["shortcut", "navigate-back"]],
         commandCalls: [],
         loggedErrors: [],
-        accelerator: platform === "darwin" ? "Cmd+[" : "Ctrl+[",
+        accelerator: "CmdOrCtrl+Alt+-",
       });
     });
 
@@ -177,23 +183,23 @@ describe("File ▸ Previous/Next file menu navigation", function () {
         sent: [["shortcut", "navigate-forward"]],
         commandCalls: [],
         loggedErrors: [],
-        accelerator: platform === "darwin" ? "Cmd+]" : "Ctrl+]",
+        accelerator: "CmdOrCtrl+Shift+-",
       });
     });
   }
 });
 
 describe("Window ▸ Reopen Closed Tab", () => {
-  const platforms: Array<[string, MenuBuilder, string]> = [
-    ["win32/linux", getWin32Menu, "Ctrl+Shift+T"],
-    ["darwin", getDarwinMenu, "Cmd+Shift+T"],
+  const platforms: Array<[string, MenuBuilder]> = [
+    ["win32/linux", getWin32Menu],
+    ["darwin", getDarwinMenu],
   ];
 
-  for (const [platform, getMenu, accelerator] of platforms) {
+  for (const [platform, getMenu] of platforms) {
     it(`${platform}: dispatches the reopen command from the standard accelerator`, () => {
       const result = clickMenuItem(getMenu, "menu.tab_reopen_closed");
       assert.deepEqual(result.sent, [["shortcut", "reopen-closed-tab"]]);
-      assert.equal(result.accelerator, accelerator);
+      assert.equal(result.accelerator, "CmdOrCtrl+Shift+T");
     });
   }
 });
@@ -217,4 +223,65 @@ describe("Edit ▸ authoring source files", function () {
       assert.deepEqual(result.commandCalls, []);
     });
   }
+});
+
+describe("File ▸ Recent files", function () {
+  let workspace = "";
+
+  beforeEach(async function () {
+    workspace = await mkdtemp(path.join(tmpdir(), "zettlr-menu-recent-"));
+  });
+
+  afterEach(async function () {
+    await rm(workspace, { recursive: true, force: true });
+  });
+
+  it("win32/linux: a recent file that another program removed gives one error window that names it", async function () {
+    const gone = path.join(workspace, "orbits.md");
+    await writeFile(gone, "# Orbits\n");
+    // The real list and the real document manager: the author opened the
+    // file once, and the menu was built while the file was on disk.
+    const recentDocs = new RecentDocumentsProvider(new LogProvider(), {
+      get: () => ({ ui: { recentFilesLimit: 10 } }),
+    });
+    recentDocs.add(gone);
+    const documents = await bootDocumentManager([workspace]);
+    const shown: Array<{ title: string; message: string }> = [];
+    const windows: MenuWindows = {
+      showAboutWindow: () => {},
+      showDefaultsWindow: () => {},
+      showLogWindow: () => {},
+      showPreferences: () => {},
+      showTagManager: () => {},
+      showErrorMessage: (title: string, message: string) => {
+        shown.push({ title, message });
+      },
+    };
+    const template = getWin32Menu(
+      { error: () => {} },
+      new TestMenuConfig(),
+      recentDocs,
+      { run: async () => undefined },
+      windows,
+      documents,
+      () => false,
+      () => {},
+    );
+    const item = findItem(template, `menu.recent_docs.${gone}`);
+    assert.ok(item?.click !== undefined, "the menu lists the recent file");
+
+    // Another program removes the file; the menu still lists it.
+    await unlink(gone);
+    const focusedWindow = new BrowserWindow();
+    item.click(new MenuItem(item), focusedWindow, { triggeredByAccelerator: false });
+    focusedWindow.close();
+    const deadline = Date.now() + 5_000;
+    while (shown.length === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    assert.equal(shown.length, 1, "one refused open opens one error window");
+    assert.ok(shown[0].message.includes(gone), `the message names ${gone}: ${shown[0].message}`);
+    await documents.shutdown();
+  });
 });

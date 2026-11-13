@@ -263,10 +263,22 @@ function assignColor(tagName: string): void {
 }
 
 async function renameTag(tagName: string): Promise<void> {
-  await ipcRenderer.invoke("application", {
-    command: "rename-tag",
-    payload: { oldName: tagName, newName: newTag.value },
-  });
+  // The application shows a failure of the command in this window.
+  const renamed = await ipcRenderer
+    .invoke("application", {
+      command: "rename-tag",
+      payload: { oldName: tagName, newName: newTag.value },
+    })
+    .then(
+      () => true,
+      (err: Error) => {
+        reportError(err);
+        return false;
+      },
+    );
+  if (!renamed) {
+    return;
+  }
 
   newTag.value = "";
   renameActiveFor.value = tagName;

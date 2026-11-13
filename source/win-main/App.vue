@@ -5,7 +5,10 @@
     :menubar="shouldShowMenubar"
     :disable-vibrancy="!hasVibrancy"
   >
-    <div class="main-body">
+    <div
+      ref="mainBody"
+      class="main-body"
+    >
       <!-- The activity bar, then the three panes under one splitter (D8): the
          sidebar's drawer, the editor, the annotation panel. -->
       <ActivityBar
@@ -21,9 +24,11 @@
         direction="horizontal"
         class="main-panes"
         :class="{ animating: panesAnimating }"
+        :data-editor-anchor="editorSlide.anchor"
         :style="{
           '--annotation-panel-width': mountWidths.annotationPanel + 'px',
-          '--navigation-sidebar-width': mountWidths.navigationSidebar + 'px'
+          '--navigation-sidebar-width': mountWidths.navigationSidebar + 'px',
+          '--editor-slide-width': editorSlide.width
         }"
       >
         <SplitterPanel
@@ -62,30 +67,30 @@
           :min-size="EDITOR_MINIMUM_PERCENT"
           @focusin="rememberEditorDesktopFocus"
         >
-          <EditorPane
-            v-if="paneConfiguration?.type === 'leaf'"
-            :node="paneConfiguration"
-            :leaf-id="paneConfiguration.id"
-            :editor-commands="editorCommands"
-            :window-id="windowId"
-            @global-search="startGlobalSearch($event)"
-            @reference-search="openReferenceSearch($event)"
-            @file-search="openFileLauncher()"
-            @create-reference-label="openCreateReferenceLabel($event)"
-            @open-pandoc-quick-help="showPandocQuickHelp = true"
-          />
-          <EditorBranch
-            v-else-if="paneConfiguration !== undefined"
-            :node="paneConfiguration"
-            :window-id="windowId"
-            :editor-commands="editorCommands"
-            :is-last="true"
-            @global-search="startGlobalSearch($event)"
-            @reference-search="openReferenceSearch($event)"
-            @file-search="openFileLauncher()"
-            @create-reference-label="openCreateReferenceLabel($event)"
-            @open-pandoc-quick-help="showPandocQuickHelp = true"
-          />
+          <div class="editor-frame">
+            <EditorPane
+              v-if="paneConfiguration?.type === 'leaf'"
+              :node="paneConfiguration"
+              :leaf-id="paneConfiguration.id"
+              :editor-commands="editorCommands"
+              :window-id="windowId"
+              @global-search="startGlobalSearch($event)"
+              @reference-search="openReferenceSearch($event)"
+              @create-reference-label="openCreateReferenceLabel($event)"
+              @open-pandoc-quick-help="showPandocQuickHelp = true"
+            />
+            <EditorBranch
+              v-else-if="paneConfiguration !== undefined"
+              :node="paneConfiguration"
+              :window-id="windowId"
+              :editor-commands="editorCommands"
+              :is-last="true"
+              @global-search="startGlobalSearch($event)"
+              @reference-search="openReferenceSearch($event)"
+              @create-reference-label="openCreateReferenceLabel($event)"
+              @open-pandoc-quick-help="showPandocQuickHelp = true"
+            />
+          </div>
         </SplitterPanel>
         <SplitterResizeHandle
           class="main-pane-handle"
@@ -108,7 +113,7 @@
           <AnnotationsTab
             :workspace-paths="workspaceCollaborationPaths"
             @navigate="navigateToWorkspaceCollaboration($event)"
-            @close="configStore.setConfigValue('window.sidebarVisible', false)"
+            @close="windowStateStore.setPaneVisible('window.sidebarVisible', false)"
           />
         </SplitterPanel>
       </SplitterGroup>
@@ -119,7 +124,7 @@
         :pressed="sidebarVisible ? PANEL_VIEW_ID : ''"
         :badges="panelActivityBadges"
         :label="trans('Panel views')"
-        @press="configStore.setConfigValue('window.sidebarVisible', $event === PANEL_VIEW_ID)"
+        @press="windowStateStore.setPaneVisible('window.sidebarVisible', $event === PANEL_VIEW_ID)"
       />
     </div>
     <template #statusbar>
@@ -173,6 +178,7 @@
     v-if="createLabelPrompt !== undefined"
     :family="createLabelPrompt.family"
     :proposed-slug="createLabelPrompt.proposedSlug"
+    :separator="createLabelSeparator"
     :existing-keys="createLabelExistingKeys"
     @close="createLabelPrompt = undefined"
     @create="handleCreateReferenceLabel($event)"
@@ -197,29 +203,40 @@
  */
 
 import type { CommandId } from "@common/commands/command-registry";
+import { emptyPipeTable } from "@common/commands/editing-menu-items";
 import { trans } from "@common/i18n-renderer";
 import type {
   ConfirmReferenceLabelOutcome,
   CreateReferenceLabelIntent,
 } from "@common/modules/markdown-editor/plugins/create-reference-label";
 import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
-import { buildPipeMarkdownTable } from "@common/util/build-pipe-markdown-table";
 import { reportError } from "@common/util/error-reporting";
 import generateId from "@common/util/generate-id";
+import { loadFromDiskAction } from "@common/util/load-document-from-disk";
 import localiseNumber from "@common/util/localise-number";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import { recordRendererError } from "@common/util/run-recoverably";
+import { saveCopyAction, saveRefusalActions } from "@common/util/save-refusal-action";
 import showToast from "@common/util/show-toast";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import {
+  COLLABORATION_FILE_UNREADABLE_CHANNEL,
+  COLLABORATION_FILE_UNWRITABLE_CHANNEL,
+  type CollaborationFileUnreadableBroadcast,
+  type CollaborationFileUnwritableBroadcast,
+} from "@dts/common/document-collaboration";
+import {
   DocumentType,
+  DP_EVENTS,
+  FILE_REMOVED_KEPT_CHANNEL,
+  type FileRemovedKeptBroadcast,
   type LeafNodeJSON,
   REMOTE_CHANGE_KEPT_CHANNEL,
   type RemoteChangeKeptBroadcast,
   SAVE_REFUSED_CHANNEL,
   type SaveRefusedBroadcast,
 } from "@dts/common/documents";
-import type { SourceRange } from "@dts/common/references";
+import { referenceLabelSeparator, type SourceRange } from "@dts/common/references";
 import {
   type EditorCommandName,
   insertTablePayloadSchema,
@@ -228,6 +245,7 @@ import {
   type ShortcutName,
 } from "@dts/common/shortcut-names";
 import { isSidebarViewId } from "@dts/common/sidebar-views";
+import type { DocumentsUpdateContext } from "@providers/documents";
 import { type UpdateState } from "@providers/updates";
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
 import type {
@@ -243,8 +261,9 @@ import {
   useWindowStateStore,
   useWorkspaceStore,
 } from "source/pinia";
+import type { PaneSetting } from "source/pinia/window-state-store";
 import { type AnyDescriptor } from "source/types/common/fsal";
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import chimeFile from "./assets/chime.mp3";
 import alarmFile from "./assets/digital_alarm.mp3";
 // Import the sound effects for the pomodoro timer
@@ -276,13 +295,17 @@ import {
   type RevealTarget,
   SIDEBAR_VIEWS,
 } from "./sidebar/sidebar-views";
+import { showCitationProblems } from "./util/citation-problem-toasts";
 import {
   type DesktopCommandContext,
   resolveDirectoryHere,
   resolveExternalFile,
 } from "./util/desktop-command-target";
 import { getSemanticDocumentTitle } from "./util/get-document-title";
+import { EDITOR_FILLS_ITS_PANE, type EditorSlide, paneSlide } from "./util/pane-slide";
 import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
+import { REFUSED_ACTION_TEXT } from "./util/refused-action-text";
+import { surfaceDocumentLoadFailure } from "./util/surface-document-load-error";
 
 const ipcRenderer = window.ipc;
 
@@ -313,7 +336,7 @@ const searchParams = new URLSearchParams(window.location.search);
 // necessary for the documents and split views to show up.
 const windowId = searchParams.get("window_id")!;
 
-const fileManagerVisible = computed<boolean>(() => configStore.config.window.fileManagerVisible);
+const fileManagerVisible = computed<boolean>(() => windowStateStore.navigationSidebarShown);
 const isUpdateAvailable = ref(false);
 const hasVibrancy = computed(
   () => configStore.config.window.vibrancy && process.platform === "darwin",
@@ -364,7 +387,7 @@ function onPaneDragging(pane: DraggablePane, dragging: boolean): void {
   // how a pane is hidden by dragging. The width it comes back at is the one
   // it had before that, so this does not persist the zero.
   if (width < PANE_MINIMUM[pane]) {
-    configStore.setConfigValue(PANE_VISIBLE_KEY[pane], false);
+    windowStateStore.setPaneVisible(PANE_VISIBLE_KEY[pane], false);
     return;
   }
   mountWidths[pane] = width;
@@ -487,6 +510,9 @@ async function openWorkspaceFile(path: string): Promise<void> {
 // insertion closure; the workspace key set feeds the live uniqueness verdict.
 const createLabelPrompt = ref<CreateReferenceLabelDialogPrompt | undefined>(undefined);
 const createLabelExistingKeys = ref<string[]>([]);
+// The separator of the new key, from the cross-reference system that
+// renders the document of the request.
+const createLabelSeparator = ref<":" | "-">(":");
 
 /**
  * Fetches the current workspace definition keys from the reference provider
@@ -496,18 +522,25 @@ const createLabelExistingKeys = ref<string[]>([]);
  * @param   {CreateReferenceLabelDialogPrompt}  prompt  The relayed request
  */
 function openCreateReferenceLabel(prompt: CreateReferenceLabelDialogPrompt): void {
-  invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
-    async (channel, message) => await ipcRenderer.invoke(channel, message),
-    { command: "get-snapshot" },
-    trans("Loading workspace references"),
-  )
-    .then((outcome) => {
+  Promise.all([
+    invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+      async (channel, message) => await ipcRenderer.invoke(channel, message),
+      { command: "get-snapshot" },
+      trans("Loading workspace references"),
+    ),
+    ipcRenderer.invoke("application", {
+      command: "get-cross-reference-system",
+      payload: prompt.documentPath,
+    }),
+  ])
+    .then(([outcome, system]) => {
       if (outcome.status === "failed") {
         return; // The boundary surfaced the closable toast; nothing to open.
       }
       createLabelExistingKeys.value = outcome.value.snapshots
         .flatMap((snapshot) => snapshot.definitions)
         .map((definition) => definition.key);
+      createLabelSeparator.value = referenceLabelSeparator(prompt.family, system);
       createLabelPrompt.value = prompt;
     })
     .catch((err) => reportError("Could not open the create-reference-label dialog", err));
@@ -642,23 +675,14 @@ const editorCommands = ref<EditorCommands>({
   data: undefined,
 });
 
-const sidebarsBeforeDistractionfree = ref<{ fileManager: boolean; sidebar: boolean }>({
-  fileManager: true,
-  sidebar: false,
-});
-
-const sidebarVisible = computed<boolean>(() => configStore.config.window.sidebarVisible);
+const sidebarVisible = computed<boolean>(() => windowStateStore.annotationPanelShown);
 
 // Showing and hiding a pane. The panes stay mounted and collapse to nothing
 // through the splitter's own collapse, so the width slides instead of
-// jumping and a pane comes back holding what it held. The transition is
-// armed only around a toggle: a window resize relays the panes too, and a
-// pane that eased after the window edge would lag behind the pointer.
-const PANE_ANIMATION_MS = 180;
-const PANE_VISIBLE_KEY: Record<
-  DraggablePane,
-  "window.fileManagerVisible" | "window.sidebarVisible"
-> = {
+// jumping and a pane comes back holding what it held. The slide runs only
+// around a toggle: a window resize relays the panes too, and a pane that
+// eased after the window edge would lag behind the pointer.
+const PANE_VISIBLE_KEY: Record<DraggablePane, PaneSetting> = {
   navigationSidebar: "window.fileManagerVisible",
   annotationPanel: "window.sidebarVisible",
 };
@@ -668,8 +692,10 @@ const PANE_MINIMUM: Record<DraggablePane, number> = {
 };
 const navigationSidebarPanel = ref<InstanceType<typeof SplitterPanel> | null>(null);
 const annotationPanelPanel = ref<InstanceType<typeof SplitterPanel> | null>(null);
+const mainBody = ref<HTMLDivElement | null>(null);
 const panesAnimating = ref(false);
-let paneAnimationTimer: ReturnType<typeof setTimeout> | undefined;
+const editorSlide = ref<EditorSlide>(EDITOR_FILLS_ITS_PANE);
+const slidePanes = paneSlide({ animating: panesAnimating, editorSlide });
 let paneResizeFrame: number | undefined;
 
 /**
@@ -688,21 +714,16 @@ function panelFor(pane: DraggablePane): InstanceType<typeof SplitterPanel> | nul
 }
 
 /**
- * Slides a pane open or shut. A pane comes back at the width it was left
- * at, which is named here rather than left to the splitter: a pane the
- * window opened with hidden was never collapsed, so the splitter remembers
- * no width for it and would hand it its bare minimum.
+ * Opens or shuts a pane in the splitter. A pane comes back at the width it
+ * was left at, which is named here rather than left to the splitter: a pane
+ * the window opened with hidden was never collapsed, so the splitter
+ * remembers no width for it and would hand it its bare minimum.
  */
 function applyPaneVisibility(pane: DraggablePane, visible: boolean): void {
   const panel = panelFor(pane);
   if (panel === null) {
     return;
   }
-  panesAnimating.value = true;
-  clearTimeout(paneAnimationTimer);
-  paneAnimationTimer = setTimeout(() => {
-    panesAnimating.value = false;
-  }, PANE_ANIMATION_MS);
   if (visible) {
     panel.expand();
     panel.resize(mountWidths[pane]);
@@ -712,12 +733,23 @@ function applyPaneVisibility(pane: DraggablePane, visible: boolean): void {
 }
 
 watch([fileManagerVisible, sidebarVisible], ([sidebar, panel], [wasSidebar, wasPanel]) => {
+  const toggled = new Map<DraggablePane, boolean>();
   if (sidebar !== wasSidebar) {
-    applyPaneVisibility("navigationSidebar", sidebar);
+    toggled.set("navigationSidebar", sidebar);
   }
   if (panel !== wasPanel) {
-    applyPaneVisibility("annotationPanel", panel);
+    toggled.set("annotationPanel", panel);
   }
+  const group = mainBody.value?.querySelector<HTMLElement>(".main-panes");
+  if (group === null || group === undefined) {
+    return;
+  }
+  // The edge of the editor that does not move: the one away from the pane.
+  slidePanes(group, toggled.has("annotationPanel") ? "left" : "right", () => {
+    for (const [pane, visible] of toggled) {
+      applyPaneVisibility(pane, visible);
+    }
+  }).catch(reportError);
 });
 
 /**
@@ -794,19 +826,10 @@ function openDesktopPath(target: string | undefined, missingMessage: string): vo
     showToast(missingMessage, "error");
     return;
   }
+  // The dispatcher shows a refusal (`command-failed`).
   ipcRenderer
     .invoke("application", { command: "open-desktop-path", payload: target })
-    .then((error) => {
-      if (error !== "") {
-        showToast(trans("Could not open %s: %s", target, error), "error");
-      }
-    })
-    .catch((err) => {
-      showToast(
-        trans("Could not open %s: %s", target, err instanceof Error ? err.message : String(err)),
-        "error",
-      );
-    });
+    .catch((err) => reportError(`Could not open ${target}`, err));
 }
 
 /** Open the focused file using its desktop MIME association. */
@@ -837,13 +860,7 @@ function editConfiguredTextFile(target: string, operationLabel: string): void {
       recordRendererError(`${operationLabel} failed`, failure);
       showToast(trans("%s failed: %s", operationLabel, error), "error");
     })
-    .catch((err) => {
-      recordRendererError(`${operationLabel} failed`, err);
-      showToast(
-        trans("%s failed: %s", operationLabel, err instanceof Error ? err.message : String(err)),
-        "error",
-      );
-    });
+    .catch((err) => recordRendererError(`${operationLabel} failed`, err));
 }
 
 function editSnippets(): void {
@@ -879,16 +896,7 @@ function openTerminalHere(): void {
         showToast(trans("Could not open a terminal in %s: %s", target, error), "error");
       }
     })
-    .catch((err) => {
-      showToast(
-        trans(
-          "Could not open a terminal in %s: %s",
-          target,
-          err instanceof Error ? err.message : String(err),
-        ),
-        "error",
-      );
-    });
+    .catch((err) => reportError(`Could not open a terminal in ${target}`, err));
 }
 
 const windowTitle = computed<string>(() => {
@@ -953,7 +961,6 @@ interface NavigationSidebarHandle {
 const navigationSidebar = ref<NavigationSidebarHandle | null>(null);
 const paneConfiguration = computed(() => documentTreeStore.paneStructure);
 const lastLeafId = computed(() => documentTreeStore.lastLeafId);
-const distractionFree = computed<boolean>(() => windowStateStore.distractionFreeMode !== undefined);
 
 // Per-pane session history position (issue #1 Phase 5): feeds the toolbar
 // Back/Forward controls' enabled state. Refreshed from the documents
@@ -1011,49 +1018,95 @@ ipcRenderer.on("jump-to-line", (event, target: { filePath: string; line: number 
 });
 refreshNavigationState();
 
-// Showing a pane ends distraction-free mode; the panes themselves mount
-// and unmount with their config values.
-watch([sidebarVisible, fileManagerVisible], ([panel, sidebar]) => {
-  if ((panel || sidebar) && windowStateStore.distractionFreeMode !== undefined) {
-    windowStateStore.distractionFreeMode = undefined;
-  }
-});
-
-watch(distractionFree, (newValue) => {
-  if (newValue) {
-    // Enter distraction free mode
-    sidebarsBeforeDistractionfree.value = {
-      fileManager: fileManagerVisible.value,
-      sidebar: sidebarVisible.value,
-    };
-    configStore.setConfigValue("window.sidebarVisible", false);
-    configStore.setConfigValue("window.fileManagerVisible", false);
-  } else {
-    // Leave distraction free mode
-    configStore.setConfigValue(
-      "window.sidebarVisible",
-      sidebarsBeforeDistractionfree.value.sidebar,
-    );
-    configStore.setConfigValue(
-      "window.fileManagerVisible",
-      sidebarsBeforeDistractionfree.value.fileManager,
-    );
-  }
-});
-
 onMounted(() => {
+  showCitationProblems();
+
   // Saves that main initiated — the close-and-save prompts — have no renderer
   // promise to carry their result, so the provider broadcasts refusals here.
   // Without this the prompt closes and the window stays open with no reason
   // given anywhere the user can see.
   ipcRenderer.on(SAVE_REFUSED_CHANNEL, (event, payload: SaveRefusedBroadcast) => {
     const name = pathBasename(payload.filePath);
-    const message =
-      payload.refusal === undefined
-        ? trans('Could not save "%s".', name)
-        : `${name}: ${payload.refusal.message}`;
-    showToast(message, "error", 12000);
+    const message = `${name}: ${payload.refusal.message}`;
+    const refused = payload.refused;
+    if (refused === undefined) {
+      showToast(message, "error", 12000, ...saveRefusalActions(payload.filePath, payload.refusal));
+      return;
+    }
+    // The refusal stopped a close, a reload or a quit. The author can
+    // repeat that action without the state that stopped it; no action is
+    // refused without that.
+    const text = REFUSED_ACTION_TEXT[refused.action];
+    showToast(message, "error", 12000, {
+      label: text.label(),
+      onAction: () => {
+        ipcRenderer
+          .invoke("documents-provider", {
+            command: "close-without-review",
+            payload: { documentId: refused.documentId },
+          })
+          .then((repeated: boolean) => {
+            if (!repeated) {
+              showToast(text.notWaiting(name), "info", 12000);
+            }
+          })
+          .catch((err: unknown) => {
+            showToast(
+              text.failed(name, err instanceof Error ? err.message : String(err)),
+              "error",
+              12000,
+            );
+          });
+      },
+    });
   });
+
+  // A document opened without its annotations and its review: their file
+  // could not be read. The author can move the file aside, so that the
+  // document takes new annotations; the file is kept.
+  ipcRenderer.on(
+    COLLABORATION_FILE_UNREADABLE_CHANNEL,
+    (event, payload: CollaborationFileUnreadableBroadcast) => {
+      const name = pathBasename(payload.filePath);
+      showToast(
+        trans(
+          "%s opened without its annotations and its review. Their file cannot be read: %s",
+          name,
+          payload.cause,
+        ),
+        "error",
+        12000,
+        {
+          label: trans("Move the file aside"),
+          onAction: () => {
+            collaborationStore.setAsideCollaborationFile(payload.file).then(
+              (aside) => showToast(trans("The file is kept as %s.", aside), "info", 12000),
+              (err: Error) =>
+                showToast(trans("Could not move the file aside: %s", err.message), "error", 12000),
+            );
+          },
+        },
+      );
+    },
+  );
+
+  // A document opened without its annotations and its review: their file
+  // was read, and the attach to the text of the file could not write it.
+  // The next load of the document attaches the file again.
+  ipcRenderer.on(
+    COLLABORATION_FILE_UNWRITABLE_CHANNEL,
+    (event, payload: CollaborationFileUnwritableBroadcast) => {
+      showToast(
+        trans(
+          "%s opened without its annotations and its review. Their file cannot be written: %s",
+          pathBasename(payload.filePath),
+          payload.cause,
+        ),
+        "error",
+        12000,
+      );
+    },
+  );
 
   // A loaded file changed on disk and the editor kept its contents. The user
   // decides, when they choose, whether the disk version replaces them.
@@ -1062,28 +1115,60 @@ onMounted(() => {
     const message = payload.unsavedChanges
       ? trans("%s changed on disk. The editor keeps your unsaved changes.", name)
       : trans("%s changed on disk. The editor keeps its contents.", name);
-    showToast(message, "info", 12000, {
-      label: trans("Load from disk"),
-      onAction: () => {
-        ipcRenderer
-          .invoke("documents-provider", {
-            command: "load-from-disk",
-            payload: { path: payload.filePath },
-          })
-          .catch((err: unknown) => {
-            showToast(
-              trans(
-                "Could not load %s from disk: %s",
-                name,
-                err instanceof Error ? err.message : String(err),
-              ),
-              "error",
-              12000,
-            );
-          });
-      },
-    });
+    showToast(message, "info", 12000, loadFromDiskAction(payload.filePath));
   });
+
+  // The file of a document with unsaved text was removed, and the document
+  // stayed open. The save of a document with a review needs the file, so
+  // that document offers a copy of its text.
+  ipcRenderer.on(FILE_REMOVED_KEPT_CHANNEL, (event, payload: FileRemovedKeptBroadcast) => {
+    const name = pathBasename(payload.filePath);
+    if (payload.saveWritesFile) {
+      showToast(
+        trans(
+          "%s was removed from disk. The editor keeps your unsaved changes; a save writes the file again.",
+          name,
+        ),
+        "info",
+        12000,
+      );
+      return;
+    }
+    showToast(
+      trans(
+        "%s was removed from disk. The editor keeps your unsaved changes. A save compares the file with the review of the document, so it is refused while the file is not there.",
+        name,
+      ),
+      "info",
+      12000,
+      saveCopyAction(payload.filePath),
+    );
+  });
+
+  // A loaded file changed on disk and could not be read. The window shows the
+  // cause one time: a pane has an editor for each of its tabs, and two panes
+  // can hold the file. Only a file in a tab is watched, so a window with the
+  // file in a tab is there for each failure.
+  ipcRenderer.on(
+    "documents-update",
+    (event, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
+      if (payload.event !== DP_EVENTS.FILE_REMOTE_CHANGE_ERROR) {
+        return;
+      }
+      const { filePath, documentLoadError } = payload.context;
+      if (filePath === undefined || documentLoadError === undefined) {
+        throw new Error(
+          `Received ${DP_EVENTS.FILE_REMOTE_CHANGE_ERROR} without a file and a cause`,
+        );
+      }
+      const holdsFile = documentTreeStore.paneData.some((pane) =>
+        pane.openFiles.some((file) => file.path === filePath),
+      );
+      if (holdsFile) {
+        surfaceDocumentLoadFailure(filePath, documentLoadError);
+      }
+    },
+  );
 
   // The window-level shortcuts this component owns, by their typed name. The
   // main process sends the same names from the application menu; names other
@@ -1095,7 +1180,7 @@ onMounted(() => {
         .catch((error) => reportError(error));
     },
     "toggle-annotation-panel": () => {
-      configStore.setConfigValue("window.sidebarVisible", !sidebarVisible.value);
+      windowStateStore.setPaneVisible("window.sidebarVisible", !sidebarVisible.value);
     },
     "insert-id": () => {
       editorCommands.value.data = generateId(configStore.config.zkn.idGen);
@@ -1130,7 +1215,7 @@ onMounted(() => {
         .catch((err) => reportError(err));
     },
     "toggle-navigation-sidebar": () => {
-      configStore.setConfigValue("window.fileManagerVisible", !fileManagerVisible.value);
+      windowStateStore.setPaneVisible("window.fileManagerVisible", !fileManagerVisible.value);
     },
     // The file manager focuses its own filter on the next tick; the drawer
     // and the Files section only have to be visible by then.
@@ -1206,12 +1291,7 @@ onMounted(() => {
 });
 
 function insertTable(spec: { rows: number; cols: number }): void {
-  // Generate a simple table based on the info, and insert it.
-  const align = new Array<"center" | "left" | "right" | null>(spec.cols).fill(null);
-  const row = (): string[] => new Array<string>(spec.cols).fill("");
-  const ast: string[][] = Array.from({ length: spec.rows }, row);
-
-  editorCommands.value.data = buildPipeMarkdownTable(ast, align);
+  editorCommands.value.data = emptyPipeTable(spec.rows, spec.cols);
   editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection;
 }
 
@@ -1321,10 +1401,10 @@ function jtl(filePath: string, lineNumber: number, newTab: boolean): void {
 function pressSidebarView(id: string): void {
   if (isSidebarViewId(id)) {
     configStore.setConfigValue("ui.sidebarView", id);
-    configStore.setConfigValue("window.fileManagerVisible", true);
+    windowStateStore.setPaneVisible("window.fileManagerVisible", true);
     return;
   }
-  configStore.setConfigValue("window.fileManagerVisible", false);
+  windowStateStore.setPaneVisible("window.fileManagerVisible", false);
 }
 
 function moveSection(data: { from: number; to: number }): void {
@@ -1444,16 +1524,37 @@ body {
     }
   }
 
-  // A pane slides open and shut. `flex-grow` is what the splitter writes, so
-  // it is what eases; the panes beside it take up the room as it goes.
-  // During animation, the inner sidebar containers are held at target width and clipped
-  // by the collapsing outer pane so cards are not repeatedly reflowed across frames.
+  .editor-frame {
+    width: 100%;
+    height: 100%;
+  }
+
+  // A pane slides open and shut: `paneSlide` plays the `flex-grow` that the
+  // splitter writes from its value of before to its new value. During the
+  // slide the content of each pane is held at the width of the end and
+  // clipped by its pane, so no pane lays its content out again for a frame.
   .main-panes.animating {
     .main-pane {
-      transition: flex-grow 180ms ease;
       overflow: hidden !important;
     }
-    .main-pane-handle { transition: width 180ms ease; }
+
+    [data-pane="editor"] {
+      position: relative;
+
+      > .editor-frame {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: var(--editor-slide-width);
+        height: auto;
+      }
+    }
+
+    &[data-editor-anchor="right"] [data-pane="editor"] > .editor-frame {
+      left: auto;
+      right: 0;
+    }
 
     [data-pane="annotation-panel"] {
       position: relative;

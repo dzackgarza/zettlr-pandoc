@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { type ChildProcess } from "node:child_process";
-import { chmod, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { chmod, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Browser, type Page } from "playwright";
@@ -10,6 +10,7 @@ import {
   createFixture,
   delay,
   findEditorPage,
+  makeUnreadableAndNewer,
   outputTail,
   preserveArtifacts,
   readAppLog,
@@ -144,10 +145,11 @@ describe("opening a Markdown document", function () {
       state: "visible",
       timeout: this.timeout(),
     });
-    const diskDocument = await readFile(
-      requireInitialized(documentPath, "The document path must be initialized"),
-      "utf8",
+    const diskDocumentPath = requireInitialized(
+      documentPath,
+      "The document path must be initialized",
     );
+    const diskDocument = await readFile(diskDocumentPath, "utf8");
     await page.waitForFunction(
       (expected) => {
         const content = document.querySelector(".cm-content");
@@ -204,6 +206,14 @@ describe("opening a Markdown document", function () {
       [],
       `The renderer reported unexpected errors or dialogs:\n${rendererEvents.join("\n")}`,
     );
+    // An open of a readable document reports no failure about it: each
+    // entry of the error level is read with the lines of its details.
+    const errorsAboutDocument = (
+      await readAppLog(requireInitialized(fixtureRoot, "The fixture must be initialized"))
+    )
+      .split(/\n(?=\[\d\d:\d\d:\d\d\] )/u)
+      .filter((entry) => entry.includes("] [Error] ") && entry.includes(diskDocumentPath));
+    assert.deepEqual(errorsAboutDocument, [], "the open reports no failure about the document");
     screenshots.set("visible-document.png", await page.screenshot());
   });
 
@@ -330,9 +340,7 @@ describe("opening a Markdown document", function () {
     );
     const page = await findEditorPage(browser, this.timeout());
 
-    await chmod(activeDocumentPath, 0o000);
-    const changedAt = new Date(Date.now() + 60_000);
-    await utimes(activeDocumentPath, changedAt, changedAt);
+    await makeUnreadableAndNewer(activeDocumentPath, new Date(Date.now() + 60_000));
 
     const toast = page.locator("#zettlr-toast-container .zettlr-toast.error");
     await toast.waitFor({ state: "visible", timeout: 20_000 });

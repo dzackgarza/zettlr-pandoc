@@ -1,3 +1,4 @@
+import type { MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import assert from "assert";
 import { execFile } from "child_process";
 import { mkdtemp, readFile, writeFile } from "fs/promises";
@@ -5,12 +6,13 @@ import os from "os";
 import path from "path";
 import { writeDefaults } from "source/app/service-providers/commands/exporter/index";
 import { loadMathJaxMacros } from "source/app/util/load-mathjax-macros";
-import type { MathJaxMacro } from "tikz-workbench/src/mathjax-config";
 import { promisify } from "util";
 import YAML from "yaml";
 
 const execFileAsync = promisify(execFile);
 
+// The ~/.pandoc directory of the export: its macro tree.
+const MACRO_TREE = path.resolve("test", "fixtures", "pandoc-macros");
 let macros: Record<string, MathJaxMacro>;
 before(async function () {
   macros = await loadMathJaxMacros("test/fixtures/mathjax-macros.json");
@@ -53,8 +55,11 @@ describe("Declarative export filter chain", function () {
       config,
       [markFilter], // the declared, ordered export filter chain
       directory,
-      path.join(directory, "unused.js"),
-      macros,
+      {
+        mathJaxDirectory: path.join(directory, "unused-mathjax"),
+        macros,
+        pandocDirectory: MACRO_TREE,
+      },
     );
 
     // The written defaults must list the declared filter BEFORE the profile's
@@ -92,6 +97,8 @@ describe("Export math-header injection toggle", function () {
     const htmlProfile = YAML.parse(
       await readFile("static/defaults/HTML.yaml", { encoding: "utf8" }),
     ) as Record<string, unknown>;
+    // The exporter can change the object of the profile.
+    const methodOfProfile = structuredClone(htmlProfile["html-math-method"]);
     const noInject = { export: { ...config.export, injectMathHeaders: false }, zkn: config.zkn };
 
     await writeDefaults(
@@ -100,8 +107,11 @@ describe("Export math-header injection toggle", function () {
       noInject,
       [],
       directory,
-      path.join(directory, "unused.js"),
-      macros,
+      {
+        mathJaxDirectory: path.join(directory, "unused-mathjax"),
+        macros,
+        pandocDirectory: MACRO_TREE,
+      },
     );
 
     const written = YAML.parse(
@@ -109,8 +119,8 @@ describe("Export math-header injection toggle", function () {
     ) as Record<string, unknown>;
     const headers = (written["include-in-header"] ?? []) as string[];
     assert.ok(!headers.some((h) => /zettlr-mathjax/.test(h)), "no injected MathJax header");
-    // Injection deletes the profile's html-math-method; skipping preserves it.
-    assert.ok(written["html-math-method"] !== undefined, "profile html-math-method survives");
+    // Injection sets the method of its own; skipping keeps that of the profile.
+    assert.deepStrictEqual(written["html-math-method"], methodOfProfile);
   });
 });
 
@@ -143,8 +153,11 @@ describe("Export template defaults", function () {
       cfg,
       [],
       directory,
-      path.join(directory, "unused.js"),
-      macros,
+      {
+        mathJaxDirectory: path.join(directory, "unused-mathjax"),
+        macros,
+        pandocDirectory: MACRO_TREE,
+      },
     );
     return YAML.parse(
       await readFile(path.join(directory, "defaults.yml"), { encoding: "utf8" }),

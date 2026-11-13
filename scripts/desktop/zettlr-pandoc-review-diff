@@ -15,6 +15,9 @@ const path = require("path");
 
 const PROGRAM = path.basename(process.argv[1] ?? "zettlr-pandoc-review-diff");
 const AGENT_API_PROTOCOL_VERSION = "1.0.0";
+// The editor answers only a caller that sends the token of its own
+// environment. The launcher of the editor and this CLI read one variable.
+const TOKEN_VARIABLE = "ZETTLR_AGENT_API_TOKEN";
 const REQUEST_TIMEOUT_MS = 30_000;
 const KNOWN_OPTIONS = new Set([
   "document",
@@ -41,6 +44,9 @@ function usage() {
     "Optional:",
     "  --baseline-sha256 HEX Expected SHA-256 of the working document.",
     "  -h, --help            Show this help.",
+    "",
+    "Environment:",
+    `  ${TOKEN_VARIABLE}  The token of the Agent API (required).`,
   ].join("\n");
 }
 
@@ -132,12 +138,14 @@ function success(response, expectedStatus, context) {
   return requireRecord(response.body, `${context} response`, response.status);
 }
 
-function request(port, method, requestPath, body) {
+function request(port, token, method, requestPath, body) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
+    const authorization = { Authorization: `Bearer ${token}` };
     const headers = payload === undefined
-      ? {}
+      ? authorization
       : {
+          ...authorization,
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(payload, "utf8"),
         };
@@ -181,6 +189,16 @@ async function main() {
     fail("INVALID_INVOCATION", "Option --baseline-sha256 must contain 64 lowercase hexadecimal characters", undefined, 2);
   }
 
+  const token = process.env[TOKEN_VARIABLE];
+  if (token === undefined || token === "") {
+    fail(
+      "TOKEN_REQUIRED",
+      `The environment has no ${TOKEN_VARIABLE}; the Agent API answers no caller without it`,
+      undefined,
+      2,
+    );
+  }
+
   const documentPath = path.resolve(options.document);
   const patchPath = path.resolve(options.patch);
   if (!fs.existsSync(patchPath) || !fs.statSync(patchPath).isFile()) {
@@ -192,7 +210,7 @@ async function main() {
   }
 
   const ping = success(
-    await request(port, "GET", "/v1/ping"),
+    await request(port, token, "GET", "/v1/ping"),
     200,
     "Agent API ping",
   );
@@ -210,7 +228,7 @@ async function main() {
   }
 
   const listed = success(
-    await request(port, "GET", "/v1/workspaces?include=files"),
+    await request(port, token, "GET", "/v1/workspaces?include=files"),
     200,
     "workspace file listing",
   );
@@ -229,7 +247,7 @@ async function main() {
   }
 
   const content = success(
-    await request(port, "GET", `/v1/documents/${encodeURIComponent(documentId)}?includeContent=true&side=working`),
+    await request(port, token, "GET", `/v1/documents/${encodeURIComponent(documentId)}?includeContent=true&side=working`),
     200,
     "working document read",
   );
@@ -248,6 +266,7 @@ async function main() {
   const proposal = success(
     await request(
       port,
+      token,
       "POST",
       `/v1/documents/${encodeURIComponent(documentId)}/proposals`,
       {

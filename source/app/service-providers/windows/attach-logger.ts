@@ -46,4 +46,16 @@ export default function attachLogger(logger: LogProvider, win: BrowserWindow, id
         break;
     }
   });
+
+  // A renderer that exits leaves a window with no content and no other trace:
+  // record why it ended. See: https://www.electronjs.org/docs/latest/api/web-contents#event-render-process-gone
+  win.webContents.on("render-process-gone", (_event, { reason, exitCode }) => {
+    logger.error(`[${id}] Renderer process gone: reason=${reason} exitCode=${exitCode}`);
+  });
+  win.webContents.on("unresponsive", () => {
+    logger.warning(`[${id}] Renderer is unresponsive`);
+  });
+  win.webContents.on("responsive", () => {
+    logger.info(`[${id}] Renderer is responsive again`);
+  });
 }

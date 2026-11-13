@@ -18,7 +18,10 @@ import { EditorView, hoverTooltip, type Tooltip } from "@codemirror/view";
 import { trans } from "@common/i18n-renderer";
 import { md2html } from "@common/modules/markdown-utils";
 import { reportError } from "@common/util/error-reporting";
+import { imageSourceUri } from "@common/util/image-source-uri";
+import { pathDirname } from "@common/util/renderer-path-polyfill";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
+import { unrenderedPreviewHtml } from "@common/util/unrendered-preview";
 import { configField } from "../util/configuration";
 
 /**
@@ -84,7 +87,9 @@ function footnotesTooltip(view: EditorView, pos: number, side: 1 | -1): Tooltip 
   const fnBody = findRefForFootnote(view.state, fn);
   const { zknLinkFormat } = view.state.field(configField);
 
-  const { library } = view.state.field(configField).metadata;
+  const { library, path } = view.state.field(configField).metadata;
+  // An image of the footnote has a path relative to the folder of the document.
+  const basePath = pathDirname(path);
 
   return {
     pos: nodeAt.from,
@@ -96,17 +101,19 @@ function footnotesTooltip(view: EditorView, pos: number, side: 1 | -1): Tooltip 
       content.classList.add("footnote-preview-container");
       dom.appendChild(content);
 
-      md2html(
-        fnBody === undefined || fnBody.text === "" ? trans("No footnote text found.") : fnBody.text,
-        {
-          onCitation: window.getCitationCallback(library),
-          zknLinkFormat,
+      const source =
+        fnBody === undefined || fnBody.text === "" ? trans("No footnote text found.") : fnBody.text;
+      md2html(source, {
+        onCitation: window.getCitationCallback(library),
+        zknLinkFormat,
+        onImageSrc: (src) => imageSourceUri(src, basePath),
+      }).then(
+        (tooltipContent) => setSanitizedHTML(content, tooltipContent, "document"),
+        (failure: Error) => {
+          reportError("Could not render the footnote", failure);
+          setSanitizedHTML(content, unrenderedPreviewHtml(source, failure), "document");
         },
-      )
-        .then((tooltipContent) => {
-          setSanitizedHTML(content, tooltipContent, "document");
-        })
-        .catch((err) => reportError(err));
+      );
 
       if (fnBody === undefined) {
         return { dom };

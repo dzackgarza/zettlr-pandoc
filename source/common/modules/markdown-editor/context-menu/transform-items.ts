@@ -14,7 +14,6 @@
 
 import { type EditorView } from "@codemirror/view";
 import { trans } from "source/common/i18n-renderer";
-import { cmShortcutToElectron } from "source/common/util/shortcuts";
 import { type SubmenuItem } from "../../window-register/application-menu-helper";
 import { addSpacesAroundEmdashes } from "../commands/transforms/add-spaces-around-emdashes";
 import { curlQuotes } from "../commands/transforms/curl-quotes";
@@ -30,14 +29,12 @@ import { toDoubleQuotes } from "../commands/transforms/to-double-quotes";
 import { toSentenceCase } from "../commands/transforms/to-sentence-case";
 import { toTitleCase } from "../commands/transforms/to-title-case";
 import { zapGremlins } from "../commands/transforms/zap-gremlins";
-import { type EditorShortcutName, getCustomShortcut } from "../keymaps/shortcuts";
+import { type EditorShortcutName } from "../keymaps/shortcuts";
 import { configField } from "../util/configuration";
+import { editorMenuAccelerator } from "./menu-accelerator";
 
 export function getTransformSubmenu(view: EditorView): SubmenuItem {
-  const customShortcutMap = view.state.field(configField).shortcuts;
-  const sc = (name: EditorShortcutName) => {
-    return cmShortcutToElectron(getCustomShortcut(name, customShortcutMap));
-  };
+  const sc = (name: EditorShortcutName) => editorMenuAccelerator(view, name);
 
   return {
     label: trans("Transform"),

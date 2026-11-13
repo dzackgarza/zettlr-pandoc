@@ -13,12 +13,19 @@
  * END HEADER
  */
 
-import { reportError } from "@common/util/error-reporting";
+import { reportError, stderrError } from "@common/util/error-reporting";
 import errorToString from "@common/util/error-to-string";
 import { getCLIArgument, handleExitArguments } from "@providers/cli-provider";
-import { app, dialog } from "electron";
+import { app, crashReporter } from "electron";
 import path from "path";
 import { getAppServiceContainer, isAppServiceContainerReady } from "./app/app-service-container";
+import { ApplicationLifecycle } from "./app/application-lifecycle";
+import {
+  acquireLaunch,
+  type LaunchOutcome,
+  launchRequestSchema,
+  replyToLaunch,
+} from "./app/launch-request";
 import { bootApplication, shutdownApplication } from "./app/lifecycle";
 // Helper function to extract files to open from process.argv
 import extractFilesFromArgv from "./app/util/extract-files-from-argv";
@@ -60,29 +67,19 @@ if (dataDir !== undefined) {
   app.setAppLogsPath(path.join(dataDir, "logs"));
 }
 
-// Immediately after launch, check if there is already another instance of
-// Zettlr running, and, if so, exit immediately. The arguments (including files)
-// from this instance will already be passed to the first instance.
-if (!app.requestSingleInstanceLock()) {
-  if (!app.isPackaged) {
-    // I always forget to close my system install before starting the
-    // development app, so let's just add a small reminder to myself.
-    console.log("There is another instance of Zettlr running. Did you forget to close that one?");
-  }
-  app.exit(0);
-}
+// Write a local minidump for every crashed process into userData/Crashpad.
+// Nothing is uploaded. See: https://www.electronjs.org/docs/latest/api/crash-reporter
+crashReporter.start({ uploadToServer: false });
 
-// Reaching this line means the lock was acquired, i.e. nothing was running to
-// hand the arguments to. A launcher that was only delivering files to a running
-// instance must not silently become that instance: it was started to add a tab
-// to a live window, and booting a whole second app instead is the wrong outcome
-// nobody asked for. Say so and stop.
-if (getCLIArgument("open-in-running-instance")) {
-  reportError("No running Zettlr instance accepted the arguments; nothing was opened.");
-  app.exit(1);
-}
-
-// If we reach this point, we are now booting the first instance of Zettlr.
+// A helper process (GPU, utility, a renderer's zygote child) that exits leaves
+// no other record. See: https://www.electronjs.org/docs/latest/api/app#event-child-process-gone
+app.on("child-process-gone", (_event, { type, reason, exitCode, name }) => {
+  // Electron names only some process types (a utility process, a plugin).
+  const helper = name === undefined ? `type=${type}` : `type=${type} name=${name}`;
+  logUnhandledProcessError(
+    `[Application] Child process gone: ${helper} reason=${reason} exitCode=${exitCode}`,
+  );
+});
 
 // To show notifications properly on Windows, we must manually set the appUserModelID
 // See https://www.electronjs.org/docs/tutorial/notifications#windows
@@ -99,29 +96,47 @@ if (getCLIArgument("disable-hardware-acceleration")) {
 
 // *****************************************************************************
 
-// This array will be only useful for macOS since there we have the "open-file"
-// event indicating that the user wants to open a file. But this event might be
-// emitted before the app is ready and the service container object has been
-// instantiated. This is why we need to cache those in this array. After the app
-// is booted, we won't need this anymore.
-const filesBeforeOpen: string[] = [];
+const restartFiles: string[] = [];
+let restartRequested = false;
 
-/**
- * This variable is being used to determine if all service providers have
- * successfully shut down and we can actually quit the app.
- *
- * @var {boolean}
- */
-let canQuit: boolean = false;
+function failLifecycle(error: Error): void {
+  const details = errorToString(error);
+  // The packaged app logs to a file only; the launcher reads stderr.
+  stderrError(`[Application] Lifecycle failed\n${details}`);
+  reportError(details);
+  app.exit(1);
+}
+
+async function completeNativeActivation(files: string[], outcome: LaunchOutcome): Promise<void> {
+  switch (outcome.status) {
+    case "ready":
+      return;
+    case "retry":
+      restartRequested = true;
+      restartFiles.push(...files);
+      return;
+    case "error":
+      throw new Error(outcome.message);
+  }
+}
 
 /**
  * Hook into the ready event and initialize the main object creating everything
  * else. It is necessary to wait for the ready event, because prior, some APIs
  * may not work correctly.
  */
-app
-  .whenReady()
-  .then(() => {
+const lifecycle = new ApplicationLifecycle({
+  async boot() {
+    const ownership = await acquireLaunch(
+      extractFilesFromArgv().map((file) => path.resolve(file)),
+      getCLIArgument("open-in-running-instance") ? "existing" : "launch",
+    );
+    if (ownership === "delivered") {
+      console.log("[Application] Launch complete.");
+      app.exit(0);
+      return;
+    }
+    await app.whenReady();
     // Override the about panel options so that a little bit more is being shown.
     // Makes only sense for macOS, as we don't call the showAboutPanel() method
     // programmatically, but either way, it's a little bit nicer.
@@ -139,27 +154,27 @@ app
     // Immediately boot the application. This function performs some initial
     // checks to make sure the environment is as expected for Zettlr, and boots
     // up the providers.
-    bootApplication()
-      .then(() => {
-        // The desktop launcher (scripts/desktop/zettlr-pandoc-boot) waits for
-        // this exact line on stdout. A window of the app's class is not proof
-        // of a start: a fatal error dialog carries the same class.
-        console.log("[Application] Boot complete.");
-        getAppServiceContainer()
-          .commands.run("roots-add", filesBeforeOpen.concat(extractFilesFromArgv(process.argv)))
-          .catch((err) => reportError(err));
-      })
-      .catch((err) => {
-        // A packaged build writes errors only to its log file. Also write
-        // to stderr for the launcher log, and show a dialog to the user.
-        const details = errorToString(err);
-        reportError(`[Application] Boot failed\n${details}`);
-        console.error(`[Application] Boot failed\n${details}`);
-        dialog.showErrorBox("Zettlr-Pandoc could not start", details);
-        app.exit(1);
-      });
-  })
-  .catch((e) => reportError(e));
+    await bootApplication();
+    if (!(await getAppServiceContainer().commands.run("roots-add", extractFilesFromArgv()))) {
+      throw new Error("Could not open the startup documents");
+    }
+    console.log("[Application] Boot complete.");
+  },
+  async open(files) {
+    const services = getAppServiceContainer();
+    if (!(await services.commands.run("roots-add", files)))
+      throw new Error("Could not open the requested documents");
+    services.windows.activate();
+  },
+  shutdown: shutdownApplication,
+  release: () => app.releaseSingleInstanceLock(),
+  quit() {
+    if (restartRequested) app.relaunch({ args: process.argv.slice(1).concat(restartFiles) });
+    app.exit(0);
+  },
+  report: (error) => logUnhandledProcessError(errorToString(error)),
+  fail: failLifecycle,
+});
 
 /**
  * This event will be called if another instance of Zettlr has been opened with
@@ -170,22 +185,17 @@ app
  * @param {Array} argv The arguments the second instance had received
  * @param {String} cwd The current working directory
  */
-app.on("second-instance", (event, argv, _cwd) => {
-  if (!isAppServiceContainerReady()) {
-    return;
-  }
-
-  const serviceContainer = getAppServiceContainer();
-
-  serviceContainer.log.info("[Application] A second instance has been opened.");
-
-  // openWindow calls the appropriate function of the windowManager, which deals
-  // with the nitty-gritty of actually making the main window visible.
-  serviceContainer.windows.showAnyWindow();
-
-  // In case the user wants to open a file/folder with this running instance
-  serviceContainer.commands?.run("roots-add", extractFilesFromArgv(argv)).catch((err) => {
-    serviceContainer.log.error("[Application] Error while handling second-instance arguments", err);
+app.on("second-instance", (_event, _argv, _cwd, data) => {
+  const request = launchRequestSchema.parse(data);
+  lifecycle.activate(request.files, async (outcome) => {
+    if (outcome.status === "retry" && request.mode === "existing") {
+      await replyToLaunch(request, {
+        status: "error",
+        message: "The running instance is shutting down",
+      });
+    } else {
+      await replyToLaunch(request, outcome);
+    }
   });
 });
 
@@ -195,31 +205,19 @@ app.on("second-instance", (event, argv, _cwd) => {
 app.on("open-file", (e, filePath) => {
   e.preventDefault(); // Need to explicitly set this b/c we're handling this
 
-  if (isAppServiceContainerReady()) {
-    const serviceContainer = getAppServiceContainer();
-    serviceContainer.log.info(`[Application] Opening file ${filePath}.`);
-    serviceContainer.windows.showAnyWindow();
-    serviceContainer.commands.run("roots-add", [filePath]).catch((err) => {
-      serviceContainer.log.error("[Application] Error while adding new roots", err);
-    });
-  } else {
-    // The Zettlr object has yet to be created -> cache it
-    filesBeforeOpen.push(filePath);
-  }
+  lifecycle.activate([filePath], (outcome) => completeNativeActivation([filePath], outcome));
 });
 
 /**
- * Quit as soon as all windows are closed. Except if
- * `system.leaveAppRunning` is true or on macOS.
+ * Quit as soon as all windows are closed, except on macOS and for a session
+ * that stays in the notification area (`keepsSessionRunning`).
  */
 app.on("window-all-closed", function () {
   if (!isAppServiceContainerReady()) {
     return;
   }
 
-  const { config } = getAppServiceContainer();
-  const { leaveAppRunning } = config.get().system;
-  if (!leaveAppRunning && process.platform !== "darwin") {
+  if (!getAppServiceContainer().windows.keepsSessionRunning() && process.platform !== "darwin") {
     // On OS X it is common for applications and their menu bar
     // to stay active until the user quits explicitly with Cmd + Q
     app.quit();
@@ -231,30 +229,16 @@ app.on("window-all-closed", function () {
  * properly.
  */
 app.on("will-quit", function (event) {
-  if (!canQuit) {
-    // Prevent immediate shutdown and allow the process to shut down first
-    event.preventDefault();
-  } else {
-    return; // Don't prevent quitting, but we don't need to shut down again.
-  }
+  event.preventDefault();
 
-  shutdownApplication()
-    .then(() => {
-      // Now we can safely quit the app. Set the flag so that the callback
-      // won't stop the shutdown, and programmatically quit the app.
-      canQuit = true;
-      app.quit();
-    })
-    .catch((err) => reportError(err));
+  void lifecycle.stop().catch(failLifecycle);
 });
 
 /**
  * On macOS, open a new window as soon as the user re-activates the app.
  */
 app.on("activate", function () {
-  if (isAppServiceContainerReady()) {
-    getAppServiceContainer().windows.showAnyWindow();
-  }
+  lifecycle.activate([], (outcome) => completeNativeActivation([], outcome));
 });
 
 /**

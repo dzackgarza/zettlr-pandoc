@@ -15,7 +15,7 @@
 import { ipcMain } from "electron";
 import { promises as fs } from "fs";
 import { type GetTextTranslations, po } from "gettext-parser";
-import { type LangFileMetadata } from "./util/enum-lang-files";
+import { installedTranslationDirectories, type LangFileMetadata } from "./util/enum-lang-files";
 import { type Candidate } from "./util/find-lang-candidates";
 import getLanguageFile from "./util/get-language-file";
 
@@ -35,7 +35,7 @@ export type I18nIPCResponse = typeof i18nData;
  * side-effect in that it sets the local module variable i18nData
  */
 export async function loadData(lang: string): Promise<Candidate & LangFileMetadata> {
-  const file = getLanguageFile(lang);
+  const file = getLanguageFile(lang, installedTranslationDirectories());
   const contents = await fs.readFile(file.path, "utf-8");
   i18nData = po.parse(contents);
 

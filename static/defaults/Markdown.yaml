@@ -19,7 +19,7 @@ variables: {}
 metadata-files: []
 bibliography: []
 filters:
-- type: citeproc
+  - type: citeproc
 section-divs: true
 eol: lf
 strip-comments: false

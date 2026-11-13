@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { tocField } from "source/common/modules/markdown-editor/plugins/toc-field";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import { divModelFromNode } from "source/common/pandoc-util/pandoc-div-model";

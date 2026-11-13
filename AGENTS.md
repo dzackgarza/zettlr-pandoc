@@ -81,22 +81,30 @@ All project workflows route through the top-level `justfile`. **`just --list`** 
 the source of truth for recipes; do not run builds/exports/tests by hand when a
 recipe exists. Key recipes (see the `justfile` for the exact commands):
 
-| Recipe | What it does |
-|---|---|
-| `just launch` | Dev mode through `scripts/test-gui/index.mjs`; uses the isolated `resources/test-cfg` profile. |
-| `just launch-desktop` | Dev mode (`electron-forge start`) with the normal user configuration. **This is the desktop path that works.** |
-| `just install-desktop-launcher` | Install the repo-owned Hyprland launcher and desktop entry under `~/.local`. |
-| `just package` | Production build and freshness verification (`electron-forge package`) → `app.asar`. |
-| `just verify-build` | Build, then prove the asar is fresh + built from HEAD (observability). |
-| `just verify-build-only` | Fast staleness check of the existing artifact (no rebuild). |
-| `just export-headless PDF.yaml file.md` | Run the real `makeExport` headlessly (no GUI) — debug exports. |
+| Recipe                                  | What it does                                                                                                   |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `just launch`                           | Dev mode through `scripts/test-gui/index.mjs`; uses the isolated `resources/test-cfg` profile.                 |
+| `just launch-desktop`                   | Dev mode (`electron-forge start`) with the normal user configuration. **This is the desktop path that works.** |
+| `just install-desktop-launcher`         | Install the repo-owned Hyprland launcher and desktop entry under `~/.local`.                                   |
+| `just package`                          | Production build and freshness verification (`electron-forge package`) → `app.asar`.                           |
+| `just verify-build`                     | Build, then prove the asar is fresh + built from HEAD (observability).                                         |
+| `just verify-build-only`                | Fast staleness check of the existing artifact (no rebuild).                                                    |
+| `just export-headless PDF.yaml file.md` | Run the real `makeExport` headlessly (no GUI) — debug exports.                                                 |
 
 ## Build process
 
 - **Dev mode** — `electron-forge start` (`just launch-desktop`). Webpack dev
-  build from source on every start; reflects the working tree. **Works.** The
-  desktop launcher uses this. `just launch` instead routes through the
-  repository's isolated GUI-test profile.
+  build from source on every start; reflects the working tree. **Works.**
+  `just launch` instead routes through the repository's isolated GUI-test
+  profile. The desktop launcher starts the packaged build.
+- **No browser extension without a request.** A start loads the Vue.js
+  devtools extension only with the app option `--vue-devtools`
+  (`just launch-desktop --vue-devtools`). The app downloads the extension, and
+  that start fails when the download fails. The content script of the
+  extension puts an inline script into each frame of a window; a frame that
+  has the content security policy of the window refuses it with a console
+  error. An e2e run therefore starts the app without the option (#183).
+  Proof: `e2e/window-frame-scripts.spec.ts`.
 - **Production** — `electron-forge package` (`just package`) → `out/Zettlr-Pandoc-linux-x64/resources/app.asar`.
   webpack configs: `webpack.main.config.js` (Node/main target), `webpack.renderer.config.js`
   (browser/renderer), assembled by `forge.config.js`. The wrapper fails if the build
@@ -107,6 +115,14 @@ recipe exists. Key recipes (see the `justfile` for the exact commands):
   from `scripts/get-git-hash.js`, referenced by `source/win-about/Debug-Tab.vue`).
   Run `just verify-build-only` to instantly answer "is my installed app actually
   current?".
+- **A build that a signal ends fails.** `electron-forge package` runs its
+  subcommand `electron-forge-package.js` as a child process through
+  commander 11, which exited 0 for a child that a signal ended (#71: earlyoom
+  sends SIGTERM to the compile). `patches/commander@11.1.0.patch` makes the
+  command exit 128 + the number of the signal, and `verify-build.py` names the
+  signal. Commander 12 fixes the cause (tj/commander.js#2023, exit 1); drop
+  the patch when Forge depends on it. Proof:
+  `test/forge-subcommand-signal.spec.ts`.
 
 ## The global-app launcher
 
@@ -121,10 +137,29 @@ Desktop entry → wrapper → splash → boot script:
   (Hyprland float/center via `hyprctl dispatch`).
 - `zettlr-pandoc-boot` is the actual launcher. It refreshes MathJax macros, then
   starts the verified packaged build through `just package` when the source
-  fingerprint is stale. It retains focus-if-running (intentional — do not
+  fingerprint is stale. A desktop entry has no shell environment, so the
+  script starts the binary under `direnv exec "$HOME"`: the app gets the
+  variables of `~/.envrc`, the Agent API token among them (§6). The script
+  stops when `direnv` or `~/.envrc` is absent. It retains focus-if-running (intentional — do not
   "fix"), Hyprland window-class detection (`class == zettlr-pandoc`), and
   fail-loud behavior on build or launch failure.
 - Launcher log: `~/.cache/zettlr-pandoc-dev.log`.
+
+## Shared Markdown editor
+
+`packages/pandoc-editor` owns the reusable CodeMirror presentation and Pandoc parser.
+Both Zettlr and math-flashcards consume its `markdownEditor` factory. The package
+imports no application modules. Hosts supply math conversion, preview configuration,
+and ranges that must remain source text. Zettlr adds document-specific renderers
+through its renderer collection. See `packages/pandoc-editor/README.md`.
+
+A click on a rendered widget selects its source through
+`selectRenderedSourceRange` or `placeCursorFromRenderedPoint`
+(`renderers/reveal-rendered-source.ts`; `clickAndSelect` calls the first). A
+Shift-click keeps the anchor of the selection and moves the head over the
+source of the widget, as in text; a Shift-click on a task checkbox does not
+toggle the task. A new widget that handles a click calls one of the two
+functions. Proof: `e2e/shift-click-widgets.spec.ts`.
 
 ## System-specific integrations
 
@@ -139,13 +174,29 @@ Desktop entry → wrapper → splash → boot script:
 - **App load:** `source/app/util/load-mathjax-macros.ts` resolves that central generated
   file and fails loudly when it is absent. The `mathjax-macros` IPC in
   `source/app/lifecycle.ts` serves the same read-only projection to renderer consumers.
-- **Format/validation:** `packages/tikz-workbench/src/mathjax-config.ts` (`parseMathJaxMacros`;
+- **Format/validation:** `packages/tikz-render/src/mathjax-config.ts` (`parseMathJaxMacros`;
   malformed central projections fail rather than being replaced with bundled defaults).
 - **Render:** `source/common/util/mathtex-to-html.ts` (`initializeMathJax`, local
   CommonHTML), wired in `source/common/modules/window-register/index.ts`.
-- **TikZ/Quiver:** TeX compilation follows the real central `dzg-tikz` template/include
-  graph. Quiver starts from the central MathJax projection and then applies compatible
-  later definitions from that actual template graph, matching TeX precedence.
+- **TikZ:** TeX compilation follows the real central `dzg-tikz` template/include
+  graph.
+- **TeX export:** a TeX writer of `writeDefaults` gets the macro package
+  `~/.pandoc/styles/dzg-mathjax.sty` and the files it inputs, flattened by
+  `latexpand` into the header (`texMacroHeader`, `pandoc-math-headers.ts`). The
+  MathJax projection is for MathJax only: a projection of a macro that LaTeX
+  already defines (`\AA`) is no TeX definition. An absent package refuses the
+  export. Proof: `test/export-document.spec.ts` (a LaTeX export, pdflatex).
+- **HTML export:** an HTML writer of `writeDefaults` gets the math method
+  `mathjax` with the component of the app, and a header with the MathJax
+  configuration (the central projection, the extensions, the fonts). Pandoc
+  and the browser of the exported file are no Electron processes and read no
+  file inside `app.asar`: `scripts/export-mathjax.js` names the MathJax
+  files, webpack copies them to `.webpack/main/assets/mathjax`, and the
+  package keeps that folder in `app.asar.unpacked` (`BUNDLED_EXPORT_MATHJAX`,
+  `AssetsProvider.exportMathJaxDirectory`). The exported file loads the
+  extensions and fonts from that folder at run time. Proof:
+  `e2e/html-export-packaged.spec.ts` (the packaged app),
+  `test/pandoc-math-headers.spec.ts`.
 - **Semantic invariant:** macro meanings and arities are owned by `~/.pandoc`; Zettlr
   may project or adapt them to a renderer but must not redefine their mathematics. See
   `~/.pandoc/AGENTS.md` for the object-valued/atomic macro rule.
@@ -155,12 +206,18 @@ Desktop entry → wrapper → splash → boot script:
 Upstream Zettlr only recognizes `$`/`$$`. This fork adds the LaTeX delimiters, and
 they must be threaded through **four** layers:
 
-- **Parser:** `source/common/modules/markdown-editor/parser/math-parser.ts` —
-  `blockMathParser` (opens on `\[`, closes on `\]` incl. a trailing `.\]`),
-  `inlineBracketMathParser` (handles `\( \)` **and** `\[ \]` mid-paragraph, spanning
-  newlines; runs `before: 'Escape'` or the backslash opener is eaten as an escape).
-- **Registered:** `source/common/modules/markdown-editor/parser/markdown-parser.ts`.
-- **Shared pure helpers:** `source/common/util/math-delimiters.ts`
+- **Parser:** the Pandoc grammar fork, `vendor/lezer-markdown-pandoc/src/pandoc/math.ts`
+  (registered in `pandoc/index.ts`): `inlineMathParser` (`$ $`, `$$ $$`) and
+  `singleBackslashMathParser` (`\( \)`, `\[ \]`, spanning newlines; both run
+  `before: 'Escape'` or the backslash opener is eaten as an escape). A display
+  equation is an `InlineCode` node in a `Paragraph`, as Pandoc reads it as an
+  inline `Math` element; its first `CodeMark` is `$$` or `\[`. A consumer that
+  looks for display math tests that mark (`mathDisplayForOpen`), not the node
+  name. The `blockMathParser` of the same file is registered nowhere.
+- **TeX overlay:** `packages/pandoc-editor/src/parser/math-parser.ts`
+  (`mathCodeParse`, the stex parser inside a math node), used by
+  `packages/pandoc-editor/src/parser/markdown-parser.ts`.
+- **Shared pure helpers:** `packages/pandoc-editor/src/util/math-delimiters.ts`
   (`MATH_DELIMITERS`, `mathDisplayForOpen`, `stripMathDelimiters`). **This module must
   import nothing (no CodeMirror/lezer)** — `markdown-to-html` runs in the main
   process, and dragging the editor graph into that Node bundle breaks the webpack
@@ -168,7 +225,10 @@ they must be threaded through **four** layers:
 - **AST:** `source/common/modules/markdown-utils/markdown-ast/index.ts` (treats `\[`
   and `\(` code marks as math).
 - **HTML (`md2html`):** `source/common/modules/markdown-utils/markdown-to-html.ts`.
-- **Live editor widget:** `source/common/modules/markdown-editor/renderers/render-math.ts`.
+- **Live editor widget:** `packages/pandoc-editor/src/renderers/render-math.ts`.
+- **Pandoc exports:** `writeDefaults` (`commands/exporter/index.ts`) gives a
+  Markdown reader `tex_math_single_backslash`, as the PDF recipe does. Proof:
+  `test/export-document.spec.ts` (LaTeX and Word).
 
 ### 3. PDF export → the `~/.pandoc` `compile-pandoc` recipe
 
@@ -186,10 +246,41 @@ they must be threaded through **four** layers:
   PDF is a **custom profile** (`writer: compile-pandoc`) in `getCustomProfiles`
   (`exporter/index.ts`); dispatch is in `makeExport`. The dzg templates require
   **pdflatex** (xelatex/lualatex fail).
+- **The recipe gets the bibliography of the documents.** The run sets
+  `PANDOC_BIB_SOURCE` to the files of the bibliography of each input
+  (`documentBibliography`, §12), apart by `:`, without repeats; the main
+  library is `export.cslLibrary`. An empty value is an export without a
+  bibliography; the recipe reads `ZOTERO_GLOBAL_BIB` only when the variable
+  is not set. A file whose path holds `:` refuses the export. Proof:
+  `test/export-bibliography.spec.ts` (the real recipe, pdflatex and biber).
+- **The templates of a Project go before the settings.** `templateOf`
+  (`commands/dir-project-export.ts`) gives an export profile the LaTeX
+  template of the Project when its writer is the PDF recipe or a TeX writer
+  (`isTexWriter`), and the HTML template of the Project when its writer is an
+  HTML writer (`isHtmlWriter`). `makeExport` gives the recipe that template;
+  an export without one gets `export.latexTemplate`. Proof:
+  `test/project-export.spec.ts`.
+- **An export of unsaved text is an export of the document.** A
+  `MinimalFile` (`exporter/types.d.ts`) has `path`, the document, and
+  `textFile`, the file with the text. `exportDocument` (`commands/export.ts`)
+  writes unsaved text to a directory of its own and removes it after the
+  export. The recipe runs in the folder of the document and gets the text
+  file by its absolute path; a textbundle takes its images from the folder of
+  the document; a wikilink resolves to the document. A declared
+  `pandoc_working_dir` is read from the folder of the document, and one that
+  is no folder refuses the export. A citation library or style of the
+  settings or of the Project that is no file refuses the export
+  (`writeDefaults`). Proof: `test/export-document.spec.ts`,
+  `test/project-export.spec.ts`.
 - The Chromium "Simple PDF" export was removed; every export now goes through pandoc.
-- Export profile list: `list-export-profiles` in
-  `source/app/service-providers/assets/index.ts` = `listDefaults()` (userData/defaults)
-  + `getCustomProfiles()`, with custom profiles overriding same-named defaults.
+- **One list of export profiles.** `exportProfiles`
+  (`commands/exporter/index.ts`) joins the defaults files of
+  `userData/defaults` and the custom profiles (`getCustomProfiles`); a custom
+  profile replaces a defaults file of the same name, so an old `PDF.yaml`
+  there does not replace the PDF recipe. The export menu and the launcher
+  (`list-export-profiles`), the Project export
+  (`AssetsProvider.listExportProfiles`) and `just export-headless` read it.
+  Proof: `test/project-export.spec.ts`.
 
 ### 4. Quarto books
 
@@ -211,19 +302,50 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 - **A chapter's identity is its real path.** `parseQuartoProject`
   (`source/app/util/quarto-project.ts`) resolves each path against the manifest's own
   directory and then through `realpath`, so a symlinked chapter is the file it points
-  at and no file reaches the document model under two names. `ProjectSettings.files`
-  therefore holds real paths for a Quarto project and directory-relative paths for a
-  Zettlr one; resolve them, never join them.
-- **Consumers:** the Book module (`QuartoBookOutline.vue`, gated in
-  `NavigationSidebar.vue` by path containment), inherited bibliographies
+  at and no file reaches the document model under two names. `parseQuartoManifest`
+  then names each chapter relative to the real path of the Project directory, so
+  `ProjectSettings.files` holds directory-relative paths with `/` separators for a
+  Quarto project and for a Zettlr one.
+- **A part is a title or a file.** Quarto reads the `part` of a book as a file when
+  a file is at that path beside the manifest, and as a title otherwise.
+  `quartoPartFile` (`quarto-project.ts`) makes the same decision. A part that a file
+  names is a `part-file` navigation item: the file is a document of the book, before
+  the chapters of its part in `ProjectSettings.files`, and its title is the title of
+  the part. The Book module shows it as a numbered row that opens the file.
+- **The Project of a file is the innermost Project directory that holds it.** A
+  Project directory is a loaded directory with `settings.project`, at any depth of
+  a workspace; the workspace store lists them (`projectDirectories`), and
+  `projectRootForPath` (`common/util/explorer-ordering.ts`) decides. A book in a
+  subdirectory of a book owns its own chapters.
+- **Consumers:** the Book module (`QuartoBookOutline.vue`; `NavigationSidebar.vue`
+  shows it when the Project of the active file is a Quarto book), the Explorer
+  membership marks, inherited bibliographies
   (`get-bibliography-for-descriptor.ts`), and project export.
+- **A new label has the id that Quarto numbers.** In a document of a Quarto
+  project, "Create reference label…" makes a figure, table, section, equation
+  or listing id with `-` (`sec-x`); a theorem-like id keeps `:` (`thm:x`), which
+  the amsthm filters of the book number. `referenceLabelSeparator`
+  (`types/common/references.ts`) decides; the command
+  `get-cross-reference-system` gives the system of the document. Proof:
+  `e2e/quarto-reference-label.spec.ts`.
+- **A Book edit changes the manifest on disk.** The command `quarto-book-edit`
+  reads the manifest, edits it and writes it (§16). While an editor holds
+  unsaved text of the manifest, the command refuses the edit: the edit would
+  not hold that text, and a save of the tab would undo the edit. Proof:
+  `e2e/quarto-bound-book.spec.ts`.
 
 ### 5. Startup preflight
 
 - `source/app/util/preflight.ts`, called from `source/app/util/environment-check.ts`.
   Fails loud (native dialog + `app.exit(1)`) if `pandoc`, `just`, `latexmk`,
-  `pdflatex`, `biber`, or `~/.pandoc/justfile` are missing in the app's runtime
-  environment.
+  `pdflatex`, `biber`, `pandoc-crossref`, `latexpand` or `~/.pandoc/justfile`
+  are missing in the app's runtime environment.
+- **One probe of each tool.** The preflight, the pandoc-crossref gate and the
+  pandoc version of the environment check read the same `probeTool` answer
+  (§25), so each tool starts one time. A tool that does not answer
+  `--version` within 10 s stops the start with "did not answer"; a tool
+  without the execute bit is "on the PATH but not executable", not absent.
+  Proof: `test/start-tool-probes.spec.ts`.
 - **The app uses the `PATH` it was started with.** The launcher owns the
   environment; a wrong `PATH` is a preflight failure, not something the app
   repairs. Upstream Zettlr runs the user's login shell at startup (`fix-path`)
@@ -234,15 +356,39 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 
 ### 6. Agent API MCP tunnel
 
-- The agent API listens on `127.0.0.1:27412` only and has no authentication. It
-  serves the OpenAPI routes and, at `/mcp`, the same operations as an MCP server
+- The agent API listens on `127.0.0.1:27412` only. It serves the OpenAPI
+  routes and, at `/mcp`, the same operations as an MCP server
   (`source/app/service-providers/agent-api/mcp-endpoint.ts`).
+- **Each request carries the token.** A caller sends
+  `Authorization: Bearer <token>`, where the token is the value of
+  `ZETTLR_AGENT_API_TOKEN` in the environment of the app. `dispatch`
+  (`http-server.ts`) verifies it before it reads the body or selects a
+  handler, and answers 401 `UNAUTHORIZED` without it. A loopback caller has no
+  exemption: each tunnel to the listener arrives from loopback. Only
+  `GET /openapi.yaml` and `GET /openapi.json` answer without the token, so an
+  importer can read the contract; the document declares the scheme
+  (`bearerToken`), which makes the import of a Custom GPT Action ask for the
+  key. An MCP tool call is a request of the same caller to the same listener
+  and carries the same header.
+- **The token has one home, `~/.envrc`.** No configuration key and no file of
+  the app holds it. An app with an enabled API and no token in its
+  environment does not start (`AgentApiTokenRequiredError`, a native error
+  dialog); `agentApi.enabled: false` starts it without the API. Each owner of
+  a process gives the variable: `zettlr-pandoc-boot` starts the app under
+  `direnv exec "$HOME"`, the tunnel unit sends the header through
+  `MCP_EXTRA_HEADERS`, `zettlr-pandoc-review-diff` reads the variable and
+  stops without it, and a development start (`just launch`,
+  `just launch-desktop`) takes it from the shell. An e2e run makes a token of
+  its own (`AGENT_API_TOKEN` in `e2e/support/electron-app.ts`).
 - Operations tagged `zotero` in `openapi.yaml` are served at `/zotero/mcp` (MCP
   server `zettlr-pandoc-zotero`), not at `/mcp`, and the served `/openapi.json`
   leaves out their routes; the Custom GPT Action imports that document and has
   a limit of 30 operations. `ZoteroLibrary` (`agent-api/zotero-library.ts`)
-  searches through the Zotero local API (`127.0.0.1:23119/api`) and imports
-  through the `/write` route of the zotero-local-write-api add-on. Zotero
+  searches through the Zotero local API (`/api`) and imports through the
+  `/write` route of the zotero-local-write-api add-on. The setting
+  `zotero.localServer` (`http://127.0.0.1:23119`, the port of the Zotero
+  preference `extensions.zotero.httpServer.port`) is the origin of these
+  routes and of the Better BibTeX JSON-RPC of the open-attachment command. Zotero
   identifies the source and fetches the metadata and the PDF; the caller sends
   no BibTeX. A source that Zotero cannot identify answers 422
   `ZOTERO_SOURCE_NOT_IDENTIFIED` with the add-on's remediation (known-good
@@ -250,13 +396,24 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   item tagged `metadata:unresolved`. An import returns the Better BibTeX key and
   waits until the main citation library (the Better BibTeX auto-export) has it
   (`citable`). `just test-zotero-integration` proves this against the running
-  Zotero.
+  Zotero. An operation that needs the add-on answers 503 `ZOTERO_UNAVAILABLE`
+  when Zotero does not answer and when Zotero answers without the add-on: its
+  own text/plain 404 for `/write` (`test/zotero-without-write-addon.spec.ts`).
 - ChatGPT reaches `/mcp` only through the OpenAI Secure MCP Tunnel
   `tunnel_6aba3fe9f56081919348c7060b52188f`. The user unit
   `scripts/systemd/openai-tunnel-zettlr-pandoc.service` runs
   [`tunnel-client`](https://github.com/openai/tunnel-client) from
   `~/.local/bin`. It long-polls `api.openai.com` with `CONTROL_PLANE_API_KEY` from
-  `~/.envrc`, so it needs no inbound port and no public hostname.
+  `~/.envrc`, so it needs no inbound port and no public hostname. The unit
+  gives tunnel-client the header `Authorization: Bearer <token>` in
+  `MCP_EXTRA_HEADERS`, made by a shell from the environment so that the token
+  is in no argument list; tunnel-client sends it with each request to `/mcp`.
+  A header that the ChatGPT app forwards replaces a static header of the same
+  name, so the app in ChatGPT has no authentication of its own. The unit sets
+  `GODEBUG=http2client=0`: over HTTP/2 the client keeps one dead connection
+  after a suspend and misses every request for about 16 minutes. The system
+  unit `openai-tunnel-zettlr-pandoc-resume@.service` also restarts the tunnel
+  at each resume (`just install-systemd-tunnel-resume`).
 - Recipes: `just install-systemd-tunnel`, `just start-systemd-tunnel`,
   `just status-systemd-tunnel`. The tunnel-client health and web UI listener is
   `http://127.0.0.1:27414/ui`; `/readyz` reports readiness.
@@ -269,32 +426,82 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 - `agentApi.skillsDirectory` in `config.json` is a read-only filesystem
   capability exposed through the existing `getHelp` MCP tool: use
   `resource=skills`, with `action=list` or `action=read` plus a relative `.md`
-  `path`. Symlinks, traversal, and non-Markdown files are not exposed. The
+  `path`. Symlinks, traversal, and non-Markdown files are not exposed. A
+  folder that the filesystem refuses is in the `notListed` of the listing,
+  and a refused read of a skill or a figure answers 409 `FILE_UNREADABLE`. The
   ChatGPT connector has a hard 30-tool limit; `/mcp` itself must therefore stay
   at 30 tools rather than hiding extra operations only from `/openapi.json`.
 
-### 7. TikZ workbench module
+### 7. TikZ figures and the external visual editor
 
-- **Module:** `packages/tikz-workbench` (Bun workspace package `tikz-workbench`). It owns
-  the TikZ editing surface — compiled preview, visual editor, Quiver, compiler
-  diagnostics — plus the TeX compiler (`src/tikz-render.ts`), the Quiver macro
-  projection, and the vendored forks `vendor/tikz-editor` and `vendor/quiver`. It must
-  import nothing from `source/`; Zettlr imports it as `tikz-workbench/src/…`.
-  This path is a submodule of `dzackgarza/visual-tikz-editor`. Commit workbench
-  changes there and update the submodule commit in this repository.
-  Zettlr starts ordinary TikZ in compiled preview. The standalone host starts
-  `tikzpicture` in the visual editor. Both start `tikzcd` in Quiver.
-- **Host contract:** `src/host.ts` (`TikzWorkbenchHost`). Zettlr's host is
-  `source/win-main/tikz-workbench-host.ts` (a CodeMirror range + IPC), mounted by
-  `MainEditor.vue`. The standalone host is `standalone/` (`just tikz-standalone
-  file.tikz`): a Bun server plus a Vite page with a source pane. A workbench change
-  goes into `packages/tikz-workbench`, not into a host.
+Zettlr compiles a diagram and shows the figure. It holds no graphical diagram
+editor. The graphical editor is the separate application Visual TikZ Editor
+(`dzackgarza/visual-tikz-editor`, installed by its `just install-desktop`), and
+Zettlr starts it on one diagram.
+
+- **Render package:** `packages/tikz-render` (Bun workspace package
+  `@dzack/tikz-render`) owns the TeX compiler (`src/tikz-render.ts`), the
+  compiler log, the preview state and the preview pane
+  (`src/ui/TikzPreviewPane.vue`). It must import nothing from `source/`. The
+  application gives the pane a `TikzPreviewHost` (`src/host.ts`); Zettlr's host
+  is in `MainEditor.vue` (the `tikz-render` IPC). See
+  `packages/tikz-render/README.md`.
+- **A render owns its processes and its scratch files.** The pandoc process
+  of a render leads a process group; the shell and the TeX that the filter
+  starts are in it. `renderTikz` stops the group at the time limit
+  (`TikzRenderConfig.timeoutMs`, result `render-timeout`), when a signal ends
+  pandoc, and when the app exits. It gives its result only when no process of
+  the render is left, and it removes the temporary directory of the render
+  (`TMPDIR` of the filter). The app sets the limit in
+  `source/app/util/resolve-tikz-render-config.ts`.
+- **One render at a time in the process.** Each `renderTikz` call waits for
+  its turn (`renderTurns`, a semaphore of one): the preview of the editor
+  (the `tikz-render` command, priority `preview`) and the compiles of the
+  lint (`buildFlowmarkLintContext`, priority `background`). No two renders
+  write one file of the cache at the same time, a figure that a second caller
+  asks for while it compiles is a cache hit for that caller, and a preview
+  goes before the lint renders that wait. A new caller gives its priority and
+  holds no lock of its own. Proof: `test/tikz-compile-bound.spec.ts`.
 - **Markdown detection stays in Zettlr:** `markdown-editor/tikz-block.ts` and
   `common/util/tikz-source-blocks.ts` turn Markdown into a `TikzSourceBlock`.
-- **Inline figure controls:** `render-tikz.ts` places rebuild and visual-editor
-  buttons over each TikZ or tikzcd figure. Rebuild bypasses the compiler cache.
-  The visual button opens tikz-editor for TikZ and Quiver for tikzcd. A click on
-  the figure selects its authored source for direct editing.
+- **Controls:** `render-tikz.ts` places a rebuild button and an "Edit in Visual
+  TikZ Editor" button over each figure; the preview pane has the same edit
+  button. Rebuild bypasses the compiler cache. A click on the figure selects
+  its authored source. The edit button is disabled for a diagram whose source
+  is not one range of the document (a diagram in a blockquote or a list item).
+- **Launch:** the window sends `tikz-edit-open` (`commands/tikz-edit.ts`) with
+  a session id and the authored source. `TikzEditSessions`
+  (`source/app/util/tikz-edit-session.ts`) writes the source to
+  `diagram.tikz` or `diagram.tikzcd` in a temporary session directory and
+  starts the command of the setting `tikz.visualEditorCommand`
+  (`visual-tikz-editor`) with `--macros <central MathJax projection>
+  --resources <document directory> <file>` as a detached process group. The
+  session directory is also the `XDG_STATE_HOME` of that editor, so the
+  recovery record of the editor stays apart from the user's own. The file
+  extension decides the editor: `.tikzcd` opens in Quiver. A missing command
+  is an error dialog, not a fallback.
+- **Saves:** the main process watches the session file and sends each new
+  content on the `tikz-edit` channel. `tikzEditSessionsField`
+  (`markdown-editor/tikz-edit-sessions.ts`) follows the range of each open
+  diagram through the edits of the author and keeps the source that the
+  document and the editor last agreed on. A save replaces the range only while
+  the range still holds that source. A save after the author changed the
+  diagram in the document is refused with a message: the document is the
+  authority. The document sends nothing to a running editor.
+- **`\input` diagrams:** a block that is `\input{file.tikz}` opens that file
+  itself. The editor saves to the file; there is no session and no document
+  change.
+- **End of a session:** the editor stops when its view state goes away (a
+  closed tab, a document loaded again: `tikz-edit-close`) and when the app
+  quits (`CommandProvider.shutdown` calls the `shutdown` of each command and
+  waits until each editor is gone). The stop has a time limit: the process
+  group of the editor gets SIGTERM, and an editor that still runs two seconds
+  later gets SIGKILL. The session directory is removed when the editor exits.
+- **Proof:** `test/tikz-edit-sessions.spec.ts` (the range and refusal rules),
+  `test/tikz-edit-process.spec.ts` (the time limit of a stop),
+  `e2e/tikz-live-preview.spec.ts` (the pane), and
+  `e2e/desktop/tikz-external-editor.spec.ts` (the assembled app with the
+  installed editor; a workstation proof, not a hosted CI job).
 - **Install layout:** `bunfig.toml` pins Bun's hoisted linker. The workspace would
   otherwise select the isolated linker, and webpack/Forge resolve transitive
   dependencies from the hoisted `node_modules`.
@@ -318,6 +525,16 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   `retargetAfterMove` rewrite only the links whose document the move changed).
   `[[#heading]]` (empty target) resolves to the linking document; backlinks and
   the graph leave that self link out.
+- **One reading of a link.** A wikilink is a `ZettelkastenLink` of the Markdown
+  AST, read with the setting `zkn.linkFormat`: in `[[a|b]]` the target is `a`
+  for `link|title` and `b` for `title|link`, and `[[x]]` in code is no link.
+  Each reader parses with that format (`markdownToAST(text, null, linkFormat)`)
+  or uses the tree of the editor, which has it: the FSAL file parser, the
+  editor chips, the lint context (`WikilinkReading`: the index and the
+  format), the export map and the rewrite after a move. No reader finds
+  wikilinks with a regular expression. A change of the setting needs a
+  restart: the FSAL reads the links of each file at the start. Proof:
+  `test/wikilink-reading.spec.ts`, `e2e/wikilinks-title-first.spec.ts`.
 - **Editor chips:** the renderer bundle has no `path`, so the editor cannot run
   `WikilinkIndex`. `MainEditor.vue` sends the document's targets to the IPC
   command `resolve-wikilinks` and stores the answer in
@@ -330,18 +547,24 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   The lint cache key includes those resolutions, so a rename elsewhere refreshes
   the diagnostics of the documents it affects.
 - **YAML `aliases`** is parsed by `fsal/util/file-parser.ts`. A change to what the
-  parser extracts must bump `PARSER_VERSION` in `fsal-file.ts`; cached descriptors
-  of another version are parsed again.
-- **PDF export:** `recipe-exporter.ts` writes `wikilinkExportMap`
-  (`common/util/wikilink-export.ts`): the heading count of each input and, per
+  parser extracts must bump `PARSER_VERSION` in that file. A descriptor keeps
+  the identity of its parser (`parsedWith`: the version, `zkn.idRE` and
+  `zkn.linkFormat`); a cached descriptor of another parser is parsed again.
+- **Exports:** each export that runs Pandoc writes `wikilinkExportMap`
+  (`common/util/wikilink-export.ts`) through `withWikilinkMap`
+  (`exporter/wikilink-map-file.ts`): the heading count of each input and, per
   raw target, the input and heading it resolves to. `PANDOC_WIKILINKS` names
-  that file for the recipe, whose `filters/wikilinks.lua` in pandoc-config
+  that file. The PDF recipe runs `filters/wikilinks.lua` of pandoc-config
+  itself; a Pandoc profile (`makeExport`: LaTeX, Word, HTML, a script) runs
+  `~/.pandoc/filters/wikilinks.lua` before each other filter. The filter
   turns each resolved link into a link to that heading and any other link into
-  its label. The filter resolves nothing itself.
+  its label; it resolves nothing itself. A link to a document outside the
+  export is its label. Proof: `test/export-document.spec.ts`.
 - **Renderer imports:** `wikilink-resolution.ts` imports Node `path`, which
   the renderer bundle maps to an empty module. Editor and window code import
-  `splitWikilinkTarget` from `common/util/wikilink-target.ts`, which imports
-  nothing, and ask the main process for resolutions.
+  `splitWikilinkTarget` and `wikilinkTargetsIn` from
+  `common/util/wikilink-target.ts`, which imports only `markdown-utils`, and
+  ask the main process for resolutions.
 
 ### 9. Responsiveness contracts
 
@@ -361,6 +584,39 @@ of an isolated instance are in the first comment of #132.
 - **A widget holds no document position.** The field keeps a widget outside a
   changed block, so a stored position goes stale. A handler reads the position
   from `view.posAtDOM`. The `eq` of a widget compares what the widget shows.
+  The widget decorations of `base-renderer.ts` have `Prec.high`, so a widget
+  owns the whole source of its node and `view.posAtDOM` gives the start of
+  that source. A replacement of lower precedence that starts at the same
+  position (the hidden `$` code mark of an equation) is not drawn.
+- **An inline widget states how it stays on its row.** The view puts an
+  image of no width (`cm-widgetBuffer`) on each side of a widget, and a
+  browser can end a row beside an image. A widget of `base-renderer.ts`
+  therefore has the property `rowJoin` (`RowJoinedWidget`): `"box"` for one
+  box that no row end divides (an inline equation, a wikilink chip), `"text"`
+  for text with row ends of its own (a citation, a cluster of reference
+  chips), `null` for a widget that fills its row (display math). The renderer
+  puts a mark (`cm-row-join`) over a joined widget and the character that
+  touches it on each side; no row ends in the mark, and a space is never in
+  it. The mark is inclusive: a mark that is not inclusive does not hold a
+  widget that starts or ends at its edge. A pill inside a widget with text
+  around it goes into an element with `ATOMIC_INLINE_JOINT_CLASS`. A widget
+  without `rowJoin` (an image, a task marker) is not joined. Proof:
+  `e2e/inline-widget-line-breaks.spec.ts`.
+- **The badges of a definition have room in the flow of its line.** The
+  reference badges are an overlay (`render-reference-definitions.ts`). The
+  layer puts an anchor, a widget without text, at the end of each line of a
+  definition in the viewport. It gives the anchor the size of the badge
+  groups of that line and puts the groups on it. An anchor without room after
+  the text goes to a row of its own, so no badge covers text. A badge group
+  takes at most the width of its line: a group that does not fit after
+  another starts a new row on the anchor, and a long key breaks in its
+  badge. A widget that replaces the line of a definition (the header of a fenced div) puts
+  `referenceBadgeAnchor(view)` in its DOM and calls
+  `referenceBadgeAnchorsRemoved(dom)` in its `destroy`; the layer uses that
+  anchor. A line whose end another renderer replaced has no anchor: its
+  badges are after the end of the line, kept inside the layer, so they add no
+  horizontal scroll. Proof: `e2e/titled-fenced-divs.spec.ts`,
+  `test/editor-reference-badges.spec.ts`.
 - **An equal value causes no transaction.** `setWorkspaceReferences`,
   `setWikilinkResolutions`, `setCompletionDatabase`, the collaboration session
   store and `modeSwitcher` (`renderers/index.ts`) dispatch or reconfigure only
@@ -368,6 +624,30 @@ of an isolated instance are in the first comment of #132.
   content again. `configField` keeps its object for a configuration update
   with equal values, so a renderer can compare the field by identity in
   `inputsChanged`.
+- **A change of one collaboration session costs work for its document only.**
+  The window store (`pinia/document-collaboration-store.ts`) holds each
+  session as the object that the main process sent: the map of sessions is
+  shallow (`shallowReactive`), each session is raw (`markRaw`), and a new
+  state replaces the session through `setSession`. No code changes a stored
+  session in place, and no watcher is deep. A value that the store derives
+  from a session (the cards, the review rows) is made one time for one
+  session object. A session whose annotation set is equal to the shown one
+  keeps the shown `annotations` object, so the editor watches that object by
+  identity. The Annotations view reads the workspace state again only when
+  its list of paths has a new member or lost one (#126). Proof:
+  `test/annotations-sidebar.spec.ts`,
+  `test/annotations-panel-animation.spec.ts`.
+- **The editor takes one new width for one slide of a side pane.** A side
+  pane of the main window slides for 180 ms. `paneSlide`
+  (`win-main/util/pane-slide.ts`) gives the panes their final sizes in one
+  step and plays the slide as an animation of `flex-grow` from the old sizes.
+  For the time of the slide the frame of the editor (`.editor-frame`) has
+  the width of the end state and is anchored to the side that does not move,
+  so the document wraps one time. On an open, the part of the editor pane
+  that the side pane did not reach yet is empty; on a close, the editor pane
+  clips its frame. A new pane that
+  slides beside the editor goes through `paneSlide`; no CSS transition
+  changes the width of the editor. Proof: `e2e/pane-slide.spec.ts`.
 - **An editor in a background tab receives no workspace transaction.** It
   reads the workspace state, the citation data and the completion databases
   when its tab becomes active (`refreshActiveEditorAuxiliaryState` in
@@ -385,13 +665,22 @@ of an isolated instance are in the first comment of #132.
   value.
 - **One parse of one document version in the main process.** `markdownToAST`
   (`markdown-utils/index.ts`) keeps the ASTs of the texts it parsed last. The
-  AST is shared: a reader must not change it. Editor code passes the tree that
-  the editor has (`markdownToAST(text, tree)`), as the spellcheck context does.
+  AST is shared: a reader must not change it. The cache key holds the link
+  format. Editor code passes the tree that the editor has
+  (`markdownToAST(text, tree)`), as the spellcheck context does.
 - **Pandoc reads one citation candidate once.**
   `references/pandoc-citations.ts` keeps the reading of each candidate source;
   an edit that changes no citation starts no Pandoc process.
-- **One probe of an external tool in a session** (`tikz-render.ts`,
+- **One probe of an external tool in a session** (`probeTool`, §25;
   `flowmarkToolPython`).
+- **Background processes wait for a pause in the editor.** The lint queue
+  (`DocumentLintProvider.work`) starts no Flowmark run until the document
+  authority had no editor update for one second
+  (`DocumentManager.lastEditorInputAt`, `INPUT_IDLE_MS`). A run that started
+  goes to its end. The lint of the active document is not in the queue and
+  does not wait. New background work that starts processes while the author
+  can type waits on the same time. Proof:
+  `test/document-lint-idle-gate.spec.ts`.
 - **One load of a citation database.** `CiteprocProvider` shares the load that
   runs for a database path between concurrent requests.
 - **`@codemirror/collab` is patched**
@@ -401,12 +690,31 @@ of an isolated instance are in the first comment of #132.
   version update of the package must keep the patch until the package has the
   change.
 
-### 10. File filters (gitignore rules)
+### 10. File filters
 
+- **What the filter judges:** the gitignore rules and the file types. A
+  file type is hidden when it is not in `fileManager.filters.include`
+  (empty: every type), when the `files.<type>.showInFilemanager` of its
+  group is off, or when it is of no known type and its extension is not in
+  `attachmentExtensions`. Markdown and code files are always of a known
+  type. The type of a file is read by `file-extention-checks.ts` only, and
+  the case of an extension does not count (`Notes.MD`, `Paper.PDF`).
+  A path with a segment that starts with `.` is a dot path, hidden
+  while dot files are off; a folder is hidden by type only as a dot path.
+  `IgnoreFilter.matches` judges both, `ruleMatches` the rules only (Hide
+  and Unhide edit rules, so they read `ruleMatches`).
+- **An extension of `attachmentExtensions` is a known extension.** It has
+  three more roles than the listing: a new file whose name has it keeps
+  its name (`file-new.ts`; another name gets the extension of the
+  document type), a rename to it is a change of extension that the author
+  confirms (`file-rename.ts`; another extension is kept as part of the
+  name), and the row of such a file has the attachment icon
+  (`file-group`, `TreeItem.vue`). `hasAnyRecognizedFileExtension` decides
+  the first two.
 - **Rules:** gitignore syntax, matched by the `ignore` package. The sources
   are `fileManager.ignoreRules` in the configuration (all workspaces) and the
   file `.zettlrignore` at the root of each open workspace. A path below
-  nested roots is judged by the innermost root (`judgingRoot`). No rule hides
+  nested roots is judged by the innermost root (`innermostRoot`). No rule hides
   a workspace root. The pure module is `source/common/util/ignore-rules.ts`
   (`createIgnoreFilter`, `ruleForName`, `ruleForPath`, `setPathIgnored`,
   `movePathRules`, `removePathRules`).
@@ -416,6 +724,14 @@ of an isolated instance are in the first comment of #132.
   index and backlinks, the lint queue and the Agent API therefore never see a
   hidden path. A new consumer lists through the FSAL; it must not walk the
   disk or filter on its own.
+- **A `change` names a file or a folder.** The watchdog reports a change of
+  `.ztr-directory` as a `change` of its folder, so a new sort, display or
+  Project of a subfolder reaches the windows as a `change` with the folder
+  descriptor. `emitChokidarEvent` drops a `change` only for a path that the
+  filter hides as a file and as a folder; the descriptor then decides. A
+  check that judges a `change` as a file drops each folder whose name has no
+  known extension (#220). Proof: `test/fsal-watcher-events.spec.ts`,
+  `e2e/explorer-metadata-sort.spec.ts`.
 - **A rule change is ordinary events.** `applyIgnoreSources` compares the
   old and the new filter over each workspace (`visibilityChanges`) and
   publishes `unlink`/`unlinkDir` for each path that the rules now hide and
@@ -426,19 +742,945 @@ of an isolated instance are in the first comment of #132.
 - **IPC:** `fsal` commands `get-ignore-rules`, `set-workspace-ignore-rules`
   (`{ root, text }`) and `set-path-ignored` (`{ path, isDirectory, ignored }`);
   the broadcast `fsal-ignore-rules` carries the current `IgnoreRuleSources`.
-- **Window:** `useIgnoreRulesStore` (`source/pinia/ignore-rules-store.ts`)
-  holds the sources and the dialog state. The window filters nothing; it
-  marks matches (`is-ignored`) and edits rules. Entry points: the context
-  menu of a tree item (`file-manager/util/ignore-menu.ts`: hide or show the
-  path, hide all items with the name), the Workspaces header menu (Edit
-  filters…, Turn the filters off), the application menu and the launcher
-  (`menu.edit_ignore_rules`), and Preferences → File Manager. Preferences uses
-  the `list` field for the rules; the `token` field splits on spaces and
-  commas.
+- **One editor:** `win-main/IgnoreRulesDialog.vue` (the File filters window)
+  holds every setting that decides what the app lists: Turn the filters off
+  (`fileManager.showIgnored`), the file types (`fileManager.filters.include`,
+  `files.<type>.showInFilemanager`, `attachmentExtensions`), the global rules,
+  each workspace `.zettlrignore`, the project file filter of each project
+  (`settings.explorer.projectFilter`) and the read-only built-in names
+  (`IGNORE_PATHS`). No other surface edits these values. Preferences →
+  File Manager has only a button that opens the window (`application`
+  command `edit-ignore-rules`); Advanced → File Treatment and the
+  onboarding page "Images and PDFs" set only "Open with", and File
+  Treatment has the same button. The Workspaces header menu, the
+  application menu and the launcher (`menu.edit_ignore_rules`) open the
+  window. "Search files" (`menu.filter_files`) is the file name search of
+  the file manager, not a filter setting. The context menus
+  are actions on the same state: hide or show a path or a name
+  (`file-manager/util/ignore-menu.ts`) and the project file filter of a
+  project folder.
+- **One evaluator.** The FSAL applies the rules, the file types and the
+  built-in names to every consumer. The project file filter is the only
+  other filter: a view of one project folder in the window
+  (`explorer-ordering.ts`). `useIgnoreRulesStore` holds the filter sources
+  and marks matches (`is-ignored`).
+- **A filter hides; it does not close.** An open document that a rule or a
+  file type hides stays open, and it saves to its path. The documents
+  provider has its own watcher and does not read `fsal-events`.
+- **A filter does not remove a chapter.** A Project export takes each
+  chapter of its settings that is a file on disk (`exportProject`), also a
+  chapter that a rule or a file type hides; the message of the export names
+  each other chapter with its cause. Proof: `test/project-export.spec.ts`.
+- **Cost of a rule change:** one scan of each open workspace before and
+  after, on asynchronous `readdir` calls. On 21,226 files in 2,312 folders a
+  rule change takes about 300 ms of main-process JavaScript in short steps,
+  and the window has no long task except one of under 90 ms for 2000
+  removed rows (#148).
 - **`fileManager.showIgnored`** turns the filters off for every consumer,
-  not only for the file manager; the file manager then dims each match.
+  not only for the file manager: hidden types and dot paths are listed too.
+  The file manager then dims each match.
 - **Proof:** `test/ignore-rules.spec.ts`, `test/fsal-ignore-rules.spec.ts`,
+  `test/file-filter-preferences.spec.ts`,
   `e2e/ignore-rules.spec.ts`.
+
+### 11. Path containment
+
+- **One owner.** `source/common/util/renderer-path-polyfill.ts` decides whether a
+  path is in a directory: `isInsideRoot` (strictly inside, at a path-segment
+  boundary), `isAtOrInsideRoot`, and `innermostRoot` (of the directories that hold
+  a path, the longest). `/notes/book-notes.md` is not in `/notes/book`.
+- **No `startsWith` on a path.** A new decision of the workspace, the Project or
+  the directory of a path calls one of those three functions. A workspace inside
+  a workspace is a supported state: each consumer (the link index, search, the
+  Agent API workspace id, the ignore rules, the launcher, the Explorer, the
+  Problems view, the reference numbering) gives a path to the innermost one.
+- **Root list.** `consolidateRootPaths` (`config/root-paths.ts`) moves an open
+  file that a workspace holds out of `openFiles`; a file beside a workspace stays.
+- **Proof:** `test/renderer-path-polyfill.spec.ts` (Node's `path.relative` is the
+  oracle), `test/config-root-paths.spec.ts`, `test/explorer-ordering.spec.ts`,
+  `e2e/nested-roots.spec.ts`.
+
+### 12. Citations and attachment files
+
+- **One owner gives the bibliography of a document.** `documentBibliography`
+  (`source/app/util/document-bibliographies.ts`) reads the front matter of
+  the text of the document (the buffer of an open document) and the Project
+  of its folder. The files of the front matter are the bibliography; else
+  the bibliographies of its Quarto book and the main library; else the main
+  library. A relative entry resolves from the folder of the document. A
+  window asks the command `get-document-bibliography` through
+  `documentCitationDatabase` (`common/util/document-citation-database.ts`);
+  the command waits until the libraries are loaded. The editor, the print
+  window, the outline, the hover previews, the Annotations view, the
+  References view, the attachment command, the lint, the documents provider
+  and the PDF export (§3) use it. A new view that renders citations of a
+  document asks it; it does not read the front matter or the Project
+  itself (#198). Proof: `e2e/document-bibliography.spec.ts`,
+  `test/export-bibliography.spec.ts`.
+- **Locales.** `CiteprocProvider` reads its CSL locales from the one directory
+  that its owner gives: `BUNDLED_LOCALE_DIRECTORY` in the app, `static/csl-locales`
+  in a spec. The working directory decides nothing. The `en-US` locale is
+  required: the engine load stops with the read error when the file is absent or
+  unreadable. For another language an absent file is the answer `false` of the
+  citeproc-js `retrieveLocale` protocol; each other failure is an error.
+- **Attachments come from the library text.** `extractBibtexAttachments`
+  (`citeproc/util/extract-bibtex-attachments.ts`) reads the `file` field of each
+  entry as Zotero's BibTeX translator writes it: records apart by an unescaped
+  `;`, parts apart by an unescaped `:`. A change to what the loader keeps must
+  move the parse cache version.
+- **Only files on disk.** `getBibTexAttachments` gives the files that the library
+  names for a citation key and that exist. The open-attachment command opens the
+  first one. When the library names files and none exists, the command logs
+  that and asks Zotero (the Better BibTeX JSON-RPC).
+- **A library is parsed on a thread of its own.** The parse of a BibLaTeX
+  library of some thousand entries takes seconds and gives the event loop no
+  turn (#138). `loadDatabaseOnThread` (`citeproc/util/load-database-on-thread.ts`)
+  starts one Node worker thread for one read; the thread program is
+  `database-loader-worker.ts`, a second entry of `webpack.main.config.js`
+  (`.webpack/main/database-loader-worker.cjs`, `BUNDLED_DATABASE_LOADER_THREAD`).
+  The thread program and what it imports must import nothing of Electron. A
+  spec gives the provider the TypeScript program (`test/citeproc-loader-thread.ts`).
+- **The record of a library comes to the main thread one entry at a time.**
+  A record that goes through `postMessage` as one object is made again on
+  the main thread in one step, whose time follows the size of the library.
+  The thread serializes each entry on its own into one buffer and transfers
+  the buffer; the main thread reads one entry in each turn of its event loop
+  (`citeproc/util/database-record-transfer.ts`). A new value that a thread
+  sends to the main process and whose size follows a library or a workspace
+  goes the same way.
+- **Nothing waits for a library.** The start of the app and the open, close
+  and save of a document name the libraries and do not wait for the reads
+  (`startDatabaseSynchronization`). A window draws its citations again when a
+  library arrives (`citeproc-database-updated`). The synchronous citation
+  call of an editor answers without a citation while the library of the
+  request is in its first read, and starts the read of a library that the
+  provider does not know. A caller that needs the items waits:
+  `synchronizeDatabases` for the libraries it names, `loadsEnded()` for each
+  running read (the Agent API citation and Zotero routes, a spec after
+  `boot()`).
+- **A changed library keeps its items until the new read ends.** The watcher
+  starts a read and stops the read that runs for that file; a stopped read
+  ends its thread. A read that fails drops the items of the file and keeps
+  the watch, so a file that appears or changes is read again.
+- **A bibliography that does not load is a problem too.** A file that the
+  front matter of a document or the manifest of a Quarto book names and that
+  cannot be read is a `CitationResourceProblem` with the resource
+  `bibliography`. No setting names it: its message has no "Open Preferences"
+  action. It does not reject the open, close or save of the document.
+- **A style or a library that does not load is a problem, not a stop.**
+  The app starts when `export.cslStyle` or `export.cslLibrary` names a file
+  that cannot be read or parsed. `CiteprocProvider` keeps each such file as a
+  `CitationResourceProblem` (resource, path, cause), answers the list on the
+  IPC command `get-problems`, and broadcasts each change of the list on
+  `citeproc-problems`. A window follows the list through
+  `followCitationProblems` (`common/util/citation-problems.ts`): the main
+  window shows a message with the action "Open Preferences", the Preferences
+  window marks the file field (`FileField.problem`), and the References view
+  shows the sentence in place of a bibliography.
+- **No citation in another style.** While the style of the setting is not
+  loaded, a render of a citation or of a bibliography throws
+  `CitationStyleError`; the bundled style and the style of the last setting
+  are not used. The Agent API answers 503 `CITATION_STYLE_NOT_LOADED`. The
+  cite keys of the libraries stay available. Each load of a style broadcasts
+  `citeproc-database-updated`, so the windows draw their citations again.
+- **A preview that cannot render shows its source and the cause.** A
+  preview of Markdown through `md2html` (a cross-reference, a footnote, a
+  wikilink, an outline entry, an annotation, the excerpt of a new
+  annotation) that rejects shows `unrenderedPreviewHtml`
+  (`common/util/unrendered-preview.ts`): the source text and the cause. A
+  new preview does the same; it does not only log the rejection. Copy as
+  HTML shows the cause in a message. Proof:
+  `e2e/preview-citation-failure.spec.ts`.
+- **The Agent API names a library that did not load.** A citation route
+  whose database the provider does not have answers 503
+  `CITATION_DATABASE_NOT_LOADED` with `error.database`, the file and the
+  cause; without it, the settings name no main library. The API reads no
+  file that a caller names: a path that is not a library of the settings, of
+  an open document or of a Project is not loaded. The listing
+  (`target=databases`) gives the libraries that did not load in
+  `notLoaded`. A render answers 404 `CITATION_NOT_FOUND` with
+  `error.missingCitekeys` for each cite key that the database does not
+  hold; a bibliography does not leave a key out.
+- **Proof:** `test/citeproc-unreadable-style.spec.ts`, `test/agent-http-api.spec.ts`
+  ("citation libraries that did not load"),
+  `e2e/unreadable-citation-style.spec.ts`,
+  `test/citeproc-library-parse-thread.spec.ts` (the event loop during a
+  parse, the calls that do not wait), and `e2e/citation-library-thread.spec.ts`
+  (the thread program in the packaged app; run `just package` before it).
+
+### 13. Assembled-app E2E runs
+
+- `just test-e2e` and `just test-e2e-file <spec>` run the specs of `e2e/`. A spec
+  that starts the app through `attach` (`e2e/support/electron-app.ts`) runs
+  `electron-forge start`: a development build of the working tree for each start.
+  `e2e/application-lifecycle.spec.ts` and `e2e/citation-library-thread.spec.ts`
+  start the packaged binary. `currentPackagedBinary` refuses a build whose
+  source fingerprint is not that of the tree: run `just package` before such a
+  spec. The packaged app writes its log to a file; such a spec reads the
+  shutdown line through `readAppLog`.
+- **The run owns the display.** With `DISPLAY` unset the recipe starts the whole
+  Mocha process under one `xvfb-run`; a spec starts no X server of its own.
+- **The run owns its session bus.** The recipe starts the Mocha process
+  under `dbus-run-session` with `scripts/e2e-session-bus.conf`, a bus without
+  services. A desktop notification of the app of a run goes to that bus and
+  not to the desktop of the author. The stock session configuration starts a
+  notification daemon on request, and that daemon draws on the compositor of
+  the author. A spec that needs a session service starts it on the bus of
+  the run.
+- **The run owns its loopback.** The recipe (`_e2e-run`) starts the run in
+  a network namespace with `lo` and no other interface. An app of the run
+  binds the Agent API port, the Forge ports and each other port there, so
+  the desktop app of the author on port 27412 takes no port from a first
+  start of the run (#215). The run reaches no service of the host (Zotero)
+  and no network: a spec that needs a service starts it in the run. On the
+  hosted runner, `just setup-ci` permits the namespace
+  (`kernel.apparmor_restrict_unprivileged_userns`). Proof:
+  `test/e2e-run-loopback.spec.ts`.
+- **A provider that cannot start is in the log before its error box.** The
+  native box of `_informativeBoot` stops the main process, and the app exits
+  after it; the log has the cause first (`LogProvider.flush`). Proof:
+  `e2e/agent-api-port-in-use.spec.ts`.
+- A Chromium probe of test-support code reports its exit code or signal, its
+  output and the X server errors when it fails (`test/visual/display-probe.ts`).
+- An e2e run and a `just package` build each need most of the memory of this
+  workstation. Run one at a time. A start from the desktop launcher runs
+  `just package` when the source changed, and the build replaces `.webpack`
+  under a running e2e start: that run stops with "Cannot find module
+  '.webpack/main/index.cjs'" or a closed page. Run it again after the build.
+- **A click that closes its page goes through `clickToClose`.** Playwright
+  stops each action of a page that closes before the action ends, so a click
+  whose handler closes the window races the close. `clickToClose` and
+  `requestWindowClose` (`e2e/support/electron-app.ts`) act in a later task
+  of the page, as `requestQuit` does.
+- **A function that runs in the page declares no named function.** tsx
+  compiles a spec with esbuild's `keepNames`, which puts a call of the helper
+  `__name` around each function that a `const` or a declaration names. The
+  page has no such helper, so `page.evaluate` stops with `__name is not
+  defined`. A callback that is an argument has no name and is not wrapped.
+- **A native message box is not a page.** Playwright does not see it. A spec
+  finds the box by its title with `xdotool`, captures it with ImageMagick
+  `import`, and presses a key in it (`e2e/quit-with-open-review.spec.ts`). The
+  CI toolchain installs both tools (`scripts/setup-ci-toolchain.sh`). Such a
+  spec runs on the display of the run only: with `DISPLAY` set, the keys go
+  to the desktop of the author.
+- **A file dialog is drawn on the display of the run.** `attach` starts the
+  app with `--xdg-portal-required-version` at a version that no portal has
+  (`NO_PORTAL_FILE_CHOOSER_VERSION`). Without the option the desktop portal
+  of the session draws the dialog on the desktop of the author. A spec
+  accepts a GTK file chooser with the mnemonic of its button (`alt+s` for
+  Save, `alt+o` for Open): the Return key does not accept it while the name
+  field has the focus (`e2e/refused-save.spec.ts`). A dialog that opens in a
+  folder of the fixture (`dialogPaths` of the configuration) shows no folder
+  of the author (`e2e/import-files.spec.ts`).
+- **Shared helpers.** `e2e/support/native-dialog.ts` finds, captures and
+  answers a native window. `e2e/support/panes.ts` gives the panes of a
+  window and opens a document in one.
+
+### 14. Document identity and refused closes
+
+- **The id of a document moves with its path.** `DocumentManager`
+  (`service-providers/documents/index.ts`) keeps the path of each id and the
+  id of each path. A rename or a move goes through `hasMovedFile` or
+  `hasMovedDir`, which move the id, the loaded document, its tabs and its
+  collaboration state under the document lock (`_movePathOfDocument`, then
+  `renameCollaboration`). A new transition that changes the path of a
+  document goes through them; it must not assign a new id to the new path.
+- **The sidecar follows the file.** The sidecar of a closed document moves
+  with the file too: `hasMovedDir` reads `listCollaborationSidecars()` for the
+  documents that are not loaded. A document whose file a move replaced is
+  dropped with its tabs, its state in memory and its sidecar
+  (`_dropReplacedDocument`).
+- **Collaboration state in memory belongs to a loaded document.** A document
+  that a refused proposal loaded and released has no state in memory.
+- **No close and no reload is refused without an action.** A close of a
+  tab, a window close, a quit and a reload from disk (`notifyRemoteChange`)
+  detach the collaboration state through `_detachForClose`. When the sidecar
+  cannot be written, it records how to repeat that action and sends
+  `save-refused` with `refused: { documentId, action }`. The window shows
+  the cause with the action "Close anyway", "Load from disk anyway" or
+  "Quit anyway" (`win-main/util/refused-action-text.ts`), which sends
+  `close-without-review`. `closeWithoutReview` drops the state in memory,
+  leaves the sidecar as it was last written, and repeats the action. A new
+  path that closes or reloads a document detaches through
+  `_detachForClose`.
+- **A message about a document goes to the window that it concerns.**
+  `_tellAbout` sends each message of the provider about one document (a
+  refused close or save, a removed file that stays open, a change on disk
+  that the editor did not take, an unreadable sidecar). The window that
+  started the action gets it. When no window started it (a quit, an
+  autosave, a watcher event), each main window whose panes show the
+  document gets it. When no pane shows the document, the main window that
+  the author used last gets it. A window that only shares the application
+  with the document shows nothing. A new message about one document goes
+  through `_tellAbout`; `broadcastIpcMessage` of the provider is for state
+  that each window keeps (`documents-update`).
+- **The message of a refused quit says what its action does.** The quit
+  stops at one document, and "Quit anyway" changes that document: its
+  review stays as the sidecar last held it, or the document closes without
+  its unsaved text. The provider writes that sentence after the cause
+  (`REVIEW_NOT_SAVED`, `CHANGES_NOT_DISCARDED`).
+- **A refused save has a reason and names its cause.** `SaveFileResult` is
+  `{ ok: true }` or a `SaveRefusal` (`types/common/documents.ts`); no save
+  answers a bare `false`. The window shows the message of the refusal
+  (`save-buffer.ts`, `App.vue`). A refusal that the disk version resolves
+  (`disk-changed`) and a failed reload of a changed file offer "Load from
+  disk" (`common/util/load-document-from-disk.ts`). A refusal that leaves
+  text which cannot reach its file (`write-failed`, `disk-unreadable`,
+  `review-not-persisted`) offers "Save a copy…"
+  (`common/util/save-refusal-action.ts`): the command `save-copy` writes the
+  text of the document to a file that the author chooses, and the document
+  stays unsaved.
+- **The answer "discard" at a close prompt goes through `_discardForClose`.**
+  A discard that fails (the sidecar cannot be written, the file cannot be
+  read) is a refused close with the same action. `closeWithoutReview` then
+  closes the tabs of the document and unloads it: its buffer is the text
+  that the author threw away.
+- **A discard changes only the state in memory.** `discardCollaboration`
+  does nothing for a document with no review and no annotations in memory.
+  The sidecar of such a document is the state of another time (the author
+  closed the document without it, or this version cannot read the file),
+  and the discard leaves the file as it is.
+- **A delete in the application moves the review state aside.**
+  `file-delete` and `dir-delete` close each document at or inside the path
+  (`closeDocumentsForDelete`; a refused close keeps the file), remove the
+  path, and then move the sidecar of each such document aside
+  (`setAsideStateOfDeleted`): a new file at the path of a deleted document
+  opens without its annotations and its review, and the bytes stay in the
+  sidecar directory. A new command that deletes authored files does the
+  same. Proof: `test/collaboration-sidecar-of-no-document.spec.ts`.
+- **A sidecar whose document has no file is named.** A document that
+  another program removed keeps its sidecar: a file that comes back at the
+  path can be the same document (a checkout). A move that cannot write the
+  sidecar at the new key leaves it at the old one. `_sidecarsOfNoDocument`
+  gives each such
+  file in `WorkspaceCollaborationListing.ownerless`: a readable sidecar of a
+  path inside an open workspace that is there, where the application
+  reaches no file and no loaded document has the path. The Annotations
+  view shows it with the action "Move the file aside". A sidecar of a path
+  outside every open workspace is not named.
+- **`closeWindow` answers whether the window may close.** The window
+  provider closes the `BrowserWindow` only for `true`, and gives the
+  documents provider the function that repeats the close.
+- **`closeFileEverywhere` answers whether the document closed.** It
+  detaches before it closes a tab, so a refused close leaves the tabs and
+  the buffer. A caller that removes the file afterwards (`file-delete`, the
+  overwrite of `file-new`) stops on `false`.
+- **The close of a root is a close of its documents.** The command
+  `root-close` takes the list of roots (workspaces and root files) that one
+  action of the author closes: a row, "Close all workspaces", "Close all
+  files". It calls `closeDocumentsInside` before it removes the roots. That
+  asks one time about the unsaved text of the documents at or inside the
+  roots that no other open root holds, as the close of a window does, and
+  closes each such document and tab, also of a path that the file filters
+  hide. A document of a nested workspace that stays open stays open too. A
+  refused or cancelled close keeps each root. A new action that closes
+  roots sends them in one `root-close`. Proof:
+  `e2e/close-workspace.spec.ts`, `e2e/close-roots.spec.ts`,
+  `test/documents-close-workspace.spec.ts`.
+- **A sidecar that cannot be read is kept.** `CollaborationSidecarStore`
+  replaces or removes a file only after its last read of that file gave a
+  sidecar or no file (`examined`). A file that this version cannot read (a
+  later schema, damaged bytes) refuses each write of its document, so a new
+  annotation is refused with `PERSISTENCE_FAILED` and the bytes stay.
+  `inventory()` gives the readable sidecars and names each unreadable file
+  with its cause; the Annotations view and a message at the open of the
+  document show the file with the action "Move the file aside"
+  (`set-aside-collaboration-sidecar`), which renames the file in the sidecar
+  directory and keeps its bytes. `list()` is the complete set or an error.
+  A read of such a file and `list()` reject with
+  `CollaborationSidecarUnreadableError`, which the Agent API answers with
+  409 `COLLABORATION_STATE_UNREADABLE` and that action. The Agent API
+  listings reject while an unreadable file exists; the lookup of an
+  annotation of a loaded document and the read of another closed document
+  do not read that file (`test/annotation-agent-api.spec.ts`).
+- **A sidecar that a load cannot write is not an unreadable sidecar.** A
+  load attaches the sidecar to the text of the file, and that attach can
+  write it (a new fence, orphaned annotations). When the write fails, the
+  document opens without the sidecar and its window gets
+  `COLLABORATION_FILE_UNWRITABLE_CHANNEL`: a message that names the write,
+  with no "Move the file aside" (the move is a write too). The next load
+  attaches the sidecar again. Only `CollaborationSidecarUnreadableError`
+  is an unreadable file (`_reattachCollaborationSidecar`); any other
+  rejection propagates. Proof: `e2e/review-persistence-failure.spec.ts`
+  (#218).
+- **A prompt for many documents does not decide a review.** A quit and a
+  window close ask the author to save or discard only the documents of
+  `_documentsToAskAbout`. A document whose review has an undecided proposal
+  (`_holdsUndecidedProposal`) is not one of them: its working text holds the
+  proposal, so a save would write the proposal to the file and a discard
+  would destroy the review. Its text and its review are in the sidecar, and
+  the next load of the document attaches them. The quit prompt names such a
+  document after the ones it asks about (`_quitPromptDetail`). Text that the
+  author accepted from a review is text of the author: the quit asks about
+  it, also for a document that no pane shows. A save that the author starts
+  for one document is not changed by this rule.
+- **Each edit of a loaded document goes through the collaboration service.**
+  The update of an editor (`pushUpdatesLocked`) and a workspace edit
+  (`applyWorkspaceTextEdits`) commit through `applyWorkingTextEditLocked`,
+  which maps the annotations and the review through the change and writes
+  the sidecar before the buffer takes the text. A new path that changes the
+  text of a loaded document commits through it. The rollback of a workspace
+  edit transaction applies the inverse of its edits (`inverseEdits`), so an
+  annotation and a review return to their places; it does not replace the
+  buffer with the old text.
+- **A restored session goes out after the buffer has its text.**
+  `reattachCollaboration` broadcasts nothing. `_reattachCollaborationSidecar`
+  applies the working text of the sidecar and then broadcasts the state. The
+  window keeps the session that it gets for a document, and an editor shows a
+  review only while its text is the working text of that session.
+- **A removed file closes only a document whose text is on disk.** The
+  watcher reports the removal of the file of a tab (`unlink`). A document
+  without unsaved text closes with its tabs. A document with unsaved text
+  stays loaded with its tabs, and each window that shows it gets one
+  message (`FILE_REMOVED_KEPT_CHANNEL`): a save writes the file again, or, for a
+  document with a review, the save is refused and the message offers
+  "Save a copy…". The watcher follows the path through the removal: a
+  file that is written again arrives as `add`, which the provider handles
+  as a change (the `add` of its own save is not a change).
+- **"Close anyway" at a window close offers no proposal for a save.** The
+  buffer of a document with an undecided proposal takes the text of the
+  file; the review and its working text stay in the sidecar. `pullUpdates`
+  tells only an editor whose pane shows the path to load its document
+  again, so the editor of a closing window does not load the document a
+  second time. `closeWindow` removes a window only when none of its
+  documents is loaded.
+- **A move finishes when its review state cannot follow.** A rename, a move
+  and a folder rename move each document id and offer the link update when
+  the sidecar cannot be written at the new key. The author gets one message
+  that names the file and the cause; the sidecar stays at the old key, where
+  the Annotations view names it.
+- **A save whose file cannot be read again is refused.** The reason is
+  `saved-not-refreshed`: the text is on disk, the document keeps the
+  descriptor of its last read, and the message names the cause.
+- **A message has a list of actions.** `showToast` takes each action of a
+  message (`ToastAction`), and the notification center shows the same list.
+  A save that is refused because the file changed on disk under a review
+  offers "Load from disk" and "Show the review", which opens the
+  Annotations view (`common/util/save-refusal-action.ts`).
+- **The window owns the message of a changed file that cannot be read.**
+  `App.vue` shows one message with "Load from disk" for the document, not
+  one for each pane or tab that shows it.
+- **A save always has a document.** The editor that holds the focus saves.
+  When no editor of the window holds it (the focus is on a message, in the
+  file manager or in a sidebar), the save is for the active document of the
+  pane that the author used last (`savesThisDocument` in `MainEditor.vue`).
+- **A refused action of the Annotations view is shown.** An action of the
+  view on one document ("Resolve all", "Clear resolved", "Accept all", the
+  recovery of a review) that the main process rejects shows the cause with
+  the name of the document. An action on each document of the workspace
+  goes on after a refused document and shows each refusal
+  (`WorkspaceBulkOutcome`, `pinia/document-collaboration-store.ts`). Proof:
+  `e2e/annotation-bulk-refused.spec.ts`.
+- **Proof:** `test/documents-move-identity.spec.ts`,
+  `test/documents-removed-file.spec.ts`,
+  `e2e/external-delete-unsaved.spec.ts`,
+  `test/documents-quit-with-review.spec.ts`,
+  `test/documents-edit-collaboration.spec.ts`,
+  `e2e/quit-with-open-review.spec.ts`,
+  `test/documents-refused-close.spec.ts`,
+  `test/documents-refused-save.spec.ts`, `test/save-refusal-toast.spec.ts`,
+  `test/unreadable-collaboration-sidecar.spec.ts`,
+  `test/collaboration-sidecar-of-no-document.spec.ts`,
+  `test/collaboration-sidecar.spec.ts`,
+  `e2e/rename-annotated-document.spec.ts`,
+  `e2e/review-persistence-failure.spec.ts`, `e2e/refused-save.spec.ts`,
+  `e2e/refused-save-changed-on-disk.spec.ts`, `e2e/window-close.spec.ts`,
+  `e2e/reload-failure.spec.ts`, `e2e/move-with-unwritable-review-state.spec.ts`,
+  `test/fsal-watcher-events.spec.ts`.
+
+### 15. Failed application commands
+
+- **A command that cannot do its work throws.** A command
+  (`service-providers/commands/`) throws an `Error` whose message names the
+  file or folder and the cause. It does not write the cause to the log and
+  answer `false`: `false` is a value of the contract of some commands, and a
+  caller cannot tell it from a failure.
+- **The dispatcher shows each failure once, in the window that started the
+  command.** `CommandProvider.run` (`commands/index.ts`) logs the error,
+  sends it on `command-failed` (`types/common/command-failure.ts`) to the
+  window whose renderer started the command, and rejects to the caller. The
+  main window gets the failure of a command that the application started (a
+  menu item, a second instance) and of a command whose window is gone. Each
+  window shows the message as an error (`window-register`). A command that
+  runs a command (`force-open`, `tutorial-open`) passes the same error on;
+  the dispatcher shows it one time.
+- **A caller does not show a rejection of a command.** It logs the rejection
+  (`reportError`) and stops its own work: no success message, no further
+  step. A second message in the caller repeats the first.
+- **`CALLER_SHOWS_FAILURE`** names the commands that a window runs on its
+  own (a lint pass, a figure render, a hover preview). Their callers show the
+  failure in their own place, and the dispatcher broadcasts nothing for them.
+  A new command of that kind goes into the set; a command that an action of
+  the author starts does not.
+- **A refused open of a document or a link is shown in the window that
+  asked.** The `open-file` request of the documents provider and the
+  navigation handler (`attach-app-navigation-handlers.ts`) send the refusal
+  on `command-failed` to that window (`showRefusalInWindow`,
+  `app/util/show-refusal-in-window.ts`); each caller in the window logs the
+  rejection and stops. Proof: `e2e/follow-link-refused.spec.ts`.
+- **A command that prompts answers its contract.** A command that showed the
+  cause itself in a native dialog or in the error window (`dir-rename`, the
+  Project export) returns its value and does not throw as well.
+- **A Project export gives one message for all its profiles.** One profile
+  that does not export does not stop the other profiles. When a profile did
+  not export, `dir-project-export` opens one error window that names each
+  such profile with its cause, shows no success notification and answers
+  `false`. A new error window closes the one before it, so a command that
+  can fail in more than one part collects the causes and opens one window.
+- **Proof:** `e2e/command-refusal.spec.ts`,
+  `e2e/project-settings-refusal.spec.ts`, `test/project-export.spec.ts`,
+  `e2e/project-export-failure.spec.ts`.
+
+### 16. Writes of authored text files
+
+- **One writer.** `writeTextFile` (`fsal/util/write-text-file.ts`) writes each
+  text file that the author owns: a document (`FSAL.writeTextFile`: a save,
+  `save-copy`, a tag rename, a duplicate; the closed files of a workspace edit,
+  its rollback and its startup recovery in `workspace-edit-transaction.ts`), a
+  Quarto manifest, `.zettlrignore`, `.ztr-directory`, the custom CSS, a
+  defaults file, a Lua filter, the snippets, the user dictionary, the prose completion file and a figure
+  of the central figures directory (its bytes, through the Agent API). A new
+  path that writes such a file calls it, and does not call `fs.writeFile` or
+  `write-file-atomic`.
+- **A creation replaces no file.** `createTextFile` (the same module) makes a
+  file only at a path that no file has, in one step of the filesystem. A new
+  path that makes a file under a name of the author calls it.
+- **A reader gets whole text.** The text goes to a temporary file beside the
+  target, and a rename puts that file in the place of the target
+  (`write-file-atomic`). A reader gets the text before the write or the text
+  after it. A write that stops leaves the text before it.
+- **In place where a rename would change what the file is.** A symbolic link,
+  a file with a second hard link, a file of another user or of a group that
+  the user cannot set, and a file in a directory without write permission are
+  written in place: the rule of the value `auto` of Vim's `backupcopy`. A
+  reader of such a file can get a part of the text.
+- **The permission of the file decides.** A file without write permission
+  refuses the write (`EACCES`), also in a directory that the author may write.
+- **The file is a new inode.** The new file has the mode, the owner and the
+  group of the old one. It does not have its extended attributes or its ACL:
+  Node has no interface to them.
+- **The watcher reports a change.** The rename arrives as `change` for the
+  file and never as `unlink`; the documents provider closes the tabs of a
+  removed file whose document has no unsaved text (§14). The temporary file `<name>.<number>` gets `add` and `unlink`
+  events. It is of no known type, so the file filters hide it (§10).
+- **Proof:** `test/fsal-write-text-file.spec.ts`, `test/central-figures-store.spec.ts`,
+  `test/fsal-watcher-events.spec.ts`, `e2e/save-after-typing.spec.ts`,
+  `e2e/refused-save.spec.ts`.
+
+### 17. A main window without a working renderer
+
+- **The author gets a prompt.** `recoverRenderer`
+  (`service-providers/windows/recover-renderer.ts`) follows each main window.
+  When Electron reports `render-process-gone`, a native message box names the
+  reason and the exit code and offers "Load the window again" and "Close the
+  window". When Electron reports `unresponsive`, a second box offers the same
+  two actions and "Keep waiting", which is its default; the box goes away
+  when the window responds again. The prompt is native because a window
+  without a renderer draws nothing and takes no input.
+- **The documents are in the main process.** A new renderer shows the
+  unsaved text of each document. Text that a hung renderer did not send to
+  its document is lost with that renderer; the prompt says so.
+- **Each action but "Keep waiting" starts a new renderer first.** "Close the
+  window" loads the window and then closes it on the usual path
+  (`closeWindow`, §14), so the unsaved-changes prompt runs and a cancel leaves
+  a window that works.
+- **A hung renderer is ended before the load.** The main process ends it
+  with SIGKILL (`webContents.getOSProcessId()`), as Electron's
+  `forcefullyCrashRenderer()` does on macOS and Windows. On Linux that method
+  only asks the renderer to crash itself, and the renderer exits when its
+  crash dump is written; a dump that does not end left the window without a
+  renderer and without a prompt. The load starts when Electron reports the
+  exit: a load that starts before the exit does not happen.
+- **No message goes to a window without a renderer.** `broadcastIPCMessage`
+  leaves out a window whose `webContents.isCrashed()`. Main-process code that
+  tells every window something calls `broadcastIPCMessage`; it does not loop
+  over `BrowserWindow.getAllWindows()` with `webContents.send`. Code that
+  tells some main windows something calls `WindowProvider.tellMainWindows`
+  (`windows/tell-main-windows.ts`), which leaves out the same windows and
+  gives the message to the main window that the author used last when no
+  addressed window can take it. A window reads the whole state when it
+  loads.
+- **Other windows.** `attachLogger` records the reason for each window. Only
+  main windows have the prompt.
+- **Proof:** `e2e/renderer-recovery.spec.ts` (a killed renderer, a renderer
+  in an endless loop, and a close of a stopped window). It answers native
+  message boxes, so it runs on the display of the run only (§13).
+
+### 18. Controls that a surface paints itself
+
+- **The window chrome paints every control.** `generic.css`
+  (`common/vue/window/assets`) gives each `input`, `select`, `textarea` and
+  `button` of a window the look of the platform. Its dark rules have the
+  weight of two classes and two elements (`body.linux.dark button`), which is
+  more than the rule of a component for its own control.
+- **A surface that states the whole painting of its controls carries
+  `self-painted-controls`.** The platform rules leave out each control in a
+  subtree with that class, so the rules of the surface decide with any
+  weight. The collaboration surfaces carry it: the Annotations view, the
+  inline thread, the review bar, the review chunk, the create-annotation
+  dialog and the two delete confirmations. The Replace All and the Fix All
+  confirmations carry it too.
+- **A portal is not in the subtree of its component.** A dialog that reka-ui
+  puts on `body` carries the class on its own content element, and no rule
+  for it is nested in the rule of the view that opens it.
+- **A surface with the class states every property that the platform rules
+  set** (background, colour, border, radius, padding, font) for each control
+  in it. A control without such a rule has the look of the browser.
+- **Proof:** `e2e/annotation-button-colours.spec.ts` (each control of each
+  collaboration surface, in dark and in light mode, has the colour of its
+  token and the same painting with and without the platform class),
+  `e2e/search-replace.spec.ts` and `e2e/fix-all.spec.ts` (the two
+  confirmations).
+
+### 19. A file that cannot be read
+
+- **The file has a descriptor.** A workspace file whose text the filesystem
+  refuses to read (`EACCES`, `EIO`) is listed. Its Markdown or code
+  descriptor carries `readError` (the code and the message of the error);
+  the other fields describe a file without text. The parsers read through
+  `readFileText` (`fsal/util/read-file-text.ts`). A path that is gone still
+  rejects. One such file does not stop the index of its workspace or the
+  start of the app.
+- **The descriptor is not cached.** Each request for it reads the file
+  again. The FSAL logs the cause one time, and publishes `change` for the
+  file when its read state changes: the watcher does not report a change of
+  permissions.
+- **The file manager shows the cause.** A row of such a file has the warning
+  icon, the attribute `data-read-error` and the cause in its title
+  (`file-manager/util/read-error.ts`).
+- **A document without text is a document that was not linted.**
+  `DocumentLintSource` is a text or the cause (`unreadable`). The Problems
+  view, the Fix All plan and `/v1/lint` (scopes `workspace` and `all`, kind
+  `unreadable` in `failed`) name the document and answer for the other
+  documents. No failure is kept for it: each reader reads the file again.
+- **A document that Flowmark cannot lint keeps its cause.**
+  `DocumentLintProvider` keeps the last run of each document that gave no
+  result, for the session. The queue does not lint the same text with the
+  same inputs again. The Problems view and `/v1/lint` (`failed`, and
+  `queueStopped` while the background queue lints no document) name each
+  such document with the cause. "Try again" in the Problems view runs the
+  command `retry-workspace-lint` (`DocumentLintProvider.retry`).
+- **A check that did not run is one diagnostic.** A lint provider of the
+  editor that rejects gives the error diagnostic "This check did not run:
+  <cause>" (`external-linter-adapter.ts`). The status bar counts follow each
+  transaction that sets diagnostics.
+- **A failed first load offers the load again.** The message of an editor
+  that could not load its document has the action "Try again"
+  (`surface-document-load-error.ts`, `loadAgain` in `MainEditor.vue`).
+- **A search reads the other files.** The workspace search
+  (`service-providers/search`) does not stop at a file that it cannot read
+  or at a folder that it cannot list. It names each such file and folder
+  (`kind`) with the cause: the broadcast `search-unread` for the Search
+  view, which lists them above the results, and the list `notSearched` of
+  `GET /v1/workspace/search`. The Replace All confirmation
+  says that those files keep their text. An error that is no filesystem
+  error ends the search with the failure `stopped`, which names the file.
+- **A walk names the folders that it could not read.**
+  `FSAL.readDirectoryRecursively` gives a `DirectoryListing`: the paths,
+  and in `notListed` each folder whose content the filesystem refused, with
+  the cause. A refused folder is in `paths` too. The walk of a missing
+  workspace (§24) gives its root and its causes, and no other path. The
+  Agent API workspace listings (`include=files`, `documents`,
+  `directories`) answer 200 with `notListed`; a root that refuses its
+  content is a listing with no files and the root in `notListed`.
+- **A folder whose metadata cannot be used is listed.** The descriptor of
+  a folder names each such thing in `metadataProblems` (source, path,
+  message): a `.ztr-directory` that cannot be read, is not JSON or does not
+  hold settings (`settings`); a Quarto manifest that cannot be read or
+  parsed, and a bound manifest that is absent or describes no book
+  (`manifest`); a folder that refuses its content (`directory`). The folder
+  has the default settings and no Project. The manifest of a Quarto project
+  that is no book is no problem of a folder without a binding. One such
+  folder does not stop the index of its workspace or the start of the app,
+  and a folder that refuses its content is a path of its workspace.
+- **A load of a folder changes nothing on disk.** `parseSettings`
+  (`fsal-directory.ts`) leaves the settings file as it is. A change of the
+  settings of a folder whose settings file could not be read throws
+  `DirectorySettingsUnreadableError`, so no write replaces what the author
+  set; the dispatcher shows the message (§15).
+- **The row and the properties of the folder show each cause**
+  (`file-manager/util/read-error.ts`, the attribute
+  `data-metadata-problem`). The properties offer the removal of a binding
+  whose manifest gives no book.
+- **A control of the folder properties shows the saved state.** After a
+  refused change the sort controls and the Project switch show what the
+  folder has (`PopoverDirProps.vue`). The controls send a command only for a
+  choice of the author: the open of the properties writes nothing.
+- **A change of a manifest is a change of its folder.** The FSAL keeps the
+  manifest location of each bound folder and publishes `change` for the
+  folder when its manifest is added, changed or removed.
+- **Proof:** `test/fsal-unreadable-file.spec.ts`,
+  `test/document-lint-failure.spec.ts`, `test/agent-http-api.spec.ts`,
+  `test/external-linter-adapter.spec.ts`, `e2e/lint-failure.spec.ts`,
+  `e2e/document-load-retry.spec.ts`, `e2e/search-replace.spec.ts`,
+  `test/fsal-directory-metadata.spec.ts`,
+  `e2e/folder-metadata-problems.spec.ts`.
+
+### 20. File import
+
+- **An import replaces no file.** `makeImport` (`commands/importer/index.ts`)
+  puts each file into the import folder under a name that the folder does
+  not have. `placeFile` (`importer/place-file.ts`) copies with
+  `COPYFILE_EXCL`, so a file that appears between the check and the copy is
+  kept too. A new import path places its files through `placeFile`.
+- **Each file has a result.** `makeImport` answers one `ImportOutcome` for
+  each file: `imported`, or a refusal with its cause (`destination-exists`,
+  `source-missing`, `unknown-format`, `no-profile`, `malformed-bundle`,
+  `conversion-failed`, `filesystem-error`). One refused file does not stop
+  the other files of the list.
+- **A bundle that would replace a file is refused whole.** A TextBundle or
+  a TextPack is refused when the folder has its note or one of its `assets/`
+  files. The importer examines every destination before the first copy. The
+  note of a TextPack takes the name of the pack file.
+- **Pandoc writes to a scratch directory.** `convertFile` gives pandoc a
+  directory of its own for the defaults file and the output, and places the
+  output afterwards. The cause of a failed conversion has the exit code and
+  the error output of pandoc. `runPandoc` (`app/util/run-pandoc.ts`) is the
+  one start of pandoc for the importer and the exporter.
+- **The command shows the refusals once.** `import-files` throws one error
+  that names each file that was not imported with its cause; the dispatcher
+  shows it (§15). A cancelled dialog is a choice and shows nothing.
+- **Proof:** `test/import-files.spec.ts`, `e2e/import-files.spec.ts`.
+
+### 21. Authored files outside the workspaces
+
+- **What they are.** The Assets window edits files of the author that no
+  workspace holds: the Lua filters (`userData/lua-filter`), the export and
+  import profiles (`userData/defaults`), the snippets file and
+  `userData/custom.css`. `AssetsProvider` and `CssProvider` own them.
+- **A refused operation rejects.** A read, a save, a creation, a rename, a
+  removal and the restore of a protected file reject with an
+  `AuthoredFileError` (`app/util/authored-file-error.ts`), whose message
+  names the file and the cause. No method answers `false` for a failure.
+  `refusedAs(operation, path)` is the rejection handler of one filesystem
+  call.
+- **No file is replaced.** A new filter or profile is made through
+  `create-filter` or `create-defaults-file`; a name that a file has is
+  refused. A rename to the name of another file is refused, and both files
+  stay. `set-filter` and `set-defaults-file` save the text of a file that the
+  window read.
+- **The window shows each refusal once.** A request of a window that is no
+  application command shows its rejection through `showRefusal`
+  (`common/util/show-refusal.ts`). The dispatcher shows the failure of a
+  command (§15).
+- **A window saves only text that it read.** A tab of the Assets window has
+  the state `editable`: the editor holds the text of the selected file. It is
+  false while the text loads and after a refused read; the editor is then
+  empty and read-only (`CodeEditor.readonly`), and the tab sends no save,
+  also for the save shortcut. A refused save leaves the text in the editor
+  with the status "Unsaved changes".
+- **An open that the desktop refuses rejects.** `openPath`
+  (`app/util/open-path.ts`) is the one open of a path with the desktop; no
+  other code calls `shell.openPath`. On Linux it starts `xdg-open` and reads
+  its exit code: since electron/electron#48079 the promise of
+  `shell.openPath` never settles there, and a caller that waits for it waits
+  for ever. The promise of `openPath` settles when `xdg-open` ends; outside a
+  desktop that `xdg-open` knows (Hyprland), that is when the author closes
+  the application. A caller that has no work after the open does not wait:
+  it shows the refusal in an error window that names the file (the export
+  commands, a file that the app does not open itself). A command that is
+  only the open waits, and its refusal is shown once: by the dispatcher
+  (§15) or by `showRefusal` in the window that asked.
+- **An address goes through `openExternal`** (the same module); no other
+  code calls `shell.openExternal`. On Linux that promise resolves although
+  `xdg-open` fails, so `openExternal` runs `xdg-open` as `openPath` does
+  and rejects with the address and the cause.
+- **Proof:** `e2e/export-open-refused.spec.ts`, `e2e/preferences-open-refused.spec.ts`,
+  `e2e/follow-link-refused.spec.ts`,
+  `test/menu-file-navigation.spec.ts`, `test/assets-authored-files.spec.ts`,
+  `e2e/assets-refused-save.spec.ts`.
+
+### 22. Data files of the application
+
+- **What they are.** The application keeps its state in files of `userData`:
+  `config.json`, `tags.json`, `targets.json`, `stats.json`, `documents.yaml`
+  and `window_state.yml`. A `PersistentDataContainer`
+  (`common/modules/persistent-data-container`) holds each one in memory and
+  writes it one second after its last change.
+- **A write that fails is shown.** The constructor of a container requires a
+  `StoreWriteFailureHandler`. In the app it is `showStoreWriteFailure`
+  (`app/util/show-store-write-failure.ts`): it logs the failure and opens one
+  error window that names the file and the cause. The data stays in memory,
+  so the change holds until the application closes. A new container gets the
+  same handler; a spec gives `unexpectedStoreWriteFailure`
+  (`test/store-write-failure.ts`), which stops the spec.
+- **The user dictionary has the same handler.** `DictionaryProvider` writes
+  `user.dic` through `writeTextFile` at each added word. A failed write
+  releases the file lock, goes to `showStoreWriteFailure`, and the next word
+  writes the whole dictionary again.
+- **A refused setting is shown at its field.** The config provider checks
+  each value against the rule of its setting (`config-validation.ts`) and
+  keeps the old value for a refused one. The Preferences window writes a
+  field through `submitFormValue` (`pinia/config.ts`), which answers the
+  reason, and `FormBuilder` shows it under the field (`refusals`) until the
+  field gives a value that the rule accepts. Code that writes a setting it
+  built itself calls `setConfigValue` or `setConfigFromForm`, which throw.
+- **A mode of a window writes no setting.** Distraction-free mode is a
+  state of one window (`distractionFreeMode`, `pinia/window-state-store.ts`):
+  it hides the panes and leaves `window.fileManagerVisible` and
+  `window.sidebarVisible` as the author set them, so a quit in the mode
+  keeps the arrangement of the author. A pane is shown when its setting is
+  on and the window is not in the mode (`navigationSidebarShown`,
+  `annotationPanelShown`). Code that shows or hides a pane calls
+  `setPaneVisible`; a shown pane ends the mode.
+- **An option of one start writes no setting.** A start with
+  `--launch-minimized` opens no window, and its session stays in the
+  notification area when its last window closes; `system.leaveAppRunning`
+  stays as the author set it. `WindowProvider.keepsSessionRunning` decides
+  for the close of the last window, `window-all-closed` and the tray icon,
+  and a desktop without a notification area keeps no session. A click on
+  the tray icon and a second start call `WindowProvider.activate`, which
+  opens the windows of the session.
+- **Proof:** `e2e/settings-write-refused.spec.ts`,
+  `e2e/preferences-refused-value.spec.ts`,
+  `e2e/user-dictionary-write-refused.spec.ts`,
+  `e2e/distraction-free-restart.spec.ts`, `test/save-refusal-toast.spec.ts`,
+  `e2e/launch-minimized.spec.ts`.
+
+### 23. The order of a folder
+
+- **A control changes the folder that the author names.** Three controls
+  change the display, the sort, the direction and the grouping of a folder:
+  the context menu of the folder, the Properties of the folder and the
+  Workspaces menu. The Workspaces menu changes the selected folder
+  (`openDirectory`; a click on a file selects its folder) and names it in
+  the item `explorer-target`. It never changes a folder that it does not
+  name.
+- **One set of choices.** `file-manager/util/explorer-view-menu.ts` owns the
+  menu items, the choices and the functions that write them
+  (`setSort`, `setDirection`, `setMetadataKey`, through
+  `updateExplorerDirectory`). A new control of the order of a folder uses
+  them.
+- **The direction keeps the sort.** A change of the direction keeps the sort
+  and its metadata field; a change of the sort keeps the direction. The
+  Properties show each sort of the folder, a metadata field too, and the
+  field of a metadata sort.
+- **Proof:** `e2e/explorer-metadata-sort.spec.ts`,
+  `e2e/folder-metadata-problems.spec.ts`, `e2e/quarto-bound-book.spec.ts`.
+
+### 24. A workspace whose folder is missing
+
+- **A folder that does not exist leaves the configuration.** At start the
+  config check (`rootPathsOnDisk`, `config/root-paths.ts`) removes a
+  workspace or an open file whose path gives `ENOENT`.
+- **A folder that the filesystem cannot examine stays.** A failed mount or a
+  parent folder without search permission (`EACCES`) is not a removed folder.
+  The workspace stays in the configuration, and the FSAL lists it as missing
+  (`deadWorkspaces`): a root descriptor with `dirNotFoundFlag`, no children,
+  no watcher, no ignore rules. The other workspaces load. An open file that
+  cannot be examined stays in the configuration and is not loaded.
+- **A workspace whose rules file cannot be read is missing too.** Without its
+  `.zettlrignore` the FSAL does not know which paths the author hid (§10), so
+  it lists none of them. Each missing workspace keeps its causes in
+  `deadWorkspaces`; its root descriptor has them in `metadataProblems`
+  (source `directory` or `rules`), and the row shows them (§19). A rules file
+  that becomes unreadable while the app runs does the same at the next read
+  of the rules (`readIgnoreSources` → `loseWorkspace`: `unlink` for each
+  listed path, `change` for the root), so a rule change of another workspace
+  still applies.
+- **The rules file of a missing workspace is not written.** Its text is not
+  known, so `editRulesFiles` refuses a change for it, and the File filters
+  window shows the cause in place of its field.
+- **"Check for directory …" loads it.** The context menu item
+  (`menu.rescan_dir`) runs the command `rescan-dir`, which calls
+  `FSAL.loadMissingWorkspace`. While the folder cannot be read, the command
+  throws with the cause, and the dispatcher shows it (§15); so does a rules
+  file that still cannot be read. When both can be read, the FSAL watches the
+  folder, applies its rules, and then publishes `addDir` and `add` for each
+  listed path, so each window shows the workspace with its files and no path
+  that a rule hides.
+- **A row follows the events before its first read.** `TreeItem.vue`
+  follows its children (`followChildren`) before it reads them, so a row
+  whose first read gives nothing still shows the children that a later
+  event adds.
+- **One listener for the rows of a window.** `followChildren`
+  (`file-manager/util/follow-children.ts`) has the one `fsal-events`
+  listener of the file manager; it calls the rows of the parent folder of
+  each event, once for each batch. A row adds no IPC listener of its own: the
+  cost of a batch follows its events, not the rows. A shortcut for a row
+  goes through the `shortcut` listener of `FileManager.vue`: "New
+  directory…" sets `newDirectoryRequest`
+  (`file-manager/util/new-directory-request.ts`) to the selected folder, and
+  only the row of that folder opens its name field. Proof:
+  `e2e/file-tree-listeners.spec.ts` (the listener count of each channel,
+  read from the `ipcRenderer` of the preload through CDP).
+- **Proof:** `e2e/missing-workspace.spec.ts`,
+  `e2e/unreadable-workspace-rules.spec.ts`,
+  `test/fsal-deleted-directory.spec.ts`.
+
+### 25. Runs of external tools
+
+- **One owner.** `packages/external-process` (`@dzack/external-process`)
+  runs each external tool of the main process: `runProcess`
+  (`src/run-process.ts`) and `probeTool` (`src/probe-tool.ts`). It imports
+  nothing from `source/`. See `packages/external-process/README.md`.
+- **Each run has the same rules.** A run leads a process group of its own. A
+  time limit stops the group with SIGTERM and then SIGKILL; a run that a
+  signal ends leaves no process of its group; the exit of the app stops each
+  run. The answer is an outcome (`exit`, `signal`, `timeout`, `not-started`),
+  never a rejection for the program's end. A failed start names its cause:
+  the program is absent, is not executable, or its working folder cannot be
+  used. `describeOutcome` gives the sentence; `requireExit` and
+  `requireSuccess` throw it for a caller whose work stops there.
+- **The callers.** The TikZ render, Flowmark, Pandoc of the export, the
+  import and the citation reader (`runPandoc`, `pandoc-citations.ts`),
+  `latexpand`, the PDF recipe, the shell commands of the author
+  (`runShellCommand`: the command is shell text, each path an argument),
+  the justfile listing, the QuickTeX loader, the tray check and
+  `notify-send`. A new run of a tool goes through `runProcess`; a new check
+  that a tool is installed goes through `probeTool`.
+- **A start of an application is not a run.** `openPath`, the kitty
+  launcher, the PDF viewer of a link and the Visual TikZ Editor start a
+  program that goes on after the app has its answer; they keep their own
+  `spawn`.
+- **Proof:** `packages/external-process/test/run-process.spec.ts`,
+  `test/start-tool-probes.spec.ts`, `test/preflight.spec.ts`,
+  `test/run-shell-command.spec.ts`.
+
+### 26. Commands, keys and menu items
+
+- **The command registry owns each key.** `common/commands/command-registry.ts`
+  gives each command its default key; `config.shortcuts` changes it. The
+  application menu (`withRegisteredAccelerators`,
+  `menu/registered-accelerators.ts`), the editor keymaps, the context menus
+  (`context-menu/menu-accelerator.ts`), the launcher rows and the Shortcuts
+  table of the Preferences read the configured key
+  (`getConfiguredShortcut`). A menu template that states a key that no
+  command owns is refused. A new item that runs a command takes its key
+  from the registry; no surface types a key.
+- **No two commands share a key.** `getCommandConflicts` compares keys in
+  the normal form of CodeMirror (`Mod-C` and `Mod-Shift-c` are one key)
+  across the scopes.
+- **One action, one handler, from each entry point.**
+  - The Insert, Format and Edit items of the context menus of the editor
+    and of a table cell are the items of the application menu
+    (`common/commands/editing-menu-items.ts`): the same id, label, command
+    and table size. Copy during a review gives the CriticMarkup of Edit →
+    Copy.
+  - "Close all tabs" and "Close other tabs" are main-process commands
+    (`close-all-tabs`, `close-other-tabs`). They close one tab after the
+    other through `closeFile`, so the author answers about one document at
+    a time and a cancel stops the rest. `closeFile` refuses a pinned tab
+    before it asks or unloads. "Close other tabs" keeps the pinned tabs;
+    "Close all tabs" closes them too.
+  - New file and New directory ask for the name in the name field of the
+    row, in the list and in the tree. A name field is keyed by the path of
+    its row (`file-manager/util/name-fields.ts`), so it stays with its row
+    while the rows change. The key of "Rename file" opens the field of the
+    row of the active document (`openRowRenameField`).
+  - Reveal in the file browser goes through the command `reveal-path`
+    (`revealPath`, `app/util/open-path.ts`): it opens the folder with the
+    application of the desktop and rejects with the cause.
+  - "Rescan directory" runs `rescan-dir` (§24); Window → New directory…
+    opens the name field of the selected folder only
+    (`newDirectoryRequest`).
+- **A context menu has the width of its labels.** `.application-menu` has
+  `width: max-content`; `positionMenu` reads that width to put the menu
+  where it fits, also at the right edge of the window.
+- **Proof:** `e2e/window-shortcut-keys.spec.ts`,
+  `e2e/editor-context-menu.spec.ts`, `e2e/tab-close-all.spec.ts`,
+  `e2e/tab-close-others.spec.ts`, `e2e/file-list-create.spec.ts`,
+  `e2e/rename-one-field.spec.ts`, `e2e/reveal-in-file-browser.spec.ts`.
 
 ## Debugging entry points
 
@@ -485,8 +1727,10 @@ of an isolated instance are in the first comment of #132.
   Flowmark CLI. Rule enablement/severity/options belong to Flowmark config.
   Zettlr supplies only context data (`source/app/util/flowmark-lint-context.ts`:
   macro source paths, active packages, workspace reference resolutions,
-  bibliography file paths (`document-bibliographies.ts`, the same files citeproc
-  uses), compiler findings) and must not own any rule decision or run
+  bibliography file paths (`document-bibliographies.ts`: the files that the
+  linted text names, by the rules of citeproc; the Project comes from the folder
+  of the document, so an open document whose file was removed keeps it),
+  compiler findings) and must not own any rule decision or run
   a CodeMirror linter of its own. Macro-sensitive rules load the declared macro
   sources themselves, so the same checks run from `flowmark-lint`; do not
   precompute a GUI-owned macro inventory for linting.
@@ -524,11 +1768,15 @@ of an isolated instance are in the first comment of #132.
   machine `fix` uses `apply-lint-fix`, which checks the cached finding and
   applies its edit through the guarded Fix All transaction.
 - **Background work is visible:** a Flowmark format, the background lint
-  queue and the startup Flowmark update each register a long-running task
+  queue, the startup Flowmark update and the index of the workspaces after a
+  change of the open paths each register a long-running task
   (`LongRunningTaskProvider`). The status bar names the newest running task
   with its elapsed time; its indicator opens the task list. A routine task
   ends through `settleTask`: a success leaves the list, a failure stays
-  listed with its error. New background work registers a task the same way.
+  listed with its error. Each path out of the work, a rejection too, ends
+  its task. New background work registers a task the same way. A file that
+  goes away between the list of the index and its read is not a failure
+  (`test/fsal-reindex.spec.ts`).
 - **Fix All:** a Flowmark diagnostic carries a `fix` (a machine-applicable
   edit that keeps the meaning of the text) beside its `suggestions` (edits
   that need the author's choice). Only a `fix` is ever applied without the
@@ -549,15 +1797,20 @@ of an isolated instance are in the first comment of #132.
 
 - The raw production command can report success without a fresh asar. Use `just
   package` or `just verify-build` so the verifier checks the current fingerprint.
-- `userData/defaults` is copied once and never pruned; a **stale shipped profile** can
-  shadow a custom one in the export menu.
-- `source/common/util/math-delimiters.ts` must stay CodeMirror-free (main-process
+- `userData/defaults` is copied once and never pruned. A surface that offers or
+  runs an export profile reads `exportProfiles`; a list of its own lets a
+  **stale shipped profile** replace a custom one.
+- `packages/pandoc-editor/src/util/math-delimiters.ts` must stay CodeMirror-free (main-process
   bundle).
 - The launcher's focus-if-running is **intentional** — quit fully to load a new build.
-- The global biome configuration formats every file, the files shared with
-  upstream Zettlr included: double quotes, semicolons, sorted imports. Run
-  `biome check --config-path ~/ai-review-ci/tool-configs/biome.json --write .`
-  before a commit; `qc-ci / qc` fails on an unformatted file.
+- The global biome configuration formats the code files, the files shared
+  with upstream Zettlr included: double quotes, semicolons, sorted imports.
+  Before a commit, format the code files that the commit changes:
+  `bun x --package @biomejs/biome biome check --config-path ~/ai-review-ci/tool-configs/biome.json --write <files>`.
+  Give it files, not a directory, and no Markdown file: Biome reads Pandoc
+  Markdown as CommonMark and turns YAML front matter into a heading, which
+  changes the fixtures of `test/fixtures` (dzackgarza/ai-review-ci#496). The
+  hosted `bun-biome` check is recorded debt: it does not fail `qc-ci / qc`.
 
 # Review Guidelines
 
@@ -643,7 +1896,7 @@ gh api graphql -f query='query { repository(owner:"dzackgarza", name:"zettlr-pan
 
 `thread-resolution` is red while any thread is unresolved, so a red `thread-resolution` says the triage loop has not been run. Triage every substantive thread through `pr-feedback-triage`: a disposition and its evidence on the thread itself, a commit behind any accepted finding, and no thread resolved on intent. Policy findings (`POLICY.FAIL_OPEN`, `POLICY.NO_ERROR_DISCARD`, `POLICY.RUNTIME_DEFAULT`, `POLICY.NO_HIDDEN_CONFIG`, `POLICY.NO_TYPE_ESCAPE`) are the global bridge-burning rules; they are not style notes and they are not waivable by a sentence in the PR body.
 
-The local commit hook exempts this fork from verification, and `e2e` specs that pass under the local xvfb harness still fail on the hosted runner. Neither a clean commit nor a green local run is evidence about the PR; the run over the branch head is.
+The local commit hook exempts this fork from verification. The hosted `Unit Tests / Lint` job builds the packaged app and runs the assembled-app E2E suite on it. Neither a clean commit nor a green local run is evidence about the PR; the run over the branch head is.
 
 ## When Acting on Review Feedback
 
@@ -662,6 +1915,7 @@ Review comments are not implementation specs.
 The worker must translate accepted feedback into first-principles remediation requirements before assigning implementation.
 
 For each comment:
+
 - Identify the concern.
 - Identify the proposed fix.
 - Decide whether the concern is true under global + repo policy.

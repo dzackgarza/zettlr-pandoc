@@ -5,6 +5,7 @@ import {
   type CompletionResult,
   type CompletionSource,
 } from "@codemirror/autocomplete";
+import { syntaxTree } from "@codemirror/language";
 import {
   type EditorState,
   type Extension,
@@ -15,10 +16,12 @@ import {
 import indexJson from "@common/data/texstudio-command-index.json";
 import {
   collectTexContext,
+  type TexDocument,
   type TexDocumentKind,
   type TexMacroSource,
   texCommandMayStartAt,
   texCommandSurface,
+  texDocument,
 } from "@common/util/tex-context";
 import {
   buildTexCommandAuthority,
@@ -67,12 +70,15 @@ interface ResolvedTexKnowledge {
   userCommands: ReadonlySet<string>;
 }
 
+/** The TeX document of an editor, with the syntax tree that the editor has. */
+function editorTexDocument(state: EditorState): TexDocument {
+  return texDocument(state.doc.toString(), documentKind(state), syntaxTree(state));
+}
+
 function resolveKnowledge(state: EditorState): ResolvedTexKnowledge {
-  const source = state.doc.toString();
   const declaration = collectTexContext(
     texstudioIndex,
-    source,
-    documentKind(state),
+    editorTexDocument(state),
     state.field(texMacroSourcesField),
   );
   const baseAuthority = buildTexCommandAuthority(texstudioIndex, [
@@ -94,8 +100,9 @@ function resolveKnowledge(state: EditorState): ResolvedTexKnowledge {
 }
 
 function commandVisibleAt(context: CompletionContext, from: number): boolean {
-  const source = context.state.doc.toString();
-  const visible = texCommandSurface(source, documentKind(context.state));
+  const document = editorTexDocument(context.state);
+  const source = document.source;
+  const visible = texCommandSurface(document);
   return (
     texCommandMayStartAt(source, from) &&
     visible.slice(from, context.pos) === source.slice(from, context.pos)

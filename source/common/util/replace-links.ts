@@ -14,7 +14,7 @@
  */
 
 import path from "path";
-import { extractASTNodes, markdownToAST } from "../modules/markdown-utils";
+import { extractASTNodes, markdownToAST, type WikilinkFormat } from "../modules/markdown-utils";
 import { type ZettelkastenLink } from "../modules/markdown-utils/markdown-ast";
 import { type WikilinkIndex } from "./wikilink-resolution";
 import { splitWikilinkTarget } from "./wikilink-target";
@@ -32,16 +32,18 @@ export interface LinkReplacement {
  * target, or undefined to leave the link as it is. The fragment and the label
  * are kept.
  *
- * @param   {string}   markdown  The document in question.
- * @param   {Function} rewrite   The new target for a link target
+ * @param   {string}          markdown    The document in question.
+ * @param   {WikilinkFormat}  linkFormat  How a wikilink names its document
+ * @param   {Function}        rewrite     The new target for a link target
  *
  * @return  {LinkReplacement[]}  The replacements, in document order
  */
 function linkReplacements(
   markdown: string,
+  linkFormat: WikilinkFormat,
   rewrite: (target: string) => string | undefined,
 ): LinkReplacement[] {
-  const ast = markdownToAST(markdown);
+  const ast = markdownToAST(markdown, null, linkFormat);
   const links = extractASTNodes(ast, "ZettelkastenLink") as ZettelkastenLink[];
 
   const replacements: LinkReplacement[] = [];
@@ -105,7 +107,8 @@ export function retargetedLink(
 
 /**
  * The replacements that retarget the links in `markdown`, the text of the
- * document that was at `sourcePath` before `move` (see `retargetedLink`).
+ * document that was at `sourcePath` before `move` (see `retargetedLink`),
+ * read with the link format `linkFormat`.
  */
 export function retargetLinks(
   markdown: string,
@@ -113,8 +116,9 @@ export function retargetLinks(
   move: PathMove,
   before: WikilinkIndex,
   after: WikilinkIndex,
+  linkFormat: WikilinkFormat,
 ): LinkReplacement[] {
-  return linkReplacements(markdown, (target) =>
+  return linkReplacements(markdown, linkFormat, (target) =>
     retargetedLink(target, sourcePath, move, before, after),
   );
 }

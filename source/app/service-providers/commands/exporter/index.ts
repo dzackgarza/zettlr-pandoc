@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { trans } from "@common/i18n-main";
 import { EXT2READER, isHtmlWriter, isTexWriter } from "@common/pandoc-util/pandoc-maps";
 import {
   enableExtension,
@@ -22,31 +23,26 @@ import {
 import isFile from "@common/util/is-file";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type AssetsProvider from "@providers/assets";
-import { type ValidPandocProfile } from "@providers/assets";
+import { type PandocProfileMetadata, type ValidPandocProfile } from "@providers/assets";
 import type ConfigProvider from "@providers/config";
 import type { ConfigOptions } from "@providers/config/get-config-template";
+import type FSAL from "@providers/fsal";
 import type LogProvider from "@providers/log";
-import { spawn } from "child_process";
 import { app } from "electron";
 import { promises as fs } from "fs";
 // Modules
 import path from "path";
-import { type MathJaxMacro } from "tikz-workbench/src/mathjax-config";
 import YAML from "yaml";
 import { loadCanonicalMathJaxMacros } from "../../../util/load-mathjax-macros";
+import { runPandoc } from "../../../util/run-pandoc";
 import { plugin as DefaultExporter } from "./default-exporter";
-import { injectPandocMathHeaders } from "./pandoc-math-headers";
+import { type ExportMath, injectPandocMathHeaders } from "./pandoc-math-headers";
 import { runRecipeExport } from "./recipe-exporter";
 import { runScriptExport } from "./script-exporter";
 import { plugin as TextbundleExporter } from "./textbundle-exporter";
 // Exporters
-import type {
-  DefaultsOverride,
-  ExporterAPI,
-  ExporterOptions,
-  ExporterOutput,
-  PandocRunnerOutput,
-} from "./types";
+import type { DefaultsOverride, ExporterAPI, ExporterOptions, ExporterOutput } from "./types";
+import { exportInputs, withWikilinkMap } from "./wikilink-map-file";
 
 /**
  * This function returns faux metadata for the custom export formats the
@@ -91,6 +87,28 @@ export function getCustomProfiles(
       }),
     ),
   ];
+}
+
+/**
+ * The export profiles of the application: the defaults files of the author
+ * and the custom profiles. A custom profile replaces a defaults file of the
+ * same name. userData/defaults is copied once and never pruned, so it can
+ * hold a PDF.yaml of a version before the PDF recipe; that file must not
+ * replace the recipe profile.
+ *
+ * @param   {Profile[]}  defaults  The defaults files of the author: all of them
+ *                                (the menu), or the valid ones (the harness)
+ * @param   {ConfigOptions["export"]["scripts"]}  scripts  The export scripts of the settings
+ *
+ * @return  {Array<Profile | ValidPandocProfile>}  The profiles, one for each name
+ */
+export function exportProfiles<Profile extends PandocProfileMetadata>(
+  defaults: Profile[],
+  scripts: ConfigOptions["export"]["scripts"],
+): Array<Profile | ValidPandocProfile> {
+  const custom = getCustomProfiles(scripts);
+  const customNames = new Set(custom.map((profile) => profile.name));
+  return [...defaults.filter((profile) => !customNames.has(profile.name)), ...custom];
 }
 
 const PLUGINS = {
@@ -151,8 +169,10 @@ type DefaultsWriterConfig = {
 /**
  * Runs the exporter.
  *
- * @param   {ExporterOptions}  options             The options needed to facilitate the export.
- * @param   {any}              [formatOptions={}]  These are options possibly required by a plugin.
+ * @param   {ExporterOptions}  options    The options needed to facilitate the export.
+ * @param   {WikilinkIndex}    wikilinks  The index that resolves the wikilinks.
+ * @param   fsal                          The folders of the documents, for the
+ *                                        bibliography of a PDF export.
  *
  * @return  {Promise<ExporterOutput>}              Resolves with an info object.
  */
@@ -162,17 +182,43 @@ export async function makeExport(
   config: ConfigProvider,
   assets: AssetsProvider,
   wikilinks: WikilinkIndex,
+  fsal: Pick<FSAL, "getAnyDirectoryDescriptor">,
 ): Promise<ExporterOutput> {
-  // We already know where the exported file will end up, so set the property
-  const inputFiles = options.sourceFiles.map((file) => file.path);
+  // The text of each document. Pandoc resolves relative resources against
+  // its working directory, not against the folder of an input.
+  const inputFiles = options.sourceFiles.map((file) => file.textFile);
 
   // Load the central ~/.pandoc MathJax projection once for this export.
-  const macros = await loadCanonicalMathJaxMacros(app.getPath("home"));
+  const math: ExportMath = {
+    mathJaxDirectory: assets.exportMathJaxDirectory,
+    macros: await loadCanonicalMathJaxMacros(app.getPath("home")),
+    pandocDirectory: path.join(app.getPath("home"), ".pandoc"),
+  };
+
+  // Zettlr resolves the wikilinks of a Pandoc export as it does for the PDF
+  // recipe: pandoc-config's filters/wikilinks.lua reads the resolutions from
+  // the file that PANDOC_WIKILINKS names, and it runs before each other
+  // filter, which can add headings.
+  const inputs = await exportInputs(options.sourceFiles);
+  const reading = { index: wikilinks, linkFormat: config.get().zkn.linkFormat };
+  const filters = [
+    path.join(math.pandocDirectory, "filters", "wikilinks.lua"),
+    ...config.get().export.filters,
+  ];
 
   // This is basically the "plugin API"
   const ctx: ExporterAPI = {
     runPandoc: async (defaults: string) => {
-      return await runPandoc(logger, defaults, options.cwd);
+      const output = await withWikilinkMap(
+        inputs,
+        reading,
+        async (mapFile) =>
+          await runPandoc(defaults, options.cwd, { ...process.env, PANDOC_WIKILINKS: mapFile }),
+      );
+      if (output.stdout.length > 0) {
+        logger.info("This Pandoc run produced additional output.", output.stdout);
+      }
+      return output;
     },
     writeDefaults: async (filename: string, overrides: Record<string, unknown> = {}) => {
       const defaults = await assets.getDefaultsFile(filename);
@@ -181,10 +227,9 @@ export async function makeExport(
         defaults,
         overrides,
         config.get(),
-        config.get().export.filters,
+        filters,
         app.getPath("temp"),
-        path.join(__dirname, "assets/defaults/mathjax-tex-chtml.js"),
-        macros,
+        math,
         options.defaultsOverride,
       );
     },
@@ -198,7 +243,15 @@ export async function makeExport(
     return await PLUGINS.textbundle(options, inputFiles, ctx);
   } else if (options.profile.writer === "compile-pandoc") {
     // PDF: delegate to the authoritative ~/.pandoc compile-pandoc recipe.
-    return await runRecipeExport(options, config.get().export.latexTemplate, wikilinks);
+    // A template of the export (the LaTeX template of a Project) goes before
+    // the template of the setting, as it does for a Pandoc profile.
+    const ownTemplate = options.defaultsOverride?.template;
+    return await runRecipeExport(options, {
+      latexTemplate: ownTemplate !== undefined ? ownTemplate : config.get().export.latexTemplate,
+      wikilinks: reading,
+      fsal,
+      mainLibrary: config.get().export.cslLibrary,
+    });
   } else if (options.profile.writer === "script") {
     const script = config.get().export.scripts.find((s) => s.name === options.profile.name);
     if (script === undefined) {
@@ -211,58 +264,6 @@ export async function makeExport(
   }
 }
 
-async function runPandoc(
-  logger: LogProvider,
-  defaultsFile: string,
-  cwd?: string,
-): Promise<PandocRunnerOutput> {
-  const output: PandocRunnerOutput = {
-    code: 0,
-    stdout: [],
-    stderr: [],
-  };
-
-  await new Promise<void>((resolve, reject) => {
-    const pandocProcess = spawn("pandoc", ["--defaults", defaultsFile], { cwd });
-
-    pandocProcess.stdout.on("data", (data) => {
-      output.stdout.push(String(data));
-    });
-
-    pandocProcess.stderr.on("data", (data) => {
-      output.stderr.push(String(data));
-    });
-
-    pandocProcess.on("close", (code: number, _signal) => {
-      // Code should be 0. To check for errors, check that
-      output.code = code;
-      resolve();
-    });
-
-    pandocProcess.on("error", (err) => {
-      reject(err);
-    });
-  });
-
-  // The data doesn't come in clean lines because it's a stream, but it will
-  // include linefeeds. In order to enable easy checks (stderr.length === 0,
-  // for example), clean up the output.
-  output.stderr = output.stderr
-    .join("")
-    .split("\n")
-    .filter((line) => line.trim() !== "");
-  output.stdout = output.stdout
-    .join("")
-    .split("\n")
-    .filter((line) => line.trim() !== "");
-
-  if (output.stdout.length > 0) {
-    logger.info("This Pandoc run produced additional output.", output.stdout);
-  }
-
-  return output;
-}
-
 // REFERENCE: Full defaults file here: https://pandoc.org/MANUAL.html#default-files
 
 export async function writeDefaults(
@@ -271,8 +272,7 @@ export async function writeDefaults(
   config: DefaultsWriterConfig,
   filters: string[],
   temporaryDirectory: string,
-  mathJaxComponent: string,
-  macros: Record<string, MathJaxMacro>,
+  math: ExportMath,
   defaultsOverride?: DefaultsOverride,
 ): Promise<string> {
   const defaultsFile = path.join(temporaryDirectory, "defaults.yml");
@@ -294,6 +294,12 @@ export async function writeDefaults(
     linkFormat === "link|title" ? "wikilinks_title_after_pipe" : "wikilinks_title_before_pipe";
   enableExtension(parsedReader, linkExt);
 
+  // The editor, md2html and the PDF recipe read \( \) and \[ \] as math
+  // (AGENTS.md §2); a Markdown reader of an export reads them the same way.
+  if (readsMarkdown) {
+    enableExtension(parsedReader, "tex_math_single_backslash");
+  }
+
   // Same for the `mark` extension which makes Pandoc correctly parse `==mark==`
   if (readsMarkdown && enforceMarkSupport) {
     enableExtension(parsedReader, "mark");
@@ -306,14 +312,23 @@ export async function writeDefaults(
   // selected database. This could break in a lot of places, but until Pandoc
   // respects a file-defined bibliography, this is our best shot.
   // const bibliography = global.citeproc.getSelectedDatabase()
-  if (isFile(cslLibrary)) {
+  // An empty setting names no file. A setting that names a file which is
+  // absent stops the export: an export without it would have other citations
+  // than the author asked for.
+  if (cslLibrary !== "") {
+    if (!isFile(cslLibrary)) {
+      throw new Error(trans("The citation library %s is no file.", cslLibrary));
+    }
     defaults.bibliography.push(cslLibrary);
   }
 
-  if (defaultsOverride?.csl !== undefined && isFile(defaultsOverride.csl)) {
-    defaults.csl = defaultsOverride.csl;
-  } else if (isFile(cslStyle)) {
-    defaults.csl = cslStyle;
+  // The style of the export (that of a Project) goes before the setting.
+  const style = defaultsOverride?.csl !== undefined ? defaultsOverride.csl : cslStyle;
+  if (style !== "") {
+    if (!isFile(style)) {
+      throw new Error(trans("The citation style %s is no file.", style));
+    }
+    defaults.csl = style;
   }
 
   // Now add metadata values for our GUI settings the user can choose. NOTE that
@@ -358,12 +373,7 @@ export async function writeDefaults(
   // Inject the fork's local MathJax config/preamble unless the user defers math
   // to the profile's template (e.g. a ~/.pandoc template that owns MathJax).
   if (config.export.injectMathHeaders) {
-    await injectPandocMathHeaders(
-      defaults as Record<string, unknown>,
-      temporaryDirectory,
-      mathJaxComponent,
-      macros,
-    );
+    await injectPandocMathHeaders(defaults as Record<string, unknown>, temporaryDirectory, math);
   }
 
   const YAMLOptions = {

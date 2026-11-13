@@ -20,11 +20,12 @@ import { md2html } from "@common/modules/markdown-utils/markdown-to-html";
 import { reportError } from "@common/util/error-reporting";
 import formatDate from "@common/util/format-date";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
+import { unrenderedPreviewHtml } from "@common/util/unrendered-preview";
 import { splitWikilinkTarget } from "@common/util/wikilink-target";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type { FindFileAndReturnMetadataResult } from "source/app/service-providers/commands/file-find-and-return-meta-data";
 import type { ForceOpenAPI } from "source/app/service-providers/commands/force-open";
-import makeValidUri from "source/common/util/make-valid-uri";
+import { documentCitationDatabase } from "source/common/util/document-citation-database";
+import { imageSourceUri } from "source/common/util/image-source-uri";
 import { pathDirname } from "source/common/util/renderer-path-polyfill";
 import { configField } from "../util/configuration";
 
@@ -114,24 +115,31 @@ function getPreviewElement(
   const basePath = pathDirname(metadata.filePath);
   content.textContent = trans("Generating preview…");
 
-  // Start the MD->HTML conversion ...
-  md2html(metadata.previewMarkdown, {
-    zknLinkFormat,
-    onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
-    onImageSrc(src) {
-      const isDataUrl = /^data:[a-zA-Z0-9/;=]+(?:;base64){0,1},.+/.test(src);
-      if (isDataUrl) {
-        return src;
-      } else {
-        return makeValidUri(src, basePath);
-      }
-    },
-  })
-    .then((html) => {
+  // Start the MD->HTML conversion with the bibliography of the linked
+  // document ...
+  documentCitationDatabase(metadata.filePath)
+    .then(
+      async (library) =>
+        await md2html(metadata.previewMarkdown, {
+          zknLinkFormat,
+          onCitation: window.getCitationCallback(library),
+          onImageSrc(src) {
+            return imageSourceUri(src, basePath);
+          },
+        }),
+    )
+    .then(
       // ... and then apply it to the content element.
-      setSanitizedHTML(content, html, "document");
-    })
-    .catch((err) => reportError(err));
+      (html) => setSanitizedHTML(content, html, "document"),
+      (failure: Error) => {
+        reportError("Could not render the preview of the linked document", failure);
+        setSanitizedHTML(
+          content,
+          unrenderedPreviewHtml(metadata.previewMarkdown, failure),
+          "document",
+        );
+      },
+    );
 
   const meta = document.createElement("div");
   meta.classList.add("metadata");

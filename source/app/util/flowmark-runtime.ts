@@ -17,7 +17,7 @@
  * END HEADER
  */
 
-import { spawn } from "child_process";
+import { describeOutcome, runProcess } from "@dzack/external-process/run-process";
 import { existsSync } from "fs";
 import path from "path";
 
@@ -26,8 +26,6 @@ export type FlowmarkProcessFailureKind = "flowmark-absent" | "flowmark-error" | 
 export type FlowmarkProcessResult =
   | { ok: true; stdout: string; stderr: string }
   | { ok: false; kind: FlowmarkProcessFailureKind; message: string };
-
-const KILL_GRACE_MS = 2_000;
 
 /** Locate a packaged/development external-linter process plugin. */
 export function externalLinterPluginPath(filename: string): string {
@@ -109,80 +107,49 @@ export interface FlowmarkProcessOptions {
 /**
  * Run one Flowmark process with bounded lifetime and captured stdio.
  *
- * The process is always spawned without a shell.  On timeout it receives
- * SIGTERM, then SIGKILL after a short grace, and the promise resolves only
- * after the child has actually closed.
+ * The process is spawned without a shell through `runProcess`. On timeout the
+ * process and the processes that it started (the Pandoc of `flowmark-lint`)
+ * receive SIGTERM, then SIGKILL after a short grace, and the promise resolves
+ * only after the child has actually closed.
  */
 export async function runFlowmarkProcess(
   options: FlowmarkProcessOptions,
 ): Promise<FlowmarkProcessResult> {
-  const command = options.command;
-  const env = options.env ?? process.env;
-
-  return await new Promise<FlowmarkProcessResult>((resolve) => {
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-    const proc = spawn(command, options.argv, { env, shell: false });
-
-    let settled = false;
-    let timedOut = false;
-    let boundTimer: NodeJS.Timeout | undefined;
-    let graceTimer: NodeJS.Timeout | undefined;
-
-    const settle = (outcome: FlowmarkProcessResult): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (boundTimer !== undefined) {
-        clearTimeout(boundTimer);
-      }
-      if (graceTimer !== undefined) {
-        clearTimeout(graceTimer);
-      }
-      resolve(outcome);
-    };
-
-    proc.stdout?.on("data", (data) => {
-      stdout.push(String(data));
-    });
-    proc.stderr?.on("data", (data) => {
-      stderr.push(String(data));
-    });
-    proc.on("error", (err) => {
-      settle({ ok: false, kind: "flowmark-absent", message: err.message });
-    });
-    proc.on("close", (code) => {
-      if (timedOut) {
-        settle({
-          ok: false,
-          kind: "flowmark-timeout",
-          message: `Markdown processing did not complete within ${String(options.timeoutMs)} ms`,
-        });
-      } else if (code === 0) {
-        settle({ ok: true, stdout: stdout.join(""), stderr: stderr.join("") });
-      } else {
-        settle({
-          ok: false,
-          kind: "flowmark-error",
-          message:
-            stderr.join("").trim() || `Markdown processing failed with exit code ${String(code)}`,
-        });
-      }
-    });
-
-    if (options.input !== undefined) {
-      proc.stdin?.end(options.input);
-    } else {
-      proc.stdin?.end();
-    }
-
-    boundTimer = setTimeout(() => {
-      timedOut = true;
-      proc.kill("SIGTERM");
-      graceTimer = setTimeout(() => {
-        proc.kill("SIGKILL");
-      }, KILL_GRACE_MS);
-    }, options.timeoutMs);
+  const outcome = await runProcess({
+    command: options.command,
+    args: options.argv,
+    env: options.env ?? process.env,
+    input: options.input,
+    timeLimitMs: options.timeoutMs,
+    waitForGroup: false,
   });
+  switch (outcome.ended) {
+    case "exit":
+      if (outcome.code === 0) {
+        return { ok: true, stdout: outcome.stdout, stderr: outcome.stderr };
+      }
+      return {
+        ok: false,
+        kind: "flowmark-error",
+        message: outcome.stderr.trim() || describeOutcome(options.command, outcome),
+      };
+    case "timeout":
+      return {
+        ok: false,
+        kind: "flowmark-timeout",
+        message: describeOutcome(options.command, outcome),
+      };
+    case "not-started":
+      return {
+        ok: false,
+        kind: outcome.reason === "absent" ? "flowmark-absent" : "flowmark-error",
+        message: describeOutcome(options.command, outcome),
+      };
+    case "signal":
+      return {
+        ok: false,
+        kind: "flowmark-error",
+        message: describeOutcome(options.command, outcome),
+      };
+  }
 }

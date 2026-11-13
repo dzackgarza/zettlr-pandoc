@@ -125,6 +125,11 @@ module.exports = {
       // app.asar file, but they will be code-signed.) Code signing these dylibs
       // is required on macOS for the Node process to properly load them.
       unpack: "*.{node,dll}",
+      // Pandoc and the browser of an exported HTML file read the MathJax of
+      // an HTML export (scripts/export-mathjax.js). Neither is Electron, so
+      // neither reads a file inside the archive: the folder stays in
+      // app.asar.unpacked.
+      unpackDir: ".webpack/main/assets/mathjax",
     },
     darwinDarkModeSupport: "true",
     // Electron-forge automatically adds the file extension based on OS

@@ -18,7 +18,8 @@ import type { AnyMenuItem } from "@common/modules/window-register/application-me
 import { reportError } from "@common/util/error-reporting";
 import showToast from "@common/util/show-toast";
 import type { AnyDescriptor } from "@dts/common/fsal";
-import { judgingRoot, ruleForName } from "source/common/util/ignore-rules";
+import { ruleForName } from "source/common/util/ignore-rules";
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import { useConfigStore, useIgnoreRulesStore } from "source/pinia";
 
 const ipcRenderer = window.ipc;
@@ -45,7 +46,7 @@ function setPathIgnored(descriptor: AnyDescriptor, ignored: boolean): void {
 export function ignoreMenuItems(descriptor: AnyDescriptor): AnyMenuItem[] {
   const configStore = useConfigStore();
   const { sources, filter } = useIgnoreRulesStore();
-  const root = judgingRoot(sources.workspaceRules.keys(), descriptor.path);
+  const root = innermostRoot(descriptor.path, sources.workspaceRules.keys());
   if (root === undefined) {
     return [];
   }
@@ -63,7 +64,7 @@ export function ignoreMenuItems(descriptor: AnyDescriptor): AnyMenuItem[] {
     ];
   }
 
-  if (filter.matches(descriptor.path, isDirectory)) {
+  if (filter.ruleMatches(descriptor.path, isDirectory)) {
     return [
       {
         id: "menu.unignore_path",
@@ -71,6 +72,21 @@ export function ignoreMenuItems(descriptor: AnyDescriptor): AnyMenuItem[] {
         type: "normal",
         action() {
           setPathIgnored(descriptor, false);
+        },
+      },
+    ];
+  }
+
+  if (filter.matches(descriptor.path, isDirectory)) {
+    return [
+      {
+        id: "menu.edit_ignore_rules",
+        label: trans("Hidden by its file type: Edit file filters…"),
+        type: "normal",
+        action() {
+          ipcRenderer
+            .invoke("application", { command: "edit-ignore-rules" })
+            .catch((err) => reportError("Could not open the file filters", err));
         },
       },
     ];

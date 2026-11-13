@@ -21,9 +21,13 @@ import findLangCandidates, { type Candidate } from "./find-lang-candidates";
 /**
  * Returns metadata for a given translation file and provides a status code.
  * @param  {string} query         The language metadata is requested for (BCP 47 compatible)
+ * @param  {string[]} directories The directories that hold the translations
  * @return {Object}               A language metadata object.
  */
-export default function getLanguageFile(query: string): Candidate & LangFileMetadata {
+export default function getLanguageFile(
+  query: string,
+  directories: string[],
+): Candidate & LangFileMetadata {
   // First of all, create the fallback object.
   const fallback: Candidate & LangFileMetadata = {
     tag: "en-US",
@@ -33,7 +37,7 @@ export default function getLanguageFile(query: string): Candidate & LangFileMeta
 
   // Now we should have a list of all available dictionaries. Next, we need to
   // search for a best and a close match.
-  let { exact, close } = findLangCandidates(query, enumLangFiles());
+  let { exact, close } = findLangCandidates(query, enumLangFiles(directories));
 
   if (exact !== undefined) {
     return exact;

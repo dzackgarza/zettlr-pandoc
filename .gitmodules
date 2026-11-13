@@ -1,3 +1,0 @@
-[submodule "packages/tikz-workbench"]
-	path = packages/tikz-workbench
-	url = https://github.com/dzackgarza/visual-tikz-editor.git

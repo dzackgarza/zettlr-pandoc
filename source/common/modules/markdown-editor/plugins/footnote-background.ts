@@ -23,7 +23,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
+import { visitVisibleSyntaxNodes } from "@dzack/pandoc-editor/util/visible-syntax-nodes";
 
 const footnoteLine = Decoration.line({ class: "cm-footnote-body" });
 const footnoteFirstLine = Decoration.line({ class: "cm-footnote-body cm-footnote-body-first" });

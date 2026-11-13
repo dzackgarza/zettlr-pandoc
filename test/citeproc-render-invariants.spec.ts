@@ -14,10 +14,10 @@ import os from "os";
 import path from "path";
 import CiteprocProvider, {
   type CiteprocConfig,
-  type CiteprocErrorDisplay,
   CiteprocRenderInvariantError,
 } from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
@@ -59,8 +59,6 @@ function config(stylePath: string): CiteprocConfig {
   };
 }
 
-const windows: CiteprocErrorDisplay = { showErrorMessage: () => {} };
-
 describe("Citeproc printable-form invariant", function () {
   let directory: string;
   let libraryPath: string;
@@ -90,7 +88,12 @@ describe("Citeproc printable-form invariant", function () {
   });
 
   async function providerFor(stylePath: string): Promise<CiteprocProvider> {
-    const provider = new CiteprocProvider(log, config(stylePath), windows);
+    const provider = new CiteprocProvider(
+      log,
+      config(stylePath),
+      path.resolve("static", "csl-locales"),
+      DATABASE_LOADER_THREAD,
+    );
     await provider.boot();
     await provider.synchronizeDatabases([libraryPath]);
     return provider;

@@ -13,12 +13,18 @@
  * END HEADER
  */
 
+import type { StoreWriteFailureHandler } from "@common/modules/persistent-data-container";
+import broadcastIPCMessage from "@common/util/broadcast-ipc-message";
+import { installedTranslationDirectories } from "@common/util/enum-lang-files";
 import { installErrorReporter } from "@common/util/error-reporting";
 import AgentHTTPProvider, { type AgentApiHost } from "@providers/agent-api/http-server";
 // Providers
 import AppearanceProvider from "@providers/appearance";
-import AssetsProvider from "@providers/assets";
-import CiteprocProvider from "@providers/citeproc";
+import AssetsProvider, { BUNDLED_EXPORT_MATHJAX } from "@providers/assets";
+import CiteprocProvider, {
+  BUNDLED_DATABASE_LOADER_THREAD,
+  BUNDLED_LOCALE_DIRECTORY,
+} from "@providers/citeproc";
 import CommandProvider from "@providers/commands";
 import ConfigProvider from "@providers/config";
 import CssProvider from "@providers/css";
@@ -38,11 +44,12 @@ import TargetProvider from "@providers/targets";
 import TrayProvider from "@providers/tray";
 import UpdateProvider from "@providers/updates";
 import WindowProvider from "@providers/windows";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, dialog } from "electron";
 import path from "path";
 import { trans } from "source/common/i18n-main";
 import LongRunningTaskProvider from "./service-providers/long-running-tasks";
 import { SearchProvider } from "./service-providers/search";
+import { showStoreWriteFailure } from "./util/show-store-write-failure";
 import { closeSplashScreen, showSplashScreen, updateSplashScreen } from "./util/splash-screen";
 
 // We need module-global variables so that garbage collect won't shut down the
@@ -113,20 +120,37 @@ export class AppServiceContainer {
     installErrorReporter((message, details) => {
       this._logProvider.error(message, details);
     });
-    this._configProvider = new ConfigProvider(this._logProvider);
+    // A provider made before the window provider tells the author of a
+    // failed write through it; the write happens after this constructor.
+    const onStoreWriteFailure: StoreWriteFailureHandler = (filePath, failure) => {
+      showStoreWriteFailure(this._logProvider, this._windowProvider, filePath, failure);
+    };
+    this._configProvider = new ConfigProvider(
+      this._logProvider,
+      installedTranslationDirectories(),
+      onStoreWriteFailure,
+    );
     this._lrtProvider = new LongRunningTaskProvider(this._logProvider); // Not really crucial, but the FSAL needs access
     this._fsal = new FSAL(this._logProvider, this._configProvider, this._lrtProvider);
 
     // Now according to their dependencies
     this._recentDocsProvider = new RecentDocumentsProvider(this._logProvider, this._configProvider);
-    this._assetsProvider = new AssetsProvider(this._logProvider, this._configProvider);
+    this._assetsProvider = new AssetsProvider(
+      this._logProvider,
+      this._configProvider,
+      BUNDLED_EXPORT_MATHJAX,
+    );
     this._cssProvider = new CssProvider(this._logProvider);
-    this._statsProvider = new StatsProvider(this._logProvider);
+    this._statsProvider = new StatsProvider(this._logProvider, onStoreWriteFailure);
 
     this._appearanceProvider = new AppearanceProvider(this._logProvider, this._configProvider);
-    this._dictionaryProvider = new DictionaryProvider(this._logProvider, this._configProvider);
+    this._dictionaryProvider = new DictionaryProvider(
+      this._logProvider,
+      this._configProvider,
+      onStoreWriteFailure,
+    );
 
-    this._targetProvider = new TargetProvider(this._logProvider, this._fsal);
+    this._targetProvider = new TargetProvider(this._logProvider, this._fsal, onStoreWriteFailure);
     this._linkProvider = new LinkProvider(this._logProvider, this._configProvider, this._fsal);
     // The document provider accesses only the FSAL in its constructor
     this._documentManager = new DocumentManager(this);
@@ -162,22 +186,15 @@ export class AppServiceContainer {
       env: process.env,
       userDataDirectory: app.getPath("userData"),
       onDrain: () => {
-        for (const window of BrowserWindow.getAllWindows()) {
-          window.webContents.send("document-lint-changed");
-        }
+        broadcastIPCMessage("document-lint-changed");
       },
     });
-    this._agentHTTPProvider = new AgentHTTPProvider(
-      this._logProvider,
-      this._documentManager,
-      this,
-      this._citeprocProvider,
-    );
     this._tagProvider = new TagProvider(
       this._logProvider,
       this._documentManager,
       this._configProvider,
       this._fsal,
+      onStoreWriteFailure,
     );
     this._windowProvider = new WindowProvider(
       this._logProvider,
@@ -188,7 +205,15 @@ export class AppServiceContainer {
     this._citeprocProvider = new CiteprocProvider(
       this._logProvider,
       this._configProvider,
-      this._windowProvider,
+      BUNDLED_LOCALE_DIRECTORY,
+      BUNDLED_DATABASE_LOADER_THREAD,
+    );
+    this._agentHTTPProvider = new AgentHTTPProvider(
+      this._logProvider,
+      this._documentManager,
+      this,
+      { homeDirectory: app.getPath("home"), env: process.env },
+      this._citeprocProvider,
     );
     this._trayProvider = new TrayProvider(
       this._logProvider,
@@ -419,6 +444,7 @@ export class AppServiceContainer {
     await this._safeShutdown(this._appearanceProvider, "AppearanceProvider");
     await this._safeShutdown(this._configProvider, "ConfigProvider");
     await this._safeShutdown(this._logProvider, "LogProvider");
+    this._isBooted = false;
   }
 
   /**
@@ -463,8 +489,11 @@ export class AppServiceContainer {
     } catch (err: unknown) {
       const title = `Error starting ${displayName}`;
       const message = `Could not start ${displayName}: ${err instanceof Error ? err.message : "unknown error"}`;
-      dialog.showErrorBox(title, message);
+      // The box stops the main process until the author answers it, and the
+      // app exits after it: the cause is in the logfile before the box shows.
       this._logProvider.error(`[AppServiceContainer] ${message}`, err);
+      await this._logProvider.flush();
+      dialog.showErrorBox(title, message);
       throw err; // Re-Throw since we need to quit the app now.
     }
   }

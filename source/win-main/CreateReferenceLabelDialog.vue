@@ -12,7 +12,7 @@
       >
         <h2>{{ trans('Create %s label', familyDisplayName) }}</h2>
         <div class="key-row">
-          <span data-family-prefix>{{ props.family }}:</span>
+          <span data-family-prefix>{{ props.family }}{{ props.separator }}</span>
           <input
             ref="slugInput"
             v-model="slug"
@@ -60,7 +60,7 @@
  *                  test/reference-create-label.spec.ts). The family prefix is
  *                  FIXED by the invoking context and never editable; the slug
  *                  input autofocuses holding the proposed slug; the live
- *                  workspace-uniqueness verdict of family + ':' + slug is
+ *                  workspace-uniqueness verdict of family + separator + slug is
  *                  reported against the supplied existingKeys (the host
  *                  fetches them over the reference-provider 'get-snapshot'
  *                  ipc command); confirmation is blocked while the key is
@@ -91,6 +91,8 @@ const props = defineProps<{
   family: ReferenceFamily
   /** The editable initial slug proposal */
   proposedSlug: string
+  /** The separator of the key: `-` for a Quarto cross-reference, else `:` */
+  separator: ':' | '-'
   /** Every workspace definition key, for the live uniqueness verdict */
   existingKeys: string[]
 }>()
@@ -106,7 +108,7 @@ const slugInput = ref<HTMLInputElement|null>(null)
 const familyDisplayName = computed<string>(() => referenceFamilyDisplayName(props.family))
 
 /** The full key the dialog is currently proposing */
-const key = computed<string>(() => `${props.family}:${slug.value}`)
+const key = computed<string>(() => `${props.family}${props.separator}${slug.value}`)
 
 /** The live workspace-uniqueness verdict of the current key */
 const uniqueness = computed<'taken'|'available'>(() => {

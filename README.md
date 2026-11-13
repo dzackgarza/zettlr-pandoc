@@ -132,6 +132,9 @@ zettlr-pandoc-review-diff \
 The running editor validates and applies the unified patch.
 The command exits nonzero when the editor refuses the proposition.
 
+The editor answers only a caller that sends its token.
+The command reads the token from the environment variable `ZETTLR_AGENT_API_TOKEN`, the variable that the editor was started with, and exits without a request when the variable is absent.
+
 ## License
 
 This software is licensed via the [GNU GPL v3-License](https://www.gnu.org/licenses/gpl-3.0.en.html), as is upstream Zettlr.

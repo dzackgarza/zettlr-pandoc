@@ -2,7 +2,7 @@
 // (FSAL-owned saved snapshots) and the renderer (live CodeMirror
 // replacements). This is the typed model locked by issue #1.
 
-import type { Citation } from "../../common/modules/markdown-editor/parser/citation-parser";
+import type { Citation } from "@dzack/pandoc-editor/parser/citation-parser";
 import {
   PANDOC_CROSS_REFERENCE_EXAMPLES,
   PANDOC_CROSSREF_PREFIXES,
@@ -80,6 +80,28 @@ export interface ReferenceKeyParts {
   prefix: string;
   separator: ":" | "-";
   remainder: string;
+}
+
+/**
+ * Which cross-reference system renders a document. A document in a Quarto
+ * project is rendered by Quarto; every other document is exported through
+ * the ~/.pandoc recipes with pandoc-crossref.
+ */
+export type CrossReferenceSystem = "quarto" | "pandoc-crossref";
+
+/**
+ * The separator of a new label of a family. Quarto numbers a figure, a
+ * table, an equation, a section and a listing only for an id with a hyphen
+ * (`#fig-key`); pandoc-crossref reads a colon (`#fig:key`). A theorem is
+ * numbered by the theorem filters of ~/.pandoc and of a book, which read a
+ * colon in both systems (`#thm:key`).
+ */
+export function referenceLabelSeparator(
+  family: ReferenceFamily,
+  system: CrossReferenceSystem,
+): ":" | "-" {
+  const crossrefFamily = CROSSREF_FAMILIES.some((candidate) => candidate === family);
+  return system === "quarto" && crossrefFamily ? "-" : ":";
 }
 
 export function referenceKeyParts(key: string): ReferenceKeyParts | undefined {

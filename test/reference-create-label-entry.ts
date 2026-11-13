@@ -124,6 +124,7 @@ window.createLabelProbeMount = async (documents: ProbeDocument[]): Promise<Dialo
   createApp(CreateReferenceLabelDialog, {
     family: "thm",
     proposedSlug: "torelli",
+    separator: ":",
     existingKeys,
     onCreate: (intent: CreateIntent) => {
       recordedCreateIntents.push(intent);

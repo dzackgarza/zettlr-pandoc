@@ -1,10 +1,16 @@
 import { md2html } from "@common/modules/markdown-utils/markdown-to-html";
+import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { reportError } from "@common/util/error-reporting";
+import { imageSourceUri } from "@common/util/image-source-uri";
+import { pathDirname } from "@common/util/renderer-path-polyfill";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import { unrenderedPreviewHtml } from "@common/util/unrendered-preview";
 import type { ReferenceDefinition } from "@dts/common/references";
 
-type PreviewSource = Pick<ReferenceDefinition, "family" | "sourceKind" | "previewSource">;
+type PreviewSource = Pick<
+  ReferenceDefinition,
+  "family" | "sourceKind" | "previewSource" | "documentPath"
+>;
 
 /** The authored content of a reference target, without its label syntax. */
 export function referencePreviewMarkdown(definition: PreviewSource): string {
@@ -33,7 +39,11 @@ export function referencePreviewMarkdown(definition: PreviewSource): string {
     .trim();
 }
 
-/** Render the same bounded Markdown excerpt used by reference hovers. */
+/**
+ * Render the same bounded Markdown excerpt used by reference hovers. Its
+ * citations use the bibliography of the document that defines the target
+ * (#198), and its images resolve from the folder of that document.
+ */
 export function renderReferencePreview(
   target: HTMLElement,
   definition: PreviewSource,
@@ -41,10 +51,20 @@ export function renderReferencePreview(
 ): void {
   const source = referencePreviewMarkdown(definition);
   target.textContent = source;
-  void md2html(source, {
-    zknLinkFormat,
-    onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
-  })
-    .then((html) => setSanitizedHTML(target, html, "document"))
-    .catch((error) => reportError("Could not render the reference excerpt", error));
+  documentCitationDatabase(definition.documentPath)
+    .then(
+      async (library) =>
+        await md2html(source, {
+          zknLinkFormat,
+          onCitation: window.getCitationCallback(library),
+          onImageSrc: (src) => imageSourceUri(src, pathDirname(definition.documentPath)),
+        }),
+    )
+    .then(
+      (html) => setSanitizedHTML(target, html, "document"),
+      (failure: Error) => {
+        reportError("Could not render the reference excerpt", failure);
+        setSanitizedHTML(target, unrenderedPreviewHtml(source, failure), "document");
+      },
+    );
 }

@@ -16,7 +16,11 @@ import { reportError } from "@common/util/error-reporting";
 import type { SourceRange } from "@dts/common/references";
 import type { DocumentsUpdateContext } from "@providers/documents";
 import { defineStore } from "pinia";
-import { pathDirname } from "source/common/util/renderer-path-polyfill";
+import {
+  innermostRoot,
+  isInsideRoot,
+  pathDirname,
+} from "source/common/util/renderer-path-polyfill";
 import { useWindowStateStore, useWorkspaceStore } from "source/pinia";
 import {
   type BranchNodeJSON,
@@ -159,7 +163,7 @@ function maybeUncollapseDirectories(filePath: string): void {
   const windowStateStore = useWindowStateStore();
   const workspaceStore = useWorkspaceStore();
 
-  const containingWs = workspaceStore.pathList.find((p) => filePath.startsWith(p));
+  const containingWs = innermostRoot(filePath, workspaceStore.workspaceMap.keys());
 
   if (containingWs === undefined) {
     return; // File path is not part of a workspace, uncollapsing not applicable
@@ -169,7 +173,7 @@ function maybeUncollapseDirectories(filePath: string): void {
 
   let dir = filePath;
 
-  while (dir.startsWith(containingWs)) {
+  while (isInsideRoot(dir, containingWs)) {
     dir = pathDirname(dir);
     if (!windowStateStore.uncollapsedDirectories.includes(dir)) {
       windowStateStore.uncollapsedDirectories.push(dir);
@@ -304,6 +308,10 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
                 maybeUncollapseDirectories(leaf.activeFile.path);
               } else {
                 lastLeafActiveFile.value = undefined;
+                // The editor that published these values closed: no
+                // document is active, so the window shows none.
+                windowStateStore.activeDocumentInfo = undefined;
+                windowStateStore.tableOfContents = undefined;
               }
             }
           })

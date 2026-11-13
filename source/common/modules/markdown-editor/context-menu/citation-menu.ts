@@ -17,10 +17,10 @@ import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
 import { reportError } from "@common/util/error-reporting";
+import { nodeToCiteItem } from "@dzack/pandoc-editor/parser/citation-parser";
 import type { SyntaxNode } from "@lezer/common";
 import { trans } from "source/common/i18n-renderer";
 import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
-import { nodeToCiteItem } from "../parser/citation-parser";
 import { configField } from "../util/configuration";
 
 const ipcRenderer = window.ipc;

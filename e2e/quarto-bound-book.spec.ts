@@ -39,6 +39,7 @@ import {
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
+import { leafIds, openInLeaf } from "./support/panes";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-quarto-bound-book-e2e-latest");
 
@@ -46,9 +47,15 @@ const DRAWER = "#navigation-sidebar";
 const SECTION = (id: string): string => `${DRAWER} [data-section="${id}"]`;
 const SECTION_HEADER = (id: string): string => `${SECTION(id)} .chrome-section-trigger`;
 const CHAPTER = `${SECTION("book")} .quarto-book-outline button.chapter`;
+const PART_FILE = `${SECTION("book")} .quarto-book-outline button.part-file`;
 const POPOVER = "#dir-props";
 const MANIFEST_FIELD = `${POPOVER} #field-input-quarto-manifest`;
 const BINDING = path.join(".book", "_quarto.yml");
+const MANIFEST_EDITOR = '.cm-content[data-language="yaml"]';
+const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
+// The chapter has no title and no heading: the Book module names it by its
+// first sentence, as its tab does (#203)
+const DISCRIMINANT_FORMS = "The discriminant form of an even lattice is a finite quadratic form.";
 
 async function waitUntil(
   probe: () => Promise<boolean>,
@@ -392,23 +399,30 @@ describe("a workspace bound to the manifest in its assembly directory", function
     await activePage.locator(SECTION_HEADER("book")).click();
     await activePage.locator(`${SECTION("book")}[data-state="open"]`).waitFor({ timeout: 10_000 });
     await waitUntil(
-      async () => (await activePage.locator(CHAPTER).count()) === 3,
-      "the three chapters of the bound book",
+      async () => (await activePage.locator(CHAPTER).count()) === 4,
+      "the four chapters of the bound book",
     );
 
     assert.deepEqual(
       await activePage
         .locator(`${SECTION("book")} .quarto-book-outline .chrome-row-label`)
         .allTextContents(),
-      ["Writing", "Bilinear and quadratic forms", "The Coble lattice table"],
+      ["Writing", "Bilinear and quadratic forms", "The Coble lattice table", DISCRIMINANT_FORMS],
       "the manifest order, titled from the real files the assembly links to",
     );
     assert.deepEqual(
       await activePage
         .locator(`${SECTION("book")} .book-part .chrome-group-label`)
         .allTextContents(),
-      ["Category theory", "Coble surfaces"],
-      "the manifest owns the parts",
+      ["Category theory", "Coble surfaces", "Lattice theory"],
+      "the manifest owns the parts; a part that a file names has the title of that file",
+    );
+    assert.deepEqual(
+      await activePage
+        .locator(`${SECTION("book")} .quarto-book-outline .chapter-number`)
+        .allTextContents(),
+      ["1", "2", "3", "4", "5"],
+      "the file of the third part is the fourth document of the book",
     );
     screenshots.set("book-module.png", await activePage.screenshot());
   });
@@ -425,14 +439,20 @@ describe("a workspace bound to the manifest in its assembly directory", function
     await omittedControl.selectOption("category-theory/index.md");
     await activePage.locator(`${SECTION("book")} [data-book-action="add-chapter"]`).click();
     await waitUntil(
-      async () => (await activePage.locator(CHAPTER).count()) === 4,
+      async () => (await activePage.locator(CHAPTER).count()) === 5,
       "the omitted category-theory index to join the book",
     );
     assert.deepEqual(
       await activePage
         .locator(`${SECTION("book")} .quarto-book-outline .chrome-row-label`)
         .allTextContents(),
-      ["Writing", "Bilinear and quadratic forms", "Category theory", "The Coble lattice table"],
+      [
+        "Writing",
+        "Bilinear and quadratic forms",
+        "Category theory",
+        "The Coble lattice table",
+        DISCRIMINANT_FORMS,
+      ],
       "adding after the active nested chapter keeps the chapter in that part",
     );
 
@@ -475,7 +495,7 @@ describe("a workspace bound to the manifest in its assembly directory", function
     await waitUntil(async () => existsSync(created), "the new book chapter file to be created");
     await activePage
       .locator(CHAPTER)
-      .filter({ hasText: "New-Section.md" })
+      .filter({ hasText: "New-Section" })
       .waitFor({ state: "visible", timeout: 10_000 });
     assert.equal(
       (
@@ -483,8 +503,8 @@ describe("a workspace bound to the manifest in its assembly directory", function
           .locator(`${SECTION("book")} .quarto-book-outline .chrome-row-label`)
           .allTextContents()
       ).at(-1),
-      "New-Section.md",
-      "the placement selector can put a newly created chapter at top-level book end",
+      "New-Section",
+      "the placement selector puts the new chapter, titled as its tab, at the book end",
     );
 
     const manifest = await readFile(manifestPath, "utf8");
@@ -501,6 +521,105 @@ describe("a workspace bound to the manifest in its assembly directory", function
     assert.match(manifest, /part: Surface appendix/);
     assert.match(manifest, /category-theory\/framework\/New-Section\.md/);
     screenshots.set("book-authoring.png", await activePage.screenshot());
+  });
+
+  it("refuses a Book edit while the manifest has unsaved text in a tab, and keeps both", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const root = requireInitialized(workspace, "workspace");
+    const manifestPath = path.join(root, BINDING);
+    const [leaf] = await leafIds(activePage);
+    await openInLeaf(activePage, requireInitialized(leaf, "the pane of the window"), manifestPath);
+    await activePage
+      .locator(`.document-tablist-wrapper [data-path=${JSON.stringify(manifestPath)}].active`)
+      .waitFor({ timeout: 20_000 });
+    await activePage.locator(MANIFEST_EDITOR).click();
+    await activePage.keyboard.press("Control+Home");
+    await activePage.keyboard.type("# A note of the author\n");
+    const onDisk = await readFile(manifestPath, "utf8");
+    const order = async (): Promise<string[]> =>
+      activePage
+        .locator(`${SECTION("book")} .quarto-book-outline .chrome-row-label`)
+        .allTextContents();
+    const before = await order();
+
+    await activePage
+      .locator(CHAPTER)
+      .filter({ hasText: DISCRIMINANT_FORMS })
+      .dragTo(activePage.locator(CHAPTER).filter({ hasText: "Category theory" }));
+
+    const toast = activePage.locator(ERROR_TOAST);
+    await toast.first().waitFor({ state: "visible", timeout: 10_000 });
+    screenshots.set("book-edit-unsaved-manifest.png", await activePage.screenshot());
+    assert.equal(await toast.count(), 1, "one message for one refused edit");
+    assert.match(await toast.first().innerText(), /_quarto\.yml/);
+    assert.equal(await readFile(manifestPath, "utf8"), onDisk, "the manifest on disk is unchanged");
+    assert.deepEqual(await order(), before, "the book keeps its order");
+    assert.match(
+      await activePage.locator(MANIFEST_EDITOR).innerText(),
+      /^# A note of the author/,
+      "the tab keeps the text of the author",
+    );
+
+    // The author saves the manifest; the same edit then applies to that text.
+    // The save is the IPC call of the save shortcut: CDP key events do not
+    // run the main-process menu accelerators.
+    assert.deepEqual(
+      await activePage.evaluate(
+        async (pathInPage) => await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+        manifestPath,
+      ),
+      { ok: true },
+    );
+    await activePage
+      .locator(CHAPTER)
+      .filter({ hasText: DISCRIMINANT_FORMS })
+      .dragTo(activePage.locator(CHAPTER).filter({ hasText: "Category theory" }));
+    await waitUntil(
+      async () => (await order())[0] === DISCRIMINANT_FORMS,
+      "the edit after the save",
+    );
+    assert.match(await readFile(manifestPath, "utf8"), /^# A note of the author/);
+
+    await activePage.evaluate(
+      async ([leafInPage, pathInPage]) => {
+        const windowId = new URLSearchParams(location.search).get("window_id");
+        if (windowId === null) {
+          throw new Error("The main window carries no window_id");
+        }
+        await window.ipc.invoke("documents-provider", {
+          command: "close-file",
+          payload: { windowId, leafId: leafInPage, path: pathInPage },
+        });
+      },
+      [requireInitialized(leaf, "the pane of the window"), manifestPath],
+    );
+    await activePage
+      .locator(`.document-tablist-wrapper [data-path=${JSON.stringify(manifestPath)}]`)
+      .waitFor({ state: "detached", timeout: 10_000 });
+  });
+
+  it("opens the file that names a part from the row of that part", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const root = requireInitialized(workspace, "workspace");
+    const partFile = path.join(root, "lattice-theory", "index.md");
+    const row = activePage.locator(PART_FILE).filter({ hasText: "Lattice theory" });
+
+    await row.click();
+
+    await activePage
+      .locator(`.document-tablist-wrapper [data-path=${JSON.stringify(partFile)}]`)
+      .waitFor({ timeout: 20_000 });
+    await activePage.locator(`${PART_FILE}.chrome-row-active`).waitFor({ timeout: 10_000 });
+    assert.equal(
+      await activePage.locator(`${SECTION("book")} .quarto-book-outline .active`).count(),
+      1,
+      "the file of the part is the one active row of the book",
+    );
+    const membership = activePage.locator(
+      `.tree-item[data-path=${JSON.stringify(partFile)}] .project-membership.included.quarto`,
+    );
+    await membership.waitFor({ state: "visible", timeout: 20_000 });
+    screenshots.set("book-part-file.png", await activePage.screenshot());
   });
 
   it("opens a chapter at the file the symlink beside the manifest reaches", async function () {

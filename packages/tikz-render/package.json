@@ -1,0 +1,16 @@
+{
+  "name": "@dzack/tikz-render",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "GPL-3.0",
+  "exports": {
+    "./*": "./src/*.ts",
+    "./ui/*.vue": "./src/ui/*.vue"
+  },
+  "dependencies": {
+    "viewerjs": "1.14.0",
+    "vue": "^3.5.43",
+    "async-mutex": "^0.5.0",
+    "@dzack/external-process": "workspace:*"
+  }
+}

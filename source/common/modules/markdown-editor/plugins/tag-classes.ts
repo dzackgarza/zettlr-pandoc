@@ -22,8 +22,8 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
+import { visitVisibleSyntaxNodes } from "@dzack/pandoc-editor/util/visible-syntax-nodes";
 import cssSafeString from "source/common/util/css-safe-string";
-import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
 
 /**
  * This function returns a decoration set that wraps any found ZknTag with a

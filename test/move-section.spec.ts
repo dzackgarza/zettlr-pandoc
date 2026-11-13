@@ -13,9 +13,9 @@
  */
 
 import { EditorState, Transaction } from "@codemirror/state";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strictEqual } from "assert";
 import { moveSection } from "source/common/modules/markdown-editor/commands/move-section";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { tocField } from "source/common/modules/markdown-editor/plugins/toc-field";
 
 const baseDocument = `\

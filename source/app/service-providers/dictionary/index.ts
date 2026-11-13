@@ -13,13 +13,13 @@
  * END HEADER
  */
 
+import type { StoreWriteFailureHandler } from "@common/modules/persistent-data-container";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import enumDictFiles, { type DictFileMetadata } from "@common/util/enum-dict-files";
 import findLangCandidates, { type Candidate } from "@common/util/find-lang-candidates";
 import type ConfigProvider from "@providers/config";
 import { FSWatcher } from "chokidar";
-
-import { app, ipcMain, shell } from "electron";
+import { app, ipcMain } from "electron";
 import EventEmitter from "events";
 import { promises as fs } from "fs";
 // NOTE: We have to include the compiled Nodehun.node library directly, because
@@ -30,12 +30,14 @@ import { promises as fs } from "fs";
 import Nodehun from "nodehun/build/Release/Nodehun.node";
 // import { Nodehun } from 'nodehun'
 import path from "path";
+import { openPath } from "source/app/util/open-path";
 import {
   appendPortableProseCompletion,
   normalizeProseCompletionEntry,
   parsePortableProseCompletions,
   proseWordsFromHunspellDic,
 } from "../../util/prose-completion-files";
+import { writeTextFile } from "../fsal/util/write-text-file";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
 
@@ -66,6 +68,7 @@ export default class DictionaryProvider extends ProviderContract {
   constructor(
     private readonly _logger: LogProvider,
     private readonly _config: ConfigProvider,
+    private readonly _onWriteFailure: StoreWriteFailureHandler,
   ) {
     super();
     // Array containing all loaded Hunspell dictionaries
@@ -130,13 +133,13 @@ export default class DictionaryProvider extends ProviderContract {
       } else if (command === "add") {
         return terms.map((t) => this.add(t));
       } else if (command === "open-dictionary-folder") {
-        shell.showItemInFolder(path.join(app.getPath("userData"), "/dict"));
+        return openPath(path.join(app.getPath("userData"), "dict"));
       } else if (command === "get-prose-completions") {
         return this.getProseCompletions();
       } else if (command === "add-prose-completion") {
         return this.addProseCompletion(message.payload.entry);
       } else if (command === "open-prose-completion-file") {
-        return shell.openPath(this._proseCompletionFile);
+        return openPath(this._proseCompletionFile);
       }
     });
 
@@ -318,11 +321,8 @@ export default class DictionaryProvider extends ProviderContract {
     this._userDictionary = dict;
     this._userDictionary = [...new Set(this._userDictionary)];
     this._userDictionary = this._userDictionary.filter((word) => word.trim() !== "");
-    this.persistUserDictionary().catch((err) => {
-      this._logger.error(
-        `[Dictionary Provider] Could not persist user dictionary: ${String(err.message)}`,
-        err,
-      );
+    this.persistUserDictionary().catch((failure: NodeJS.ErrnoException) => {
+      this._onWriteFailure(this._userDictionaryPath, failure);
     });
 
     // Send an invalidation message to the renderer
@@ -498,8 +498,13 @@ export default class DictionaryProvider extends ProviderContract {
     const data = this._userDictionary.join("\n");
     this._fileLock = true;
     this._unwrittenChanges = false; // NOTE that this has to come before the writing
-    await fs.writeFile(this._userDictionaryPath, data);
-    this._fileLock = false;
+    try {
+      await writeTextFile(this._userDictionaryPath, data);
+    } finally {
+      // A failed write releases the lock too, so the next change writes the
+      // whole dictionary again.
+      this._fileLock = false;
+    }
 
     // After we're done, check if someone tried to call the function in the
     // meantime. If so, the flag will be true by now: immediately call it again.
@@ -587,11 +592,8 @@ export default class DictionaryProvider extends ProviderContract {
     // Adds the given term to the user dictionary
     if (!this._userDictionary.includes(term)) {
       this._userDictionary.push(term);
-      this.persistUserDictionary().catch((err) => {
-        this._logger.error(
-          `[Dictionary Provider] Could not persist user dictionary: ${String(err.message)}`,
-          err,
-        );
+      this.persistUserDictionary().catch((failure: NodeJS.ErrnoException) => {
+        this._onWriteFailure(this._userDictionaryPath, failure);
       });
       // Send an invalidation message to the renderer so that it reloads all words
       broadcastIpcMessage("dictionary-provider", { command: "invalidate-dict" });

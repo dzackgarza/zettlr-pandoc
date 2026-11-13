@@ -15,7 +15,7 @@ import {
 } from "@codemirror/autocomplete";
 import { mathJaxCompletionCatalogue } from "@common/util/mathtex-to-html";
 import { standardTexControlWords } from "@common/util/standard-tex-control-words";
-import type { MathJaxMacro } from "tikz-workbench/src/mathjax-config";
+import type { MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import latexWorkshopCommands from "../../../../../static/autocomplete/latex-workshop-commands.json";
 import latexWorkshopEnvironments from "../../../../../static/autocomplete/latex-workshop-environments.json";
 import { tikzBlockAt } from "../tikz-block";
@@ -94,7 +94,9 @@ async function userMathJaxCommands(): Promise<readonly UserMathJaxCommand[]> {
 
 async function compilerTexCommands(): Promise<readonly string[]> {
   if (compilerTexCommandPromise === null) {
-    compilerTexCommandPromise = window.ipc.invoke("tex-macro-commands");
+    compilerTexCommandPromise = window.ipc
+      .invoke("tex-macro-commands")
+      .then((vocabulary) => vocabulary.commands);
   }
   return await compilerTexCommandPromise;
 }

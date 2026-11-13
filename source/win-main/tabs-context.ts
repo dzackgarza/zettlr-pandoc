@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { trans } from "@common/i18n-renderer";
 import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
@@ -22,7 +23,7 @@ export function displayTabbarContext(
 ): void {
   const items: AnyMenuItem[] = [
     {
-      label: "Close leaf",
+      label: trans("Close pane"),
       id: "close-leaf",
       type: "normal",
     },

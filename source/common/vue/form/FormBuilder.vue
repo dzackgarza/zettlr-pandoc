@@ -25,6 +25,7 @@
             <FormFieldControl
               v-bind:field="fieldset.titleField"
               v-bind:model="getModelValue(fieldset.titleField.model)"
+              v-bind:refusal="props.refusals?.[fieldset.titleField.model]"
               v-on:update:model-value="emit('update:modelValue', fieldset.titleField.model, $event)"
             ></FormFieldControl>
           </div>
@@ -46,6 +47,7 @@
             v-if="'model' in field"
             v-bind:field="field"
             v-bind:model="getModelValue(field.model)"
+            v-bind:refusal="props.refusals?.[field.model]"
             v-on:update:model-value="emit('update:modelValue', field.model, $event)"
           ></FormFieldControl>
           <div
@@ -64,6 +66,7 @@
                   v-if="'model' in subField"
                   v-bind:field="subField"
                   v-bind:model="getModelValue(subField.model)"
+                  v-bind:refusal="props.refusals?.[subField.model]"
                   v-on:update:model-value="emit('update:modelValue', subField.model, $event)"
                 ></FormFieldControl>
                 <FormFieldControl
@@ -90,6 +93,7 @@
                   v-if="'model' in subField"
                   v-bind:field="subField"
                   v-bind:model="getModelValue(subField.model)"
+                  v-bind:refusal="props.refusals?.[subField.model]"
                   v-on:update:model-value="emit('update:modelValue', subField.model, $event)"
                 ></FormFieldControl>
                 <FormFieldControl
@@ -233,6 +237,8 @@ interface FileField extends BasicInfo {
   type: "file" | "directory";
   reset?: string | boolean;
   filter?: FileFilter[];
+  /** Why the app could not use the file that the value names. */
+  problem?: string;
 }
 
 interface CheckboxField extends BasicInfo {
@@ -379,6 +385,8 @@ export interface FormSchema {
 const props = defineProps<{
   model: any;
   schema: FormSchema;
+  /** For each model whose last value its owner refused, the reason. */
+  refusals?: Record<string, string>;
 }>();
 
 const emit = defineEmits<(e: "update:modelValue", key: string, value: any) => void>();
@@ -409,6 +417,9 @@ function getModelValue(model: string): any {
   fieldset {
     background-color: rgb(236, 236, 236);
     border: 1px solid rgb(230, 230, 230);
+    // A fieldset is min-content wide by default: one wide control would make
+    // it, and each fieldset beside it, wider than the pane.
+    min-width: 0;
     margin: 10px;
     padding: 24px;
     padding-top: 18px;

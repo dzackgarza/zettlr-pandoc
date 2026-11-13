@@ -3,6 +3,8 @@
  * shows its summary, and commits the same plan.
  */
 
+import type { UnsavedDocument } from "./documents";
+
 export type FixAllRequest =
   | { scope: "document"; documentPath: string }
   | { scope: "open" }
@@ -28,10 +30,19 @@ export interface FixAllPlan {
   documents: FixAllDocument[];
   /** How many documents the scope held. */
   documentsChecked: number;
-  /** The documents Flowmark could not lint, so their fixes are unknown. */
+  /**
+   * The documents without a lint result (a failed Flowmark run, a file that
+   * gave no text), so their fixes are unknown.
+   */
   unlinted: string[];
 }
 
 export type FixAllOutcome =
-  | { status: "applied"; fixesApplied: number; documentsChanged: string[] }
+  | {
+      status: "applied";
+      fixesApplied: number;
+      documentsChanged: string[];
+      /** The open documents that hold their fixes but whose save was refused. */
+      unsaved: UnsavedDocument[];
+    }
   | { status: "conflict"; documentPath: string };

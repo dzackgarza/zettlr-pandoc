@@ -19,7 +19,7 @@
  * END HEADER
  */
 
-import { statSync } from "fs";
+import { statPath } from "./examine-path";
 
 /**
  * True iff `p` resolves to a regular file, following symlinks.
@@ -27,11 +27,8 @@ import { statSync } from "fs";
  * @param  {string}  p  The path to check
  *
  * @return {boolean}    True iff the (symlink-resolved) target is a regular file
+ * @throws {Error}      If the filesystem could not examine the path
  */
 export default function resolvesToFile(p: string): boolean {
-  try {
-    return statSync(p).isFile();
-  } catch (err) {
-    return false;
-  }
+  return statPath(p, true)?.isFile() === true;
 }

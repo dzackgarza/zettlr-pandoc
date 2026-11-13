@@ -13,55 +13,61 @@
  * END HEADER
  */
 
+import { examinePath, statPath } from "@common/util/examine-path";
 import { hasCodeExt, hasMarkdownExt } from "@common/util/file-extention-checks";
+import { hasErrnoCode } from "@common/util/is-errno-exception";
 import type {
   AnyDescriptor,
   CodeFileDescriptor,
   DirDescriptor,
+  DirectoryMetadataProblem,
   MDFileDescriptor,
   OtherFileDescriptor,
   ProjectSettings,
   SortMethod,
 } from "@dts/common/fsal";
-import type { SearchResult, SearchTerm } from "@dts/common/search";
 import type ConfigProvider from "@providers/config";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import type { EventName } from "chokidar/handler.js";
 import { app, ipcMain } from "electron";
 import EventEmitter from "events";
-import { constants as FS_CONSTANTS, promises as fs, lstatSync, type Stats } from "fs";
+import { constants as FS_CONSTANTS, promises as fs, type Stats, statSync } from "fs";
 import path from "path";
 import { trans } from "source/common/i18n-main";
 import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
 import {
   createIgnoreFilter,
+  EVERY_FILE_TYPE,
   type IgnoreFilter,
   type IgnoreRuleSources,
-  judgingRoot,
   movePathRules,
   removePathRules,
   rulesTextOf,
   setPathIgnored,
   WORKSPACE_RULES_FILE,
 } from "source/common/util/ignore-rules";
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import _ from "underscore";
 import type LongRunningTaskProvider from "../long-running-tasks";
+import type { LongRunningTask } from "../long-running-tasks/task";
 import * as FSALAttachment from "./fsal-attachment";
 import FSALCache from "./fsal-cache";
 import * as FSALCodeFile from "./fsal-code-file";
 import * as FSALDir from "./fsal-directory";
 import * as FSALFile from "./fsal-file";
 import FSALWatchdog from "./fsal-watchdog";
-import getMarkdownFileParser from "./util/file-parser";
+import getMarkdownFileParser, { type MarkdownFileParser } from "./util/file-parser";
+import { pathExists } from "./util/fs";
 import { type FilesystemMetadata, getFilesystemMetadata } from "./util/get-fs-metadata";
 import {
-  type ListingRules,
+  type DirectoryListing,
   readDirectoryFromDisk,
   readDirectoryRecursivelyFromDisk,
   visibilityChanges,
 } from "./util/read-directory";
 import { safeDelete } from "./util/safe-delete";
+import { createTextFile, writeTextFile } from "./util/write-text-file";
 
 /**
  * The time in which the FSAL collects events for one publication. A burst of
@@ -88,13 +94,14 @@ async function writeRulesFile(root: string, text: string): Promise<void> {
   if (text === "") {
     await fs.rm(rulesFile, { force: true });
   } else {
-    await fs.writeFile(rulesFile, text, "utf-8");
+    await writeTextFile(rulesFile, text);
   }
 }
 
 function sameIgnoreSources(a: IgnoreRuleSources, b: IgnoreRuleSources): boolean {
   return (
     a.showIgnored === b.showIgnored &&
+    _.isEqual(a.fileTypes, b.fileTypes) &&
     _.isEqual(a.globalRules, b.globalRules) &&
     _.isEqual([...a.workspaceRules], [...b.workspaceRules])
   );
@@ -126,7 +133,19 @@ export default class FSAL extends ProviderContract {
   private readonly _cache: FSALCache;
   private readonly _emitter: EventEmitter;
   private readonly watchers: Map<string, FSALWatchdog>;
-  private readonly deadWorkspaces: Set<string>;
+  /**
+   * Each workspace that is listed as missing, with the causes that its row
+   * shows. A missing workspace has no children, no watcher and no rules.
+   */
+  private readonly deadWorkspaces: Map<string, DirectoryMetadataProblem[]>;
+  /** The files whose last read of the text failed. */
+  private readonly unreadableFiles = new Set<string>();
+  /**
+   * The manifest of each directory that is bound to a Quarto manifest. The
+   * watcher names a changed manifest, and this map gives the directories
+   * that the manifest describes.
+   */
+  private readonly boundManifests = new Map<string, string>();
   /** The events that wait for the next publication, in the order they happened */
   private readonly pendingEvents: FSALEventPayload[] = [];
   private readonly publishPendingEvents = _.throttle(
@@ -147,6 +166,7 @@ export default class FSAL extends ProviderContract {
     globalRules: [],
     workspaceRules: new Map(),
     showIgnored: false,
+    fileTypes: EVERY_FILE_TYPE,
   };
   private ignoreFilter: IgnoreFilter = createIgnoreFilter(this.ignoreSources);
   /** The last queued change of the ignore rules. Changes run one after the other. */
@@ -163,14 +183,20 @@ export default class FSAL extends ProviderContract {
     this._cache = new FSALCache(this._logger, path.join(cachedir, "fsal/cache"));
     this._emitter = new EventEmitter();
     this.watchers = new Map();
-    this.deadWorkspaces = new Set();
+    this.deadWorkspaces = new Map();
 
     ipcMain.handle("fsal", async (event, { command, payload }) => {
       if (command === "read-path-recursively" && typeof payload === "string") {
+        if (this.deadWorkspaces.has(payload)) {
+          return [payload];
+        }
+        if (!examinePath(payload, true).examined) {
+          return [];
+        }
         if (await this.isFile(payload)) {
           return [payload];
         } else if (await this.isDir(payload)) {
-          return await this.readDirectoryRecursively(payload);
+          return (await this.readDirectoryRecursively(payload)).paths;
         } else {
           return [];
         }
@@ -186,7 +212,11 @@ export default class FSAL extends ProviderContract {
           for (const absPath of payload) {
             // Check every path for existence to ensure an array lookup does not
             // fail.
-            if ((await this.isFile(absPath)) || (await this.isDir(absPath))) {
+            if (
+              this.deadWorkspaces.has(absPath) ||
+              (await this.isFile(absPath)) ||
+              (await this.isDir(absPath))
+            ) {
               descriptors.push(await this.getDescriptorFor(absPath));
             } else {
               this._logger.error(
@@ -244,12 +274,15 @@ export default class FSAL extends ProviderContract {
       if (
         which === "openPaths" ||
         which === "fileManager.ignoreRules" ||
-        which === "fileManager.showIgnored"
+        which === "fileManager.showIgnored" ||
+        which === "attachmentExtensions" ||
+        which?.startsWith("fileManager.filters") === true ||
+        which?.startsWith("files.") === true
       ) {
         this.refreshIgnoreRules();
       }
 
-      if (which === "openPaths" || which === "files.dotFiles.showInFilemanager") {
+      if (which === "openPaths") {
         this.syncRoots()
           .then(() => {
             // Always reindex all files after config updates later on.
@@ -328,14 +361,29 @@ export default class FSAL extends ProviderContract {
       this.refreshIgnoreRules();
     }
 
+    if (event === "add" || event === "change" || event === "unlink") {
+      this.publishManifestOwners(absPath);
+    }
+    if (event === "unlinkDir") {
+      this.boundManifests.delete(absPath);
+    }
+
     // A path that the ignore rules hide is not listed, so its events stay
-    // here. The event name says whether an unlinked path was a directory.
-    if (!this.isListed(absPath, event === "addDir" || event === "unlinkDir")) {
+    // here. The other event names say whether the path is a directory; a
+    // `change` names a file or a directory (the watchdog reports a change of
+    // `.ztr-directory` as a change of its folder), so it stays here only
+    // when it is hidden as both, and its descriptor decides below.
+    const listed =
+      event === "change"
+        ? this.isListed(absPath, false) || this.isListed(absPath, true)
+        : this.isListed(absPath, event === "addDir" || event === "unlinkDir");
+    if (!listed) {
       return;
     }
 
     // In unlink-events, there won't be a descriptor.
     if (event === "unlink" || event === "unlinkDir") {
+      this.unreadableFiles.delete(absPath);
       this.publishEvent({ event, path: absPath });
       return;
     }
@@ -349,12 +397,71 @@ export default class FSAL extends ProviderContract {
           this.publishEvent({ event, descriptor });
         }
       })
-      .catch((err) => {
+      .catch(async (err: Error) => {
+        // A rename or a removal can take a file away before its `add` or
+        // `change` is handled, as the temporary file of an atomic write
+        // shows. Such a file has no descriptor, and its `unlink` event
+        // reports the removal. Any other failure is an error.
+        const gone = await fs.lstat(absPath).then(
+          () => false,
+          (statError: Error) => hasErrnoCode(statError, "ENOENT", "ENOTDIR"),
+        );
+        if (gone) {
+          this._logger.verbose(`[FSAL] No event ${event} for path "${absPath}": the path is gone.`);
+          return;
+        }
         this._logger.error(
           `[FSAL] Could not emit event ${event} for path "${absPath}": ${err.message}`,
           err,
         );
       });
+  }
+
+  /**
+   * Publishes a change of each listed directory that the Quarto manifest at
+   * a path describes: the directory that holds the manifest, and each
+   * directory that is bound to it. The Project and the manifest problem of a
+   * directory are read from its manifest, and the watcher reports a manifest
+   * edit as a change of the manifest file only.
+   */
+  private publishManifestOwners(absPath: string): void {
+    const owners = new Set(
+      [...this.boundManifests]
+        .filter(([, manifest]) => manifest === absPath)
+        .map(([directory]) => directory),
+    );
+    if (path.basename(absPath) === FSALDir.QUARTO_MANIFEST_NAME) {
+      owners.add(path.dirname(absPath));
+    }
+
+    for (const directory of owners) {
+      if (!this.isListed(directory, true)) {
+        continue;
+      }
+      this.isDir(directory)
+        .then(async (isDirectory) => {
+          // A directory that went away with its manifest has its own event.
+          if (isDirectory) {
+            const descriptor = await this.getAnyDirectoryDescriptor(directory);
+            this.publishEvent({ event: "change", descriptor });
+          }
+        })
+        .catch((err: Error) => {
+          this._logger.error(
+            `[FSAL] Could not read "${directory}" again after a change of its Quarto manifest: ${err.message}`,
+            err,
+          );
+        });
+    }
+  }
+
+  /** Records which manifest a directory is bound to. */
+  private rememberBoundManifest(directory: DirDescriptor): void {
+    if (directory.settings.quartoManifest === null) {
+      this.boundManifests.delete(directory.path);
+    } else {
+      this.boundManifests.set(directory.path, FSALDir.quartoManifestLocation(directory));
+    }
   }
 
   /**
@@ -368,30 +475,51 @@ export default class FSAL extends ProviderContract {
     );
   }
 
-  private listingRules(): ListingRules {
-    return {
-      ignoreDotFiles: !this._config.get().files.dotFiles.showInFilemanager,
-      ignoreFilter: this.ignoreFilter,
-    };
-  }
-
   /**
    * Reads the ignore rules from their sources: the configuration and the rules
-   * file of each open workspace.
+   * file of each open workspace. A workspace whose rules file cannot be read
+   * is listed as missing (`loseWorkspace`), so the other workspaces keep
+   * their rules.
    */
   private async readIgnoreSources(): Promise<IgnoreRuleSources> {
     const {
       app: { openWorkspaces },
       fileManager,
+      files,
+      attachmentExtensions,
     } = this._config.get();
     const workspaceRules = new Map<string, string>();
     for (const root of openWorkspaces) {
-      workspaceRules.set(root, await readRulesFile(root));
+      if (this.deadWorkspaces.has(root)) {
+        workspaceRules.set(root, "");
+        continue;
+      }
+      const rules = await readRulesFile(root).catch((cause: Error) => cause);
+      if (rules instanceof Error) {
+        await this.loseWorkspace(root, {
+          source: "rules",
+          path: path.join(root, WORKSPACE_RULES_FILE),
+          message: rules.message,
+        });
+        workspaceRules.set(root, "");
+        continue;
+      }
+      workspaceRules.set(root, rules);
     }
     return {
       globalRules: [...fileManager.ignoreRules],
       workspaceRules,
       showIgnored: fileManager.showIgnored,
+      fileTypes: {
+        include: [...fileManager.filters.include],
+        images: files.images.showInFilemanager,
+        pdf: files.pdf.showInFilemanager,
+        msoffice: files.msoffice.showInFilemanager,
+        openOffice: files.openOffice.showInFilemanager,
+        dataFiles: files.dataFiles.showInFilemanager,
+        dotFiles: files.dotFiles.showInFilemanager,
+        attachmentExtensions: [...attachmentExtensions],
+      },
     };
   }
 
@@ -434,7 +562,6 @@ export default class FSAL extends ProviderContract {
     this.ignoreFilter = createIgnoreFilter(sources);
     broadcastIPCMessage("fsal-ignore-rules", sources);
 
-    const { ignoreDotFiles, ignoreFilter } = this.listingRules();
     const roots = new Set(sources.workspaceRules.keys());
     for (const root of roots) {
       if (this.deadWorkspaces.has(root)) {
@@ -443,10 +570,9 @@ export default class FSAL extends ProviderContract {
 
       for (const change of await visibilityChanges(
         root,
-        ignoreDotFiles,
         roots,
         before,
-        ignoreFilter,
+        this.ignoreFilter,
         this._logger,
       )) {
         if (!change.visible) {
@@ -487,6 +613,16 @@ export default class FSAL extends ProviderContract {
         if (!sources.workspaceRules.has(root)) {
           throw new Error(`[FSAL] Cannot write ignore rules for ${root}: Not an open workspace`);
         }
+        // The text of a rules file that cannot be read is not known, and a
+        // write would replace it.
+        if (this.deadWorkspaces.has(root)) {
+          throw new Error(
+            trans(
+              'The file filters of the workspace "%s" cannot be changed while it is missing.',
+              root,
+            ),
+          );
+        }
         await writeRulesFile(root, text);
       }
       await this.applyIgnoreSources(await this.readIgnoreSources());
@@ -524,7 +660,7 @@ export default class FSAL extends ProviderContract {
     ignored: boolean,
   ): Promise<void> {
     await this.editRulesFiles(({ globalRules, workspaceRules }) => {
-      const root = judgingRoot(workspaceRules.keys(), absPath);
+      const root = innermostRoot(absPath, workspaceRules.keys());
       if (root === undefined) {
         throw new Error(
           `[FSAL] Cannot change the ignore rules for ${absPath}: Not inside an open workspace`,
@@ -548,10 +684,20 @@ export default class FSAL extends ProviderContract {
     // An open file can go missing between two sessions. Removing missing
     // files here prevents errors on boot. Unlike workspaces, the files are
     // removed. (Workspaces can be marked as "dead" so that users don't
-    // lose them.)
+    // lose them.) A file that the filesystem cannot examine stays in the
+    // configuration, as the config check keeps it, and is not loaded.
     const workingOpenFiles: string[] = [];
+    const unexaminedFiles = new Set<string>();
     for (const file of openFiles) {
-      if (await this.isFile(file)) {
+      const examination = examinePath(file, true);
+      if (!examination.examined) {
+        this._logger.error(
+          `[FSAL] Not loading the open file ${file}: ${examination.error.message}`,
+          examination.error,
+        );
+        unexaminedFiles.add(file);
+        workingOpenFiles.push(file);
+      } else if (examination.stats?.isFile() === true) {
         workingOpenFiles.push(file);
       }
     }
@@ -568,30 +714,55 @@ export default class FSAL extends ProviderContract {
 
     const allRoots = openFiles.concat(openWorkspaces);
 
+    // A workspace that is missing stays missing until the author asks for it
+    // (`loadMissingWorkspace`), which tells the windows.
     for (const rootPath of allRoots) {
-      if (this.watchers.has(rootPath)) {
-        continue; // This path has already been loaded
+      if (
+        this.watchers.has(rootPath) ||
+        this.deadWorkspaces.has(rootPath) ||
+        unexaminedFiles.has(rootPath)
+      ) {
+        continue;
       }
 
       try {
         const descriptor = await this.getDescriptorFor(rootPath, false);
-        if (descriptor === undefined) {
-          // Mount a "dummy" workspace indicating an unlinked root
-          this._logger.error(`Could not load root ${rootPath}. Mounting dummy...`);
-          // TODO
-        } else {
-          // Start watching the root path.
-          const watcher = new FSALWatchdog(this._logger, this._config);
-          watcher.on("change", (event, absPath, stats) => {
-            this.emitChokidarEvent(event, absPath, stats);
-          });
-          watcher.watchPath(rootPath);
-          this.watchers.set(rootPath, watcher);
-          this.deadWorkspaces.delete(rootPath);
+        if (descriptor.type === "directory" && descriptor.dirNotFoundFlag === true) {
+          const examination = examinePath(rootPath, true);
+          const problems: DirectoryMetadataProblem[] = examination.examined
+            ? []
+            : [{ source: "directory", path: rootPath, message: examination.error.message }];
+          this.markMissing(rootPath, problems);
+          continue;
         }
+        if (descriptor.type === "directory") {
+          // Without its rules the application does not know which paths of
+          // the workspace the author hid, so it lists none of them.
+          const rulesFile = path.join(rootPath, WORKSPACE_RULES_FILE);
+          const rules = await readRulesFile(rootPath).catch((cause: Error) => cause);
+          if (rules instanceof Error) {
+            this.markMissing(rootPath, [
+              { source: "rules", path: rulesFile, message: rules.message },
+            ]);
+            continue;
+          }
+        }
+        this.watchRoot(rootPath);
       } catch (err: unknown) {
         this._logger.error(`Could not load root ${rootPath}.`, err);
-        this.deadWorkspaces.add(rootPath);
+        this.markMissing(rootPath, [
+          {
+            source: "directory",
+            path: rootPath,
+            message: err instanceof Error ? err.message : String(err),
+          },
+        ]);
+      }
+    }
+
+    for (const rootPath of this.deadWorkspaces.keys()) {
+      if (!allRoots.includes(rootPath)) {
+        this.deadWorkspaces.delete(rootPath);
       }
     }
 
@@ -605,27 +776,128 @@ export default class FSAL extends ProviderContract {
     }
   }
 
+  /** Lists a workspace as missing, with the causes that its row shows. */
+  private markMissing(rootPath: string, problems: DirectoryMetadataProblem[]): void {
+    this._logger.error(
+      `[FSAL] The workspace ${rootPath} is listed as missing: ${problems.map((problem) => `${problem.path}: ${problem.message}`).join("; ")}`,
+    );
+    this.deadWorkspaces.set(rootPath, problems);
+  }
+
+  /**
+   * Lists a loaded workspace as missing: each window removes its paths and
+   * shows its root with the cause.
+   */
+  private async loseWorkspace(rootPath: string, problem: DirectoryMetadataProblem): Promise<void> {
+    const listed = (await this.readDirectoryRecursively(rootPath)).paths.filter(
+      (listedPath) => listedPath !== rootPath,
+    );
+    const removals: FSALEventPayloadUnlink[] = [];
+    for (const listedPath of listed.reverse()) {
+      const descriptor = await this.getDescriptorFor(listedPath);
+      removals.push({
+        event: descriptor.type === "directory" ? "unlinkDir" : "unlink",
+        path: listedPath,
+      });
+    }
+
+    await this.watchers.get(rootPath)?.shutdown();
+    this.watchers.delete(rootPath);
+    this.markMissing(rootPath, [problem]);
+    for (const removal of removals) {
+      this.publishEvent(removal);
+    }
+    this.publishEvent({
+      event: "change",
+      descriptor: this.missingWorkspaceDescriptor(rootPath, [problem]),
+    });
+  }
+
+  /** Starts the watcher of a root. A watched root is not missing. */
+  private watchRoot(rootPath: string): void {
+    const watcher = new FSALWatchdog(this._logger, this._config);
+    watcher.on("change", (event, absPath, stats) => {
+      this.emitChokidarEvent(event, absPath, stats);
+    });
+    watcher.watchPath(rootPath);
+    this.watchers.set(rootPath, watcher);
+    this.deadWorkspaces.delete(rootPath);
+  }
+
+  /**
+   * Loads a workspace whose folder was missing when the roots were loaded.
+   * The root and each path below it reach the consumers as `addDir` and `add`
+   * events, as a folder that appears does.
+   *
+   * @throws when the path is not a missing workspace, its folder is still
+   *         not there, or its rules file cannot be read
+   */
+  public async loadMissingWorkspace(rootPath: string): Promise<void> {
+    if (!this.deadWorkspaces.has(rootPath)) {
+      throw new Error(`[FSAL] Cannot load ${rootPath}: It is not a missing workspace`);
+    }
+    if (!(await this.isDir(rootPath))) {
+      throw new Error(trans('The folder "%s" of the workspace is still missing.', rootPath));
+    }
+    await readRulesFile(rootPath);
+
+    this.watchRoot(rootPath);
+    // The rules of the workspace apply before its paths are listed, so a
+    // path that a rule hides reaches no consumer.
+    await this.queueIgnoreUpdate(async () => {
+      await this.applyIgnoreSources(await this.readIgnoreSources());
+    });
+    for (const childPath of (await this.readDirectoryRecursively(rootPath)).paths) {
+      const descriptor = await this.getDescriptorFor(childPath, false);
+      this.publishEvent({
+        event: descriptor.type === "directory" ? "addDir" : "add",
+        descriptor,
+      });
+    }
+  }
+
   /**
    * This function ensures that all files anywhere within the loaded paths are
    * properly indexed in the cache for fast access.
    */
   public async reindexFiles(onFile?: (absPath: string, percent: number) => void): Promise<void> {
+    // The lifecycle passes `onFile` when it indexes at startup and shows the
+    // progress itself; each other index is a task of the status bar. The
+    // task ends with the index: a success leaves the list, a failure stays
+    // with its cause.
+    if (onFile !== undefined) {
+      await this.indexLoadedPaths(undefined, onFile);
+      return;
+    }
+    const task = this._lrt.registerTask(
+      trans("Indexing files"),
+      trans("Discovering paths to index…"),
+    );
+    await this.indexLoadedPaths(task, undefined).then(
+      () => this._lrt.settleTask(task),
+      (error: Error) => {
+        this._lrt.settleTask(task, error);
+        throw error;
+      },
+    );
+  }
+
+  private async indexLoadedPaths(
+    task: LongRunningTask | undefined,
+    onFile: ((absPath: string, percent: number) => void) | undefined,
+  ): Promise<void> {
     let currentPercent = 0;
 
     // Start a timer to measure how long the roots take to load.
     let start = performance.now();
 
-    // Register a LRT. NOTE: We only do that if "onFile" is not defined, because
-    // this function is called also from within the lifecycle when the FSAL
-    // cache is cleared on startup.
-    const task =
-      onFile === undefined
-        ? this._lrt.registerTask(trans("Indexing files"), trans("Discovering paths to index…"))
-        : undefined;
-
     const { openFiles, openWorkspaces } = this._config.get().app;
     const pathsToIndex: string[] = [];
     for (const file of openFiles) {
+      if (!examinePath(file, true).examined) {
+        this._logger.warning(`[FSAL] Not re-indexing ${file}: The filesystem cannot examine it.`);
+        continue;
+      }
       if (!(await this.isFile(file))) {
         this._logger.warning(`[FSAL] Could not re-index standalone file ${file}: File not found.`);
         continue;
@@ -645,7 +917,7 @@ export default class FSAL extends ProviderContract {
         continue;
       }
 
-      const allPaths = await this.readDirectoryRecursively(workspace);
+      const allPaths = (await this.readDirectoryRecursively(workspace)).paths;
       pathsToIndex.push(...allPaths);
     }
 
@@ -676,12 +948,17 @@ export default class FSAL extends ProviderContract {
       }
 
       // Requesting the descriptor will, behind the scenes, check for cache hits
-      // and automatically recache if necessary.
-      await this.getDescriptorFor(absPath);
+      // and automatically recache if necessary. A path that went away after
+      // the list is not indexed: the watcher reports its removal.
+      await this.getDescriptorFor(absPath).catch((cause: Error) => {
+        const examination = examinePath(absPath, true);
+        if (!examination.examined || examination.stats !== undefined) {
+          throw cause;
+        }
+      });
     }
 
     task?.update({ info: trans("Indexing complete.") });
-    task?.endTask("success");
 
     const reindexDuration = performance.now() - start;
     if (reindexDuration < 1000) {
@@ -721,16 +998,17 @@ export default class FSAL extends ProviderContract {
     }
 
     for (const workspace of openWorkspaces) {
-      if (this.deadWorkspaces.has(workspace)) {
+      const problems = this.deadWorkspaces.get(workspace);
+      if (problems !== undefined) {
         this._logger.info(
           `[FSAL] Not trying to load descriptors from workspace ${workspace}: Marked as dead`,
         );
-        allDescriptors.push(this.loadDummyDirectoryDescriptor(workspace));
+        allDescriptors.push(this.missingWorkspaceDescriptor(workspace, problems));
         continue;
       }
 
       try {
-        const allPaths = await this.readDirectoryRecursively(workspace);
+        const allPaths = (await this.readDirectoryRecursively(workspace)).paths;
         for (const child of allPaths) {
           try {
             const descriptor = await this.getDescriptorFor(child);
@@ -781,20 +1059,21 @@ export default class FSAL extends ProviderContract {
   public async shutdown(): Promise<void> {
     this._logger.verbose("FSAL shutting down ...");
     this.publishPendingEvents.cancel();
+    // Each watcher holds the process open until it is closed.
+    await Promise.all([...this.watchers.values()].map((watcher) => watcher.shutdown()));
+    this.watchers.clear();
     await this._cache.persist();
   }
 
   /**
-   * Ever in need for a descriptor mocking a non existing directory? Call this
-   * function.
-   *
-   * @param   {string}         dirPath  The directory path this descriptor
-   *                                    should represent
-   *
-   * @return  {DirDescriptor}           The descriptor
+   * The descriptor of a missing workspace: a root without children that names
+   * the causes that keep it missing.
    */
-  public loadDummyDirectoryDescriptor(dirPath: string): DirDescriptor {
-    return FSALDir.getDirNotFoundDescriptor(dirPath);
+  private missingWorkspaceDescriptor(
+    rootPath: string,
+    problems: DirectoryMetadataProblem[],
+  ): DirDescriptor {
+    return { ...FSALDir.getDirNotFoundDescriptor(rootPath), metadataProblems: [...problems] };
   }
 
   /**
@@ -803,8 +1082,9 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Function}  A parser that can be passed to FSAL functions involving files
    */
-  public getMarkdownFileParser(): (file: MDFileDescriptor, content: string) => void {
-    return getMarkdownFileParser(this._config.get().zkn.idRE);
+  public getMarkdownFileParser(): MarkdownFileParser {
+    const { idRE, linkFormat } = this._config.get().zkn;
+    return getMarkdownFileParser(idRE, linkFormat);
   }
 
   /**
@@ -830,8 +1110,10 @@ export default class FSAL extends ProviderContract {
   }
 
   /**
-   * Writes a given file using the provided contents. May throw an error if the
-   * FSAL cannot write to the given path.
+   * Writes a given file using the provided contents. A reader of the file
+   * gets the text before the write or the text after it (see
+   * `util/write-text-file.ts`). Rejects if the FSAL cannot write to the
+   * given path.
    *
    * @param  {string}  filePath  The file to write
    * @param  {string}  contents  The file contents to put in the file.
@@ -839,26 +1121,19 @@ export default class FSAL extends ProviderContract {
   public async writeTextFile(filePath: string, contents: string): Promise<void> {
     // In case this file was cached, remove the cached data again.
     await this._cache.del(filePath);
-    await fs.writeFile(filePath, contents, "utf-8");
+    await writeTextFile(filePath, contents);
   }
 
   /**
-   * Tests the access to a given path. Provide the flags as provided in
-   * `fs.constants`. By default, this function checks for visibility and whether
-   * we can actually read in the node.
+   * Tests the access to a given path with flags of `fs.constants`. A missing
+   * path and a denied access answer false. Any other error of the access
+   * check is a failure: the filesystem gave no answer, and the promise
+   * rejects.
    *
    * @return  {Promise<boolean>}  Returns true if the file fulfills the criteria.
    */
-  public async testAccess(
-    absPath: string,
-    flags: number = FS_CONSTANTS.F_OK | FS_CONSTANTS.R_OK,
-  ): Promise<boolean> {
-    try {
-      await fs.access(absPath, flags);
-      return true;
-    } catch (err) {
-      return false;
-    }
+  public async testAccess(absPath: string, flags: number): Promise<boolean> {
+    return await pathExists(absPath, flags);
   }
 
   /**
@@ -869,9 +1144,7 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<boolean>}           Returns true, if absPath is a dir
    */
   public async isDir(absPath: string): Promise<boolean> {
-    // A missing entry is the only answer of "no"; any other lstat error throws.
-    const stat = lstatSync(absPath, { throwIfNoEntry: false });
-    return stat !== undefined && stat.isDirectory();
+    return statPath(absPath, true)?.isDirectory() === true;
   }
 
   /**
@@ -882,21 +1155,16 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<boolean>}           Returns true, if absPath is a file
    */
   public async isFile(absPath: string): Promise<boolean> {
-    // A missing entry is the only answer of "no"; any other lstat error throws.
-    const stat = lstatSync(absPath, { throwIfNoEntry: false });
-    return stat !== undefined && stat.isFile();
+    return statPath(absPath, true)?.isFile() === true;
   }
 
   /**
-   * Creates a new file in the given directory
-   *
-   * @param  {DirDescriptor}                                           src      The source directory
-   * @param  {{ name: string, content: string, type: 'code'|'file' }}  options  Options
-   * @deprecated  Use `writeTextFile` instead
+   * Creates the file at `filePath` with `content`. The creation replaces no
+   * file (`createTextFile`): a path that has one rejects with `EEXIST`.
    */
   public async createFile(filePath: string, content: string): Promise<void> {
     await this._cache.del(filePath);
-    await fs.writeFile(filePath, content, { encoding: "utf-8", flag: "wx" });
+    await createTextFile(filePath, content);
   }
 
   /**
@@ -937,27 +1205,6 @@ export default class FSAL extends ProviderContract {
   }
 
   /**
-   * Search the given file
-   *
-   * @param   {MDFileDescriptor}  src          The file to search
-   * @param   {SearchTerm[]}      searchTerms  The search terms
-   *
-   * @return  {Promise<SearchResult[]>}        Returns the results
-   */
-  public async searchFile(
-    src: MDFileDescriptor | CodeFileDescriptor,
-    searchTerms: SearchTerm[],
-  ): Promise<SearchResult[]> {
-    // TODO: Implement search results type
-    // Searches a file and returns the result
-    if (src.type === "file") {
-      return await FSALFile.search(src, searchTerms);
-    } else {
-      return await FSALCodeFile.search(src, searchTerms);
-    }
-  }
-
-  /**
    * Reads in the filenames of the provided directory. May throw an error if the
    * directory cannot be read.
    *
@@ -991,11 +1238,13 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<FSALDir.QuartoManifestBinding>}  The binding, or why there is none
    */
-  public bindQuartoManifest(
+  public async bindQuartoManifest(
     src: DirDescriptor,
     manifestPath: string,
   ): Promise<FSALDir.QuartoManifestBinding> {
-    return FSALDir.bindQuartoManifest(src, manifestPath);
+    const binding = await FSALDir.bindQuartoManifest(src, manifestPath);
+    this.rememberBoundManifest(src);
+    return binding;
   }
 
   /**
@@ -1005,6 +1254,7 @@ export default class FSAL extends ProviderContract {
    */
   public async unbindQuartoManifest(src: DirDescriptor): Promise<void> {
     await FSALDir.unbindQuartoManifest(src);
+    this.rememberBoundManifest(src);
   }
 
   /**
@@ -1157,9 +1407,11 @@ export default class FSAL extends ProviderContract {
   ): Promise<MDFileDescriptor | CodeFileDescriptor | OtherFileDescriptor> {
     if (await this.isFile(absPath)) {
       if (hasMarkdownExt(absPath)) {
-        return await FSALFile.parse(absPath, this._cache, this.getMarkdownFileParser());
+        return this.noteReadResult(
+          await FSALFile.parse(absPath, this._cache, this.getMarkdownFileParser()),
+        );
       } else if (hasCodeExt(absPath)) {
-        return await FSALCodeFile.parse(absPath, this._cache);
+        return this.noteReadResult(await FSALCodeFile.parse(absPath, this._cache));
       } else {
         return await FSALAttachment.parse(absPath, this._cache);
       }
@@ -1170,6 +1422,31 @@ export default class FSAL extends ProviderContract {
     }
 
     throw new Error(`[FSAL] Cannot load file ${absPath}: Not found`);
+  }
+
+  /**
+   * Follows whether the text of a file can be read. The first read that
+   * fails is logged. Each change, a read that fails after a read that gave
+   * the text and the reverse, is a `change` event of the file: a descriptor
+   * that a consumer holds has another `readError` than this one.
+   */
+  private noteReadResult<T extends MDFileDescriptor | CodeFileDescriptor>(descriptor: T): T {
+    const wasUnreadable = this.unreadableFiles.has(descriptor.path);
+    if ((descriptor.readError !== undefined) === wasUnreadable) {
+      return descriptor;
+    }
+    if (descriptor.readError === undefined) {
+      this.unreadableFiles.delete(descriptor.path);
+    } else {
+      this.unreadableFiles.add(descriptor.path);
+      this._logger.warning(
+        `[FSAL] Could not read the text of ${descriptor.path}: ${descriptor.readError.message}`,
+      );
+    }
+    if (this.isListed(descriptor.path, false)) {
+      this.publishEvent({ event: "change", descriptor });
+    }
+    return descriptor;
   }
 
   /**
@@ -1193,25 +1470,39 @@ export default class FSAL extends ProviderContract {
     absPath: string,
     avoidDiskAccess: boolean = true,
   ): Promise<AnyDescriptor> {
+    const problems = this.deadWorkspaces.get(absPath);
+    if (problems !== undefined) {
+      return this.missingWorkspaceDescriptor(absPath, problems);
+    }
+
     if (avoidDiskAccess) {
       const cacheHit = await this._cache.get(absPath);
       if (
         cacheHit !== undefined &&
-        (cacheHit.type !== "file" || cacheHit.parserVersion === FSALFile.PARSER_VERSION)
+        (cacheHit.type !== "file" || cacheHit.parsedWith === this.getMarkdownFileParser().identity)
       ) {
         return cacheHit;
       }
     }
 
-    try {
-      return await this.getAnyDirectoryDescriptor(absPath);
-    } catch (err: unknown) {
-      const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
-      if (code === "EACCES" || code === "EPERM") {
-        return this.loadDummyDirectoryDescriptor(absPath);
+    // A path that the filesystem does not let the application examine (no
+    // search permission on a folder above it) is not known to be a file or a
+    // directory.
+    const isDirectory = await this.isDir(absPath).catch((cause: Error) => {
+      if (hasErrnoCode(cause, "EACCES", "EPERM")) {
+        return undefined;
       }
-      return await this.getDescriptorForAnySupportedFile(absPath);
+      throw cause;
+    });
+    if (isDirectory === undefined) {
+      return FSALDir.getDirNotFoundDescriptor(absPath);
     }
+
+    // The error of a directory is the error of that directory: it is not
+    // read as a file.
+    return isDirectory
+      ? await this.getAnyDirectoryDescriptor(absPath)
+      : await this.getDescriptorForAnySupportedFile(absPath);
   }
 
   /**
@@ -1225,22 +1516,26 @@ export default class FSAL extends ProviderContract {
    * @throws if the path is not a directory
    */
   public async getAnyDirectoryDescriptor(absPath: string): Promise<DirDescriptor> {
-    if (this.deadWorkspaces.has(absPath)) {
-      return this.loadDummyDirectoryDescriptor(absPath);
+    const problems = this.deadWorkspaces.get(absPath);
+    if (problems !== undefined) {
+      return this.missingWorkspaceDescriptor(absPath, problems);
     }
 
     if (!(await this.isDir(absPath))) {
       throw new Error(`[FSAL] Cannot load directory ${absPath}: Not a directory`);
     }
 
-    return await FSALDir.parse(absPath);
+    const directory = await FSALDir.parse(absPath);
+    this.rememberBoundManifest(directory);
+    return directory;
   }
 
   /**
    * Checks if a given path exists on the file system. Optional flags can be
    * passed to check specific access rights. By default, will check for general
    * access (i.e., the process can see the file), and read access, but not write
-   * access. Use fs.constants as flags.
+   * access. Use fs.constants as flags. An error of the access check other
+   * than a missing path or a denied access rejects.
    *
    * @param   {string}            absPath  The path to check
    * @param   {number|undefined}  flags    Optional mode check flags
@@ -1251,12 +1546,7 @@ export default class FSAL extends ProviderContract {
     absPath: string,
     flags: number = FS_CONSTANTS.F_OK | FS_CONSTANTS.R_OK,
   ): Promise<boolean> {
-    try {
-      await fs.access(absPath, flags);
-      return true;
-    } catch (err: unknown) {
-      return false;
-    }
+    return await pathExists(absPath, flags);
   }
 
   /**
@@ -1275,26 +1565,25 @@ export default class FSAL extends ProviderContract {
   // *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
 
   /**
-   * Reads `absPath` into an array of absolute paths. If `absPath` is a file,
-   * the array will only contain that, allowing you to skip any check for
-   * whether a root path is a file or folder. If it is a directory, it will read
-   * in the directory and any children recursively to construct a list of every
-   * file and folder within `absPath` and return it.
-   *
-   * NOTE: This function will already exclude dotfiles, ignored directories and
-   * the paths that the ignore rules hide, so this function is safe to consume
-   * in terms of what Zettlr should display.
-   *
-   * @param   {string}             directoryPath  The absolute path to parse
-   *
-   * @return  {Promise<string[]>}           Returns a list of the entire directory
+   * Lists a directory and each path below it that the app lists: the
+   * directory first, then each file and folder that the ignore rules and the
+   * file types show. A folder whose content the filesystem refuses, and a
+   * directory that cannot be listed, is a path without content and is in
+   * `notListed` with the cause, so a consumer can name what its listing does
+   * not hold.
    */
-  public async readDirectoryRecursively(directoryPath: string): Promise<string[]> {
-    if (!(await this.isDir(directoryPath))) {
-      throw new Error(`[FSAL] Cannot read path ${directoryPath}: Not a directory!`);
+  public async readDirectoryRecursively(directoryPath: string): Promise<DirectoryListing> {
+    // A missing workspace lists no path below its root until "Check for
+    // directory" loads it: without its rules the FSAL does not know which
+    // paths the author hid.
+    const problems = this.deadWorkspaces.get(directoryPath);
+    if (problems !== undefined) {
+      return {
+        paths: [directoryPath],
+        notListed: problems.map((problem) => ({ path: directoryPath, cause: problem.message })),
+      };
     }
-
-    return await readDirectoryRecursivelyFromDisk(directoryPath, this.listingRules(), this._logger);
+    return await readDirectoryRecursivelyFromDisk(directoryPath, this.ignoreFilter, this._logger);
   }
 
   /**
@@ -1306,10 +1595,13 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<AnyDescriptor>[]}           The children.
    */
   public async readDirectory(absPath: string): Promise<AnyDescriptor[]> {
+    // A missing workspace lists no children until "Check for directory" loads it.
+    if (this.deadWorkspaces.has(absPath)) {
+      return [];
+    }
     return readDirectoryFromDisk(
       absPath,
-      this.listingRules(),
-      this.deadWorkspaces.has(absPath),
+      this.ignoreFilter,
       async (childPath) => await this.getDescriptorFor(childPath),
       this._logger,
     );

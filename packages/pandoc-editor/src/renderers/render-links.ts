@@ -1,0 +1,99 @@
+/**
+ * @ignore
+ * BEGIN HEADER
+ *
+ * Contains:        LinkRenderer
+ * CVM-Role:        View
+ * Maintainer:      Hendrik Erz
+ * License:         GNU GPL v3
+ *
+ * Description:     This renderer can render links and URLs.
+ *
+ * END HEADER
+ */
+
+import type { Range, RangeSet } from "@codemirror/state";
+import {
+  Decoration,
+  type DecorationSet,
+  type EditorView,
+  ViewPlugin,
+  type ViewUpdate,
+} from "@codemirror/view";
+import { previewConfiguration } from "../util/configuration";
+import {
+  rangeInPreviewSuppression,
+  reviewSuppressionChanged,
+} from "../util/range-in-preview-suppression";
+import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
+
+function hideLinkMarkers(view: EditorView): RangeSet<Decoration> {
+  const ranges: Array<Range<Decoration>> = [];
+  const hiddenDeco = Decoration.replace({});
+  const linkLabelDeco = Decoration.mark({
+    class: "cm-preview-link",
+    attributes: { title: "Ctrl/Command-click to open link" },
+  });
+  const includeAdjacent = previewConfiguration(
+    view.state,
+  ).previewModeShowSyntaxWhenCursorIsAdjacent;
+
+  visitVisibleSyntaxNodes(view, (node) => {
+    // Wikilinks render as chips (render-wikilinks.ts)
+    if (node.name !== "Link") {
+      return;
+    }
+
+    // Do not hide any characters if a selection is inside here
+    if (rangeInPreviewSuppression(view.state, node.from, node.to, includeAdjacent)) {
+      return false;
+    }
+
+    const marks = node.node.getChildren("LinkMark");
+    const label = node.node.getChild("LinkLabel");
+
+    // We need at least three LinkMarks for regular links: [, ], and (
+    // since the parser will also parse ellipses as Links (a.k.a.
+    // reference style links). Alternatively, it needs to have a LinkLabel
+    // child node
+    if (marks.length < 3 && !label) {
+      return false;
+    }
+
+    if (marks[0].to === marks[1].from) {
+      return false; // Empty link title -> would hide the entire link
+    }
+
+    ranges.push(
+      hiddenDeco.range(marks[0].from, marks[0].to),
+      linkLabelDeco.range(marks[0].to, marks[1].from),
+      hiddenDeco.range(marks[1].from, label ? label.to : marks[marks.length - 1].to),
+    );
+  });
+
+  return Decoration.set(ranges, true);
+}
+
+export const renderLinks = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = hideLinkMarkers(view);
+    }
+
+    update(update: ViewUpdate): void {
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        update.selectionSet ||
+        reviewSuppressionChanged(update)
+      ) {
+        this.decorations = hideLinkMarkers(update.view);
+      }
+    }
+  },
+  {
+    decorations: (v) => v.decorations,
+  },
+);

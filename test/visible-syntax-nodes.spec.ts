@@ -1,12 +1,12 @@
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { strict as assert } from "assert";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import {
   visibleSyntaxNodes,
   visitSyntaxNodeGroups,
-} from "source/common/modules/markdown-editor/util/visible-syntax-nodes";
+} from "@dzack/pandoc-editor/util/visible-syntax-nodes";
+import { strict as assert } from "assert";
 
 describe("shared visible syntax traversal", function () {
   function createView(doc: string): EditorView {

@@ -16,14 +16,13 @@
  */
 
 import { EditorState } from "@codemirror/state";
-import { strict as assert } from "assert";
 import {
   type Citation,
-  type CiteItem,
   extractCitationNodes,
   nodeToCiteItem,
-} from "source/common/modules/markdown-editor/parser/citation-parser";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+} from "@dzack/pandoc-editor/parser/citation-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { strict as assert } from "assert";
 import { execPandocReference } from "./pandoc-reference";
 
 interface PandocCitation {
@@ -97,14 +96,11 @@ describe("Pandoc Differential Oracle Citation Parity Specification", function ()
         `Citekey mismatch at index ${i} for "${markdown}": expected "${pItem.citationId}", got "${lItem.id}"`,
       );
 
-      // Verify citation modes
-      if (pItem.citationMode.t === "SuppressAuthor") {
-        assert.equal(
-          lItem["suppress-author"],
-          true,
-          `Expected suppress-author to be true for key "${lItem.id}" in "${markdown}"`,
-        );
-      }
+      assert.equal(
+        lItem["suppress-author"] === true,
+        pItem.citationMode.t === "SuppressAuthor",
+        `Citation mode mismatch for key "${lItem.id}" in "${markdown}": Pandoc reads ${pItem.citationMode.t}`,
+      );
     }
   }
 
@@ -229,6 +225,54 @@ describe("Pandoc Differential Oracle Citation Parity Specification", function ()
 
     for (const tc of nonCitations) {
       it(`matches real Pandoc producing 0 citations for: "${tc}"`, function () {
+        assertPandocParity(tc);
+      });
+    }
+  });
+
+  // Pandoc reads a textual `@key` after any character that is not the end of
+  // a string: a letter, a number or `.` (Citations.hs `citeKey`, Markdown.hs
+  // `str`). A citation is no string, so a second key directly after a key is
+  // a citation too (#203).
+  describe("7. Textual Citations After Punctuation Parity with Real Pandoc", function () {
+    const testCases = [
+      'As "@Lurie2009" shows.',
+      "As '@Lurie2009' shows.",
+      "The pre-@Lurie2009 results.",
+      "Compare @Lurie2009/@Joyal2002.",
+      "Source:@Lurie2009",
+      "Both,@Lurie2009 and @Joyal2002.",
+      "Lurie\u2026@Lurie2009 shows it.",
+      "Keys @Lurie2009@Joyal2002 here.",
+      "Theorem 2.@Lurie2009 is false.",
+      "Mail lurie@harvard.edu now.",
+    ];
+
+    for (const tc of testCases) {
+      it(`matches real Pandoc AST for: ${tc}`, function () {
+        assertPandocParity(tc);
+      });
+    }
+  });
+
+  // Pandoc records where a string ends after a run of letters, numbers and
+  // single dots (Markdown.hs `str`) and after the closer of an emphasis
+  // (`one`, `two`, `three`: `ender c n >> updateLastStrPos`). An ellipsis of
+  // three dots is read by `smart` and ends no string (#203).
+  describe("8. Textual Citations After an Ellipsis or an Emphasis Parity with Real Pandoc", function () {
+    const testCases = [
+      "Lurie...@Lurie2009 shows it.",
+      "Lurie....@Lurie2009 shows it.",
+      "Lurie......@Lurie2009 shows it.",
+      "As *shown*@Lurie2009 here.",
+      "As **shown**@Lurie2009 here.",
+      "As _shown_@Lurie2009 here.",
+      "As *shown*-@Lurie2009 here.",
+      "A star*@Lurie2009 here.",
+    ];
+
+    for (const tc of testCases) {
+      it(`matches real Pandoc AST for: ${tc}`, function () {
         assertPandocParity(tc);
       });
     }

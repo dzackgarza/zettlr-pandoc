@@ -1,10 +1,7 @@
 import { EditorState } from "@codemirror/state";
+import { extractCitationNodes, nodeToCiteItem } from "@dzack/pandoc-editor/parser/citation-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
-import {
-  extractCitationNodes,
-  nodeToCiteItem,
-} from "../source/common/modules/markdown-editor/parser/citation-parser";
-import markdownParser from "../source/common/modules/markdown-editor/parser/markdown-parser";
 
 describe("Editable Pandoc citation input", () => {
   it("preserves braced and Unicode identifiers in citation clusters", () => {

@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { trans } from "@common/i18n-main";
 import {
   isSnippetFileName,
   parseVSCodeSnippetFile,
@@ -23,16 +24,19 @@ import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import type { PhraseDictionaryEntry } from "@common/util/phrase-dictionary";
 import type { QuickTexCatalogue } from "@dts/common/quicktex";
 import type { SnippetCatalogue, SnippetFileDiagnostic, UserSnippet } from "@dts/common/snippets";
-import { getCustomProfiles } from "@providers/commands/exporter";
+import { exportProfiles } from "@providers/commands/exporter";
 import { FSWatcher } from "chokidar";
-import { app, ipcMain, shell } from "electron";
+import { app, ipcMain } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
 import YAML from "yaml";
-import { getAppServiceContainer, isAppServiceContainerReady } from "../../app-service-container";
+import { nameTaken, refusedAs } from "../../util/authored-file-error";
 import { loadPhraseDictionaries } from "../../util/load-phrase-dictionaries";
 import { loadQuickTex } from "../../util/load-quicktex";
+import { openPath } from "../../util/open-path";
 import type ConfigProvider from "../config";
+import { isTaken } from "../fsal/util/fs";
+import { createTextFile, writeTextFile } from "../fsal/util/write-text-file";
 import type LogProvider from "../log";
 import ProviderContract, { type IPCMessage } from "../provider-contract";
 
@@ -132,15 +136,20 @@ export type AssetsProviderIPCContract = {
   };
   "set-filter": {
     request: { payload: { filename: string; contents: string } };
-    response: boolean;
+    response: void;
+  };
+  // Answers the name of the new file.
+  "create-filter": {
+    request: { payload: { filename: string } };
+    response: string;
   };
   "rename-filter": {
     request: { payload: { oldName: string; newName: string } };
-    response: boolean;
+    response: void;
   };
   "remove-filter": {
     request: { payload: { filename: string } };
-    response: boolean;
+    response: void;
   };
   "list-filter": {
     request: { payload?: undefined };
@@ -156,15 +165,20 @@ export type AssetsProviderIPCContract = {
   };
   "set-defaults-file": {
     request: { payload: { filename: string; contents: string } };
-    response: boolean;
+    response: void;
+  };
+  // Answers the name of the new file.
+  "create-defaults-file": {
+    request: { payload: { filename: string; contents: string } };
+    response: string;
   };
   "rename-defaults-file": {
     request: { payload: { oldName: string; newName: string } };
-    response: boolean;
+    response: void;
   };
   "remove-defaults-file": {
     request: { payload: { filename: string } };
-    response: boolean;
+    response: void;
   };
   "get-snippets-source": {
     request: { payload?: undefined };
@@ -186,19 +200,18 @@ export type AssetsProviderIPCContract = {
     request: { payload?: undefined };
     response: string[];
   };
-  // The open-*-directory commands answer with shell.openPath's error string,
-  // empty when the directory opened.
+  // An open-* command rejects when the desktop did not open the path.
   "open-defaults-directory": {
     request: { payload?: undefined };
-    response: string;
+    response: void;
   };
   "open-snippets-file": {
     request: { payload?: undefined };
-    response: string;
+    response: void;
   };
   "open-filter-directory": {
     request: { payload?: undefined };
-    response: string;
+    response: void;
   };
   "list-snippets": {
     request: { payload?: undefined };
@@ -214,11 +227,67 @@ export type AssetsProviderIPCContract = {
   };
   "open-phrase-completions-directory": {
     request: { payload?: undefined };
-    response: string;
+    response: void;
   };
 };
 
 export type AssetsProviderIPCAPI = IPCMessage<AssetsProviderIPCContract>;
+
+/** The file name of a Lua filter for the name that a caller gives. */
+function luaFilename(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed === "") {
+    throw new Error(trans("The name of a Lua filter is empty."));
+  }
+  if (/\.lua$/i.test(trimmed)) {
+    return trimmed;
+  }
+  return trimmed + (trimmed.endsWith(".") ? "lua" : ".lua");
+}
+
+/** The file name of a defaults file for the name that a caller gives. */
+function yamlFilename(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed === "") {
+    throw new Error(trans("The name of a defaults file is empty."));
+  }
+  if (/\.ya?ml$/i.test(trimmed)) {
+    return trimmed;
+  }
+  return trimmed + (trimmed.endsWith(".") ? "yaml" : ".yaml");
+}
+
+/**
+ * Renames a file of the author to a name that no file has. Answers false
+ * when both paths are one path, so nothing moved. `fs.rename` replaces a
+ * file at the new path, and Node has no call that refuses to
+ * (`renameat2` with `RENAME_NOREPLACE`), so the check comes first: a file
+ * that another program makes between the check and the rename is replaced.
+ */
+async function renameToFreeName(oldPath: string, newPath: string): Promise<boolean> {
+  if (oldPath === newPath) {
+    return false;
+  }
+  if (await isTaken(newPath).catch(refusedAs("rename", oldPath))) {
+    throw nameTaken("rename", oldPath, newPath);
+  }
+  await fs.rename(oldPath, newPath).catch(refusedAs("rename", oldPath));
+  return true;
+}
+
+/**
+ * The MathJax of an HTML export (`scripts/export-mathjax.js`). Pandoc is a
+ * process of its own and reads it, so it is a file of the filesystem: in the
+ * packaged app the folder is in `app.asar.unpacked` (`asar.unpackDir` in
+ * `forge.config.js`), the place of a file of the app that another process
+ * reads (https://www.electronjs.org/docs/latest/tutorial/asar-archives#adding-unpacked-files-to-asar-archives).
+ * A development start has no archive.
+ */
+export const BUNDLED_EXPORT_MATHJAX = path.join(
+  __dirname.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`),
+  "assets",
+  "mathjax",
+);
 
 export default class AssetsProvider extends ProviderContract {
   /**
@@ -273,6 +342,8 @@ export default class AssetsProvider extends ProviderContract {
   constructor(
     private readonly _logger: LogProvider,
     private readonly _config: ConfigProvider,
+    /** The folder of the MathJax of an HTML export (BUNDLED_EXPORT_MATHJAX in the app). */
+    readonly exportMathJaxDirectory: string,
   ) {
     super();
 
@@ -360,6 +431,8 @@ export default class AssetsProvider extends ProviderContract {
         return await this.getFilter(payload.filename);
       } else if (command === "set-filter") {
         return await this.setFilter(payload.filename, payload.contents);
+      } else if (command === "create-filter") {
+        return await this.createFilter(payload.filename);
       } else if (command === "rename-filter") {
         return await this.renameFilter(payload.oldName, payload.newName);
       } else if (command === "remove-filter") {
@@ -370,11 +443,13 @@ export default class AssetsProvider extends ProviderContract {
         return this.listProtectedFilters();
       } else if (command === "open-filter-directory") {
         this._logger.info(`[Assets Provider] Opening path ${this._filterPath}`);
-        return await shell.openPath(this._filterPath);
+        return await openPath(this._filterPath);
       } else if (command === "get-defaults-file") {
         return await this.getDefaultsFileContents(payload.filename);
       } else if (command === "set-defaults-file") {
         return await this.setDefaultsFile(payload.filename, payload.contents, true);
+      } else if (command === "create-defaults-file") {
+        return await this.createDefaultsFile(payload.filename, payload.contents);
       } else if (command === "rename-defaults-file") {
         return await this.renameDefaultsFile(payload.oldName, payload.newName);
       } else if (command === "remove-defaults-file") {
@@ -382,23 +457,12 @@ export default class AssetsProvider extends ProviderContract {
       } else if (command === "list-defaults") {
         return await this.listDefaults();
       } else if (command === "list-export-profiles") {
-        const profiles = await this.listDefaults();
-        const scripts = isAppServiceContainerReady()
-          ? getAppServiceContainer().config.get().export.scripts
-          : [];
-        const custom = getCustomProfiles(scripts);
-        // Custom profiles (e.g. the compile-pandoc PDF) override any same-named
-        // defaults file. userData/defaults is copied once and never pruned, so a
-        // stale shipped default (e.g. an old xelatex PDF.yaml renamed/removed in
-        // a later version) can linger there; it must not shadow the custom
-        // profile of the same name in the export menu.
-        const customNames = new Set(custom.map((p) => p.name));
-        return profiles.filter((p) => !customNames.has(p.name)).concat(custom);
+        return await this.listExportProfiles();
       } else if (command === "list-available-filters") {
         return await this.listAvailableFilters();
       } else if (command === "open-defaults-directory") {
         this._logger.info(`[AssetsProvider] Opening path ${this._defaultsPath}`);
-        return await shell.openPath(this._defaultsPath);
+        return await openPath(this._defaultsPath);
       } else if (command === "get-snippets-source") {
         return await this.getSnippetsSource();
       } else if (command === "set-snippets-source") {
@@ -409,12 +473,12 @@ export default class AssetsProvider extends ProviderContract {
         return this._quickTexCatalogue;
       } else if (command === "open-snippets-file") {
         this._logger.info(`[AssetsProvider] Opening path ${this._snippetsFile}`);
-        return await shell.openPath(this._snippetsFile);
+        return await openPath(this._snippetsFile);
       } else if (command === "list-phrase-completions") {
         return await loadPhraseDictionaries(this._phraseCompletionsPath);
       } else if (command === "open-phrase-completions-directory") {
         this._logger.info(`[AssetsProvider] Opening path ${this._phraseCompletionsPath}`);
-        return await shell.openPath(this._phraseCompletionsPath);
+        return await openPath(this._phraseCompletionsPath);
       }
     });
   }
@@ -567,122 +631,72 @@ export default class AssetsProvider extends ProviderContract {
    */
   async getFilter(filename: string): Promise<string> {
     const absPath = path.join(this._filterPath, filename);
-    const lua = await fs.readFile(absPath, { encoding: "utf-8" });
-    return lua;
+    return await fs.readFile(absPath, { encoding: "utf-8" }).catch(refusedAs("read", absPath));
   }
 
   /**
-   * Creates/Updates the filter with the provided filename, using the contents.
+   * Writes the text of a filter. Rejects with an `AuthoredFileError` when
+   * the file system refuses the write.
    *
-   * @param   {string}            filename  The filter name
-   * @param   {string}            contents  The file contents
-   *
-   * @return  {Promise<boolean>}            Whether the command succeeded.
+   * @param   {string}  filename  The filter name
+   * @param   {string}  contents  The file contents
    */
-  async setFilter(filename: string, contents: string): Promise<boolean> {
-    filename = filename.trim();
-    if (filename === "") {
-      throw new Error("Cannot set Lua filter: Filename was empty.");
-    }
+  async setFilter(filename: string, contents: string): Promise<void> {
+    const absPath = path.join(this._filterPath, luaFilename(filename));
+    await writeTextFile(absPath, contents).catch(refusedAs("save", absPath));
+  }
 
-    if (!/\.lua$/i.test(filename)) {
-      filename += filename.endsWith(".") ? "lua" : ".lua";
-    }
+  /**
+   * Creates an empty filter. Rejects with an `AuthoredFileError` when a file
+   * has the name already, and when the file system refuses the creation.
+   *
+   * @param   {string}           filename  The filter name
+   *
+   * @return  {Promise<string>}            The name of the new file
+   */
+  async createFilter(filename: string): Promise<string> {
+    const name = luaFilename(filename);
+    const absPath = path.join(this._filterPath, name);
+    await createTextFile(absPath, "").catch(refusedAs("create", absPath));
+    return name;
+  }
 
+  /**
+   * Renames a filter. Rejects with an `AuthoredFileError` when another file
+   * has the new name, and when the file system refuses the rename.
+   *
+   * @param   {string}  oldName  The existing name
+   * @param   {string}  newName  The new name
+   */
+  async renameFilter(oldName: string, newName: string): Promise<void> {
+    const oldPath = path.join(this._filterPath, luaFilename(oldName));
+    const newPath = path.join(this._filterPath, luaFilename(newName));
+    if (await renameToFreeName(oldPath, newPath)) {
+      await this.restoreProtectedFilter(path.basename(oldPath));
+    }
+  }
+
+  /**
+   * Removes the filter with the provided name. A protected filter is
+   * restored at once. Rejects with an `AuthoredFileError` when the file
+   * system refuses the removal.
+   *
+   * @param   {string}  filename  The filter name
+   */
+  async removeFilter(filename: string): Promise<void> {
     const absPath = path.join(this._filterPath, filename);
-
-    try {
-      // Stringify the new defaults according to the verbatim flag
-      await fs.writeFile(absPath, contents);
-      return true;
-    } catch (err: unknown) {
-      this._logger.error(
-        `[Assets Provider] Could not save lua filter: ${err instanceof Error ? err.message : "unknown error"}`,
-        err,
-      );
-      return false;
-    }
+    await fs.unlink(absPath).catch(refusedAs("remove", absPath));
+    await this.restoreProtectedFilter(filename);
   }
 
-  /**
-   * Renames the provided filter.
-   *
-   * @param   {string}            oldName  The existing name
-   * @param   {string}            newName  The new name
-   *
-   * @return  {Promise<boolean>}           Whether the command succeeded.
-   */
-  async renameFilter(oldName: string, newName: string): Promise<boolean> {
-    newName = newName.trim();
-    oldName = oldName.trim();
-    if (newName === "" || oldName === "") {
-      throw new Error("Cannot rename lua filter: Filename was empty.");
+  /** Puts the shipped file of a protected filter back; does nothing for another filter. */
+  private async restoreProtectedFilter(filename: string): Promise<void> {
+    if (!this._protectedFilters.includes(filename)) {
+      return;
     }
-
-    if (!/\.lua$/i.test(newName)) {
-      newName += newName.endsWith(".") ? "lua" : ".lua";
-    }
-
-    const oldPath = path.join(this._filterPath, oldName);
-    const newPath = path.join(this._filterPath, newName);
-
-    try {
-      await fs.rename(oldPath, newPath);
-      if (this._protectedFilters.includes(oldName)) {
-        await this.restoreFilterFor(oldName);
-      }
-      return true;
-    } catch (err: unknown) {
-      this._logger.error(
-        `[Assets Provider] Could not rename lua filter from ${oldPath} to ${newPath}.`,
-        err,
-      );
-      return false;
-    }
-  }
-
-  /**
-   * Removes the filter with the provided name.
-   *
-   * @param   {string}            filename  The filter name
-   *
-   * @return  {Promise<boolean>}            Whether the command succeeded.
-   */
-  async removeFilter(filename: string): Promise<boolean> {
-    const absPath = path.join(this._filterPath, filename);
-    try {
-      await fs.unlink(absPath);
-      // If removing that file removed a protected one, restore it immediately.
-      // This is effectively the same as restoring the file.
-      if (this._protectedFilters.includes(filename)) {
-        await this.restoreFilterFor(filename);
-      }
-      return true;
-    } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not remove lua filter: ${absPath}`, err);
-      return false;
-    }
-  }
-
-  /**
-   * Restores the file for a provided filter name.
-   *
-   * @param   {string}            filename  The filter name
-   *
-   * @return  {Promise<boolean>}            Whether the command succeeded.
-   */
-  async restoreFilterFor(filename: string): Promise<boolean> {
     const source = path.join(__dirname, "./assets/lua-filter", filename);
     const target = path.join(this._filterPath, filename);
-
-    try {
-      await fs.copyFile(source, target);
-    } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not restore filter file ${filename}!`, err);
-      return false;
-    }
-
-    return true;
+    await fs.copyFile(source, target).catch(refusedAs("restore", target));
   }
 
   /**
@@ -696,7 +710,7 @@ export default class AssetsProvider extends ProviderContract {
    *                                                    of filters.
    */
   async listFilters(returnAbsolutePaths: boolean = false): Promise<string[]> {
-    const files = await fs.readdir(this._filterPath);
+    const files = await fs.readdir(this._filterPath).catch(refusedAs("read", this._filterPath));
     return files
       .filter((file) => /\.lua$/i.test(file))
       .map((file) => (returnAbsolutePaths ? path.join(this._filterPath, file) : file));
@@ -714,7 +728,14 @@ export default class AssetsProvider extends ProviderContract {
     const dirs = [path.join(app.getPath("home"), ".pandoc", "filters"), this._filterPath];
     const names = new Set<string>();
     for (const dir of dirs) {
-      const files = await fs.readdir(dir).catch(() => [] as string[]);
+      // The filter directory of Pandoc is no directory of the app: it can be
+      // absent. Each other failure is a refusal.
+      const files = await fs.readdir(dir).catch((failure: NodeJS.ErrnoException): string[] => {
+        if (failure.code === "ENOENT") {
+          return [];
+        }
+        return refusedAs("read", dir)(failure);
+      });
       for (const file of files) {
         if (/\.lua$/i.test(file)) {
           names.add(file);
@@ -746,7 +767,7 @@ export default class AssetsProvider extends ProviderContract {
    */
   async getDefaultsFileContents(filename: string): Promise<string> {
     const absPath = path.join(this._defaultsPath, filename);
-    return await fs.readFile(absPath, { encoding: "utf-8" });
+    return await fs.readFile(absPath, { encoding: "utf-8" }).catch(refusedAs("read", absPath));
   }
 
   /**
@@ -771,125 +792,87 @@ export default class AssetsProvider extends ProviderContract {
   }
 
   /**
-   * Overwrites the defaults for a given writer.
+   * Writes a defaults file. Rejects with an `AuthoredFileError` when the
+   * file system refuses the write.
    *
-   * @param   {string}            filename      The file to write
-   * @param   {string}            newDefaults   The new defaults
-   * @param   {boolean}           verbatim      If false, newDefaults will be serialized to YAML
-   *
-   * @return  {Promise<boolean>}      Whether or not the operation was successful.
+   * @param   {string}   filename     The file to write
+   * @param   {string}   newDefaults  The new defaults
+   * @param   {boolean}  verbatim     If false, newDefaults will be serialized to YAML
    */
   async setDefaultsFile(
     filename: string,
     newDefaults: string,
     verbatim: boolean = false,
-  ): Promise<boolean> {
-    filename = filename.trim();
-    if (filename === "") {
-      throw new Error("Cannot set defaults file: Filename was empty.");
-    }
+  ): Promise<void> {
+    const absPath = path.join(this._defaultsPath, yamlFilename(filename));
+    const yaml = verbatim ? newDefaults : YAML.stringify(newDefaults);
+    await writeTextFile(absPath, yaml).catch(refusedAs("save", absPath));
+  }
 
-    if (!/\.ya?ml$/i.test(filename)) {
-      filename += filename.endsWith(".") ? "yaml" : ".yaml";
-    }
+  /**
+   * Creates a defaults file. Rejects with an `AuthoredFileError` when a file
+   * has the name already, and when the file system refuses the creation.
+   *
+   * @param   {string}           filename  The name of the new file
+   * @param   {string}           contents  The YAML source of the new file
+   *
+   * @return  {Promise<string>}            The name of the new file
+   */
+  async createDefaultsFile(filename: string, contents: string): Promise<string> {
+    const name = yamlFilename(filename);
+    const absPath = path.join(this._defaultsPath, name);
+    await createTextFile(absPath, contents).catch(refusedAs("create", absPath));
+    return name;
+  }
 
+  /**
+   * Renames a defaults file. Rejects with an `AuthoredFileError` when
+   * another file has the new name, and when the file system refuses the
+   * rename.
+   *
+   * @param   {string}  oldName  The existing name
+   * @param   {string}  newName  The new name
+   */
+  async renameDefaultsFile(oldName: string, newName: string): Promise<void> {
+    const oldPath = path.join(this._defaultsPath, yamlFilename(oldName));
+    const newPath = path.join(this._defaultsPath, yamlFilename(newName));
+    if (await renameToFreeName(oldPath, newPath)) {
+      await this.restoreProtectedDefaults(path.basename(oldPath));
+    }
+  }
+
+  /**
+   * Removes the given defaults file. A protected profile is restored at
+   * once. Rejects with an `AuthoredFileError` when the file system refuses
+   * the removal.
+   *
+   * @param   {string}  filename  The defaults file's name
+   */
+  async removeDefaultsFile(filename: string): Promise<void> {
     const absPath = path.join(this._defaultsPath, filename);
-
-    try {
-      // Stringify the new defaults according to the verbatim flag
-      const yaml = verbatim ? newDefaults : YAML.stringify(newDefaults);
-      await fs.writeFile(absPath, yaml);
-      return true;
-    } catch (err: unknown) {
-      this._logger.error(
-        `[Assets Provider] Could not save defaults file: ${err instanceof Error ? err.message : "unknown error"}`,
-        err,
-      );
-      return false;
-    }
+    await fs.unlink(absPath).catch(refusedAs("remove", absPath));
+    await this.restoreProtectedDefaults(filename);
   }
 
-  /**
-   * Allows one to rename a defaults file
-   *
-   * @param   {string}            oldName  The former path to the file
-   * @param   {string}            newName  The new path to the file
-   *
-   * @return  {Promise<boolean>}           True upon success
-   */
-  async renameDefaultsFile(oldName: string, newName: string): Promise<boolean> {
-    newName = newName.trim();
-    oldName = oldName.trim();
-    if (newName === "" || oldName === "") {
-      throw new Error("Cannot rename defaults file: Filename was empty.");
+  /** Puts the shipped file of a protected profile back; does nothing for another profile. */
+  private async restoreProtectedDefaults(filename: string): Promise<void> {
+    if (!this._protectedDefaults.includes(filename)) {
+      return;
     }
-
-    if (!/\.ya?ml$/i.test(newName)) {
-      newName += newName.endsWith(".") ? "yaml" : ".yaml";
-    }
-
-    const oldPath = path.join(this._defaultsPath, oldName);
-    const newPath = path.join(this._defaultsPath, newName);
-
-    try {
-      await fs.rename(oldPath, newPath);
-      // If renaming that file removed a protected one, restore it immediately.
-      // This is effectively the same as duplicating the file.
-      if (this._protectedDefaults.includes(oldName)) {
-        await this.restoreDefaultsFor(oldName);
-      }
-      return true;
-    } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not rename file ${oldPath} to ${newPath}.`, err);
-      return false;
-    }
-  }
-
-  /**
-   * Removes the given defaults file. NOTE that any default profiles will be
-   * restored on the next start of the app, so removing them will only be
-   * temporary (e.g. for restoring purposes).
-   *
-   * @param   {string}            filename  The defaults file's name
-   *
-   * @return  {Promise<boolean>}           Returns true upon success
-   */
-  async removeDefaultsFile(filename: string): Promise<boolean> {
-    const absPath = path.join(this._defaultsPath, filename);
-    try {
-      await fs.unlink(absPath);
-      // If removing that file removed a protected one, restore it immediately.
-      // This is effectively the same as restoring the file.
-      if (this._protectedDefaults.includes(filename)) {
-        await this.restoreDefaultsFor(filename);
-      }
-      return true;
-    } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not remove defaults file: ${absPath}`, err);
-      return false;
-    }
-  }
-
-  /**
-   * Restores the requested defaults file by copying it from the directory
-   * within Zettlr into the defaults path (user data).
-   *
-   * @param   {string}             filename  The defaults file to copy over
-   *
-   * @return  {Promise<boolean>}           Returns true on success
-   */
-  async restoreDefaultsFor(filename: string): Promise<boolean> {
     const source = path.join(__dirname, "./assets/defaults", filename);
     const target = path.join(this._defaultsPath, filename);
+    await fs.copyFile(source, target).catch(refusedAs("restore", target));
+  }
 
-    try {
-      await fs.copyFile(source, target);
-    } catch (err: unknown) {
-      this._logger.error(`[Assets Provider] Could not restore defaults file ${filename}!`, err);
-      return false;
-    }
-
-    return true;
+  /**
+   * The export profiles of the application, one for each name
+   * (`exportProfiles`). Every surface that offers or runs an export profile
+   * reads this list.
+   *
+   * @return  {Promise<PandocProfileMetadata[]>}  The profiles
+   */
+  async listExportProfiles(): Promise<PandocProfileMetadata[]> {
+    return exportProfiles(await this.listDefaults(), this._config.get().export.scripts);
   }
 
   /**
@@ -900,7 +883,9 @@ export default class AssetsProvider extends ProviderContract {
   async listDefaults(): Promise<PandocProfileMetadata[]> {
     const profiles: PandocProfileMetadata[] = [];
 
-    const defaultsFiles = await fs.readdir(this._defaultsPath);
+    const defaultsFiles = await fs
+      .readdir(this._defaultsPath)
+      .catch(refusedAs("read", this._defaultsPath));
     const defaults = defaultsFiles.filter((file) => /\.ya?ml$/.test(file));
     for (const file of defaults) {
       const profile = await this.readProfile(file);
@@ -1004,11 +989,17 @@ export default class AssetsProvider extends ProviderContract {
   async getSnippetsSource(): Promise<{ filePath: string; contents: string }> {
     return {
       filePath: this._snippetsFile,
-      contents: await fs.readFile(this._snippetsFile, { encoding: "utf-8" }),
+      contents: await fs
+        .readFile(this._snippetsFile, { encoding: "utf-8" })
+        .catch(refusedAs("read", this._snippetsFile)),
     };
   }
 
-  /** Validate and write the configured portable VS Code snippet source. */
+  /**
+   * Validate and write the configured portable VS Code snippet source. A
+   * source that is no snippet file is the answer `ok: false`; a write that
+   * the file system refuses rejects with an `AuthoredFileError`.
+   */
   async setSnippetsSource(contents: string): Promise<{ ok: true } | { ok: false; error: string }> {
     const parsed = parseVSCodeSnippetFile(path.basename(this._snippetsFile), contents);
     if (parsed.diagnostics.length > 0) {
@@ -1018,20 +1009,16 @@ export default class AssetsProvider extends ProviderContract {
       };
     }
 
-    try {
-      await fs.writeFile(this._snippetsFile, contents);
-      return { ok: true };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      this._logger.error(`[Assets Provider] Could not save snippet file: ${message}`, err);
-      return { ok: false, error: message };
-    }
+    await writeTextFile(this._snippetsFile, contents).catch(refusedAs("save", this._snippetsFile));
+    return { ok: true };
   }
 
   /** Parse the configured `.code-snippets` file into the editor catalogue. */
   async listSnippets(): Promise<SnippetCatalogue> {
     const sourceFile = path.basename(this._snippetsFile);
-    const contents = await fs.readFile(this._snippetsFile, { encoding: "utf-8" });
+    const contents = await fs
+      .readFile(this._snippetsFile, { encoding: "utf-8" })
+      .catch(refusedAs("read", this._snippetsFile));
     const parsed = parseVSCodeSnippetFile(sourceFile, contents);
     const snippets: UserSnippet[] = parsed.snippets;
     const diagnostics: SnippetFileDiagnostic[] = parsed.diagnostics;

@@ -22,10 +22,17 @@
  *                    conflict, and then nothing is applied anywhere. Open
  *                    buffers change through the document authority and are
  *                    saved; closed files are written.
+ *                  - 'list-workspace-lint' { scope } answers the Problems
+ *                    view from the lint cache.
+ *                  - 'apply-lint-fix' applies one fix of that view.
+ *                  - 'retry-workspace-lint' starts again each lint that gave
+ *                    no result, and tells the editors to lint their text
+ *                    again.
  *
  * END HEADER
  */
 
+import broadcastIPCMessage from "@common/util/broadcast-ipc-message";
 import { hasMarkdownExt } from "@common/util/file-extention-checks";
 import type { FixAllOutcome, FixAllPlan, FixAllRequest } from "@dts/common/fix-all";
 import type {
@@ -44,13 +51,32 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class FixAll extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, ["preview-fix-all", "commit-fix-all", "list-workspace-lint", "apply-lint-fix"]);
+    super(app, [
+      "preview-fix-all",
+      "commit-fix-all",
+      "list-workspace-lint",
+      "apply-lint-fix",
+      "retry-workspace-lint",
+    ]);
   }
 
   async run(
     evt: string,
-    arg: FixAllRequest | { plan: FixAllPlan } | ListProblemsRequest | ApplyProblemFixRequest,
-  ): Promise<FixAllPlan | FixAllOutcome | WorkspaceProblems> {
+    arg:
+      | FixAllRequest
+      | { plan: FixAllPlan }
+      | ListProblemsRequest
+      | ApplyProblemFixRequest
+      | undefined,
+  ): Promise<FixAllPlan | FixAllOutcome | WorkspaceProblems | undefined> {
+    if (evt === "retry-workspace-lint") {
+      await this._app.documentLint.retry();
+      broadcastIPCMessage("document-lint-retried");
+      return undefined;
+    }
+    if (arg === undefined) {
+      throw new Error(`${evt} requires a payload`);
+    }
     if (evt === "list-workspace-lint") {
       return await this.listProblems(arg);
     }
@@ -142,7 +168,7 @@ export default class FixAll extends ZettlrCommand {
     if (result.status === "conflict") {
       return { status: "conflict", documentPath: result.documentPath };
     }
-    await saveUpdatedBuffers(
+    const unsaved = await saveUpdatedBuffers(
       async (documentPath) => await documents.saveFile(documentPath),
       result.openBuffersUpdated,
     );
@@ -150,6 +176,7 @@ export default class FixAll extends ZettlrCommand {
       status: "applied",
       fixesApplied: edits.length,
       documentsChanged: [...result.openBuffersUpdated, ...result.closedFilesWritten],
+      unsaved,
     };
   }
 }

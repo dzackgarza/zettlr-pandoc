@@ -1,0 +1,30 @@
+diff --git a/lib/command.js b/lib/command.js
+index 21e90e40b50650a433a7d883cdcdf33f8536b010..5d4b4cc11f9d20b3f39cdf47b9fb9acad9fc89e0 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -1030,13 +1030,18 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     // By default terminate process when spawned process terminates.
+     // Suppressing the exit if exitCallback defined is a bit messy and of limited use, but does allow process to stay running!
+     const exitCallback = this._exitCallback;
+-    if (!exitCallback) {
+-      proc.on('close', process.exit.bind(process));
+-    } else {
+-      proc.on('close', () => {
+-        exitCallback(new CommanderError(process.exitCode || 0, 'commander.executeSubCommandAsync', '(close)'));
+-      });
+-    }
++    proc.on('close', (code, signal) => {
++      // The code is null for a child that a signal ended. Commander 12
++      // exits 1 for it (tj/commander.js#2023); this patch exits 128 + the
++      // number of the signal, as a POSIX shell reports such a command, so
++      // the caller can name the signal (zettlr-pandoc #71).
++      const status = code === null ? 128 + require('os').constants.signals[signal] : code;
++      if (!exitCallback) {
++        process.exit(status);
++      } else {
++        exitCallback(new CommanderError(status, 'commander.executeSubCommandAsync', '(close)'));
++      }
++    });
+     proc.on('error', (err) => {
+       // @ts-ignore
+       if (err.code === 'ENOENT') {

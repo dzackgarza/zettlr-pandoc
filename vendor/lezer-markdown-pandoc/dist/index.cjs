@@ -4,6 +4,43 @@ var common = require('@lezer/common');
 var highlight = require('@lezer/highlight');
 var entities = require('entities');
 
+/**
+ * Line lookahead over the block input.
+ *
+ * A Lezer BlockParser cannot roll BlockContext back after `nextLine()`, so a
+ * Pandoc rule that needs lookahead reads the input ahead of the context. The
+ * input is read in growing windows: a lookahead that stops after a few lines
+ * reads a few lines, not the rest of the document.
+ */
+const FIRST_WINDOW = 2048;
+/**
+ * The physical lines of `input` that start at or after `from`. The sequence
+ * is the one `input.read(from, input.length).split("\n")` gives.
+ */
+function* linesFrom(input, from) {
+    let text = "";
+    let textFrom = from;
+    let lineFrom = from;
+    let window = FIRST_WINDOW;
+    for (;;) {
+        let newline = text.indexOf("\n", lineFrom - textFrom);
+        while (newline < 0 && textFrom + text.length < input.length) {
+            const readFrom = textFrom + text.length;
+            const readTo = Math.min(input.length, readFrom + window);
+            text = text.slice(lineFrom - textFrom) + input.read(readFrom, readTo);
+            textFrom = lineFrom;
+            window *= 2;
+            newline = text.indexOf("\n");
+        }
+        if (newline < 0) {
+            yield { from: lineFrom, text: text.slice(lineFrom - textFrom) };
+            return;
+        }
+        yield { from: lineFrom, text: text.slice(lineFrom - textFrom, newline) };
+        lineFrom = textFrom + newline + 1;
+    }
+}
+
 class CompositeBlock {
     static create(type, value, from, parentHash, end) {
         let hash = (parentHash + (parentHash << 8) + type + (value << 4)) | 0;
@@ -745,6 +782,21 @@ function lineEnd$1(text, pos) {
     }
     return pos;
 }
+// Pandoc's `setextHeader` parses the inlines of the heading line and then
+// requires a newline and the underline. An inline that the line opens and a
+// later line of the paragraph closes (inline math over the `=` line) consumes
+// that newline, so the line is no heading. The inlines are parsed over the
+// paragraph text up to its first blank line, the reach of an inline.
+function inlineRunsPastLine(cx, leaf) {
+    let lineEnd = leaf.start + leaf.content.length;
+    let text = leaf.content;
+    for (let next of linesFrom(cx.input, lineEnd + 1)) {
+        if (next.text.trim() == "")
+            break;
+        text += "\n" + next.text;
+    }
+    return cx.parser.parseInline(text, leaf.start).some(element => element.from < lineEnd && element.to > lineEnd);
+}
 class SetextHeadingParser {
     nextLine(cx, line, leaf) {
         // Pandoc's Markdown reader only admits a Setext heading when the heading
@@ -757,6 +809,8 @@ class SetextHeadingParser {
         let underline = line.depth < cx.stack.length ? -1 : isSetextUnderline(line);
         let next = line.next;
         if (underline < 0)
+            return false;
+        if (cx.parser.pandocParagraphContinuation && inlineRunsPastLine(cx, leaf))
             return false;
         let underlineMark = elt(Type.HeaderMark, cx.lineStart + line.pos, cx.lineStart + underline);
         cx.nextLine();
@@ -3075,6 +3129,9 @@ const CANONICAL_ROMAN_NUMERAL = /^(?=[MDCLXVI]+$)M{0,3}(?:CM|CD|D?C{0,3})(?:XC|X
 const BARE_CITATION_KEY = /^[\p{L}\p{N}_]+(?:[:.#$%&+?<>~\/-][\p{L}\p{N}_]+)*/u;
 const bracketFollowers = new WeakMap();
 const parenthesizedFollowers = new WeakMap();
+// Each nested opener starts with the same unquoted state as an independent
+// lookahead. Cache its result while scanning, so incomplete followers do not
+// make every later citation scan the paragraph suffix again.
 function balancedFollower(ctx, pos, open, close, quoted, cache) {
     let matches = cache.get(ctx);
     if (matches === undefined) {
@@ -3116,6 +3173,18 @@ function balancedFollower(ctx, pos, open, close, quoted, cache) {
         matches.set(opener, false);
     return false;
 }
+/**
+ * Port the negative lookahead at the end of Pandoc `normalCite`:
+ *
+ *   notFollowedBy (try (void source) <|>
+ *                  (Ext_bracketed_spans *> void attributes) <|>
+ *                  void reference)
+ *
+ * A bracketed citation immediately followed by syntax that would make the
+ * bracket group a link/reference/span is NOT a normal citation. Pandoc then
+ * falls back to parsing the interior `@key` textually. This distinction is
+ * observable in e.g. `[@a][label](url)`.
+ */
 function conflictsWithNormalCiteClose(ctx, pos) {
     const next = ctx.char(pos);
     if (next === CHAR.CURLY_OPEN) {
@@ -3223,6 +3292,53 @@ function parseCitationSuffix(suffix) {
         return { suffix: authored };
     return { locator, label: parsed.label, suffix: locatorText.slice(locator.length) };
 }
+/**
+ * Whether Pandoc records the end of a string at `pos`, which refuses a
+ * textual citation there: `citeKey` runs `guard =<< notAfterString`.
+ *
+ * - `str` reads letters, numbers and each `.` that no `.` follows, then calls
+ *   `updateLastStrPos`. So `user@example.com` and `2.@key` end a string, and
+ *   `"@key"`, `pre-@key` and `a/@key` do not.
+ * - The `smart` extension reads three dots as an ellipsis, which is no
+ *   string. A run of k dots therefore ends a string iff k is no multiple
+ *   of 3: `x...@key` is a citation, `x....@key` is not.
+ * - `one`, `two` and `three` call `updateLastStrPos` after the closer of an
+ *   emphasis, so `*x*@key` is no citation. A `*` without an opener before it
+ *   is a symbol, and `x*@key` is a citation.
+ * - A citation is no string, so a key directly after a key is a citation.
+ *
+ * Reference: Pandoc commit f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * Text.Pandoc.Parsing.Citations `citeKey`, Text.Pandoc.Readers.Markdown
+ * `str`, `one`, `two`, `three`, `textualCite`.
+ */
+function endsString(ctx, pos) {
+    const before = ctx.parts[ctx.parts.length - 1];
+    const touches = before !== undefined && before !== null && before.to === pos;
+    if (touches && !('side' in before) && before.type === ctx.parser.getNodeType(NODES.CITATION)) {
+        return false;
+    }
+    const char = ctx.slice(pos - 1, pos);
+    if (/[\p{L}\p{N}]/u.test(char)) {
+        return true;
+    }
+    if (char === '.') {
+        let dots = 1;
+        while (pos - dots > ctx.offset && ctx.slice(pos - dots - 1, pos - dots) === '.') {
+            dots++;
+        }
+        return dots % 3 !== 0;
+    }
+    if (!touches || !('side' in before)) {
+        return false;
+    }
+    // An emphasis delimiter that can close (`Mark.Close`, 2) after one of its
+    // own type that can open (`Mark.Open`, 1).
+    if (before.type.resolve !== 'Emphasis' || (before.side & 2) === 0) {
+        return false;
+    }
+    return ctx.parts.some(part => part !== null && part !== before && 'side' in part &&
+        part.type === before.type && part.to <= before.from && (part.side & 1) !== 0);
+}
 // Here follows the actual parser
 const citationParser = {
     name: 'citations',
@@ -3242,26 +3358,10 @@ const citationParser = {
         }
         // Pandoc's `normalCite` begins directly at `[` and imposes no condition on
         // the preceding character, so constructs such as `` `code`[@key] `` are
-        // valid citations. The boundary restriction belongs only to textual
-        // `@key` / `-@key` recognition, where it prevents email-like false
-        // positives. Reference: Markdown.hs `cite`, `normalCite`, `textualCite`.
-        if (next !== CHAR.BRACKET_OPEN) {
-            const prevChar = ctx.char(pos - 1);
-            const validBefore = Number.isNaN(prevChar) || [
-                CHAR.BRACE_OPEN,
-                CHAR.BRACKET_OPEN,
-                CHAR.BRACKET_CLOSE,
-                CHAR.ASTERISK,
-                CHAR.UNDERSCORE,
-                CHAR.TILDE,
-                CHAR.LF,
-                CHAR.CR,
-                CHAR.TAB,
-                CHAR.SPACE
-            ].includes(prevChar);
-            if (!validBefore) {
-                return -1;
-            }
+        // valid citations. A textual `@key` / `-@key` must not follow the end of
+        // a string (`endsString`).
+        if (next !== CHAR.BRACKET_OPEN && pos > ctx.offset && endsString(ctx, pos)) {
+            return -1;
         }
         // Quick additional check to save us some headaches, because if `next` is a
         // hyphen, it MUST be followed by an @ to be considered a valid citation.
@@ -4022,43 +4122,6 @@ function footnoteComposite(ctx, line, _value) {
 }
 
 /**
- * Line lookahead over the block input.
- *
- * A Lezer BlockParser cannot roll BlockContext back after `nextLine()`, so a
- * Pandoc rule that needs lookahead reads the input ahead of the context. The
- * input is read in growing windows: a lookahead that stops after a few lines
- * reads a few lines, not the rest of the document.
- */
-const FIRST_WINDOW = 2048;
-/**
- * The physical lines of `input` that start at or after `from`. The sequence
- * is the one `input.read(from, input.length).split("\n")` gives.
- */
-function* linesFrom(input, from) {
-    let text = "";
-    let textFrom = from;
-    let lineFrom = from;
-    let window = FIRST_WINDOW;
-    for (;;) {
-        let newline = text.indexOf("\n", lineFrom - textFrom);
-        while (newline < 0 && textFrom + text.length < input.length) {
-            const readFrom = textFrom + text.length;
-            const readTo = Math.min(input.length, readFrom + window);
-            text = text.slice(lineFrom - textFrom) + input.read(readFrom, readTo);
-            textFrom = lineFrom;
-            window *= 2;
-            newline = text.indexOf("\n");
-        }
-        if (newline < 0) {
-            yield { from: lineFrom, text: text.slice(lineFrom - textFrom) };
-            return;
-        }
-        yield { from: lineFrom, text: text.slice(lineFrom - textFrom, newline) };
-        lineFrom = textFrom + newline + 1;
-    }
-}
-
-/**
  * Pandoc YAML metadata block grammar.
  *
  * Reference implementation: Pandoc 3.10.2 commit
@@ -4072,6 +4135,15 @@ function blockInput$1(ctx) {
     return ctx.input;
 }
 /**
+ * Pandoc `blankline` (`skipMany spaceChar >> newline`) after a fence: spaces
+ * and tabs to the line end. Pandoc reads CRLF text as LF text, so a CR before
+ * the line feed belongs to the line end.
+ */
+const FENCE_LINE_END = /^[ \t]*\r?$/u;
+function isFenceLine(text, fence) {
+    return text.startsWith(fence) && FENCE_LINE_END.test(text.slice(fence.length));
+}
+/**
  * Non-mutating port of Pandoc Metadata.hs `yamlMetaBlock` / `stopLine`.
  * Lezer cannot roll BlockContext back after `nextLine()`, so recognition must
  * be complete before the block parser advances at all.
@@ -4079,15 +4151,18 @@ function blockInput$1(ctx) {
 function frontmatterExtent(ctx, openingStart) {
     const input = blockInput$1(ctx);
     let bodyFrom = -1;
+    // The end of the last body line, before its line end (LF or CRLF)
+    let bodyTo = -1;
     let linesToClose = 0;
     for (const line of linesFrom(input, openingStart)) {
         if (bodyFrom < 0) {
-            if (!line.text.startsWith('---'))
+            if (!isFenceLine(line.text, '---'))
                 return undefined;
             bodyFrom = line.from + line.text.length + 1;
             // The opener must end in a line feed.
             if (bodyFrom > input.length)
                 return undefined;
+            bodyTo = bodyFrom;
             continue;
         }
         linesToClose++;
@@ -4095,15 +4170,16 @@ function frontmatterExtent(ctx, openingStart) {
             // Pandoc: `notFollowedBy blankline` immediately after the opener.
             return undefined;
         }
-        if (/^(?:---|\.\.\.)[ \t]*$/u.test(line.text)) {
+        if (isFenceLine(line.text, '---') || isFenceLine(line.text, '...')) {
             return {
                 bodyFrom,
-                bodyTo: Math.max(bodyFrom, line.from - 1),
+                bodyTo,
                 closeFrom: line.from,
                 closeTo: line.from + line.text.length,
                 linesToClose,
             };
         }
+        bodyTo = line.from + line.text.replace(/\r$/u, '').length;
     }
     return undefined;
 }
@@ -4114,7 +4190,7 @@ const frontmatterParser = {
         // Pandoc's YAML metadata block is a block parser, not a document-prologue
         // parser. It may occur after ordinary blocks as long as `---` starts the
         // current block.
-        if (line.text !== '---') {
+        if (!isFenceLine(line.text, '---')) {
             return false;
         }
         const openingStart = ctx.lineStart + line.pos;

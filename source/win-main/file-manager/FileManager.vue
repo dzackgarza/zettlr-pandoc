@@ -102,18 +102,18 @@
  * END HEADER
  */
 
+import { getConfiguredShortcut } from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { explodeShortcut } from "@common/util/shortcuts";
 import ShortcutDisplay from "@common/vue/ShortcutDisplay.vue";
-import { getCustomShortcut } from "@providers/menu/shortcuts";
 import { useConfigStore, useWindowStateStore } from "source/pinia";
 import { useWorkspaceStore } from "source/pinia/workspace-store";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import FileList from "./FileList.vue";
 import FileTree from "./FileTree.vue";
-import { filterDescriptorChildren } from "./util/filter-children";
 import { buildFilePickerCache, type FilePickerCache } from "./util/match-query";
+import { requestNewDirectory } from "./util/new-directory-request";
 
 const ipcRenderer = window.ipc;
 
@@ -140,12 +140,11 @@ const configStore = useConfigStore();
 const windowStateStore = useWindowStateStore();
 
 const selectedDirectory = computed(() => configStore.config.openDirectory);
-// The picker cache is exactly the file-manager-visible file set. Invoking
-// Ctrl+Shift+P only activates this already-computed candidate set. The cache
-// follows each publication of the descriptors and each configuration value
-// that the visibility filter reads.
+// The picker cache is every listed file. Invoking Ctrl+Shift+P only activates
+// this already-computed candidate set. The cache follows each publication of
+// the descriptors.
 const filePickerCache = computed<FilePickerCache>(() =>
-  buildFilePickerCache(workspaceStore.descriptorMap.values(), filterDescriptorChildren()),
+  buildFilePickerCache(workspaceStore.descriptorMap.values()),
 );
 
 /** Remembers the directory context when the Explorer itself takes focus. */
@@ -161,10 +160,10 @@ function rememberFileManagerFocus(): void {
 }
 
 const filterPlaceholder = trans("Search files");
-// The filter's shortcut hint reads the same binding the menu's Filter files
-// item carries: the user's custom shortcut, or the default when none is set.
+// The search box's shortcut hint is the key of the menu's Search files item:
+// the key of the registered command.
 const filterShortcut = computed(() => {
-  const shortcut = getCustomShortcut("filter-files", configStore.config.shortcuts.ui);
+  const shortcut = getConfiguredShortcut("filter-files", configStore.config.shortcuts);
   return shortcut === undefined ? undefined : explodeShortcut(shortcut);
 });
 const fileManagerMode = computed(() => configStore.config.fileManagerMode);
@@ -218,7 +217,9 @@ let stopShortcutListener: (() => void) | undefined;
 
 onMounted(() => {
   stopShortcutListener = ipcRenderer.on("shortcut", (event, message) => {
-    if (message === "filter-files") {
+    if (message === "new-dir" && selectedDirectory.value !== null) {
+      requestNewDirectory(selectedDirectory.value);
+    } else if (message === "filter-files") {
       filePickerActive.value = true;
       // Focus the filter on the next tick. Why? Because it might be that
       // the file manager is hidden, or the global search is visible. In both

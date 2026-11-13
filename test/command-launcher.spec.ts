@@ -23,6 +23,7 @@ import path from "path";
 import { serializedMenuSchema } from "source/types/common/serialized-menu";
 import {
   allMenuLeafRows,
+  fileBreadcrumb,
   menuGroupRows,
   rankRows,
   resolveGroup,
@@ -105,7 +106,7 @@ describe("command launcher: rows", function () {
     const open = rows.find((row) => row.kind === "menu-leaf" && row.id === "menu.open");
     assert.ok(open !== undefined && open.kind === "menu-leaf");
     assert.equal(open.label, "Open file…");
-    assert.equal(open.accelerator, "Ctrl+O");
+    assert.equal(open.accelerator, "CmdOrCtrl+O");
     assert.equal(open.enabled, true);
     assert.deepEqual(open.breadcrumb, ["File"]);
     assert.ok(
@@ -144,7 +145,7 @@ describe("command launcher: rows", function () {
     assert.deepEqual(newTex.breadcrumb, ["File", "New file…"]);
     const fileLauncher = rows.find((row) => row.id === "menu.file_launcher");
     assert.ok(fileLauncher !== undefined);
-    assert.equal(fileLauncher.accelerator, "Ctrl+Shift+P");
+    assert.equal(fileLauncher.accelerator, "CmdOrCtrl+Shift+P");
     assert.deepEqual(fileLauncher.breadcrumb, ["View"]);
     for (const id of [
       "menu.open_terminal_here",
@@ -275,5 +276,18 @@ describe("command launcher: a menu the launcher cannot present in full", functio
       "a leaf with no id can never be clicked, so the launcher must say so instead of listing one command fewer",
     );
     assert.throws(() => allMenuLeafRows(withUnaddressableLeaf), Error);
+  });
+});
+
+describe("the breadcrumb of a document row", function () {
+  it("is the directory relative to the innermost workspace root", function () {
+    const roots = ["/u/notes", "/u/notes/zeta"];
+    assert.deepEqual(fileBreadcrumb("/u/notes/zeta/foundations/a.md", roots), ["foundations"]);
+    assert.deepEqual(fileBreadcrumb("/u/notes/alpha/b.md", roots), ["alpha"]);
+    assert.deepEqual(fileBreadcrumb("/u/notes/zeta/c.md", [...roots].reverse()), []);
+  });
+
+  it("is the absolute directory of a file beside a root with the same name prefix", function () {
+    assert.deepEqual(fileBreadcrumb("/n/proj-notes/x.md", ["/n/proj"]), ["n", "proj-notes"]);
   });
 });

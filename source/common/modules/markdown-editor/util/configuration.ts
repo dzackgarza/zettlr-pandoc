@@ -17,10 +17,14 @@
  */
 
 import { StateEffect, StateField } from "@codemirror/state";
+import { mathJaxToElem } from "@common/util/mathtex-to-html";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import { mathHost } from "@dzack/pandoc-editor/renderers/render-math";
+import { previewConfig } from "@dzack/pandoc-editor/util/configuration";
 import { type MarkdownTheme } from "@providers/config/get-config-template";
 import _ from "underscore";
+import { equationMenu } from "../context-menu/equation-menu";
 import { type CustomEditorShortcut } from "../keymaps/shortcuts";
 
 export interface AutocorrectOptions {
@@ -185,6 +189,10 @@ export type EditorWindowConfiguration = Omit<
 
 export const configUpdateEffect = StateEffect.define<EditorConfiguration>();
 export const configField = StateField.define<EditorConfiguration>({
+  provide: (field) => [
+    previewConfig.from(field),
+    mathHost.of({ render: mathJaxToElem, contextMenu: equationMenu }),
+  ],
   create(_state) {
     return getDefaultConfig();
   },

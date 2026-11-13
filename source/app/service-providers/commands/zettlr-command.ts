@@ -24,8 +24,19 @@ import { type AppServiceContainer } from "../../app-service-container";
  */
 export type CommandWireValue = unknown;
 
-export default abstract class ZettlrCommand {
-  protected readonly _app: AppServiceContainer;
+/** A command as the dispatcher holds it, whatever services the command uses. */
+export type DispatchedCommand = Pick<
+  ZettlrCommand,
+  "run" | "respondsTo" | "getEvents" | "shutdown"
+>;
+
+/**
+ * A command of the application. `Services` is the part of the service
+ * container that the command uses; a command that states none gets the whole
+ * container.
+ */
+export default abstract class ZettlrCommand<Services = AppServiceContainer> {
+  protected readonly _app: Services;
   protected readonly _bind: string[];
 
   /**
@@ -38,7 +49,7 @@ export default abstract class ZettlrCommand {
    */
   abstract run(evt: string, arg: CommandWireValue): Promise<CommandWireValue>;
 
-  constructor(app: AppServiceContainer, bindEvent: string | string[]) {
+  constructor(app: Services, bindEvent: string | string[]) {
     // The app is the api entry point for all things we can do.
     this._app = app;
 
@@ -48,6 +59,9 @@ export default abstract class ZettlrCommand {
     }
     this._bind = bindEvent;
   }
+
+  /** Called when the app stops. A command that owns a process stops it here. */
+  async shutdown(): Promise<void> {}
 
   /**
    * Returns the event name this thing binds to

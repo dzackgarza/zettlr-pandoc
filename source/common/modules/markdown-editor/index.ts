@@ -19,10 +19,10 @@
 
 // Import our additional styles we need to put here since we don't have a Vue
 // component for the editor itself.
-import "./editor.css";
+import "@dzack/pandoc-editor/editor.css";
 
 import { foldEffect, foldState } from "@codemirror/language";
-import { forceLinting } from "@codemirror/lint";
+import { forceLinting, setDiagnosticsEffect } from "@codemirror/lint";
 import { closeSearchPanel, openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import {
   Compartment,
@@ -48,6 +48,7 @@ import {
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import type { EditorCommandName } from "@dts/common/shortcut-names";
 import type { UserSnippet } from "@dts/common/snippets";
+import { darkModeEffect, useDarkModeEditor } from "@dzack/pandoc-editor/theme/dark-mode";
 import { type TagRecord } from "@providers/tags";
 // Keymaps/Input modes
 import { emacs } from "@replit/codemirror-emacs";
@@ -66,34 +67,16 @@ import {
   tagsUpdate,
   texMacroSourcesUpdate,
 } from "./autocomplete";
-import { addNewFootnote } from "./commands/footnotes";
+// Custom commands
+import { runEditorCommand } from "./commands/editor-commands";
 import {
   type FormatResult,
   formatDocument,
   type MarkdownFormatter,
 } from "./commands/format-document";
-// Custom commands
-import {
-  applyBlockquote,
-  applyBold,
-  applyBulletList,
-  applyCode,
-  applyComment,
-  applyH1,
-  applyH2,
-  applyH3,
-  applyH4,
-  applyH5,
-  applyH6,
-  applyItalic,
-  applyOrderedList,
-  applyPandocDivOrSpan,
-  applyStrikethrough,
-  applyTaskList,
-  insertImage,
-  insertLink,
-} from "./commands/markdown";
+import { applyPandocDivOrSpan } from "./commands/markdown";
 import { moveSection } from "./commands/move-section";
+import { externalLintAgain } from "./diagnostics/external-linter-adapter";
 import { languageToolState, updateLTState } from "./diagnostics/language-tool-state";
 // Main configuration
 import {
@@ -110,12 +93,8 @@ import {
   collaborationControls,
   type MountCollaborationControl,
 } from "./plugins/collaboration-controls";
-import {
-  createReferenceLabel,
-  openCreateReferenceLabelEffect,
-} from "./plugins/create-reference-label";
+import { openCreateReferenceLabelEffect } from "./plugins/create-reference-label";
 import { editorMetadataFacet } from "./plugins/editor-metadata";
-import { openFileSearchEffect } from "./plugins/file-search-effect";
 import { formatDocumentEffect } from "./plugins/format-document-effect";
 import { highlightRangesEffect } from "./plugins/highlight-ranges";
 import { openPandocQuickHelpEffect } from "./plugins/pandoc-quick-help-effect";
@@ -153,10 +132,8 @@ import {
   workspaceReferencesUpdate,
 } from "./plugins/workspace-references-field";
 import { EMPTY_QUICKTEX, quickTexUpdate } from "./quicktex";
-import { toggleReadability } from "./renderers/readability";
 import { syncCitationData } from "./renderers/render-citations";
-import { countDiagnostics, type DiagnosticCounts, toggleLintPanel } from "./statusbar/diagnostics";
-import { darkModeEffect, useDarkModeEditor } from "./theme/dark-mode";
+import { countDiagnostics, type DiagnosticCounts } from "./statusbar/diagnostics";
 import {
   cloneEditorConfiguration,
   configField,
@@ -167,7 +144,6 @@ import {
 } from "./util/configuration";
 // Utilities
 import { copyAsHTML, pasteAsPlain } from "./util/copy-paste-cut";
-import { whenAuthoritySynced } from "./util/when-authority-synced";
 import { countRange } from "./util/word-count";
 
 export interface DocumentWrapper {
@@ -269,34 +245,6 @@ export interface EditorViewPersistentState {
   foldedRanges: DecorationSet;
 }
 
-/**
- * The editor commands by their typed name: one table, consumed by
- * runCommand, keyed by the same names the Insert and Format menus send.
- */
-const EDITOR_COMMANDS: Record<EditorCommandName, (view: EditorView) => boolean> = {
-  markdownComment: applyComment,
-  markdownLink: insertLink,
-  markdownImage: insertImage,
-  insertFootnote: addNewFootnote,
-  markdownMakeTaskList: applyTaskList,
-  createReferenceLabel,
-  markdownBold: applyBold,
-  markdownItalic: applyItalic,
-  markdownCode: applyCode,
-  markdownStrikethrough: applyStrikethrough,
-  markdownHeading1: applyH1,
-  markdownHeading2: applyH2,
-  markdownHeading3: applyH3,
-  markdownHeading4: applyH4,
-  markdownHeading5: applyH5,
-  markdownHeading6: applyH6,
-  markdownBlockquote: applyBlockquote,
-  markdownBulletList: applyBulletList,
-  markdownOrderedList: applyOrderedList,
-  toggleReadabilityMode: toggleReadability,
-  toggleLintPanel,
-};
-
 export default class MarkdownEditor extends EventEmitter {
   /**
    * The underlying CodeMirror view
@@ -329,6 +277,12 @@ export default class MarkdownEditor extends EventEmitter {
    * Consumers must handle rejection and surface it to the user.
    */
   public readonly ready: Promise<void>;
+
+  /**
+   * Whether the editor holds its document. Before the first load ends, the
+   * view holds an empty state without a language and without a syntax tree.
+   */
+  private _documentLoaded = false;
 
   /**
    * The database cache for the various autocompletes.
@@ -486,17 +440,18 @@ export default class MarkdownEditor extends EventEmitter {
               this.emit("docUpdate");
             }
 
-            // Workspace reference search request — plain Mod-P (null) or a
-            // count badge's keyed reverse lookup ({ key }): surface the
-            // request payload to the shell (MainEditor.vue relays it up to
-            // App.vue's overlay; dropping the payload here would break the
-            // Phase 8 badge-keyed reverse lookup).
-            if (effect.is(openReferenceSearchEffect)) {
-              this.emit("reference-search", effect.value);
+            // A lint set its diagnostics, so the counts of the document
+            // info changed. Such a transaction changes no selection and no
+            // word count.
+            if (effect.is(setDiagnosticsEffect)) {
+              this.emit("docUpdate");
             }
 
-            if (effect.is(openFileSearchEffect)) {
-              this.emit("file-search");
+            // A count badge asked for the citing locations of its key
+            // ({ key }): surface the request payload to the shell
+            // (MainEditor.vue relays it up to App.vue's overlay).
+            if (effect.is(openReferenceSearchEffect)) {
+              this.emit("reference-search", effect.value);
             }
 
             // A gutter chip was clicked: the pane opens or closes that
@@ -714,6 +669,7 @@ export default class MarkdownEditor extends EventEmitter {
 
     this._instance.focus();
 
+    this._documentLoaded = true;
     this.emit("loaded");
   }
 
@@ -975,7 +931,7 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {EditorCommandName}  cmd  The command to run
    */
   runCommand(cmd: EditorCommandName): void {
-    EDITOR_COMMANDS[cmd](this._instance);
+    runEditorCommand(this._instance, cmd);
   }
 
   /**
@@ -1444,12 +1400,26 @@ export default class MarkdownEditor extends EventEmitter {
   }
 
   /**
+   * Runs each linter again on the text that the editor has. The author asks
+   * for it after a lint that did not run.
+   */
+  lintAgain(): void {
+    this._instance.dispatch({ effects: externalLintAgain.of(null) });
+    forceLinting(this._instance);
+  }
+
+  /**
    * Returns the current contents of the editor
    *
    * @return  {String}  The editor contents
    */
   get value(): string {
     return [...this._instance.state.doc.iterLines()].join("\n");
+  }
+
+  /** Whether the editor holds its document (the event `loaded` was sent). */
+  get documentLoaded(): boolean {
+    return this._documentLoaded;
   }
 
   /**
@@ -1465,22 +1435,6 @@ export default class MarkdownEditor extends EventEmitter {
    */
   async runFormatter(formatter: MarkdownFormatter): Promise<FormatResult> {
     return formatDocument(this._instance, formatter);
-  }
-
-  /**
-   * Resolves once every pending change has been pushed to the document
-   * authority (there are no sendable collab updates left), and THROWS when
-   * `timeout` ms pass with updates still unsent. Callers use this to order a
-   * format-then-save: the on-disk write must see the formatted bytes, so the
-   * format's collab update has to reach main first, and a caller that cannot be
-   * given that ordering must hear about it instead of saving anyway.
-   *
-   * @param   {number}         timeout  Backstop in ms (default 2000).
-   *
-   * @return  {Promise<void>}
-   */
-  async whenSynced(timeout = 2000): Promise<void> {
-    await whenAuthoritySynced(() => this._instance.state, timeout);
   }
 
   /**

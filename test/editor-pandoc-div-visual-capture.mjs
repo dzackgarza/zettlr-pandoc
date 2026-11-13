@@ -9,6 +9,9 @@ const scenes = [
   { name: "active-citation-edit", scene: "citation-edit", dark: false, width: 1200, height: 700 },
   { name: "nested-light", scene: "nested", dark: false, width: 1200, height: 800 },
   { name: "nested-dark", scene: "nested", dark: true, width: 1200, height: 800 },
+  { name: "titled-light", scene: "titled", dark: false, width: 1200, height: 1700 },
+  { name: "titled-dark-narrow", scene: "titled", dark: true, width: 480, height: 2400 },
+  { name: "titled-light-medium", scene: "titled", dark: false, width: 700, height: 2000 },
 ];
 
 async function capture(view, spec) {
@@ -31,15 +34,35 @@ async function capture(view, spec) {
   const diagnostics = await view.page.evaluate(() => {
     const panel = document.querySelector("pandoc-div-wrapper");
     const content = document.querySelector(".cm-content");
+    const contentRight = content?.getBoundingClientRect().right;
+    // A title is cut off when a row of its content is outside the box of
+    // its header or outside the editor content.
+    const cutTitles = [...document.querySelectorAll(".pandoc-div-header-title")]
+      .filter((title) => {
+        const box = title.closest(".pandoc-div-header").getBoundingClientRect();
+        const content = document.createRange();
+        content.selectNodeContents(title);
+        return [...content.getClientRects()].some(
+          (row) =>
+            row.right > box.right + 1 ||
+            row.bottom > box.bottom + 1 ||
+            row.right > contentRight + 1,
+        );
+      })
+      .map((title) => title.textContent);
     return {
       contentClientWidth: content?.clientWidth,
       contentScrollWidth: content?.scrollWidth,
       panelWhiteSpace: panel === null ? null : getComputedStyle(panel).whiteSpace,
+      cutTitles,
     };
   });
   console.log(spec.name, diagnostics);
   if (diagnostics.contentScrollWidth > diagnostics.contentClientWidth + 1) {
     throw new Error(`${spec.name} has horizontal editor overflow`);
+  }
+  if (diagnostics.cutTitles.length > 0) {
+    throw new Error(`${spec.name} cuts off a div title: ${diagnostics.cutTitles.join("; ")}`);
   }
   await view.capture(spec.name);
 }

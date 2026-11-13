@@ -3,8 +3,8 @@
 import { strict as assert } from "node:assert";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
-import { stripMathDelimiters } from "source/common/util/math-delimiters";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { stripMathDelimiters } from "@dzack/pandoc-editor/util/math-delimiters";
 import { execPandocReference } from "./pandoc-reference";
 
 const READER = "markdown+tex_math_dollars+tex_math_single_backslash";

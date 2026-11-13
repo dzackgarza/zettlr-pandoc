@@ -13,24 +13,17 @@
  * END HEADER
  */
 
+import { listedDocumentName } from "@common/util/document-title";
 import extractYamlFrontmatter from "@common/util/extract-yaml-frontmatter";
 import { type WikilinkResolution } from "@common/util/wikilink-resolution";
 import { splitWikilinkTarget } from "@common/util/wikilink-target";
-import type { MDFileDescriptor } from "@dts/common/fsal";
-import type { AppServiceContainer } from "source/app/app-service-container";
+import type { FileNameDisplay } from "@dts/common/fsal";
+import type FSAL from "source/app/service-providers/fsal";
+import type LinkProvider from "source/app/service-providers/links";
 import ZettlrCommand from "./zettlr-command";
 
 const MAX_FILE_PREVIEW_LENGTH = 300;
 const MAX_FILE_PREVIEW_LINES = 10;
-
-function previewTitleGenerator(userConfig: string, descriptor: MDFileDescriptor): string {
-  if (userConfig.includes("title") && descriptor.yamlTitle !== undefined) {
-    return descriptor.yamlTitle;
-  } else if (userConfig.includes("heading") && descriptor.firstHeading !== null) {
-    return descriptor.firstHeading;
-  }
-  return descriptor.name;
-}
 
 export interface FindFileAndReturnMetadataRequest {
   linkContents: string;
@@ -49,8 +42,17 @@ export type FindFileAndReturnMetadataResult =
     }
   | Exclude<WikilinkResolution, { status: "resolved" }>;
 
-export default class FilePathFindMetaData extends ZettlrCommand {
-  constructor(app: AppServiceContainer) {
+/** The services that the command uses. */
+export interface FileMetadataServices {
+  links: Pick<LinkProvider, "resolve">;
+  fsal: Pick<FSAL, "getDescriptorFor" | "loadAnySupportedFile">;
+  config: {
+    get: () => { fileNameDisplay: FileNameDisplay; display: { markdownFileExtensions: boolean } };
+  };
+}
+
+export default class FilePathFindMetaData extends ZettlrCommand<FileMetadataServices> {
+  constructor(app: FileMetadataServices) {
     super(app, ["file-find-and-return-meta-data"]);
   }
 
@@ -89,9 +91,15 @@ export default class FilePathFindMetaData extends ZettlrCommand {
       i++;
     }
 
+    const config = this._app.config.get();
     return {
       status: "resolved",
-      title: previewTitleGenerator(this._app.config.get().fileNameDisplay, descriptor),
+      // The name that the file manager lists for the target
+      title: listedDocumentName(
+        descriptor,
+        config.fileNameDisplay,
+        config.display.markdownFileExtensions,
+      ),
       filePath: descriptor.path,
       previewMarkdown: preview,
       wordCount: descriptor.wordCount,

@@ -22,6 +22,7 @@
  * END HEADER
  */
 
+import { createShortcutConfig } from "@common/commands/command-registry";
 import { strict as assert } from "assert";
 import { readFileSync } from "fs";
 import path from "path";
@@ -30,6 +31,7 @@ import {
   PANDOC_CITATION_EXAMPLES,
   PANDOC_CROSS_REFERENCE_EXAMPLES,
   PANDOC_REFERENCE_AUTHORING_TOPICS,
+  referenceTopicSyntax,
   THEOREM_DIV_EXAMPLES,
 } from "source/common/util/pandoc-quick-reference";
 
@@ -71,15 +73,29 @@ describe("Searchable Pandoc quick help (review A2)", function () {
     );
   });
 
-  it("matches case-insensitively across titles and details", function () {
+  it("matches case-insensitively across titles, details and the shown key", function () {
+    const shortcuts = createShortcutConfig();
     const matches = filterHelpEntries(PANDOC_REFERENCE_AUTHORING_TOPICS, "MOD-P", (topic) => [
       topic.title,
       topic.detail,
-      topic.syntax,
+      referenceTopicSyntax(topic, shortcuts),
     ]);
     assert.deepStrictEqual(
       matches.map((topic) => topic.kind),
       ["definition-search"],
+    );
+  });
+
+  it("shows the key that the author gave the command launcher (#202)", function () {
+    const shortcuts = createShortcutConfig();
+    shortcuts.ui["open-command-launcher"] = "Mod-Alt-k";
+    const shown = PANDOC_REFERENCE_AUTHORING_TOPICS.map((topic) => [
+      topic.kind,
+      referenceTopicSyntax(topic, shortcuts),
+    ]);
+    assert.deepStrictEqual(
+      shown.filter(([kind]) => kind === "definition-search"),
+      [["definition-search", "Mod-Alt-k"]],
     );
   });
 

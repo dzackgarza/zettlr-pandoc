@@ -37,3 +37,67 @@ export interface DocumentCollaborationSession {
   /** Absent when the document carries no active review. */
   review: ReviewDiffSession | undefined;
 }
+
+/**
+ * A file of collaboration state that this version of the application cannot
+ * read: a later version wrote it, or it is damaged. The file stays where it
+ * is until the author moves it aside.
+ */
+export interface UnreadableCollaborationFile {
+  /** The absolute path of the file in the application data. */
+  file: string;
+  /** Why the file could not be read. */
+  cause: string;
+  /** The document that the file belongs to, when the listing names it. */
+  documentPath: string | undefined;
+}
+
+/**
+ * A file of collaboration state whose document has no file: the author
+ * deleted the document, or a move of the document could not carry the
+ * state. The file stays where it is until the author moves it aside.
+ */
+export interface OwnerlessCollaborationFile {
+  /** The absolute path of the file in the application data. */
+  file: string;
+  /** The path that the state belongs to, where no file is. */
+  documentPath: string;
+}
+
+/** The collaboration state of the documents of a workspace. */
+export interface WorkspaceCollaborationListing {
+  sessions: DocumentCollaborationSession[];
+  /** The files that could not be read. Their state is in no session. */
+  unreadable: UnreadableCollaborationFile[];
+  /**
+   * The files whose document has no file, for the documents of the open
+   * workspaces. Their state is in no session.
+   */
+  ownerless: OwnerlessCollaborationFile[];
+}
+
+/**
+ * Broadcast on COLLABORATION_FILE_UNREADABLE_CHANNEL when a document opened
+ * without its annotations and its review, because their file could not be
+ * read. The window offers to move the file aside.
+ */
+export type CollaborationFileUnreadableBroadcast = {
+  filePath: string;
+  file: string;
+  cause: string;
+};
+
+export const COLLABORATION_FILE_UNREADABLE_CHANNEL = "collaboration-sidecar-unreadable";
+
+/**
+ * Broadcast on COLLABORATION_FILE_UNWRITABLE_CHANNEL when a document opened
+ * without its annotations and its review, because the attach of their file
+ * to the text of the document could not write the file. The file keeps its
+ * bytes, and the next load of the document attaches it again.
+ */
+export type CollaborationFileUnwritableBroadcast = {
+  filePath: string;
+  cause: string;
+};
+
+export const COLLABORATION_FILE_UNWRITABLE_CHANNEL = "collaboration-sidecar-unwritable";

@@ -15,14 +15,12 @@
  * END HEADER
  */
 
+import isErrnoException from "@common/util/is-errno-exception";
 import isFile from "@common/util/is-file";
+import { type MathJaxMacro, parseMathJaxMacros } from "@dzack/tikz-render/mathjax-config";
+import { texCommandDeclarationEntries } from "@dzack/tikz-render/tex-command-declarations";
 import { type Dirent, promises as fs } from "fs";
 import path from "path";
-import { type MathJaxMacro, parseMathJaxMacros } from "tikz-workbench/src/mathjax-config";
-import {
-  texCommandDeclarationEntries,
-  texCommandDeclarations,
-} from "tikz-workbench/src/tex-command-declarations";
 
 export const MATHJAX_MACROS_FILENAME = "mathjax-macros.json";
 
@@ -47,10 +45,23 @@ export interface CanonicalMacroEntry {
   mathjax?: CanonicalMacroMathJaxDefinition;
 }
 
+/** A path of the macro tree whose content the filesystem refuses, with the cause. */
+export interface MacroSourceNotRead {
+  path: string;
+  cause: string;
+}
+
 export interface CanonicalMacroInventory {
   root: string;
   macros: CanonicalMacroEntry[];
+  notRead: MacroSourceNotRead[];
 }
+
+/**
+ * The macro tree of ~/.pandoc cannot be read, or its generated MathJax
+ * projection cannot be read or is not a macro projection.
+ */
+export class MacroSourcesUnavailableError extends Error {}
 
 /** Resolve the generated MathJax projection owned by ~/.pandoc. */
 export function canonicalMathJaxMacrosPath(homeDirectory: string): string {
@@ -66,58 +77,130 @@ export async function loadCanonicalMathJaxMacros(
   homeDirectory: string,
 ): Promise<Record<string, MathJaxMacro>> {
   const filePath = canonicalMathJaxMacrosPath(homeDirectory);
-  if (!isFile(filePath)) {
-    throw new Error(
-      `Can't find the generated MathJax macro file ${filePath}. ` +
+  let contents: string;
+  try {
+    contents = await fs.readFile(filePath, "utf8");
+  } catch (error) {
+    if (!isErrnoException(error)) throw error;
+    throw new MacroSourcesUnavailableError(
+      `Can't read the generated MathJax macro file ${filePath}: ${error.message}. ` +
         "Run ~/.pandoc/bin/generate-mathjax-config.py to rebuild it.",
+      { cause: error },
     );
   }
-  return await loadMathJaxMacros(filePath);
+  try {
+    return parseMathJaxMacros(JSON.parse(contents));
+  } catch (error) {
+    // JSON.parse throws a SyntaxError and parseMathJaxMacros a TypeError for
+    // text that is no macro projection.
+    if (!(error instanceof SyntaxError) && !(error instanceof TypeError)) throw error;
+    throw new MacroSourcesUnavailableError(
+      `The generated MathJax macro file ${filePath} is not a macro projection: ${error.message}. ` +
+        "Run ~/.pandoc/bin/generate-mathjax-config.py to rebuild it.",
+      { cause: error },
+    );
+  }
+}
+
+/** The control words that the readable sources of the macro tree declare. */
+export interface CanonicalTexMacroCommands {
+  commands: string[];
+  notRead: MacroSourceNotRead[];
 }
 
 /**
  * Enumerate every user-declared control word in the canonical authoring macro
  * tree. Unlike the MathJax projection, this includes compiler-only macros whose
- * TeX definitions cannot be represented faithfully by MathJax.
+ * TeX definitions cannot be represented faithfully by MathJax. A folder or a
+ * source file whose content the filesystem refuses is in `notRead`; a root
+ * that refuses its content is a MacroSourcesUnavailableError.
  */
-export async function loadCanonicalTexMacroCommands(homeDirectory: string): Promise<string[]> {
-  const root = path.join(homeDirectory, ".pandoc", "styles", "macros");
-  let entries: Dirent[];
-  try {
-    entries = await fs.readdir(root, { withFileTypes: true });
-  } catch (error) {
-    throw new Error(`Can't read the TeX macro directory ${root}.`, {
-      cause: error,
-    });
-  }
+export async function loadCanonicalTexMacroCommands(
+  homeDirectory: string,
+): Promise<CanonicalTexMacroCommands> {
+  const tree = await readMacroTree(macroTreeRoot(homeDirectory));
+  const commands = new Set(tree.declarations.map((entry) => entry.name));
+  return {
+    commands: [...commands].sort((a, b) => a.localeCompare(b)),
+    notRead: tree.notRead,
+  };
+}
 
-  const commands = new Set<string>();
-  const queue: Array<{ directory: string; entries: Dirent[] }> = [{ directory: root, entries }];
+function macroTreeRoot(homeDirectory: string): string {
+  return path.join(homeDirectory, ".pandoc", "styles", "macros");
+}
+
+interface MacroTree {
+  declarations: Array<{ name: string; declaration: CanonicalMacroDeclaration }>;
+  notRead: MacroSourceNotRead[];
+}
+
+/**
+ * Reads each TeX source of the macro tree at `root`, in the order of the
+ * names. A folder or a source file whose content the filesystem refuses is
+ * in `notRead`, and its declarations are not read; a root that refuses its
+ * content is a MacroSourcesUnavailableError.
+ */
+async function readMacroTree(root: string): Promise<MacroTree> {
+  const declarations: MacroTree["declarations"] = [];
+  const notRead: MacroSourceNotRead[] = [];
+  const queue: string[] = [root];
+  const relativeToRoot = (absolute: string): string =>
+    path.relative(root, absolute).split(path.sep).join("/");
+
   while (queue.length > 0) {
-    const current = queue.shift();
-    if (current === undefined) {
+    const directory = queue.shift();
+    if (directory === undefined) {
       break;
     }
-    for (const entry of current.entries) {
-      const absolute = path.join(current.directory, entry.name);
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if (!isErrnoException(error)) throw error;
+      if (directory === root) {
+        throw new MacroSourcesUnavailableError(
+          `Can't read the TeX macro directory ${root}: ${error.message}`,
+          { cause: error },
+        );
+      }
+      notRead.push({ path: relativeToRoot(directory), cause: error.message });
+      continue;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) {
-        queue.push({
-          directory: absolute,
-          entries: await fs.readdir(absolute, { withFileTypes: true }),
-        });
+        queue.push(absolute);
         continue;
       }
       if (!entry.isFile() || !TEX_SOURCE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
         continue;
       }
-      const source = await fs.readFile(absolute, "utf8");
-      for (const command of texCommandDeclarations(source)) {
-        commands.add(command);
+      const sourcePath = relativeToRoot(absolute);
+      let source: string;
+      try {
+        source = await fs.readFile(absolute, "utf8");
+      } catch (error) {
+        if (!isErrnoException(error)) throw error;
+        notRead.push({ path: sourcePath, cause: error.message });
+        continue;
+      }
+      for (const command of texCommandDeclarationEntries(source)) {
+        declarations.push({
+          name: command.name,
+          declaration: {
+            sourcePath,
+            line: command.line,
+            declaration: command.declaration,
+            context: command.context,
+          },
+        });
       }
     }
   }
 
-  return [...commands].sort((a, b) => a.localeCompare(b));
+  return { declarations, notRead };
 }
 
 function mathJaxDefinition(definition: MathJaxMacro): CanonicalMacroMathJaxDefinition {
@@ -133,58 +216,17 @@ function mathJaxDefinition(definition: MathJaxMacro): CanonicalMacroMathJaxDefin
 /**
  * Inspect the complete canonical user macro vocabulary. Compiler-only TeX
  * declarations and MathJax-projected declarations are merged by control word;
- * duplicate authored declarations are deliberately preserved.
+ * duplicate authored declarations are deliberately preserved. A folder or a
+ * source file whose content the filesystem refuses is in `notRead`, and its
+ * declarations are not in the inventory; a root that refuses its content is
+ * a MacroSourcesUnavailableError.
  */
 export async function loadCanonicalMacroInventory(
   homeDirectory: string,
 ): Promise<CanonicalMacroInventory> {
-  const root = path.join(homeDirectory, ".pandoc", "styles", "macros");
-  const found: Array<{ name: string; declaration: CanonicalMacroDeclaration }> = [];
-  const queue: string[] = [root];
-
-  while (queue.length > 0) {
-    const directory = queue.shift();
-    if (directory === undefined) {
-      break;
-    }
-    let entries: Dirent[];
-    try {
-      entries = await fs.readdir(directory, { withFileTypes: true });
-    } catch (error) {
-      if (directory === root) {
-        throw new Error(`Can't read the TeX macro directory ${root}.`, {
-          cause: error,
-        });
-      }
-      throw error;
-    }
-    entries.sort((a, b) => a.name.localeCompare(b.name));
-    for (const entry of entries) {
-      const absolute = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        queue.push(absolute);
-        continue;
-      }
-      if (!entry.isFile() || !TEX_SOURCE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
-        continue;
-      }
-      const source = await fs.readFile(absolute, "utf8");
-      const sourcePath = path.relative(root, absolute).split(path.sep).join("/");
-      for (const command of texCommandDeclarationEntries(source)) {
-        found.push({
-          name: command.name,
-          declaration: {
-            sourcePath,
-            line: command.line,
-            declaration: command.declaration,
-            context: command.context,
-          },
-        });
-      }
-    }
-  }
-
-  const declarations = Map.groupBy(found, (entry) => entry.name);
+  const root = macroTreeRoot(homeDirectory);
+  const tree = await readMacroTree(root);
+  const declarations = Map.groupBy(tree.declarations, (entry) => entry.name);
   const projected = await loadCanonicalMathJaxMacros(homeDirectory);
   const names = new Set([
     ...declarations.keys(),
@@ -204,7 +246,7 @@ export async function loadCanonicalMacroInventory(
       };
     });
 
-  return { root, macros };
+  return { root, macros, notRead: tree.notRead };
 }
 
 /**

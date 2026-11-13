@@ -2,9 +2,15 @@
 
 import type { DocumentReferenceSnapshot } from "./references";
 
+/**
+ * One item of a book's chapter list. A part has a title, or it names a file
+ * that holds its title and its introduction (`part-file`); that file is a
+ * document of the book, before the chapters of the part.
+ */
 export type ProjectNavigationItem =
   | { kind: "chapter"; path: string }
-  | { kind: "part"; title: string; chapters: string[] };
+  | { kind: "part"; title: string; chapters: string[] }
+  | { kind: "part-file"; path: string; chapters: string[] };
 
 export type ProjectManifest =
   | { kind: "zettlr" }
@@ -135,6 +141,26 @@ export interface DirectorySettings {
 }
 
 /**
+ * A part of the metadata of a directory that the application could not use.
+ * The directory is listed without that part: with the default settings for
+ * `settings`, without a Project for `manifest`, without children for
+ * `directory`. A workspace whose rules file cannot be read (`rules`) is
+ * listed as missing, without children.
+ */
+export interface DirectoryMetadataProblem {
+  /**
+   * What could not be used: the settings file `.ztr-directory`, the Quarto
+   * manifest, the content of the directory itself, or the rules file
+   * `.zettlrignore` of a workspace.
+   */
+  source: "settings" | "manifest" | "directory" | "rules";
+  /** The file or the directory that the problem is in. */
+  path: string;
+  /** The cause. */
+  message: string;
+}
+
+/**
  * The FSAL directory descriptor
  */
 export interface DirDescriptor extends FSMetaInfo {
@@ -143,7 +169,14 @@ export interface DirDescriptor extends FSMetaInfo {
   settings: DirectorySettings;
   type: "directory";
   isGitRepository: boolean;
+  /** Each part of the metadata that the last load could not use. */
+  metadataProblems: DirectoryMetadataProblem[];
   dirNotFoundFlag?: boolean; // If the flag is set & true this directory has not been found
+}
+
+/** A directory that is a Project. */
+export interface ProjectDirDescriptor extends DirDescriptor {
+  settings: DirectorySettings & { project: ProjectSettings };
 }
 
 /**
@@ -155,6 +188,15 @@ export type YamlValue = string | number | boolean | null | YamlValue[] | YamlMap
 /** A YAML mapping with string keys, such as a parsed frontmatter block. */
 export interface YamlMapping {
   [key: string]: YamlValue;
+}
+
+/**
+ * Why the last read of the text of a file failed: the code and the message of
+ * the filesystem error.
+ */
+export interface FileReadError {
+  code: string;
+  message: string;
 }
 
 /**
@@ -173,9 +215,12 @@ export interface MDFileDescriptor extends FSMetaInfo {
   /** First authored Markdown heading, regardless of heading depth. */
   firstHeading: string | null;
   /** First prose sentence, used only when no authored heading exists. */
-  firstSentence?: string | null;
-  /** The parser that produced this descriptor; a cached descriptor from another parser is parsed again. */
-  parserVersion?: number;
+  firstSentence: string | null;
+  /**
+   * The identity of the parser that produced this descriptor: its version and
+   * the settings it read. A cached descriptor of another parser is parsed again.
+   */
+  parsedWith?: string;
   yamlTitle: string | undefined;
   /** The YAML `aliases`: further names a wikilink may use for this document. */
   aliases: string[];
@@ -187,6 +232,11 @@ export interface MDFileDescriptor extends FSMetaInfo {
    * that produces tags, links, and citekeys (issue #1).
    */
   references: DocumentReferenceSnapshot;
+  /**
+   * Present when the file is there and its text could not be read. The other
+   * fields then describe a file without text.
+   */
+  readError?: FileReadError;
 }
 
 /**
@@ -197,6 +247,8 @@ export interface CodeFileDescriptor extends FSMetaInfo {
   type: "code";
   bom: string; // An optional BOM
   linefeed: string;
+  /** Present when the file is there and its text could not be read. */
+  readError?: FileReadError;
 }
 
 /**

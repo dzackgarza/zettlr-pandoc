@@ -15,17 +15,15 @@
  *                  the defining document, Escape returns focus to where it
  *                  was.
  *
- *                  One hop is driven through the app's own path instead of
- *                  a key: Electron's application-menu accelerators do not
- *                  fire from keys synthesised over CDP (verified: the
- *                  renderer receives every keydown, CodeMirror's own Ctrl+P
- *                  binding fires, the menu's Ctrl+J / Ctrl+Alt+L never do).
- *                  So with focus outside the editor the launcher is opened
- *                  by clicking the View menu item the accelerator belongs
- *                  to, through the same click-menu-item IPC the custom
- *                  menubar uses; the serialised menu proves the item carries
- *                  the accelerator. With editor focus the real Ctrl+P key
- *                  opens it.
+ *                  Ctrl+P and Ctrl+Shift+P are keys of the application menu
+ *                  (#202): the editor has no binding of its own for them.
+ *                  Electron's application-menu accelerators do not fire
+ *                  from keys synthesised over CDP, so a test that presses
+ *                  one presses the key of the X server (xdotool) in the
+ *                  main window. The other tests open the launcher by
+ *                  clicking the View menu item, through the same
+ *                  click-menu-item IPC the custom menubar uses; the
+ *                  serialised menu proves the item carries the key.
  *
  * END HEADER
  */
@@ -43,12 +41,15 @@ import {
   createWorkspaceFixture,
   delay,
   findEditorPage,
+  findMenuNode,
   hideDevServerOverlay,
   preserveArtifacts,
   REPO_ROOT,
+  readApplicationMenu,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
+import { pressKey, windowOfPage } from "./support/native-dialog";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-command-launcher-e2e-latest");
 
@@ -59,45 +60,6 @@ const NAVIGATION_SIDEBAR = "#navigation-sidebar";
 const FILTER_INPUT = "#navigation-sidebar .chrome-filter-input";
 const LAUNCHER_MENU_ITEM = "menu.command_launcher";
 const execFileAsync = promisify(execFile);
-
-interface SerializedMenuNode {
-  id?: string;
-  label?: string;
-  type?: string;
-  accelerator?: string | null;
-  submenu?: SerializedMenuNode[];
-}
-
-/** The application menu as the menu provider serialises it for this window. */
-function readApplicationMenu(page: Page): Promise<SerializedMenuNode[]> {
-  return page.evaluate(
-    () =>
-      new Promise<SerializedMenuNode[]>((resolve) => {
-        window.ipc.on(
-          "menu-provider",
-          (_event: unknown, message: { command: string; payload: SerializedMenuNode[] }) => {
-            if (message.command === "application-menu") {
-              resolve(message.payload);
-            }
-          },
-        );
-        window.ipc.send("menu-provider", { command: "get-application-menu" });
-      }),
-  );
-}
-
-function findMenuNode(nodes: SerializedMenuNode[], id: string): SerializedMenuNode | undefined {
-  for (const node of nodes) {
-    if (node.id === id) {
-      return node;
-    }
-    const nested = node.submenu === undefined ? undefined : findMenuNode(node.submenu, id);
-    if (nested !== undefined) {
-      return nested;
-    }
-  }
-  return undefined;
-}
 
 /** Opens the launcher the way the accelerator would: by clicking its menu item. */
 async function openLauncherFromMenu(page: Page): Promise<void> {
@@ -307,10 +269,14 @@ describe("the Ctrl+P command launcher", function () {
     assert.ok(viewMenu?.submenu !== undefined, "the View menu must be serialised");
     const item = findMenuNode(viewMenu.submenu, LAUNCHER_MENU_ITEM);
     assert.ok(item !== undefined, "the View menu must carry the command launcher item");
-    assert.equal(item.accelerator, "Ctrl+P", "the launcher item must own Ctrl+P");
+    assert.equal(item.accelerator, "CmdOrCtrl+P", "the launcher item must own Ctrl+P");
     const fileItem = findMenuNode(viewMenu.submenu, "menu.file_launcher");
     assert.ok(fileItem !== undefined, "the View menu must carry the quick-file item");
-    assert.equal(fileItem.accelerator, "Ctrl+Shift+P", "the quick-file item must own Ctrl+Shift+P");
+    assert.equal(
+      fileItem.accelerator,
+      "CmdOrCtrl+Shift+P",
+      "the quick-file item must own Ctrl+Shift+P",
+    );
 
     await focusOutsideEditor(activePage);
     await openLauncherFromMenu(activePage);
@@ -371,7 +337,7 @@ describe("the Ctrl+P command launcher", function () {
       "editor.lint.languageTool.active",
       "zkn.idGen",
       "export.cslStyle",
-      "files.dotFiles.showInFilemanager",
+      "fileNameDisplay",
       "shortcuts.ui.next-tab",
     ]) {
       assert.ok(
@@ -445,6 +411,14 @@ describe("the Ctrl+P command launcher", function () {
       await row.locator("[data-reset-keybinding]").click();
       assert.match(await row.innerText(), /Default/);
       assert.match(await row.innerText(), /Unassigned/);
+
+      // The default key of Go Back ends in "-", the character that also
+      // parts the modifiers of the key name (#202).
+      await search.fill("nav-history-back");
+      const back = preferencesPage.locator('[data-command-id="nav-history-back"]');
+      await back.waitFor({ state: "visible" });
+      const keys = await back.locator(".keybinding-cell kbd").allTextContents();
+      assert.equal(keys.at(-1), "-", `the row shows the keys ${JSON.stringify(keys)}`);
     } finally {
       await preferencesPage.close();
     }
@@ -479,6 +453,65 @@ describe("the Ctrl+P command launcher", function () {
     await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
   });
 
+  it("names the repository whose justfile Just cannot read, with the cause", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const root = requireInitialized(fixtureRoot, "The fixture must be initialized");
+    const justfile = path.join(root, "workspace", "justfile");
+    const readable = await readFile(justfile, "utf8");
+    await writeFile(justfile, `${readable}\nfixture-broken:\n  @echo {{ unclosed\n`);
+
+    await focusOutsideEditor(activePage);
+    await openLauncherFromMenu(activePage);
+    await activePage.locator(LAUNCHER_INPUT).fill("justfile");
+    await waitUntil(
+      async () =>
+        (await activePage
+          .locator(`${LAUNCHER} [data-launcher-row]`, { hasText: "Justfile commands" })
+          .count()) > 0,
+      "the Justfile commands group while the justfile does not parse",
+      10_000,
+    );
+    await typeAndWaitForHighlight(activePage, "justfile", "Justfile commands");
+    await activePage.keyboard.press("Enter");
+
+    const unlisted = activePage.locator(`${LAUNCHER} [data-row-kind="just-unlisted"]`);
+    await unlisted.waitFor({ timeout: 10_000 });
+    screenshots.set("launcher-justfile-unlisted.png", await activePage.screenshot());
+    const workspaceRoot = (
+      await execFileAsync("git", [
+        "-C",
+        path.join(root, "workspace"),
+        "rev-parse",
+        "--show-toplevel",
+      ])
+    ).stdout.trim();
+    assert.equal(await unlisted.getAttribute("data-just-repository"), workspaceRoot);
+    // The row shows the first line of the diagnosis of Just, and its title the
+    // whole diagnosis with the line of the justfile.
+    assert.match(
+      await unlisted.innerText(),
+      /workspace: Just did not list the recipes: .*unterminated interpolation/,
+    );
+    assert.ok(
+      (await unlisted.getAttribute("title"))?.includes("@echo {{ unclosed"),
+      "the title of the row gives the diagnosis of Just",
+    );
+    assert.equal(
+      await unlisted.getAttribute("data-disabled"),
+      "",
+      "a repository without recipes is no command to run",
+    );
+    assert.equal(
+      await activePage.locator(`${LAUNCHER} [data-row-kind="just-recipe"]`).count(),
+      0,
+      "a justfile that does not parse lists no recipe",
+    );
+
+    await activePage.keyboard.press("Escape");
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
+    await writeFile(justfile, readable);
+  });
+
   it("toggles the sidebar off and on through a typed command", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await focusOutsideEditor(activePage);
@@ -508,12 +541,12 @@ describe("the Ctrl+P command launcher", function () {
     assert.ok(cursor > 0, "the fixture document must have a first line");
     await placeCursor(activePage, cursor);
 
-    await activePage.keyboard.press("Control+p");
+    await pressKey(await windowOfPage(activePage), "ctrl+p");
     await activePage.locator(LAUNCHER_INPUT).waitFor({ state: "visible", timeout: 10_000 });
     assert.equal(
       await activePage.locator(LAUNCHER).count(),
       1,
-      "the editor binding opens exactly one launcher",
+      "the menu key opens exactly one launcher",
     );
 
     await typeAndWaitForHighlight(activePage, "insert", "Insert");
@@ -637,7 +670,7 @@ describe("the Ctrl+P command launcher", function () {
     const indexText = await readFile(indexPath, "utf8");
 
     await activeEditor(activePage).focus();
-    await activePage.keyboard.press("Control+Shift+P");
+    await pressKey(await windowOfPage(activePage), "ctrl+shift+p");
     await activePage.locator(LAUNCHER_INPUT).waitFor({ state: "visible", timeout: 10_000 });
     assert.equal(
       (await activePage.locator(`${LAUNCHER} [data-row-kind="file"]`).count()) > 0,

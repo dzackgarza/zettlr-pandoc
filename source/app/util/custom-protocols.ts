@@ -22,6 +22,7 @@ const CONTENT_TYPE_MAP = new Map([
   [".jpg", "image/jpeg"],
   [".jpeg", "image/jpeg"],
   [".gif", "image/gif"],
+  [".bmp", "image/bmp"],
   [".tiff", "image/tiff"],
   [".tif", "image/tiff"],
   [".ico", "image/vnd.microsoft.icon"],
@@ -41,7 +42,7 @@ const CONTENT_TYPE_MAP = new Map([
  */
 function headersForFileType(filePath: string): Record<string, string> {
   const headers: Record<string, string> = {};
-  const type = CONTENT_TYPE_MAP.get(path.extname(filePath));
+  const type = CONTENT_TYPE_MAP.get(path.extname(filePath).toLowerCase());
   if (type !== undefined) {
     headers["Content-type"] = type;
   }

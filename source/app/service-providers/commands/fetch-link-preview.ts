@@ -17,6 +17,7 @@ import { fetchLinkPreview, type LinkPreviewResult } from "@common/util/fetch-lin
 import { nativeImage } from "electron";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import { filePathOfUri } from "source/app/util/file-uri-path";
 import ZettlrCommand from "./zettlr-command";
 
 const MAX_FILE_PREVIEW_LENGTH = 300;
@@ -46,17 +47,7 @@ export default class FetchLinkPreview extends ZettlrCommand {
     }
 
     // Next, is it an absolute path to a file on the computer?
-    if (arg.startsWith("safe-file://")) {
-      arg = arg.slice(12);
-      // Due to the colons in the drive letters on Windows, the pathname will
-      // look like this: /C:/Users/Documents/test.jpg
-      // See: https://github.com/Zettlr/Zettlr/issues/5489
-      if (/^\/[A-Z]:/i.test(arg)) {
-        arg = arg.slice(1);
-      }
-    }
-
-    arg = decodeURIComponent(arg);
+    arg = arg.startsWith("safe-file://") ? filePathOfUri(arg) : decodeURIComponent(arg);
 
     if (path.isAbsolute(arg)) {
       try {
@@ -79,7 +70,7 @@ export default class FetchLinkPreview extends ZettlrCommand {
           const rawContents = await this._app.fsal.loadAnySupportedFile(arg);
           const { frontmatter, content } = extractYamlFrontmatter(rawContents);
 
-          if (frontmatter !== null && "abstract" in frontmatter) {
+          if (typeof frontmatter?.abstract === "string") {
             returnValue.summary = frontmatter.abstract;
           } else {
             const lines = content.split("\n");
@@ -95,8 +86,8 @@ export default class FetchLinkPreview extends ZettlrCommand {
               i++;
             }
           }
-        } else if (/\.(png|jpe?g)$/.test(descriptor.name)) {
-          // Image file
+        } else if (/\.(png|jpe?g)$/i.test(descriptor.name)) {
+          // An image that nativeImage decodes: PNG and JPEG only
           const img = nativeImage.createFromPath(descriptor.path);
           if (!img.isEmpty()) {
             const { width, height } = img.getSize();

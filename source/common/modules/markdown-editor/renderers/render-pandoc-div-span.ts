@@ -31,20 +31,27 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
+import { VISUAL_INDENT_EXEMPT_CLASS } from "@dzack/pandoc-editor/plugins/visual-indent";
+import {
+  placeCursorFromRenderedPoint,
+  selectRenderedSourceRange,
+} from "@dzack/pandoc-editor/renderers/reveal-rendered-source";
+import {
+  incrementalNodeDecorations,
+  type SourceRange,
+} from "@dzack/pandoc-editor/util/incremental-node-decorations";
+import {
+  rangeInPreviewSuppression,
+  reviewSuppressionChanged,
+} from "@dzack/pandoc-editor/util/range-in-preview-suppression";
+import { rangeInSelection } from "@dzack/pandoc-editor/util/range-in-selection";
+import { visitVisibleSyntaxNodes } from "@dzack/pandoc-editor/util/visible-syntax-nodes";
 import { divModelFromNode, type PandocDivModel } from "source/common/pandoc-util/pandoc-div-model";
 import { parsePandocAttributes } from "source/common/pandoc-util/parse-pandoc-attributes";
 import { reportError } from "source/common/util/error-reporting";
 import { mathJaxToElem } from "source/common/util/mathtex-to-html";
-import { VISUAL_INDENT_EXEMPT_CLASS } from "../plugins/visual-indent";
 import { configField } from "../util/configuration";
-import { incrementalNodeDecorations, type SourceRange } from "../util/incremental-node-decorations";
-import {
-  rangeInPreviewSuppression,
-  reviewSuppressionChanged,
-} from "../util/range-in-preview-suppression";
-import { rangeInSelection } from "../util/range-in-selection";
-import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
-import { placeCursorFromRenderedPoint, selectRenderedSourceRange } from "./reveal-rendered-source";
+import { referenceBadgeAnchor, referenceBadgeAnchorsRemoved } from "./render-reference-definitions";
 
 function createSpanDecorations(view: EditorView): RangeSet<Decoration> {
   const ranges: Range<Decoration>[] = [];
@@ -185,15 +192,16 @@ class PandocDivHeaderWidget extends WidgetType {
   constructor(
     readonly label: string,
     readonly title: string | undefined,
+    readonly id: string | undefined,
   ) {
     super();
   }
 
   eq(other: PandocDivHeaderWidget): boolean {
-    return other.label === this.label && other.title === this.title;
+    return other.label === this.label && other.title === this.title && other.id === this.id;
   }
 
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const header = document.createElement("span");
     header.classList.add("pandoc-div-header");
 
@@ -209,7 +217,17 @@ class PandocDivHeaderWidget extends WidgetType {
       header.append(title);
     }
 
+    // The header replaces the line that holds the id of the div, so the
+    // badges of that id get their room in the header.
+    if (this.id !== undefined) {
+      header.append(referenceBadgeAnchor(view));
+    }
+
     return header;
+  }
+
+  destroy(dom: HTMLElement): void {
+    referenceBadgeAnchorsRemoved(dom);
   }
 }
 
@@ -401,7 +419,7 @@ function divHeaderDecorations(state: EditorState, from: number, to: number): Ran
       if (!rangeInSelection(state.selection, div.from, div.to, includeAdjacent)) {
         ranges.push(
           Decoration.replace({
-            widget: new PandocDivHeaderWidget(div.label, div.properties.title),
+            widget: new PandocDivHeaderWidget(div.label, div.properties.title, div.id),
             block: true,
           }).range(div.openFrom, div.contentFrom),
         );
@@ -651,23 +669,29 @@ export const renderPandoc = [
       {
         visibility: "hidden",
       },
+    // The header is one run of text: the label, the title and the room of
+    // the reference badges wrap as words do, so a long title is whole in a
+    // narrow editor.
     ".pandoc-div-header": {
-      display: "flex",
-      alignItems: "center",
-      gap: "0.5em",
-      width: "fit-content",
+      display: "block",
       maxWidth: "100%",
-      height: "1.55em",
+      minHeight: "1.55em",
+      lineHeight: "1.55",
       pointerEvents: "none",
       visibility: "visible",
-      whiteSpace: "nowrap",
+      whiteSpace: "normal",
+      overflowWrap: "anywhere",
     },
     ".pandoc-div-header-label": {
       display: "inline-flex",
       alignItems: "center",
-      height: "100%",
+      // 1.55 times the default editor font size, in the unit of the label.
+      height: "2.15em",
+      marginRight: "0.5em",
       padding: "0 0.55em",
       boxSizing: "border-box",
+      verticalAlign: "middle",
+      whiteSpace: "nowrap",
       border: "1px solid color-mix(in srgb, var(--pandoc-div-accent) 35%, transparent)",
       borderRadius: "999px",
       color: "var(--pandoc-div-accent)",
@@ -679,17 +703,11 @@ export const renderPandoc = [
       textTransform: "uppercase",
     },
     ".pandoc-div-header-title": {
-      display: "inline-flex",
-      alignItems: "center",
-      gap: "0.15em",
-      minWidth: "0",
-      overflow: "hidden",
       color: "inherit",
       fontSize: "0.9em",
       fontWeight: "550",
-      lineHeight: "1.2",
-      textOverflow: "ellipsis",
       textTransform: "none",
+      verticalAlign: "middle",
     },
     ".pandoc-div-header-math mjx-container": {
       margin: "0 !important",

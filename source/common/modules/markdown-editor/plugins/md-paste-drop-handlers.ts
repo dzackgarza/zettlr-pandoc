@@ -16,7 +16,7 @@
 
 import { type DOMEventHandlers } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
-import { hasMdOrCodeExt } from "@common/util/file-extention-checks";
+import { hasImageExt, hasMdOrCodeExt } from "@common/util/file-extention-checks";
 import html2md from "@common/util/html-to-md";
 import {
   pathBasename,
@@ -24,68 +24,11 @@ import {
   pathExtname,
   relativePath,
 } from "@common/util/renderer-path-polyfill";
-import { type SaveImageFromClipboardAPI } from "source/app/service-providers/commands/save-image-from-clipboard";
 import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { configField } from "../util/configuration";
+import { normalizePathForInsertion, saveClipboardImage } from "../util/save-clipboard-image";
 
 const ipcRenderer = window.ipc;
-
-const imageRE = /\.(?:png|jpe?g|gif|bmp|svg|tiff?)$/i;
-
-/**
- * This function normalizes an absolute path in a way that is suitable for the
- * main editor, i.e., it should be easily readable for humans and as short as
- * possible.
- *
- * @param   {string}  p         The path to be normalized
- * @param   {string}  basePath  The base path for turning `p` relative.
- *
- * @return  {string}            The normalized path.
- */
-function normalizePathForInsertion(p: string, basePath: string): string {
-  const relative = relativePath(basePath, p);
-  let sanitizedPath = relative.replace(/\\/g, "/");
-  if (!sanitizedPath.startsWith("./") && !sanitizedPath.startsWith("../")) {
-    sanitizedPath = "./" + sanitizedPath;
-  }
-  return sanitizedPath;
-}
-
-/**
- * Handles the code required to save an image from the clipboard. It returns the
- * image tag with the image path as soon as the image has been saved to disk.
- *
- * @param   {string}           basePath  The base path for the image
- * @param   {File}             file      The image object
- *
- * @return  {Promise<string>}            Resolves with the image tag or undefined.
- */
-async function saveImageFromClipboard(basePath: string, file: File): Promise<string | undefined> {
-  const imageData = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-
-    // Hook event listeners
-    reader.addEventListener("abort", () => reject(new Error("Image read was aborted")));
-    reader.addEventListener("error", () => reject(new Error("Could not read image data")));
-    reader.addEventListener("load", () => resolve(reader.result as string));
-
-    // Start loading (as a data URL)
-    reader.readAsDataURL(file);
-  });
-
-  const pathToInsert: string | undefined = await ipcRenderer.invoke("application", {
-    command: "save-image-from-clipboard",
-    payload: { basePath, imageData, imageName: file.name } as SaveImageFromClipboardAPI,
-  });
-
-  // If the user aborts the pasting process, the command will return
-  // undefined, so we have to check for this.
-  if (pathToInsert !== undefined) {
-    const p = normalizePathForInsertion(pathToInsert, basePath);
-    const tag = `![${pathBasename(p)}](${p})`;
-    return tag;
-  }
-}
 
 /**
  * These handlers hook into the editor and attempt to intercept events that need
@@ -149,7 +92,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<void> = {
     } else {
       // The user intends to paste an image or a series of files
       for (const file of data.files) {
-        if (imageRE.test(file.name)) {
+        if (hasImageExt(file.name)) {
           const filePath = window.getPathForFile(file);
           if (filePath === undefined) {
             // This image resides only within the clipboard, so prompt the user
@@ -157,7 +100,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<void> = {
             // `![]()`.
             allPromises.push(
               new Promise((resolve, reject) => {
-                saveImageFromClipboard(basePath, file)
+                saveClipboardImage(basePath, file, file.name)
                   .then((tag) => {
                     if (tag !== undefined) {
                       insertions.push(tag);
@@ -223,7 +166,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<void> = {
       // We have a list of files being dropped onto the editor --> handle them
       for (const file of dataTransfer.files) {
         const filePath = window.getPathForFile(file);
-        const isImage = imageRE.test(file.name);
+        const isImage = hasImageExt(file.name);
 
         if (isImage && filePath !== undefined) {
           // The image resides somewhere on disk -> directly insert
@@ -232,7 +175,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<void> = {
           // It's an image --> offer to save
           allPromises.push(
             new Promise((resolve, reject) => {
-              saveImageFromClipboard(cwd, file)
+              saveClipboardImage(cwd, file, file.name)
                 .then((tag) => {
                   if (tag !== undefined) {
                     insertions.push(tag);
@@ -278,13 +221,22 @@ export const mdPasteDropHandlers: DOMEventHandlers<void> = {
       const name = pathBasename(data.path, pathExtname(data.path));
       const pathToInsert = normalizePathForInsertion(data.path, cwd);
       if (data.type === "file") {
-        // Insert as Zkn link
-        view.dispatch({ changes: { from: pos, insert: `[[${name}]]` } });
+        // A workspace document gets the wikilink of the link index, the
+        // shortest path suffix that names it alone. A document outside every
+        // workspace has no wikilink name, so it gets a Markdown link.
+        ipcRenderer
+          .invoke("link-provider", { command: "get-link-targets" })
+          .then((targets: Record<string, string>) => {
+            const target = targets[data.path];
+            const insert = target === undefined ? `[${name}](${pathToInsert})` : `[[${target}]]`;
+            view.dispatch({ changes: { from: pos, insert } });
+          })
+          .catch((err) => reportError(err));
       } else if (data.type === "code") {
         // Insert as Md link
         view.dispatch({ changes: { from: pos, insert: `[${name}](${pathToInsert})` } });
       } else if (data.type === "other") {
-        if (imageRE.test(data.path)) {
+        if (hasImageExt(data.path)) {
           view.dispatch({ changes: { from: pos, insert: `![${name}](${pathToInsert})` } });
         } else {
           view.dispatch({ changes: { from: pos, insert: `[${name}](${pathToInsert})` } });

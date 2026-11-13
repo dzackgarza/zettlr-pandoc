@@ -19,10 +19,11 @@ import { reportError } from "@common/util/error-reporting";
 import { defineStore } from "pinia";
 import {
   createIgnoreFilter,
+  EVERY_FILE_TYPE,
   type IgnoreFilter,
   type IgnoreRuleSources,
-  judgingRoot,
 } from "source/common/util/ignore-rules";
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import { computed, ref, shallowRef, watch } from "vue";
 import { useConfigStore } from "./config";
 
@@ -37,7 +38,7 @@ function nearestListedDirectory(
   roots: Iterable<string>,
   dirPath: string,
 ): string {
-  const root = judgingRoot(roots, dirPath);
+  const root = innermostRoot(dirPath, roots);
   if (root === undefined) {
     return dirPath;
   }
@@ -59,6 +60,7 @@ export const useIgnoreRulesStore = defineStore("ignore-rules", () => {
     globalRules: [],
     workspaceRules: new Map(),
     showIgnored: false,
+    fileTypes: EVERY_FILE_TYPE,
   });
   const filter = computed(() => createIgnoreFilter(sources.value));
   /** True while the dialog that edits the rules is open. */

@@ -151,12 +151,16 @@ export default class AgentMcpEndpoint {
    * Answers one MCP exchange. The transport is stateless, so every request
    * gets its own server and transport, as in the SDK's stateless example.
    * `apiOrigin` is this listener's own loopback origin; tool calls go there.
+   * `credentials` is the `Authorization` header that the listener verified
+   * for this exchange. A tool call is a request of the same caller to the
+   * same listener, so it carries the same header.
    */
   async handle(
     req: http.IncomingMessage,
     res: http.ServerResponse,
     parsedBody: ToolArgument,
     apiOrigin: string,
+    credentials: string,
   ): Promise<void> {
     // The tools are OpenAPI JSON Schemas, not Zod schemas, so they are
     // registered on the protocol-level server under McpServer.
@@ -165,7 +169,7 @@ export default class AgentMcpEndpoint {
       tools: [...this._tools.values()].map((entry) => entry.tool),
     }));
     server.server.setRequestHandler(CallToolRequestSchema, (request) =>
-      this.callTool(request.params.name, request.params.arguments, apiOrigin),
+      this.callTool(request.params.name, request.params.arguments, apiOrigin, credentials),
     );
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -184,6 +188,7 @@ export default class AgentMcpEndpoint {
     // MCP omits `arguments` from a call that passes none.
     args: ToolArguments | undefined,
     apiOrigin: string,
+    credentials: string,
   ): Promise<CallToolResult> {
     const entry = this._tools.get(name);
     if (entry === undefined) {
@@ -213,7 +218,10 @@ export default class AgentMcpEndpoint {
     const body = args?.[BODY_ARGUMENT];
     const response = await fetch(url, {
       method: entry.method,
-      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      headers:
+        body === undefined
+          ? { Authorization: credentials }
+          : { Authorization: credentials, "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await response.text();

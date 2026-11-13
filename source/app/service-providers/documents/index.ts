@@ -22,6 +22,7 @@ import PersistentDataContainer from "@common/modules/persistent-data-container";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import { countAll } from "@common/util/counter";
 import errorToString from "@common/util/error-to-string";
+import isErrnoException from "@common/util/is-errno-exception";
 import isFile from "@common/util/is-file";
 import serializeChangeSet from "@common/util/serialize-change-set";
 import { sha256Text } from "@common/util/sha256";
@@ -36,18 +37,31 @@ import type {
   AnnotationMessage,
   TextAnnotation,
 } from "@dts/common/annotation-domain";
-import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
+import {
+  COLLABORATION_FILE_UNREADABLE_CHANNEL,
+  COLLABORATION_FILE_UNWRITABLE_CHANNEL,
+  type CollaborationFileUnreadableBroadcast,
+  type CollaborationFileUnwritableBroadcast,
+  type DocumentCollaborationSession,
+  type OwnerlessCollaborationFile,
+  type UnreadableCollaborationFile,
+  type WorkspaceCollaborationListing,
+} from "@dts/common/document-collaboration";
 import {
   type BranchNodeJSON,
   DocumentType,
   DP_EVENTS,
+  FILE_REMOVED_KEPT_CHANNEL,
+  type FileRemovedKeptBroadcast,
   type LeafNodeJSON,
   type OpenDocument,
   REMOTE_CHANGE_KEPT_CHANNEL,
+  type RefusedAction,
   type RemoteChangeKeptBroadcast,
   SAVE_REFUSED_CHANNEL,
   type SaveFileResult,
   type SaveRefusal,
+  type SaveRefusalReason,
   type SaveRefusedBroadcast,
   type SerializedUpdate,
 } from "@dts/common/documents";
@@ -56,14 +70,20 @@ import type { DocumentLocation, SourceRange, WorkspaceTextEdit } from "@dts/comm
 import { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
+import type { FolderNotListed } from "@providers/fsal/util/read-directory";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
-import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions, shell } from "electron";
+import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions } from "electron";
 import EventEmitter from "events";
 import { constants as FSConstants } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
+import { bibliographyFiles, documentBibliography } from "source/app/util/document-bibliographies";
+import { openPath } from "source/app/util/open-path";
+import { throwFailures } from "source/app/util/run-each-step";
+import { showRefusalInWindow } from "source/app/util/show-refusal-in-window";
+import { showStoreWriteFailure } from "source/app/util/show-store-write-failure";
 import {
   getDocumentTypeForExtension,
   hasImageExt,
@@ -71,8 +91,14 @@ import {
   hasPDFExt,
 } from "source/common/util/file-extention-checks";
 import isDir from "source/common/util/is-dir";
+import {
+  innermostRoot,
+  isAtOrInsideRoot,
+  isInsideRoot,
+} from "source/common/util/renderer-path-polyfill";
 import { v4 as uuid4 } from "uuid";
 import { type AppServiceContainer } from "../../app-service-container";
+import { CollaborationSidecarUnreadableError } from "./collaboration-sidecar-store";
 import {
   type AgentEventPayload,
   type AnnotationFailure,
@@ -93,6 +119,7 @@ import {
   type ReviewStatus,
   reviewFromSidecar,
 } from "./review-diff-store";
+import { ReviewStateNotMovedError } from "./review-state-not-moved-error";
 import {
   type AcceptAllChunksResponse,
   type AddReviewCommentResponse,
@@ -101,6 +128,7 @@ import {
   type ChunkDecisionResponse,
   type ClearReviewResponse,
   type DiscardReviewResponse,
+  type ProposalRefusal,
   type ReapplyReviewResponse,
   type RetractProposalResponse,
 } from "./review-transitions";
@@ -141,6 +169,7 @@ type DocumentManagerApp = {
     getAllLoadedDescriptors?(): Promise<AnyDescriptor[]>;
   } & Pick<
     AppServiceContainer["fsal"],
+    | "getAnyDirectoryDescriptor"
     | "getDescriptorFor"
     | "getDescriptorForAnySupportedFile"
     | "loadAnySupportedFile"
@@ -164,9 +193,22 @@ type DocumentManagerApp = {
   stats: Pick<AppServiceContainer["stats"], "updateCounts">;
   windows: Pick<
     AppServiceContainer["windows"],
-    "askSaveChanges" | "getFirstMainWindow" | "getMainWindowKey"
+    | "askSaveChanges"
+    | "getFirstMainWindow"
+    | "getMainWindowKey"
+    | "saveFile"
+    | "showErrorMessage"
+    | "tellMainWindows"
   >;
 };
+
+/** What the provider tells the author about one document (_tellAbout). */
+type DocumentMessage =
+  | SaveRefusedBroadcast
+  | FileRemovedKeptBroadcast
+  | RemoteChangeKeptBroadcast
+  | CollaborationFileUnreadableBroadcast
+  | CollaborationFileUnwritableBroadcast;
 
 // Keep no more than this many updates.
 const MAX_VERSION_HISTORY = 100;
@@ -217,6 +259,41 @@ export type DocumentsUpdateContext = {
     message: string;
     diagnostic: string;
   };
+};
+
+/** A close that the provider refused, and what the author's answer to it does. */
+interface RefusedClose {
+  /** Repeats the close that was refused. */
+  repeat: () => Promise<void>;
+  /**
+   * The author answered the prompt of that close with "discard", and the
+   * discard failed: the buffer still holds the text that the author threw
+   * away.
+   */
+  textDiscarded: boolean;
+}
+
+/**
+ * The message of a refusal: what the application did not do and the cause.
+ * The message of a refused quit also says what its action does, because the
+ * label "Quit anyway" does not name the document that it changes.
+ */
+type RefusalMessage = (cause: string) => string;
+
+const REVIEW_NOT_SAVED: Record<RefusedAction, RefusalMessage> = {
+  close: (cause) => `The review could not be saved, so this document was left open: ${cause}`,
+  reload: (cause) => `The review could not be saved, so the disk version was not loaded: ${cause}`,
+  quit: (cause) =>
+    `The review could not be saved, so the application did not quit: ${cause}\n` +
+    '"Quit anyway" quits. The review stays as it was last saved, and it returns when the document is opened.',
+};
+
+const CHANGES_NOT_DISCARDED: Record<"close" | "quit", RefusalMessage> = {
+  close: (cause) =>
+    `The unsaved changes could not be discarded, so this document was left open: ${cause}`,
+  quit: (cause) =>
+    `The unsaved changes could not be discarded, so the application did not quit: ${cause}\n` +
+    '"Quit anyway" closes this document without its unsaved changes and quits.',
 };
 
 /**
@@ -368,8 +445,14 @@ export type DocumentManagerIPCContract = {
     request: { payload: { windowId: string } };
     response: boolean;
   };
+  "close-other-tabs": {
+    /** Each tab of the pane but the tab of `path` and the pinned tabs. */
+    request: { payload: LeafLoc & { path: string } };
+    response: boolean;
+  };
   "close-all-tabs": {
-    request: { payload: { windowId: string } };
+    /** Without `leafId` each pane of the window; with it that pane only. */
+    request: { payload: { windowId: string; leafId?: string } };
     response: boolean;
   };
   "save-all": {
@@ -382,15 +465,20 @@ export type DocumentManagerIPCContract = {
   };
   "close-file-everywhere": {
     request: { payload: { path: string } };
-    response: undefined;
+    response: boolean;
   };
   "load-from-disk": {
     request: { payload: { path: string } };
     response: undefined;
   };
-  "get-open-workspace-files": {
+  "close-without-review": {
+    request: { payload: { documentId: string } };
+    response: boolean;
+  };
+  // The path of the copy, or undefined when the author chose no file.
+  "save-copy": {
     request: { payload: { path: string } };
-    response: string[];
+    response: string | undefined;
   };
   "sort-open-files": {
     request: { payload: LeafLoc & { newOrder: string[] } };
@@ -409,7 +497,11 @@ export type DocumentManagerIPCContract = {
   };
   "get-workspace-collaboration-sessions": {
     request: { payload: { paths: string[] } };
-    response: DocumentCollaborationSession[];
+    response: WorkspaceCollaborationListing;
+  };
+  "set-aside-collaboration-sidecar": {
+    request: { payload: { file: string } };
+    response: string;
   };
   "move-file": {
     request: {
@@ -551,6 +643,23 @@ export interface ReattachAnnotationIpcInput {
 }
 
 /**
+ * The two bulk owner moves need only the document and the fence of the
+ * snapshot the panel rendered: the batch names its targets itself, so
+ * neither carries an annotationId. The resolve batch's scope picks acted
+ * remediation results ("acted", the default server-side) or every open
+ * thread ("open").
+ */
+export interface BulkAnnotationIpcInput {
+  path: string;
+  expectedAnnotationGeneration: number;
+}
+
+export interface BulkAnnotationResolutionIpcInput extends BulkAnnotationIpcInput {
+  /** The open annotations that the batch takes: those an agent marked acted, or all. */
+  scope: "acted" | "open";
+}
+
+/**
  * The document operations the renderer invokes on their own typed channels,
  * one handler signature each. This provider owns the schema; the renderer
  * bridge composes it, so a wrong payload or a changed return type is a
@@ -607,6 +716,12 @@ export type DocumentIpcHandlers = {
   "documents:delete-annotation": (
     input: AnnotationLifecycleIpcInput,
   ) => TextAnnotation | AnnotationFailure;
+  "documents:resolve-acted-annotations": (
+    input: BulkAnnotationResolutionIpcInput,
+  ) => { resolved: TextAnnotation[] } | AnnotationFailure;
+  "documents:clear-resolved-annotations": (
+    input: BulkAnnotationIpcInput,
+  ) => { deleted: TextAnnotation[] } | AnnotationFailure;
 };
 
 export default class DocumentManager
@@ -678,8 +793,21 @@ export default class DocumentManager
    */
   public readonly agentEvents = new EventEmitter();
 
-  /** Maps a path to its document ID for agent API lookups. */
+  /**
+   * The id of each document path, and the path of each document id. The
+   * two maps change together (_assignDocumentId, _moveDocumentId): an id
+   * names one path, and a path has one id.
+   */
   private readonly _documentIdByPath: Map<string, string>;
+  private readonly _documentPathById: Map<string, string>;
+
+  /**
+   * The closes that the provider refused, by the id of the document that
+   * stopped each one: its collaboration state could not be written, or the
+   * discard of its unsaved text failed. closeWithoutReview acts on the
+   * entry when the author decides to close without that state.
+   */
+  private readonly _refusedCloses: Map<string, RefusedClose>;
 
   /** The load of each document that is loading now (getDocument). */
   private readonly _pendingLoads = new Map<
@@ -703,10 +831,19 @@ export default class DocumentManager
    */
   private readonly documents: Document[];
 
+  /**
+   * Ends when the last call of synchronizeDatabases named its bibliographies
+   * to the citation provider. The next call collects after it.
+   */
+  private bibliographiesNamed: Promise<void> = Promise.resolve();
+
   private _shuttingDown: boolean;
 
   /** True while the before-quit save-or-discard dialog is unanswered. */
   private _quitPromptOpen: boolean;
+
+  /** The time of the last update that an editor sent; 0 for none. */
+  private _lastEditorInputAt = 0;
 
   private readonly _lastEditor: {
     windowId: string | undefined;
@@ -721,7 +858,9 @@ export default class DocumentManager
     this._windows = {};
     this._closedTabs = new Map();
     this._emitter = new EventEmitter();
-    this._config = new PersistentDataContainer(containerPath, "yaml");
+    this._config = new PersistentDataContainer(containerPath, "yaml", (filePath, failure) => {
+      showStoreWriteFailure(this._app.log, this._app.windows, filePath, failure);
+    });
     this._ignoreChanges = [];
     this._announcedRemoteModtime = new Map();
     this._remoteChangeErrorShownFor = [];
@@ -736,6 +875,8 @@ export default class DocumentManager
       },
     });
     this._documentIdByPath = new Map();
+    this._documentPathById = new Map();
+    this._refusedCloses = new Map();
     this.documents = [];
     this._shuttingDown = false;
     this._quitPromptOpen = false;
@@ -754,13 +895,15 @@ export default class DocumentManager
         this._app.log.warning("[DocumentManager] Ignoring watchdog change with a non-string path.");
         return;
       }
-      if (changeEvent !== "unlink" && changeEvent !== "change") {
+      // A file that was removed and is written again arrives as `add`: the
+      // watcher follows the path of a tab through a removal.
+      if (changeEvent !== "unlink" && changeEvent !== "change" && changeEvent !== "add") {
         this._app.log.warning(
           `[DocumentManager] Received unexpected event ${String(changeEvent)} for ${changedPath}.`,
         );
         return;
       }
-      if (this._ignoreChanges.includes(changedPath) && changeEvent === "change") {
+      if (this._ignoreChanges.includes(changedPath) && changeEvent !== "unlink") {
         this._app.log.info(`[DocumentManager] Ignoring change for ${changedPath}`);
         this._ignoreChanges.splice(this._ignoreChanges.indexOf(changedPath), 1);
         return;
@@ -768,7 +911,12 @@ export default class DocumentManager
         this._app.log.info(`[DocumentManager] Processing ${changeEvent} for ${changedPath}`);
       }
 
-      if (changeEvent === "unlink") {
+      if (changeEvent === "unlink" && this.isModified(changedPath)) {
+        // The text of the document is only in the application now. The
+        // document stays open with it, and the author decides: a save writes
+        // the file again, a close asks about the text.
+        this._announceRemovedFileKept(changedPath);
+      } else if (changeEvent === "unlink") {
         // Close the file everywhere
         this.closeFileEverywhere(changedPath).catch((err: unknown) =>
           this._app.log.error(err instanceof Error ? err.message : String(err)),
@@ -965,6 +1113,32 @@ export default class DocumentManager
       );
     });
 
+    // The bulk owner moves over the annotations panel. They must also reach a
+    // document no pane shows: the panel's workspace projection carries closed
+    // documents' sidecar state, and the remediation backlog these clear sits
+    // on documents the agent touched without ever opening them. So unlike the
+    // single-id channels above, the path resolves to a documentId through the
+    // collaboration sidecar when the document is not open, and each commit
+    // runs on the open-or-closed ordering.
+    operations.handle("documents:resolve-acted-annotations", async (_event, input) => {
+      const documentId = await this._documentIdForBulkOwnerMutation(input.path);
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path);
+      }
+      return await this._resolveActedAnnotations(
+        documentId,
+        input.expectedAnnotationGeneration,
+        input.scope,
+      );
+    });
+    operations.handle("documents:clear-resolved-annotations", async (_event, input) => {
+      const documentId = await this._documentIdForBulkOwnerMutation(input.path);
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path);
+      }
+      return await this._deleteResolvedAnnotations(documentId, input.expectedAnnotationGeneration);
+    });
+
     // Finally, listen to events from the renderer
     ipcMain.handle("documents-provider", async (event, message: DocumentManagerIPCAPI) => {
       const { command, payload } = message;
@@ -984,6 +1158,9 @@ export default class DocumentManager
           return await this.openFile(windowId, leafId, path, newTab, {
             targetRange,
             sourceLocation,
+          }).catch((error: unknown) => {
+            showRefusalInWindow(event.sender, "open-file", error);
+            throw error;
           });
         }
         case "close-file": {
@@ -993,8 +1170,12 @@ export default class DocumentManager
         case "reopen-closed-tab": {
           return await this.reopenClosedTab(payload.windowId);
         }
+        case "close-other-tabs": {
+          const { windowId, leafId, path } = payload;
+          return await this.closeOtherTabs(windowId, leafId, path);
+        }
         case "close-all-tabs": {
-          return await this.closeAllTabs(payload.windowId);
+          return await this.closeAllTabs(payload.windowId, payload.leafId);
         }
         case "save-all": {
           return await this.saveAll(payload.windowId);
@@ -1013,9 +1194,11 @@ export default class DocumentManager
           await this.notifyRemoteChange(payload.path);
           return;
         }
-        case "get-open-workspace-files": {
-          const { path } = payload;
-          return this.getFilesForWorkspace(path);
+        case "close-without-review": {
+          return await this.closeWithoutReview(payload.documentId);
+        }
+        case "save-copy": {
+          return await this.saveCopy(payload.path);
         }
         case "sort-open-files": {
           const { windowId, leafId, newOrder } = payload;
@@ -1033,6 +1216,9 @@ export default class DocumentManager
         }
         case "get-workspace-collaboration-sessions": {
           return await this._workspaceCollaborationSessions(payload.paths);
+        }
+        case "set-aside-collaboration-sidecar": {
+          return await this._reviewApplication.setAsideCollaborationSidecar(payload.file);
         }
         case "move-file": {
           const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
@@ -1094,7 +1280,7 @@ export default class DocumentManager
     // this, if we ever switched to the auto updater.
     app.on("before-quit", (event) => {
       const parked = this._reviewedDocumentsWithoutPane();
-      const unsaved = this._unsavedDocumentsToPrompt();
+      const unsaved = this._documentsToAskAbout(this.documents);
       if (parked.length === 0 && unsaved.length === 0) {
         this._shuttingDown = true;
         return;
@@ -1125,35 +1311,92 @@ export default class DocumentManager
   } // END constructor
 
   /**
-   * The unsaved changes a quit asks about: a document some pane shows, or
-   * one that no review owns. A reviewed document that no pane shows is not
-   * here; `_reviewedDocumentsWithoutPane` parks it in its sidecar instead.
+   * A document whose review has a proposal that the author did not decide
+   * on. Its working text holds that proposal, so a prompt that asks about
+   * many documents at one time (a quit, a window close) has no answer for
+   * it: a save writes the proposal to the file before the author decided on
+   * it, and a discard destroys the review. Each change of such a document
+   * writes its sidecar before the buffer takes it, so the sidecar has the
+   * working text and the review, and the next load of the document attaches
+   * them (#146).
    */
-  private _unsavedDocumentsToPrompt(): Document[] {
+  private _holdsUndecidedProposal(document: Document): boolean {
+    return this._reviewApplication.getStatus(document.documentId)?.state === "active";
+  }
+
+  /**
+   * Of `documents`, the ones whose unsaved text a prompt asks the author to
+   * save or discard: a modified document that holds no undecided proposal.
+   * A document with a frozen review is asked about only while a pane shows
+   * it; `_reviewedDocumentsWithoutPane` parks the others.
+   */
+  private _documentsToAskAbout(documents: readonly Document[]): Document[] {
     const shown = this._pathsShownInPanes();
-    return this.documents.filter(
-      (document) =>
-        this.isModified(document.filePath) &&
-        (shown.has(document.filePath) ||
-          this._reviewApplication.getReview(document.documentId) === undefined),
-    );
+    return documents.filter((document) => {
+      if (!this.isModified(document.filePath) || this._holdsUndecidedProposal(document)) {
+        return false;
+      }
+      const state = this._reviewApplication.getStatus(document.documentId)?.state;
+      return state !== "invalidated" || shown.has(document.filePath);
+    });
   }
 
   /**
    * An agent proposal loads its document into the authority without a pane,
    * and the review's working text leaves that buffer modified where nobody is
-   * looking at it. Saving it at quit would write the proposal to disk before
-   * the author decided on it; discarding it would destroy the review. The
-   * sidecar is where a closed document's review lives, so a quit detaches
-   * these the way closing their last tab would.
+   * looking at it. The sidecar is where a closed document's review lives, so
+   * a quit detaches these the way closing their last tab would. A document
+   * whose proposals the author all decided on is not here: its unsaved text
+   * is text of the author, and the quit asks about it.
    */
   private _reviewedDocumentsWithoutPane(): Document[] {
     const shown = this._pathsShownInPanes();
+    const asked = new Set(this._documentsToAskAbout(this.documents));
     return this.documents.filter(
       (document) =>
         !shown.has(document.filePath) &&
+        !asked.has(document) &&
         this._reviewApplication.getReview(document.documentId) !== undefined,
     );
+  }
+
+  /**
+   * Whether a quit has work to do before the process may end: a review to
+   * park or a question for the author. The window provider keeps the last
+   * window open exactly while this holds.
+   */
+  public settlesBeforeQuit(): boolean {
+    return (
+      this._reviewedDocumentsWithoutPane().length > 0 ||
+      this._documentsToAskAbout(this.documents).length > 0
+    );
+  }
+
+  /**
+   * Tells the author something about one document, in one place. The window
+   * that started the action gets the message. An event that no window
+   * started (a quit, a change on disk, an autosave) goes to each window
+   * whose panes show the document. The window provider gives the message to
+   * the main window that the author used last when none of those can show
+   * it.
+   */
+  private _tellAbout(
+    filePath: string,
+    startedBy: string | undefined,
+    channel: string,
+    payload: DocumentMessage,
+  ): void {
+    const addressed =
+      startedBy !== undefined
+        ? [startedBy]
+        : Object.entries(this._windows)
+            .filter(([, tree]) =>
+              tree
+                .getAllLeafs()
+                .some((leaf) => leaf.tabMan.openFiles.some((file) => file.path === filePath)),
+            )
+            .map(([windowId]) => windowId);
+    this._app.windows.tellMainWindows(addressed, channel, payload);
   }
 
   private _pathsShownInPanes(): Set<string> {
@@ -1174,14 +1417,18 @@ export default class DocumentManager
     unsaved: Document[],
   ): Promise<boolean> {
     for (const document of parked) {
-      try {
-        await this._detachCollaboration(document.documentId);
-      } catch (err) {
-        this._announceDetachFailure(document.filePath, err);
+      const detached = await this._detachForClose(
+        document.documentId,
+        document.filePath,
+        async () => {
+          app.quit();
+        },
+        "quit",
+      );
+      if (!detached) {
         return false;
       }
-      this.documents.splice(this.documents.indexOf(document), 1);
-      this._app.references.dropAuthorityBuffer(document.filePath);
+      this._unload(document);
     }
     if (parked.length > 0) {
       this.syncWatchedFilePaths();
@@ -1197,7 +1444,7 @@ export default class DocumentManager
       cancelId: 2,
       title: trans("Unsaved changes"),
       message: trans("There are unsaved changes. Do you want to save or discard them?"),
-      detail: unsaved.map((document) => document.filePath).join("\n"),
+      detail: this._quitPromptDetail(unsaved),
     };
     const { response } = await dialog.showMessageBox(opt);
     // 0 = Save, 1 = Don't save, 2 = Cancel
@@ -1212,11 +1459,40 @@ export default class DocumentManager
           this._announceSaveRefusal(document.filePath, saved);
           return false;
         }
-      } else {
-        await this._discardChanges(document);
+      } else if (
+        !(await this._discardForClose(
+          document,
+          async () => {
+            app.quit();
+          },
+          "quit",
+        ))
+      ) {
+        return false;
       }
     }
     return true;
+  }
+
+  /**
+   * The documents that the quit prompt asks about, one path for each line.
+   * A modified document in a pane that the prompt does not ask about is
+   * named after them with the reason, so the author knows where its text is.
+   */
+  private _quitPromptDetail(unsaved: Document[]): string {
+    const shown = this._pathsShownInPanes();
+    const kept = this.documents.filter(
+      (document) =>
+        shown.has(document.filePath) &&
+        this.isModified(document.filePath) &&
+        this._holdsUndecidedProposal(document),
+    );
+    const asked = unsaved.map((document) => document.filePath).join("\n");
+    if (kept.length === 0) {
+      return asked;
+    }
+    const keptPaths = kept.map((document) => document.filePath).join("\n");
+    return `${asked}\n\n${trans("Not saved and not discarded, because a review has open proposals. The text and the review return at the next start:")}\n${keptPaths}`;
   }
 
   /**
@@ -1224,18 +1500,25 @@ export default class DocumentManager
    * the windowId may be closed. If this function returns true, the user agreed
    * to drop all changes, or there were no changes contained in the window.
    *
-   * @param   {string}            windowId  The window in question
+   * @param   {string}            windowId    The window in question
+   * @param   {Function}          closeAgain  Repeats the close of the window (closeWindow)
    *
-   * @return  {Promise<boolean>}            Returns false if the window may not be closed
+   * @return  {Promise<boolean>}              Returns false if the window may not be closed
    */
-  public async askUserToCloseWindow(windowId: string): Promise<boolean> {
+  public async askUserToCloseWindow(
+    windowId: string,
+    closeAgain: () => Promise<void>,
+  ): Promise<boolean> {
     if (this.isClean(windowId)) {
       return true;
     }
 
-    // TODO: Check if the same (modified) files are also open in other windows.
-    // If so, we can treat this window as if it contains no changes, since the
-    // document is still open somewhere else.
+    // A document that holds an undecided proposal is neither saved nor
+    // discarded here: closeWindow puts its text and its review in the sidecar.
+    const asked = this._documentsToAskAbout(this._windowExclusiveDocuments(windowId));
+    if (asked.length === 0) {
+      return await this.closeWindow(windowId, closeAgain);
+    }
 
     const result = await this._app.windows.askSaveChanges();
     // 0 = Save, 1 = Don't save, 2 = Cancel
@@ -1249,34 +1532,28 @@ export default class DocumentManager
       // Only this window's documents: the prompt named this window's unsaved
       // changes, and a discard that reached every loaded document would throw
       // away edits the user is still holding in another window.
-      for (const document of this._windowExclusiveDocuments(windowId)) {
-        await this._discardChanges(document);
-      }
-
-      // If we're not shutting down, this function will only be called for when
-      // the user wants to actively close a window for good
-      if (!this._shuttingDown) {
-        await this.closeWindow(windowId);
-      }
-
-      return true;
-    } else if (result.response === 0) {
-      // Save this window's docs — the same set the discard branch throws away.
-      for (const document of this._windowExclusiveDocuments(windowId)) {
-        const saved = await this.saveFile(document.filePath);
-        if (!saved.ok) {
-          this._announceSaveRefusal(document.filePath, saved);
+      for (const document of asked) {
+        if (!(await this._discardForClose(document, closeAgain, "close", windowId))) {
           return false;
         }
       }
 
       // If we're not shutting down, this function will only be called for when
       // the user wants to actively close a window for good
-      if (!this._shuttingDown) {
-        await this.closeWindow(windowId);
+      return await this.closeWindow(windowId, closeAgain);
+    } else if (result.response === 0) {
+      // Save this window's docs — the same set the discard branch throws away.
+      for (const document of asked) {
+        const saved = await this.saveFile(document.filePath);
+        if (!saved.ok) {
+          this._announceSaveRefusal(document.filePath, saved, windowId);
+          return false;
+        }
       }
 
-      return true;
+      // If we're not shutting down, this function will only be called for when
+      // the user wants to actively close a window for good
+      return await this.closeWindow(windowId, closeAgain);
     } else {
       return false;
     }
@@ -1300,12 +1577,21 @@ export default class DocumentManager
         const tree = DocumentTree.fromJSON(treedata[key]);
         for (const leaf of tree.getAllLeafs()) {
           for (const file of leaf.tabMan.openFiles.map((x) => x.path)) {
-            if (
-              !(await this._app.fsal.testAccess(
-                file,
-                FSConstants.F_OK | FSConstants.W_OK | FSConstants.R_OK,
-              ))
-            ) {
+            // A failed access check gives no answer. The tab stays, and the
+            // document reports the error of the file when it loads.
+            const gone = await this._app.fsal
+              .testAccess(file, FSConstants.F_OK | FSConstants.W_OK | FSConstants.R_OK)
+              .then(
+                (accessible) => !accessible,
+                (err: Error) => {
+                  this._app.log.error(
+                    `[Document Provider] Could not test the access to ${file}: ${err.message}`,
+                    err,
+                  );
+                  return false;
+                },
+              );
+            if (gone) {
               leaf.tabMan.closeFile(file);
             }
           }
@@ -1339,7 +1625,7 @@ export default class DocumentManager
 
     // Sync everything after boot
     this.syncWatchedFilePaths();
-    await this.synchronizeDatabases();
+    this.startDatabaseSynchronization();
     this.syncToConfig();
 
     this._app.log.info(`[Document Manager] Restored ${this.windowCount()} open windows.`);
@@ -1374,9 +1660,15 @@ export default class DocumentManager
     this.syncToConfig();
   }
 
-  public async closeWindow(windowId: string): Promise<void> {
+  /**
+   * Removes a window from the provider. Resolves false when the window
+   * must stay: the collaboration state of one of its documents could not
+   * be written (_detachForClose). `closeAgain` is the request of the
+   * window owner that repeats this close.
+   */
+  public async closeWindow(windowId: string, closeAgain: () => Promise<void>): Promise<boolean> {
     if (this._shuttingDown) {
-      return; // During shutdown only the WindowManager should close windows
+      return true; // During shutdown only the WindowManager should close windows
     }
 
     const isLastWindow = Object.values(this._windows).length === 1;
@@ -1389,15 +1681,25 @@ export default class DocumentManager
       // TODO: If we ever implement workspaces, etc., this safeguard won't be
       // necessary anymore.
       this._app.log.info(`[Documents Manager] Closing window ${windowId}!`);
-      for (const document of this._windowExclusiveDocuments(windowId)) {
-        try {
-          await this._detachCollaboration(document.documentId);
-        } catch (err) {
-          this._announceDetachFailure(document.filePath, err);
-          return;
+      // An editor of the window can load a document again while a later
+      // document detaches (pullUpdates), so the window goes only when none
+      // of its documents is loaded.
+      let exclusive = this._windowExclusiveDocuments(windowId);
+      while (exclusive.length > 0) {
+        for (const document of exclusive) {
+          const detached = await this._detachForClose(
+            document.documentId,
+            document.filePath,
+            closeAgain,
+            "close",
+            windowId,
+          );
+          if (!detached) {
+            return false;
+          }
+          this._unload(document);
         }
-        this.documents.splice(this.documents.indexOf(document), 1);
-        this._app.references.dropAuthorityBuffer(document.filePath);
+        exclusive = this._windowExclusiveDocuments(windowId);
       }
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete this._windows[windowId];
@@ -1405,6 +1707,7 @@ export default class DocumentManager
       this.syncToConfig();
       this.syncWatchedFilePaths();
     }
+    return true;
   }
 
   // Enable global event listening to updates of the config
@@ -1564,17 +1867,17 @@ export default class DocumentManager
    * editor view, unsaved changes, or a review has an owner beyond this
    * acquisition, and it is left exactly as it is.
    */
-  public async releaseTemporaryDocument(documentId: string): Promise<void> {
+  public async releaseTemporaryDocument(documentId: string): Promise<boolean> {
     const filePath = this.getDocumentPath(documentId);
     if (filePath === undefined) {
-      return;
+      return false;
     }
     const doc = this.documents.find((candidate) => candidate.filePath === filePath);
     if (doc === undefined || doc.currentVersion !== doc.lastSavedVersion) {
-      return;
+      return false;
     }
     if (this._reviewApplication.getReview(documentId) !== undefined) {
-      return;
+      return false;
     }
 
     let hasEditorView = false;
@@ -1585,12 +1888,12 @@ export default class DocumentManager
       return false;
     });
     if (hasEditorView) {
-      return;
+      return false;
     }
 
-    this.documents.splice(this.documents.indexOf(doc), 1);
-    this._app.references.dropAuthorityBuffer(filePath);
+    this._unload(doc);
     this.syncWatchedFilePaths();
+    return true;
   }
 
   private async pullUpdates(
@@ -1599,10 +1902,11 @@ export default class DocumentManager
   ): Promise<SerializedUpdate[] | false> {
     const doc = this.documents.find((doc) => doc.filePath === filePath);
     if (doc === undefined) {
-      // Indicate to the editor that they should get the document (again). This
-      // handles the case where the document has been remotely modified and thus
-      // removed from the document array.
-      return false;
+      // The editor of a pane gets the document again: the document was
+      // unloaded while the pane shows it. An editor whose pane is gone (its
+      // window closes) has nothing to get. A load for it would leave a
+      // document that no window shows, with the review of its sidecar.
+      return this._pathsShownInPanes().has(filePath) ? false : [];
     }
 
     if (clientVersion < doc.minimumVersion || clientVersion > doc.currentVersion) {
@@ -1637,10 +1941,20 @@ export default class DocumentManager
     clientVersion: number,
     clientUpdates: SerializedUpdate[],
   ): Promise<boolean> {
+    this._lastEditorInputAt = Date.now();
     return this._reviewApplication.withDocumentLock(
       this.ensureDocumentId(filePath),
       async () => await this.pushUpdatesLocked(filePath, clientVersion, clientUpdates),
     );
+  }
+
+  /**
+   * The time (epoch milliseconds) of the last update that an editor sent to
+   * this authority, and 0 when no editor sent one. Background work that takes
+   * processor time from the window waits on it (the lint queue, #139).
+   */
+  public lastEditorInputAt(): number {
+    return this._lastEditorInputAt;
   }
 
   private async pushUpdatesLocked(
@@ -1705,9 +2019,8 @@ current contents from the editor somewhere else, and restart the application.`,
       candidateMinimumVersion += 1;
     }
 
-    const documentId = this.getDocumentId(filePath);
-    const review =
-      documentId === undefined ? undefined : this._reviewApplication.getReview(documentId);
+    const documentId = this.ensureDocumentId(filePath);
+    const reviewed = this._reviewApplication.getReview(documentId) !== undefined;
     const candidateWorkingText = normalizeText(candidateText.toString());
     const commitDocument = (): void => {
       doc.document = candidateText;
@@ -1723,19 +2036,21 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     };
 
-    if (documentId !== undefined && review !== undefined) {
-      await this._reviewApplication.applyWorkingTextEditLocked(
-        documentId,
-        candidateWorkingText,
-        candidateChanges,
-        commitDocument,
-      );
+    // The collaboration service commits the document. A document with a
+    // review or with annotations gets its sidecar first: the service maps
+    // the suggestions and the annotation anchors through the changes. A
+    // document with neither is committed at once.
+    await this._reviewApplication.applyWorkingTextEditLocked(
+      documentId,
+      candidateWorkingText,
+      candidateChanges,
+      commitDocument,
+    );
+    if (reviewed) {
       // A reviewed document does not autosave: the save gate owns when its
       // bytes reach disk.
       return true;
     }
-
-    commitDocument();
 
     const autoSave = this._app.config.get().editor.autoSave;
 
@@ -1758,17 +2073,14 @@ current contents from the editor somewhere else, and restart the application.`,
           // makes the reason findable instead of inventing a silent success.
           // A failed disk write leaves the text only in memory, so the user
           // learns of it now, through the same toast as a refused close.
-          if (result.refusal?.reason === "write-failed") {
+          if (result.refusal.reason === "write-failed") {
             const payload: SaveRefusedBroadcast = {
               filePath: doc.filePath,
               refusal: result.refusal,
             };
-            broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
+            this._tellAbout(doc.filePath, undefined, SAVE_REFUSED_CHANNEL, payload);
           }
-          const reason =
-            result.refusal === undefined
-              ? "no reason reported"
-              : `${result.refusal.reason}: ${result.refusal.message}`;
+          const reason = `${result.refusal.reason}: ${result.refusal.message}`;
           this._app.log.warning(
             `[Document Provider] Autosave refused for ${doc.filePath} (${reason}). ` +
               "The buffer is unchanged and still unsaved; the next explicit save will " +
@@ -1790,68 +2102,82 @@ current contents from the editor somewhere else, and restart the application.`,
   // END DOCUMENT AUTHORITY FUNCTIONS
 
   /**
-   * This function searches all currently opened documents for files that have
-   * databases attached to them, and announces to the citeproc provider that it
-   * should keep those available. Resolves once the citeproc provider finishes
-   * synchronizing.
-   */
-  /**
-   * Recompute every bibliography reachable from the currently loaded roots and
-   * synchronize Citeproc with that union. Root-management commands call this
-   * after changing the configured roots so already-open editors receive the
-   * same database update they would after opening another document.
+   * Names to the citation provider the bibliographies that it keeps: those
+   * of the loaded documents and those of the Quarto books of the loaded
+   * roots. Ends when the provider read each of them; a file that does not
+   * load is a problem of the provider and rejects nothing here.
+   *
+   * The calls name their bibliographies in the order of the calls, so the
+   * last call decides what the provider keeps. A root-management command
+   * waits for this after it changed the roots: the bibliographies of a new
+   * root are then available to the editors that are open.
    */
   public async synchronizeDatabases(): Promise<void> {
-    const libraries: string[] = [];
+    const named = this.bibliographiesNamed.then(async () => {
+      const libraries = await this.bibliographies();
+      return { read: this._app.citeproc.synchronizeDatabases(libraries) };
+    });
+    // The next call collects after this one, also when this one failed.
+    this.bibliographiesNamed = named.then(
+      () => {},
+      () => {},
+    );
+    await (await named).read;
+  }
 
-    for (const doc of this.documents) {
-      if (doc.descriptor.type !== "file") {
-        continue;
-      }
+  /**
+   * Names the bibliographies again and does not wait for the reads. The
+   * start, and an open, a close and a save of a document do not wait for a
+   * library: the read of a large one takes seconds.
+   */
+  private startDatabaseSynchronization(): void {
+    this.synchronizeDatabases().catch((err: unknown) => {
+      this._app.log.error(
+        `[Document Manager] Could not name the bibliographies to the citation provider: ${err instanceof Error ? err.message : String(err)}`,
+        err,
+      );
+    });
+  }
 
-      const frontmatter: unknown = doc.descriptor.frontmatter;
-      if (
-        frontmatter !== null &&
-        typeof frontmatter === "object" &&
-        "bibliography" in frontmatter
-      ) {
-        const bib = frontmatter.bibliography;
-        if (typeof bib === "string" && path.isAbsolute(bib) && !libraries.includes(bib)) {
-          libraries.push(bib);
-        } else if (Array.isArray(bib)) {
-          for (const item of bib) {
-            if (typeof item === "string" && path.isAbsolute(item) && !libraries.includes(item)) {
-              libraries.push(item);
-            }
-          }
-        }
-      }
-    }
+  /**
+   * The absolute paths of the bibliographies of the Quarto books of the
+   * loaded roots and of the loaded documents. The documents are read last and
+   * without a wait after them, so the list has the documents of the moment
+   * at which the citation provider gets it.
+   */
+  private async bibliographies(): Promise<string[]> {
+    const libraries = new Set<string>();
 
     if (typeof this._app.fsal.getAllLoadedDescriptors === "function") {
-      try {
-        const descriptors = await this._app.fsal.getAllLoadedDescriptors();
-        for (const descriptor of descriptors) {
-          if (
-            descriptor.type === "directory" &&
-            descriptor.settings.project?.manifest.kind === "quarto"
-          ) {
-            for (const bibPath of descriptor.settings.project.manifest.bibliographies) {
-              if (path.isAbsolute(bibPath) && !libraries.includes(bibPath)) {
-                libraries.push(bibPath);
-              }
+      for (const descriptor of await this._app.fsal.getAllLoadedDescriptors()) {
+        if (
+          descriptor.type === "directory" &&
+          descriptor.settings.project?.manifest.kind === "quarto"
+        ) {
+          for (const bibPath of descriptor.settings.project.manifest.bibliographies) {
+            if (path.isAbsolute(bibPath)) {
+              libraries.add(bibPath);
             }
           }
         }
-      } catch (err: unknown) {
-        this._app.log.error(
-          "[Document Manager] Could not collect project bibliographies from FSAL",
-          err,
-        );
       }
     }
 
-    await this._app.citeproc.synchronizeDatabases(libraries);
+    // The main library is the provider's own; '' leaves it out of the list.
+    const ofDocuments = await Promise.all(
+      [...this.documents].map(
+        async (doc) =>
+          (await documentBibliography(this._app.fsal, doc.filePath, doc.document.toString()))
+            .database,
+      ),
+    );
+    for (const database of ofDocuments) {
+      for (const file of bibliographyFiles(database, "")) {
+        libraries.add(file);
+      }
+    }
+
+    return [...libraries];
   }
 
   /**
@@ -1865,6 +2191,18 @@ current contents from the editor somewhere else, and restart the application.`,
    *
    * @return {Promise<boolean>} True if it successfully opens the file
    */
+  /**
+   * Opens a path with the application of the desktop. The open of a
+   * document does not wait for that application; a refusal is a message
+   * of its own.
+   */
+  private _openExternally(filePath: string): void {
+    openPath(filePath).catch((refusal: Error) => {
+      this._app.log.error(refusal.message, refusal);
+      this._app.windows.showErrorMessage(trans("Could not open the file"), refusal.message);
+    });
+  }
+
   public async openFile(
     windowId: string | undefined,
     leafId: string | undefined,
@@ -1881,7 +2219,7 @@ current contents from the editor somewhere else, and restart the application.`,
       // folders, so we just quickly check for that, and open them (similar to
       // non-Markdown files a few lines below).
       if (isDir(filePath)) {
-        await shell.openPath(filePath);
+        this._openExternally(filePath);
         return false;
       }
 
@@ -1906,7 +2244,7 @@ current contents from the editor somewhere else, and restart the application.`,
       }
 
       if (shouldOpenExternally) {
-        await shell.openPath(filePath);
+        this._openExternally(filePath);
         return false;
       }
     }
@@ -1965,7 +2303,7 @@ current contents from the editor somewhere else, and restart the application.`,
     this._app.recentDocs.add(filePath);
 
     const { openFiles, openWorkspaces } = this._app.config.get().app;
-    if (!openFiles.includes(filePath) && openWorkspaces.every((p) => !filePath.startsWith(p))) {
+    if (!openFiles.includes(filePath) && innermostRoot(filePath, openWorkspaces) === undefined) {
       // The file just opened is outside the current opened roots -> add as a
       // standalone root file.
       this._app.config.addPath(filePath);
@@ -2018,7 +2356,7 @@ current contents from the editor somewhere else, and restart the application.`,
       filePath: leaf.tabMan.activeFile?.path,
       targetRange: navigation?.targetRange,
     });
-    await this.synchronizeDatabases();
+    this.startDatabaseSynchronization();
     this.syncToConfig();
     return ret;
   }
@@ -2040,6 +2378,13 @@ current contents from the editor somewhere else, and restart the application.`,
       );
       return false;
     }
+    // The tab manager keeps a pinned tab open. Refuse before the question
+    // about unsaved text and before the document unloads, or the tab stays
+    // without its document.
+    if (leaf.tabMan.openFiles.some((file) => file.path === filePath && file.pinned)) {
+      this._app.log.info(`[Document Manager] Not closing ${filePath}: its tab is pinned.`);
+      return false;
+    }
 
     let numOpenInstances = 0;
     await this.forEachLeaf(async (tabMan) => {
@@ -2056,19 +2401,25 @@ current contents from the editor somewhere else, and restart the application.`,
     // opened in this session of Zettlr, hence it will not be modified, hence we
     // don't have to do anything.
     const openFile = this.documents.find((doc) => doc.filePath === filePath);
+    const repeatClose = async (): Promise<void> => {
+      await this.closeFile(windowId, leafId, filePath);
+    };
+    // The window of the tab shows a refusal of this close.
+    const detachForThisClose = async (): Promise<boolean> =>
+      openFile !== undefined &&
+      (await this._detachForClose(openFile.documentId, filePath, repeatClose, "close", windowId));
     if (openFile !== undefined && this.isModified(filePath) && numOpenInstances === 1) {
       const detail = trans("File: %s", openFile.descriptor.name);
       const result = await this._app.windows.askSaveChanges(detail);
       // 0 = Save, 1 = Don't save, 2 = Cancel
       if (result.response === 1) {
-        await this._discardChanges(openFile);
+        if (!(await this._discardForClose(openFile, repeatClose, "close", windowId))) {
+          return false;
+        }
         // A saved review may survive the discard of a later edit. The
         // document is about to leave the live registry, so detach that
         // preserved review before removing its working-text resolver.
-        try {
-          await this._detachCollaboration(openFile.documentId);
-        } catch (err) {
-          this._announceDetachFailure(filePath, err);
+        if (!(await detachForThisClose())) {
           return false;
         }
         this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
@@ -2078,16 +2429,13 @@ current contents from the editor somewhere else, and restart the application.`,
       } else if (result.response === 0) {
         const saved = await this.saveFile(filePath);
         if (!saved.ok) {
-          this._announceSaveRefusal(filePath, saved);
+          this._announceSaveRefusal(filePath, saved, windowId);
           return false;
         }
         // The save persists the review, but the final pane is leaving the
         // live registry. Detach before the splice so closed-file API reads do
         // not observe a review whose working-text authority is gone.
-        try {
-          await this._detachCollaboration(openFile.documentId);
-        } catch (err) {
-          this._announceDetachFailure(filePath, err);
+        if (!(await detachForThisClose())) {
           return false;
         }
       } else {
@@ -2097,23 +2445,15 @@ current contents from the editor somewhere else, and restart the application.`,
       }
 
       // Remove the file
-      this.documents.splice(this.documents.indexOf(openFile), 1);
-      this._app.references.dropAuthorityBuffer(filePath);
+      this._unload(openFile);
     } else if (openFile !== undefined && numOpenInstances === 1) {
       // The file is not modified, but this is still the last instance, so we
       // can close it without having to ask. Detach before the splice: the
       // sidecar export reads the working text through the live document.
-      const _id = this.getDocumentId(filePath);
-      if (_id !== undefined) {
-        try {
-          await this._detachCollaboration(_id);
-        } catch (err) {
-          this._announceDetachFailure(filePath, err);
-          return false;
-        }
+      if (!(await detachForThisClose())) {
+        return false;
       }
-      this.documents.splice(this.documents.indexOf(openFile), 1);
-      this._app.references.dropAuthorityBuffer(filePath);
+      this._unload(openFile);
     }
 
     const ret = leaf.tabMan.closeFile(filePath);
@@ -2139,7 +2479,7 @@ current contents from the editor somewhere else, and restart the application.`,
         this.syncToConfig();
       }
 
-      await this.synchronizeDatabases();
+      this.startDatabaseSynchronization();
     }
     return ret;
   }
@@ -2158,18 +2498,46 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Close every tab in one window using the ordinary per-document close path.
+   * Close each tab of one pane but the tab of `keptPath` and the pinned tabs,
+   * one after the other through `closeFile`: one question about unsaved text
+   * at a time, and a cancelled or refused close stops the rest (#202).
+   */
+  public async closeOtherTabs(
+    windowId: string,
+    leafId: string,
+    keptPath: string,
+  ): Promise<boolean> {
+    const leaf = this._windows[windowId]?.findLeaf(leafId);
+    if (leaf === undefined) {
+      return false;
+    }
+    const paths = leaf.tabMan.openFiles
+      .filter((file) => file.path !== keptPath && !file.pinned)
+      .map((file) => file.path);
+    for (const filePath of paths) {
+      if (!(await this.closeFile(windowId, leafId, filePath))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Close every tab in one window, or in one pane of it when `leafId` is
+   * given, using the ordinary per-document close path. The Window menu and
+   * the context menu of a tab are this one action (#202).
    *
    * Modified documents therefore keep the existing Save / Don't save / Cancel
    * semantics. Pinned tabs are included because "all tabs" is explicit, but a
    * refused/cancelled close restores the pin before aborting the bulk action.
    */
-  public async closeAllTabs(windowId: string): Promise<boolean> {
+  public async closeAllTabs(windowId: string, leafId?: string): Promise<boolean> {
     const tree = this._windows[windowId];
     if (tree === undefined) {
       return false;
     }
-    const tabs = tree.getAllLeafs().flatMap((leaf) =>
+    const leafs = tree.getAllLeafs().filter((leaf) => leafId === undefined || leaf.id === leafId);
+    const tabs = leafs.flatMap((leaf) =>
       leaf.tabMan.openFiles.map((file) => ({
         leafId: leaf.id,
         path: file.path,
@@ -2211,7 +2579,7 @@ current contents from the editor somewhere else, and restart the application.`,
       }
       const saved = await this.saveFile(document.filePath);
       if (!saved.ok) {
-        this._announceSaveRefusal(document.filePath, saved);
+        this._announceSaveRefusal(document.filePath, saved, windowId);
         return false;
       }
     }
@@ -2236,9 +2604,144 @@ current contents from the editor somewhere else, and restart the application.`,
    * are definitely closed. This will be called from within the watcher callback
    * on an `unlink` event.
    *
+   * Resolves false when the collaboration state could not be written: the
+   * document stays loaded and its tabs stay open, so the refusal that the
+   * window shows is true and the author still has the buffer. A caller that
+   * removes the file afterwards must stop on false.
+   *
    * @param   {string}  filePath  The file path in question
    */
-  public async closeFileEverywhere(filePath: string): Promise<void> {
+  public async closeFileEverywhere(filePath: string): Promise<boolean> {
+    // Detach before the tabs close and before the splice: the sidecar export
+    // reads the working text through the live document. After an `unlink`
+    // the file is gone from disk, so the review in memory and the buffer are
+    // the only copy of both.
+    const documentId = this.getDocumentId(filePath);
+    if (
+      documentId !== undefined &&
+      !(await this._detachForClose(documentId, filePath, async () => {
+        await this.closeFileEverywhere(filePath);
+      }))
+    ) {
+      return false;
+    }
+    await this._closeTabsEverywhere(filePath);
+    const document = this.documents.find((doc) => doc.filePath === filePath);
+    if (document !== undefined) {
+      this._unload(document);
+    }
+
+    this.syncWatchedFilePaths();
+    return true;
+  }
+
+  /**
+   * Closes each document at or inside `targetPath` before a delete in the
+   * application removes its file: each loaded document and each tab. Unsaved
+   * text is asked about for each document. Resolves false at the first
+   * document that stays open: the author cancelled, or its close was refused.
+   */
+  public async closeDocumentsForDelete(targetPath: string): Promise<boolean> {
+    const paths = new Set([
+      ...this.documents.map((document) => document.filePath),
+      ...this._pathsShownInPanes(),
+    ]);
+    for (const filePath of paths) {
+      if (isAtOrInsideRoot(filePath, targetPath) && !(await this.closeFileEverywhere(filePath))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Moves aside the collaboration state of each document at or inside
+   * `deletedPath`, after the author deleted that path in the application. A
+   * new file at the path of a deleted document does not get its annotations
+   * or its review; the bytes stay in the sidecar directory. A document that
+   * is loaded keeps its state. A sidecar that cannot be read is moved aside
+   * when it is the one of `deletedPath`; the name of the file of another
+   * document is a hash that names no path.
+   */
+  public async setAsideStateOfDeleted(deletedPath: string): Promise<void> {
+    const loaded = new Set(this.documents.map((document) => document.filePath));
+    const { sidecars, unreadable } = await this._reviewApplication.collaborationSidecarInventory();
+    const files = sidecars
+      .filter(
+        (sidecar) =>
+          isAtOrInsideRoot(sidecar.documentPath, deletedPath) && !loaded.has(sidecar.documentPath),
+      )
+      .map((sidecar) => this._reviewApplication.sidecarFileOf(sidecar.documentPath));
+    const ownFile = this._reviewApplication.sidecarFileOf(deletedPath);
+    if (unreadable.some((entry) => entry.file === ownFile)) {
+      files.push(ownFile);
+    }
+    for (const file of files) {
+      await this._reviewApplication.setAsideCollaborationSidecar(file);
+    }
+  }
+
+  /**
+   * Closes each document at or inside one of `rootPaths` that no other open
+   * root holds: each loaded document and each tab, also of a path that the
+   * file filters hide. A document of a workspace that stays open stays open
+   * with its text. Unsaved text is
+   * asked about one time, as at the close of a window; a document with an
+   * undecided proposal is not asked about, its close puts the review in the
+   * sidecar. Resolves false when a document stays open: the author
+   * cancelled, a save was refused, or a close was refused with an action
+   * that runs `closeAgain`.
+   */
+  public async closeDocumentsInside(
+    rootPaths: readonly string[],
+    closeAgain: () => Promise<void>,
+  ): Promise<boolean> {
+    const { openFiles, openWorkspaces } = this._app.config.get().app;
+    const otherRoots = [...openFiles, ...openWorkspaces].filter(
+      (root) => !rootPaths.includes(root),
+    );
+    const inside = (filePath: string): boolean =>
+      rootPaths.some((root) => isAtOrInsideRoot(filePath, root)) &&
+      !otherRoots.some((root) => isAtOrInsideRoot(filePath, root));
+    const loaded = this.documents.filter((document) => inside(document.filePath));
+    const asked = this._documentsToAskAbout(loaded);
+    if (asked.length > 0) {
+      const detail = asked
+        .map((document) => trans("File: %s", document.descriptor.name))
+        .join("\n");
+      const result = await this._app.windows.askSaveChanges(detail);
+      // 0 = Save, 1 = Don't save, 2 = Cancel
+      if (result.response === 2) {
+        return false;
+      }
+      for (const document of asked) {
+        if (result.response === 1) {
+          if (!(await this._discardForClose(document, closeAgain, "close"))) {
+            return false;
+          }
+          continue;
+        }
+        const saved = await this.saveFile(document.filePath);
+        if (!saved.ok) {
+          this._announceSaveRefusal(document.filePath, saved);
+          return false;
+        }
+      }
+    }
+    const paths = new Set([
+      ...loaded.map((document) => document.filePath),
+      ...[...this._pathsShownInPanes()].filter(inside),
+    ]);
+    for (const filePath of paths) {
+      if (!(await this.closeFileEverywhere(filePath))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** Closes the tab of a path in every pane, pinned or not. */
+  private async _closeTabsEverywhere(filePath: string): Promise<void> {
     await this.forEachLeaf(async (tabMan, windowId, leafId) => {
       if (tabMan.openFiles.map((x) => x.path).includes(filePath)) {
         tabMan.setPinnedStatus(filePath, false);
@@ -2261,50 +2764,34 @@ current contents from the editor somewhere else, and restart the application.`,
 
       return true;
     });
-
-    // We also must splice the document out of our provider. Detach before
-    // the splice: the sidecar export reads the working text through the
-    // live document.
-    const documentId = this.getDocumentId(filePath);
-    if (documentId !== undefined) {
-      try {
-        await this._detachCollaboration(documentId);
-      } catch (err) {
-        // The file is gone from disk, so there is no reopening it to retry
-        // the export; the review stays in memory and the buffer stays loaded
-        // rather than being dropped along with the only copy of both.
-        this._announceDetachFailure(filePath, err);
-        return;
-      }
-    }
-    const idx = this.documents.findIndex((doc) => doc.filePath === filePath);
-    if (idx > -1) {
-      this.documents.splice(idx, 1);
-      this._app.references.dropAuthorityBuffer(filePath);
-    }
-
-    this.syncWatchedFilePaths();
   }
 
   /**
-   * For the provided root workspace directory at `filePath`,
-   * retrieve a list of filepaths representing every open file
-   * within the workspace.
-   *
-   * @param {string}      filePath  Path of the workspace directory
-   *
-   * @returns {string[]}            A list of file paths representing the
-   *                                open files within `filePath`.
+   * Every Markdown and code file of the workspace at `workspacePath`, by the
+   * walk of the FSAL, and each folder whose content that walk does not hold.
    */
-  /**
-   * For the provided root workspace directory at `workspacePath`,
-   * retrieve a list of filepaths representing every supported file
-   * within the workspace, using FSAL as the source of truth.
-   */
-  public async getFilesForWorkspace(workspacePath: string): Promise<string[]> {
-    const allPaths = await this._app.fsal.readDirectoryRecursively(workspacePath);
-    // Filter: supported file extensions, and exclude the workspace directory itself
-    return allPaths.filter((p) => p !== workspacePath && hasMdOrCodeExt(p) && !isDir(p));
+  public async getFilesForWorkspace(
+    workspacePath: string,
+  ): Promise<{ files: string[]; notListed: FolderNotListed[] }> {
+    const listing = await this._app.fsal.readDirectoryRecursively(workspacePath);
+    return {
+      files: listing.paths.filter((p) => p !== workspacePath && hasMdOrCodeExt(p) && !isDir(p)),
+      notListed: listing.notListed,
+    };
+  }
+
+  /** Tells the author that a removed file left a document with unsaved text. */
+  private _announceRemovedFileKept(filePath: string): void {
+    const documentId = this.getDocumentId(filePath);
+    const payload: FileRemovedKeptBroadcast = {
+      filePath,
+      saveWritesFile:
+        documentId === undefined || this._reviewApplication.getReview(documentId) === undefined,
+    };
+    this._app.log.warning(
+      `[DocumentManager] ${filePath} was removed from disk; its document has unsaved text and stays open.`,
+    );
+    this._tellAbout(filePath, undefined, FILE_REMOVED_KEPT_CHANNEL, payload);
   }
 
   /**
@@ -2378,7 +2865,7 @@ current contents from the editor somewhere else, and restart the application.`,
         status: "modification",
       });
       const payload: RemoteChangeKeptBroadcast = { filePath, unsavedChanges: isModified };
-      broadcastIpcMessage(REMOTE_CHANGE_KEPT_CHANNEL, payload);
+      this._tellAbout(filePath, undefined, REMOTE_CHANGE_KEPT_CHANNEL, payload);
     } else {
       // The user has activated the setting to alwaysReloadFiles.
       await this.notifyRemoteChange(filePath);
@@ -2395,39 +2882,86 @@ current contents from the editor somewhere else, and restart the application.`,
    * @param  {string}  newPath  The path it'll be afterwards
    */
   public async hasMovedFile(oldPath: string, newPath: string): Promise<void> {
-    // Basically we just have to close the oldPath, and "open" the new path.
-    const openDoc = this.documents.find((doc) => doc.filePath === oldPath);
-    if (openDoc === undefined) {
-      return; // Nothing to do
+    if (oldPath === newPath) {
+      return;
     }
+    await this._dropReplacedDocument(newPath);
 
-    // The collaboration sidecar is keyed by the OLD path's hash; carry it to
-    // the new path before anything else touches openDoc.filePath, so a crash
-    // between the two never leaves the sidecar unreachable under either name.
-    await this._reviewApplication.renameCollaboration(openDoc.documentId, oldPath, newPath);
+    // The document keeps its id, loaded or not: its annotations, its review
+    // and the agents that hold the id follow it to the new path (#178).
+    const documentId = this._assignDocumentId(oldPath);
+    await this._reviewApplication.withDocumentLock(documentId, async () => {
+      this._movePathOfDocument(documentId, oldPath, newPath);
+      // The sidecar goes last. When it cannot be written, the error goes to
+      // the caller with the id, the tabs and the state in memory at the new
+      // path: the next write of the state lands there.
+      await this._reviewApplication
+        .renameCollaboration(documentId, oldPath, newPath)
+        .catch((failure: Error) => {
+          throw ReviewStateNotMovedError.of(newPath, failure);
+        });
+    });
+  }
 
-    openDoc.filePath = newPath;
-    openDoc.descriptor.path = newPath;
-    openDoc.descriptor.dir = path.dirname(newPath);
-    openDoc.descriptor.name = path.basename(newPath);
-    openDoc.descriptor.ext = path.extname(newPath);
+  /**
+   * A move put another file at this path. The document that was there lost
+   * its file: its tabs close, and its buffer and its collaboration state in
+   * memory go with no write. The move of the sidecar replaces its sidecar.
+   */
+  private async _dropReplacedDocument(filePath: string): Promise<void> {
+    await this._closeTabsEverywhere(filePath);
+    const replacedId = this.getDocumentId(filePath);
+    if (replacedId !== undefined) {
+      await this._reviewApplication.withDocumentLock(replacedId, async () => {
+        this._reviewApplication.dropCollaboration(replacedId);
+      });
+    }
+    const replaced = this.documents.find((doc) => doc.filePath === filePath);
+    if (replaced !== undefined) {
+      this._unload(replaced);
+    }
+  }
 
-    // The buffer moved with the document: its live reference overlay moves
-    // too (issue #53) — the old path's overlay dies, the new path reports
-    // immediately (a move is a single event, not a typing storm).
-    this._app.references.dropAuthorityBuffer(oldPath);
-    if (openDoc.type === DocumentType.Markdown) {
-      this._app.references.reportAuthorityBuffer(newPath, true);
+  /**
+   * Every record of the provider that names the path of a document takes
+   * the new path, in one synchronous step: the id maps, the loaded
+   * document, the reference overlay, the tabs and the watcher.
+   */
+  private _movePathOfDocument(documentId: string, oldPath: string, newPath: string): void {
+    this._moveDocumentId(documentId, oldPath, newPath);
+    this._announcedRemoteModtime.delete(oldPath);
+    this._announcedRemoteModtime.delete(newPath);
+
+    const openDoc = this.documents.find((doc) => doc.filePath === oldPath);
+    if (openDoc !== undefined) {
+      openDoc.filePath = newPath;
+      openDoc.descriptor.path = newPath;
+      openDoc.descriptor.dir = path.dirname(newPath);
+      openDoc.descriptor.name = path.basename(newPath);
+      openDoc.descriptor.ext = path.extname(newPath);
+
+      // The buffer moved with the document: its live reference overlay moves
+      // too (issue #53) — the old path's overlay dies, the new path reports
+      // immediately (a move is a single event, not a typing storm).
+      this._app.references.dropAuthorityBuffer(oldPath);
+      if (openDoc.type === DocumentType.Markdown) {
+        this._app.references.reportAuthorityBuffer(newPath, true);
+      }
     }
 
     const leafsToNotify: Array<[string, string]> = [];
-    await this.forEachLeaf(async (tabMan, windowId, leafId) => {
-      const res = tabMan.replaceFilePath(oldPath, newPath);
-      if (res) {
-        leafsToNotify.push([windowId, leafId]);
+    let tabsChanged = false;
+    for (const [windowId, tree] of Object.entries(this._windows)) {
+      for (const leaf of tree.getAllLeafs()) {
+        if (leaf.tabMan.replaceFilePath(oldPath, newPath)) {
+          leafsToNotify.push([windowId, leaf.id]);
+          tabsChanged = true;
+        }
       }
-      return res;
-    });
+    }
+    if (tabsChanged) {
+      this.syncToConfig();
+    }
 
     this.syncWatchedFilePaths();
 
@@ -2454,22 +2988,52 @@ current contents from the editor somewhere else, and restart the application.`,
    * Will internally call hasMovedFile for every affected file to ensure a
    * smooth user experience.
    *
+   * Each document of the folder moves, also after the move of another
+   * failed. The documents whose collaboration state stayed at the old path
+   * are one error (ReviewStateNotMovedError).
+   *
    * @param  {string}  oldPath  The old path
    * @param  {string}  newPath  The new path
    */
   public async hasMovedDir(oldPath: string, newPath: string): Promise<void> {
-    // Similar as hasMovedFile, but triggers the command for every affected file
-    const docs = this.documents.filter((doc) => doc.filePath.startsWith(oldPath));
-
-    for (const doc of docs) {
-      this._app.log.info(
-        "Replacing file path for doc " +
-          doc.filePath +
-          " with " +
-          doc.filePath.replace(oldPath, newPath),
+    // Similar as hasMovedFile, but triggers the command for every affected
+    // file: each loaded document, each path with an id and each tab below
+    // the folder, then each document that has only a sidecar.
+    const known = new Set(
+      [
+        ...this.documents.map((doc) => doc.filePath),
+        ...this._documentIdByPath.keys(),
+        ...this._pathsShownInPanes(),
+      ].filter((filePath) => isInsideRoot(filePath, oldPath)),
+    );
+    const failures: Error[] = [];
+    const move = async (filePath: string): Promise<void> => {
+      await this.hasMovedFile(filePath, newPath + filePath.slice(oldPath.length)).catch(
+        (failure: Error) => {
+          failures.push(failure);
+        },
       );
-      await this.hasMovedFile(doc.filePath, doc.filePath.replace(oldPath, newPath));
+    };
+    for (const filePath of known) {
+      this._app.log.info(`Replacing file path for doc ${filePath} with one in ${newPath}`);
+      await move(filePath);
     }
+
+    // A file that cannot be read stays where it is. It stops no move. A
+    // document of the first loop whose sidecar stayed at the old path is
+    // not moved a second time: that move would replace the document.
+    const { sidecars } = await this._reviewApplication.collaborationSidecarInventory();
+    for (const sidecar of sidecars) {
+      if (isInsideRoot(sidecar.documentPath, oldPath) && !known.has(sidecar.documentPath)) {
+        await move(sidecar.documentPath);
+      }
+    }
+
+    const stateStayed = failures.filter((failure) => failure instanceof ReviewStateNotMovedError);
+    throwFailures([
+      ...(stateStayed.length > 1 ? [ReviewStateNotMovedError.merged(stateStayed)] : stateStayed),
+      ...failures.filter((failure) => !(failure instanceof ReviewStateNotMovedError)),
+    ]);
   }
 
   /**
@@ -2593,24 +3157,30 @@ current contents from the editor somewhere else, and restart the application.`,
     // through the live document. After external drift the review arrives
     // here invalidated, and it is stored frozen until it is reapplied or
     // discarded.
-    const _id = this.getDocumentId(filePath);
-    if (_id !== undefined) {
-      try {
-        await this._detachCollaboration(_id);
-      } catch (err) {
-        // The reload is what would discard the in-memory review, so it does
-        // not happen: the buffer and the review stay, and the renderer is
-        // told why the file it saw change was not reloaded.
-        this._announceDetachFailure(filePath, err);
-        return;
-      }
+    // The reload is what would discard the in-memory review, so it does not
+    // happen when the detach fails: the buffer and the review stay, and the
+    // renderer is told why the file it saw change was not reloaded.
+    const documentId = this.getDocumentId(filePath);
+    if (
+      documentId !== undefined &&
+      !(await this._detachForClose(
+        documentId,
+        filePath,
+        async () => {
+          await this.notifyRemoteChange(filePath);
+        },
+        "reload",
+      ))
+    ) {
+      return;
     }
-    const idx = this.documents.findIndex((file) => file.filePath === filePath);
-    this.documents.splice(idx, 1);
-    this._announcedRemoteModtime.delete(filePath);
     // The reloading renderers re-trigger getDocument, which reports the
     // fresh buffer; until then the saved FSAL snapshot is the truth.
-    this._app.references.dropAuthorityBuffer(filePath);
+    const document = this.documents.find((file) => file.filePath === filePath);
+    if (document !== undefined) {
+      this._unload(document);
+    }
+    this._announcedRemoteModtime.delete(filePath);
     // Indicate to all affected editors that they should reload the file
     this.broadcastEvent(DP_EVENTS.FILE_REMOTELY_CHANGED, { filePath });
   }
@@ -2935,11 +3505,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * caller must not paper over with an empty string.
    */
   private _workingTextOf(documentId: string): string | undefined {
-    const filePath = this.getDocumentPath(documentId);
-    if (filePath === undefined) {
-      return undefined;
-    }
-    const doc = this.documents.find((d) => d.filePath === filePath);
+    const doc = this.documents.find((d) => d.documentId === documentId);
     return doc === undefined ? undefined : normalizeText(doc.document.toString());
   }
 
@@ -3245,8 +3811,28 @@ current contents from the editor somewhere else, and restart the application.`,
     // Pending chunks do not block a save: saving persists the document as-is
     // and the review's status alongside it, so a pending review can be closed
     // and revisited later. The only refusal left is external drift.
-    const diskContents = await this._app.fsal.loadAnySupportedFile(filePath);
-    if (sha256Text(normalizeText(diskContents)) !== review.diskFenceSha256) {
+    const disk = await this._app.fsal.loadAnySupportedFile(filePath).then(
+      (contents): { contents: string } => ({ contents }),
+      (err: unknown): { unreadable: string } => {
+        this._app.log.error(
+          `[DocumentManager] Save gate closed for ${filePath}: the file could not be read.`,
+          err,
+        );
+        return { unreadable: err instanceof Error ? err.message : String(err) };
+      },
+    );
+    if ("unreadable" in disk) {
+      // The gate cannot tell whether the file changed after the review
+      // opened, so the save does not replace the file.
+      return {
+        reason: "disk-unreadable",
+        message: trans(
+          "The file could not be read, so the save could not compare it with its review, and nothing was written: %s",
+          disk.unreadable,
+        ),
+      };
+    }
+    if (sha256Text(normalizeText(disk.contents)) !== review.diskFenceSha256) {
       this._app.log.warning(
         `[DocumentManager] Save gate closed for ${filePath}: the document changed on disk ` +
           "after the review opened; the external edit was preserved.",
@@ -3254,7 +3840,7 @@ current contents from the editor somewhere else, and restart the application.`,
       return {
         reason: "disk-changed",
         message: trans(
-          "The document changed on disk after this review opened. The external edit was preserved.",
+          "The document changed on disk after this review opened, so it was not saved. Load the disk version, or reapply or discard the review in the Annotations view and save again.",
         ),
       };
     }
@@ -3275,6 +3861,72 @@ current contents from the editor somewhere else, and restart the application.`,
     );
   }
 
+  /**
+   * Writes the text that the application holds of a document to a file that
+   * the author chooses. The document keeps its path, its unsaved text and
+   * its review. This is the way out for text that a refused save cannot put
+   * into the file of the document.
+   *
+   * @return The path of the copy, or undefined when the author chose no file.
+   * @throws {Error} If the document is not loaded, if the chosen file is the
+   *                 file of a loaded document, or if the write fails.
+   */
+  public async saveCopy(filePath: string): Promise<string | undefined> {
+    const name = path.basename(filePath);
+    const notLoaded = (): Error =>
+      new Error(trans("The application holds no text of %s, so there is nothing to copy.", name));
+    if (!this.documents.some((doc) => doc.filePath === filePath)) {
+      throw notLoaded();
+    }
+
+    const extension = path.extname(filePath);
+    const target = await this._app.windows.saveFile(
+      path.join(
+        path.dirname(filePath),
+        trans("%s copy", path.basename(filePath, extension)) + extension,
+      ),
+    );
+    if (target === undefined) {
+      return undefined;
+    }
+    // A write to the file of a loaded document is a save of that document,
+    // and a save goes through its own gates.
+    if (this.documents.some((doc) => doc.filePath === target)) {
+      throw new Error(
+        trans(
+          "%s is open in the application. Choose another file for the copy.",
+          path.basename(target),
+        ),
+      );
+    }
+
+    // The text is read under the document lock, so the copy is one state of
+    // the document. The dialog is not: the author can type while it is open.
+    return await this._reviewApplication.withDocumentLock(
+      this.ensureDocumentId(filePath),
+      async () => {
+        const doc = this.documents.find((doc) => doc.filePath === filePath);
+        if (doc === undefined) {
+          throw notLoaded();
+        }
+        const content = [...doc.document.iterLines()].join("\n");
+        await this._app.fsal.writeTextFile(target, this._fileTextOf(doc, content));
+        return target;
+      },
+    );
+  }
+
+  /**
+   * The text of a file of `doc` that holds `content`. The application keeps
+   * every text with LF line ends; a Markdown file has the byte order mark
+   * and the line ends that it had when it was read.
+   */
+  private _fileTextOf(doc: Document, content: string): string {
+    return doc.descriptor.type === "file"
+      ? doc.descriptor.bom + content.split("\n").join(doc.descriptor.linefeed)
+      : content;
+  }
+
   private async _saveFileLocked(filePath: string): Promise<SaveFileResult> {
     const doc = this.documents.find((doc) => doc.filePath === filePath);
 
@@ -3282,7 +3934,16 @@ current contents from the editor somewhere else, and restart the application.`,
       this._app.log.error(
         `[Document Provider] Could not save file ${filePath}: Not found in loaded documents!`,
       );
-      return { ok: false };
+      return {
+        ok: false,
+        refusal: {
+          reason: "not-loaded",
+          message: trans(
+            "The application holds no text of %s, so nothing was written. Open the document again.",
+            path.basename(filePath),
+          ),
+        },
+      };
     }
 
     // If saveFile was called from a timeout, clearTimeout does nothing but the
@@ -3299,13 +3960,12 @@ current contents from the editor somewhere else, and restart the application.`,
       return { ok: false, refusal };
     }
 
-    // NOTE: Remember that we MUST under any circumstances adapt the document
-    // descriptor BEFORE attempting to save. The reason is that if we don't do
-    // that, we can run into the following race condition:
-    // 1. User changes the document
-    // 2. The save commences
-    // 3. The user adds more changes
-    // 4. The save finishes and undos the modifications
+    // The version and the text of this save are read here, before the write,
+    // and recorded as saved only after the write. A change that the author
+    // makes while the write runs has a later version, so the document stays
+    // modified. A write that fails records nothing: the document keeps text
+    // that is not on disk, and it must read as modified, or a close and a
+    // quit drop that text without a question.
 
     // NOTE: Zettlr internally always uses regular LF linefeeds. The FSAL load
     // and FSAL save methods will take care to actually use the proper linefeeds
@@ -3313,25 +3973,7 @@ current contents from the editor somewhere else, and restart the application.`,
     // future prevent bugs like #4959
     const docLines = [...doc.document.iterLines()];
     const content = docLines.join("\n");
-    doc.lastSavedVersion = doc.currentVersion;
-    doc.lastSavedContent = content;
-
-    if (doc.descriptor.type === "file") {
-      // In case of an MD File increase the word or char count
-      const locale: string = this._app.config.get().appLang;
-      const ast = markdownToAST(content);
-      const counts = countAll(ast, locale);
-      const newWordCount = counts.words;
-      const newCharCount = counts.chars;
-
-      this._app.stats.updateCounts(
-        newWordCount - doc.lastSavedWordCount,
-        newCharCount - doc.lastSavedCharCount,
-      );
-
-      doc.lastSavedWordCount = newWordCount;
-      doc.lastSavedCharCount = newCharCount;
-    }
+    const savedVersion = doc.currentVersion;
 
     // 8.6: a surviving review's sidecar records the save it is about to
     // survive BEFORE the document write, naming both hashes. A process that
@@ -3354,24 +3996,36 @@ current contents from the editor somewhere else, and restart the application.`,
 
     this._ignoreChanges.push(filePath);
 
+    let written = false;
     try {
-      if (doc.descriptor.type === "file") {
-        const fileContents = doc.descriptor.bom + content.split("\n").join(doc.descriptor.linefeed);
-        await this._app.fsal.writeTextFile(doc.descriptor.path, fileContents);
-        doc.descriptor = (await this._app.fsal.getDescriptorFor(
-          doc.descriptor.path,
-          false,
-        )) as MDFileDescriptor;
-        await this.synchronizeDatabases(); // The file may have gotten a library
-      } else {
-        await this._app.fsal.writeTextFile(doc.descriptor.path, content);
-        doc.descriptor = (await this._app.fsal.getDescriptorFor(
-          doc.descriptor.path,
-          false,
-        )) as CodeFileDescriptor;
+      await this._app.fsal.writeTextFile(doc.descriptor.path, this._fileTextOf(doc, content));
+      // The file has the text. The watcher compares the file with
+      // lastSavedContent, so it is recorded before the next await.
+      written = true;
+      doc.lastSavedVersion = savedVersion;
+      doc.lastSavedContent = content;
+      const refreshed = (await this._app.fsal.getDescriptorFor(doc.descriptor.path, false)) as
+        | MDFileDescriptor
+        | CodeFileDescriptor;
+      // A file that can be written and not read has a descriptor of a file
+      // without text. The document keeps the descriptor of its last read.
+      if (refreshed.readError !== undefined) {
+        return {
+          ok: false,
+          refusal: this._savedNotRefreshed(doc, refreshed.readError.message, refreshed.readError),
+        };
+      }
+      doc.descriptor = refreshed;
+      if (refreshed.type === "file") {
+        this.startDatabaseSynchronization(); // The file may have gotten a library
       }
     } catch (err: unknown) {
       const reason = err instanceof Error ? err.message : String(err);
+      if (written) {
+        return { ok: false, refusal: this._savedNotRefreshed(doc, reason, err) };
+      }
+      // The write failed, so the next change of the file is not this save.
+      this._ignoreChanges.splice(this._ignoreChanges.lastIndexOf(filePath), 1);
       this._app.log.error(`[DocumentManager] Could not write ${filePath}: ${reason}`, err);
       return {
         ok: false,
@@ -3380,6 +4034,23 @@ current contents from the editor somewhere else, and restart the application.`,
           message: trans("Could not save file %s: %s", doc.descriptor.name, reason),
         },
       };
+    }
+
+    if (doc.descriptor.type === "file") {
+      // In case of an MD File increase the word or char count
+      const locale: string = this._app.config.get().appLang;
+      const ast = markdownToAST(content);
+      const counts = countAll(ast, locale);
+      const newWordCount = counts.words;
+      const newCharCount = counts.chars;
+
+      this._app.stats.updateCounts(
+        newWordCount - doc.lastSavedWordCount,
+        newCharCount - doc.lastSavedCharCount,
+      );
+
+      doc.lastSavedWordCount = newWordCount;
+      doc.lastSavedCharCount = newCharCount;
     }
 
     this._app.log.info(`[DocumentManager] File ${filePath} saved.`);
@@ -3435,6 +4106,60 @@ current contents from the editor somewhere else, and restart the application.`,
     };
   }
 
+  /**
+   * The documentId a bulk owner mutation works on: the live document, or —
+   * for a document no pane shows — a collaboration sidecar for that path,
+   * which is the only annotation state a closed document has. Assigning an
+   * id is cheap and stable, but it is also why this must not become the
+   * general channel for an arbitrary path: it exists because the panel's
+   * projection just read that sidecar through ensureDocumentId.
+   */
+  private async _documentIdForBulkOwnerMutation(filePath: string): Promise<string | undefined> {
+    const live = this.getDocumentId(filePath);
+    if (live !== undefined) {
+      return live;
+    }
+    const sidecar = await this._reviewApplication.readSidecar(filePath);
+    if (sidecar === undefined) {
+      return undefined;
+    }
+    return this.ensureDocumentId(filePath);
+  }
+
+  /** Resolve the open annotations of one document, owner-actor hardcoded. */
+  private async _resolveActedAnnotations(
+    documentId: string,
+    expectedAnnotationGeneration: number,
+    scope: "acted" | "open",
+  ): Promise<{ resolved: TextAnnotation[] } | AnnotationFailure> {
+    const result = await this._reviewApplication.resolveActedAnnotations({
+      documentId,
+      actor: "owner",
+      expectedAnnotationGeneration,
+      scope,
+    });
+    if ("ok" in result) {
+      return result;
+    }
+    return { resolved: result };
+  }
+
+  /** Delete every resolved annotation of one document, owner-actor hardcoded. */
+  private async _deleteResolvedAnnotations(
+    documentId: string,
+    expectedAnnotationGeneration: number,
+  ): Promise<{ deleted: TextAnnotation[] } | AnnotationFailure> {
+    const result = await this._reviewApplication.deleteResolvedAnnotations({
+      documentId,
+      actor: "owner",
+      expectedAnnotationGeneration,
+    });
+    if ("ok" in result) {
+      return result;
+    }
+    return { deleted: result };
+  }
+
   public ensureDocumentId(filePath: string): string {
     return this._assignDocumentId(filePath);
   }
@@ -3447,22 +4172,23 @@ current contents from the editor somewhere else, and restart the application.`,
    * main is what made the original deadlock unrecoverable), and the renderer
    * only surfaces refusals for saves it requested itself — so without this the
    * prompt closes, the window stays open, and the reason is only in the log.
+   *
+   * `startedBy` is the window whose close or whose "save all" asked for the
+   * save; a quit has none.
    */
-  private _announceSaveRefusal(filePath: string, result: SaveFileResult): void {
+  private _announceSaveRefusal(filePath: string, result: SaveFileResult, startedBy?: string): void {
     if (result.ok) {
       return;
     }
     this._app.log.warning(
-      `[DocumentManager] Close aborted: ${filePath} could not be saved` +
-        (result.refusal === undefined
-          ? " and reported no reason."
-          : ` (${result.refusal.reason}): ${result.refusal.message}`),
+      `[DocumentManager] Close aborted: ${filePath} could not be saved ` +
+        `(${result.refusal.reason}): ${result.refusal.message}`,
     );
     const payload: SaveRefusedBroadcast = {
       filePath,
       refusal: result.refusal,
     };
-    broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
+    this._tellAbout(filePath, startedBy, SAVE_REFUSED_CHANNEL, payload);
   }
 
   /**
@@ -3484,11 +4210,159 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * A close aborted because the review could not be written through. The
-   * renderer surfaces this the same way it surfaces a refused save: the
-   * document is still open, and the reason has to reach the person who asked
-   * for the close rather than only the log.
+   * The detach of a close. Resolves false when the state could not be
+   * written: the close does not happen, the document stays loaded with its
+   * state, and one window names the cause with one action (_tellAbout;
+   * `startedBy` is the window of the close). That action is
+   * closeWithoutReview, which runs `repeatClose` after it dropped the
+   * state. No close is refused without it (#178).
+   *
+   * A reload from disk and a quit detach the same way: `action` says
+   * which of the three the refusal stopped. A quit detaches only a document
+   * that no pane shows, so its action leaves the review as its sidecar
+   * last held it; the message says so.
    */
+  private async _detachForClose(
+    documentId: string,
+    filePath: string,
+    repeatClose: () => Promise<void>,
+    action: RefusedAction = "close",
+    startedBy?: string,
+  ): Promise<boolean> {
+    return await this._detachCollaboration(documentId).then(
+      () => {
+        this._refusedCloses.delete(documentId);
+        return true;
+      },
+      (err: unknown) => {
+        this._refusedCloses.set(documentId, { repeat: repeatClose, textDiscarded: false });
+        this._announceRefusedClose(
+          filePath,
+          documentId,
+          "review-not-persisted",
+          REVIEW_NOT_SAVED[action],
+          err,
+          action,
+          startedBy,
+        );
+        return false;
+      },
+    );
+  }
+
+  /**
+   * The answer "discard" at a close prompt, for one document. Resolves
+   * false when the discard failed: the collaboration state could not be
+   * written, or the file could not be read. The close does not happen, the
+   * document keeps its text and its state, and one window names the
+   * cause with the action of _detachForClose. That action closes the
+   * document with the text that the author discarded (#178). `action`
+   * says whether the prompt was that of a close or that of a quit.
+   */
+  private async _discardForClose(
+    document: Document,
+    repeatClose: () => Promise<void>,
+    action: "close" | "quit",
+    startedBy?: string,
+  ): Promise<boolean> {
+    return await this._discardChanges(document).then(
+      () => true,
+      (err: unknown) => {
+        this._refusedCloses.set(document.documentId, { repeat: repeatClose, textDiscarded: true });
+        this._announceRefusedClose(
+          document.filePath,
+          document.documentId,
+          "discard-failed",
+          CHANGES_NOT_DISCARDED[action],
+          err,
+          action,
+          startedBy,
+        );
+        return false;
+      },
+    );
+  }
+
+  /** Removes a document from the loaded set, with its reference overlay. */
+  private _unload(document: Document): void {
+    const index = this.documents.indexOf(document);
+    if (index === -1) {
+      throw new Error(`Document ${document.filePath} is not loaded`);
+    }
+    this.documents.splice(index, 1);
+    this._refusedCloses.delete(document.documentId);
+    this._app.references.dropAuthorityBuffer(document.filePath);
+  }
+
+  /**
+   * The author's answer to a refused close: close without the state that
+   * could not be written. The state in memory goes; the sidecar stays as
+   * it was last written, so the next load of the document attaches that.
+   * Resolves false when no close of this document is refused now.
+   *
+   * A document that no pane shows is unloaded: its buffer is the working
+   * text of the review that goes. A document in a pane keeps its buffer,
+   * and the repeated close asks about unsaved text as each close does.
+   *
+   * The buffer of a document whose review has an undecided proposal is the
+   * working text of that review, in a pane too. The sidecar has that text,
+   * because each change of such a document writes the sidecar first. The
+   * buffer takes the text of the file, so the repeated close has no
+   * proposal to offer for a save (#146).
+   *
+   * A document whose unsaved text the author discarded leaves every pane
+   * and is unloaded: its buffer is the text that the author threw away,
+   * and the discard that puts the text of the file back is what failed.
+   */
+  public async closeWithoutReview(documentId: string): Promise<boolean> {
+    const refused = this._refusedCloses.get(documentId);
+    if (refused === undefined) {
+      return false;
+    }
+    this._refusedCloses.delete(documentId);
+    const document = this.documents.find((doc) => doc.documentId === documentId);
+    const heldUndecidedProposal = document !== undefined && this._holdsUndecidedProposal(document);
+    await this._reviewApplication.withDocumentLock(documentId, async () => {
+      this._reviewApplication.dropCollaboration(documentId);
+    });
+    if (document !== undefined) {
+      if (heldUndecidedProposal) {
+        this._applyWorkingTextToDocument(document.filePath, document.lastSavedContent);
+        document.lastSavedVersion = document.currentVersion;
+      }
+      if (refused.textDiscarded) {
+        await this._closeTabsEverywhere(document.filePath);
+      }
+      if (this._pathsShownInPanes().has(document.filePath)) {
+        this.broadcastCollaborationState(documentId);
+      } else {
+        this._unload(document);
+        this.syncWatchedFilePaths();
+      }
+    }
+    await refused.repeat();
+    return true;
+  }
+
+  /**
+   * The answer of a save that wrote the file and could not read it again. The
+   * text is on disk, so the document is not modified.
+   */
+  private _savedNotRefreshed(doc: Document, reason: string, cause: unknown): SaveRefusal {
+    this._app.log.error(
+      `[DocumentManager] ${doc.descriptor.path} was written, and its new state could not be read: ${reason}`,
+      cause,
+    );
+    return {
+      reason: "saved-not-refreshed",
+      message: trans(
+        "%s was saved, but the application could not read the file again: %s",
+        doc.descriptor.name,
+        reason,
+      ),
+    };
+  }
+
   /** The refusal a save owes when the review could not be persisted. */
   private _persistenceRefusal(filePath: string, err: unknown): SaveRefusal {
     const message =
@@ -3498,16 +4372,29 @@ current contents from the editor somewhere else, and restart the application.`,
     return { reason: "review-not-persisted", message };
   }
 
-  private _announceDetachFailure(filePath: string, err: unknown): void {
-    const message =
-      "The review could not be saved, so this document was left open: " +
-      (err instanceof Error ? err.message : String(err));
+  /**
+   * A close, a reload or a quit that the provider refused. The window shows
+   * this as it shows a refused save, with the document for which the author
+   * can repeat the action without the state that stopped it
+   * (closeWithoutReview).
+   */
+  private _announceRefusedClose(
+    filePath: string,
+    documentId: string,
+    reason: SaveRefusalReason,
+    what: RefusalMessage,
+    err: unknown,
+    action: RefusedAction,
+    startedBy: string | undefined,
+  ): void {
+    const message = what(err instanceof Error ? err.message : String(err));
     this._app.log.error(`[DocumentManager] Close aborted for ${filePath}: ${message}`, err);
     const payload: SaveRefusedBroadcast = {
       filePath,
-      refusal: { reason: "review-not-persisted", message },
+      refusal: { reason, message },
+      refused: { documentId, action },
     };
-    broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
+    this._tellAbout(filePath, startedBy, SAVE_REFUSED_CHANNEL, payload);
   }
 
   /**
@@ -3537,7 +4424,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * The sidecar deletion is deliberately NOT wrapped in the error handling
    * _detachCollaboration uses: a discard whose file removal failed leaves those
    * bytes reattachable, and swallowing that would reinstate the defect. It
-   * throws, and the close it was called from aborts.
+   * throws, and the close it was called from is refused (_discardForClose).
    */
   private async _discardChanges(doc: Document): Promise<void> {
     await this._reviewApplication.withDocumentLock(doc.documentId, async () => {
@@ -3590,16 +4477,44 @@ current contents from the editor somewhere else, and restart the application.`,
         doc.filePath,
         doc.lastSavedContent,
       );
-      // Annotations restore silently: only a restored review gives the
-      // sidecar's working text a claim on the buffer.
-      if (restored?.workingText === undefined) {
+      if (restored === undefined) {
         return;
       }
-      this._applyWorkingTextToDocument(doc.filePath, restored.workingText);
+      // Only a restored review gives the working text of the sidecar a
+      // claim on the buffer.
+      if (restored.workingText !== undefined) {
+        this._applyWorkingTextToDocument(doc.filePath, restored.workingText);
+      }
+      // The window keeps the session that it gets for the document, and an
+      // editor shows a review only while its text is the working text of
+      // that session. The session goes out after the buffer has its text.
+      this.broadcastCollaborationState(doc.documentId);
     } catch (err) {
-      // The document itself is fine — open it; the broken sidecar stays on
-      // disk as evidence and keeps failing loudly until it is dealt with.
-      this._surfaceReviewSidecarError(doc.documentId, "read", err);
+      // The document itself is fine — open it; the sidecar stays on disk as
+      // it is and keeps failing loudly until it is dealt with.
+      if (err instanceof CollaborationSidecarUnreadableError) {
+        this._surfaceReviewSidecarError(doc.documentId, "read", err);
+        // The window says so and offers to move the file aside.
+        const payload: CollaborationFileUnreadableBroadcast = {
+          filePath: doc.filePath,
+          file: this._reviewApplication.sidecarFileOf(doc.filePath),
+          cause: err.message,
+        };
+        this._tellAbout(doc.filePath, undefined, COLLABORATION_FILE_UNREADABLE_CHANNEL, payload);
+        return;
+      }
+      if (!isErrnoException(err)) {
+        throw err;
+      }
+      // The file was read; the attach to the text of the file could not
+      // write it. Nothing of it is in memory, and the next load attaches it
+      // again. A move aside is a write too, so the window offers none.
+      this._surfaceReviewSidecarError(doc.documentId, "write", err);
+      const payload: CollaborationFileUnwritableBroadcast = {
+        filePath: doc.filePath,
+        cause: err.message,
+      };
+      this._tellAbout(doc.filePath, undefined, COLLABORATION_FILE_UNWRITABLE_CHANNEL, payload);
     }
   }
 
@@ -3607,12 +4522,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * Get the file path for a documentId.
    */
   public getDocumentPath(documentId: string): string | undefined {
-    for (const [filePath, id] of this._documentIdByPath) {
-      if (id === documentId) {
-        return filePath;
-      }
-    }
-    return undefined;
+    return this._documentPathById.get(documentId);
   }
 
   public isDocumentOpen(documentPath: string): boolean {
@@ -3626,6 +4536,18 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * The text of a document: the buffer of a loaded document, which can hold
+   * text that is not on disk and outlives its file (§14), else the file.
+   */
+  public readDocumentText(filePath: string): Promise<string> {
+    const doc = this.documents.find((d) => path.resolve(d.filePath) === path.resolve(filePath));
+    if (doc !== undefined) {
+      return Promise.resolve(doc.document.toString());
+    }
+    return this.readSupportedFile(filePath);
+  }
+
+  /**
    * Assign a documentId for a newly loaded document.
    * Called internally during document loading.
    */
@@ -3636,7 +4558,24 @@ current contents from the editor somewhere else, and restart the application.`,
     }
     const id = `doc-${randomUUID()}`;
     this._documentIdByPath.set(filePath, id);
+    this._documentPathById.set(id, filePath);
     return id;
+  }
+
+  /**
+   * The id of the document at `oldPath` names `newPath` from here on. An
+   * id that named `newPath` belonged to the file that the move replaced:
+   * it names no path, and a refused close of that document has no object.
+   */
+  private _moveDocumentId(documentId: string, oldPath: string, newPath: string): void {
+    const replacedId = this._documentIdByPath.get(newPath);
+    if (replacedId !== undefined) {
+      this._documentPathById.delete(replacedId);
+      this._refusedCloses.delete(replacedId);
+    }
+    this._documentIdByPath.delete(oldPath);
+    this._documentIdByPath.set(newPath, documentId);
+    this._documentPathById.set(documentId, newPath);
   }
 
   /**
@@ -3721,7 +4660,7 @@ current contents from the editor somewhere else, and restart the application.`,
     claims: ProposalClaim[],
     clientRequestId: string,
     expectedReviewGeneration: number,
-  ): Promise<SubmittedProposal | { ok: false; code: string; message: string }> {
+  ): Promise<SubmittedProposal | ProposalRefusal> {
     return this._reviewApplication.submitProposal({
       documentId,
       baselineSha256,
@@ -3960,7 +4899,8 @@ current contents from the editor somewhere else, and restart the application.`,
    * transaction set. The document manager is the central collab authority:
    * it prepares every ChangeSet before mutating any document, records one
    * serialized authority update per touched document, then broadcasts the
-   * updates for every renderer pane to pull.
+   * updates for every renderer pane to pull. The review and the annotations
+   * of a document follow the edit, and its sidecar holds the edited text.
    *
    * Resolving the returned promise is the application acknowledgement used
    * by ReferenceProvider. No rename success or undo record may be exposed
@@ -3981,11 +4921,13 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     }
 
+    // Every ChangeSet is made, and with that checked against its document,
+    // before a buffer changes.
     const prepared: Array<{
       document: Document;
       filePath: string;
-      nextText: Text;
-      update: SerializedUpdate;
+      source: Text;
+      changes: ChangeSet;
     }> = [];
     for (const [filePath, documentEdits] of editsByDocument) {
       const document = this.documents.find((candidate) => candidate.filePath === filePath);
@@ -4005,34 +4947,45 @@ current contents from the editor somewhere else, and restart the application.`,
         })),
         document.document.length,
       );
-      const update = {
-        changes: serializeChangeSet(changes),
-        clientID: "reference-rename",
-      };
-      prepared.push({
-        document,
-        filePath,
-        nextText: changes.apply(document.document),
-        update,
-      });
+      prepared.push({ document, filePath, source: document.document, changes });
     }
 
-    for (const transaction of prepared) {
-      transaction.document.document = transaction.nextText;
-      transaction.document.currentVersion += 1;
-      transaction.document.updates.push(transaction.update);
-      while (transaction.document.updates.length > MAX_VERSION_HISTORY) {
-        transaction.document.updates.shift();
-        transaction.document.minimumVersion += 1;
-      }
-    }
-
-    for (const transaction of prepared) {
-      this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
-        filePath: transaction.filePath,
-        status: "modification",
+    // Each document changes as it does for an update of an editor: under its
+    // lock and through the collaboration service, which writes the sidecar
+    // of a document with a review or annotations before the buffer changes.
+    // A document that fails leaves the earlier ones changed and rejects; the
+    // workspace-edit transaction then restores them.
+    for (const { document, filePath, source, changes } of prepared) {
+      const documentId = this.ensureDocumentId(filePath);
+      await this._reviewApplication.withDocumentLock(documentId, async () => {
+        assert(
+          this.documents.includes(document) && document.document === source,
+          `[DocumentManager] ${filePath} changed during the workspace edit`,
+        );
+        const nextText = changes.apply(source);
+        await this._reviewApplication.applyWorkingTextEditLocked(
+          documentId,
+          normalizeText(nextText.toString()),
+          changes,
+          () => {
+            document.document = nextText;
+            document.currentVersion += 1;
+            document.updates.push({
+              changes: serializeChangeSet(changes),
+              clientID: "reference-rename",
+            });
+            while (document.updates.length > MAX_VERSION_HISTORY) {
+              document.updates.shift();
+              document.minimumVersion += 1;
+            }
+            this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
+              filePath,
+              status: "modification",
+            });
+            this._app.references.reportAuthorityBuffer(filePath);
+          },
+        );
       });
-      this._app.references.reportAuthorityBuffer(transaction.filePath);
     }
 
     return prepared.map((transaction) => transaction.filePath);
@@ -4070,10 +5023,17 @@ current contents from the editor somewhere else, and restart the application.`,
    * Closed documents are projected from their validated collaboration
    * sidecars into that exact same renderer shape. The renderer never reads
    * sidecars directly and never has to know whether a document is open.
+   *
+   * A sidecar that cannot be read hides no other document: the listing
+   * names the file, and the document of the file when `paths` holds it.
+   *
+   * A sidecar outside `paths` is the state of a document that the window
+   * does not list. The listing names it when its document has no file
+   * (_sidecarsOfNoDocument).
    */
   private async _workspaceCollaborationSessions(
     paths: readonly string[],
-  ): Promise<DocumentCollaborationSession[]> {
+  ): Promise<WorkspaceCollaborationListing> {
     const wanted = new Set(paths);
     const sessions: DocumentCollaborationSession[] = [];
     const livePaths = new Set<string>();
@@ -4094,8 +5054,14 @@ current contents from the editor somewhere else, and restart the application.`,
 
     // Enumerate the small set of sidecars once, then intersect it with the
     // workspace. This avoids one failed filesystem lookup per ordinary file.
-    for (const sidecar of await this._reviewApplication.listCollaborationSidecars()) {
-      if (!wanted.has(sidecar.documentPath) || livePaths.has(sidecar.documentPath)) {
+    const { sidecars, unreadable } = await this._reviewApplication.collaborationSidecarInventory();
+    const unlisted: string[] = [];
+    for (const sidecar of sidecars) {
+      if (livePaths.has(sidecar.documentPath)) {
+        continue;
+      }
+      if (!wanted.has(sidecar.documentPath)) {
+        unlisted.push(sidecar.documentPath);
         continue;
       }
       const documentId = this.ensureDocumentId(sidecar.documentPath);
@@ -4109,7 +5075,67 @@ current contents from the editor somewhere else, and restart the application.`,
         }),
       );
     }
-    return sessions;
+    return {
+      sessions,
+      unreadable: this._documentsOfUnreadableFiles(unreadable, wanted),
+      ownerless: await this._sidecarsOfNoDocument(unlisted),
+    };
+  }
+
+  /**
+   * Of the given document paths, each of which has a sidecar, the ones
+   * where the application reaches no file: the author deleted the document,
+   * or a move of the document could not carry the state to its new path.
+   *
+   * Only a path in an open workspace that is there counts. The file of a
+   * workspace on a volume that is not mounted is not a deleted document,
+   * and the application knows nothing of a file outside every workspace. A
+   * document that is loaded keeps its state for as long as it is loaded.
+   */
+  private async _sidecarsOfNoDocument(
+    documentPaths: readonly string[],
+  ): Promise<OwnerlessCollaborationFile[]> {
+    const { openWorkspaces } = this._app.config.get().app;
+    const loaded = new Set(this.documents.map((document) => document.filePath));
+    const rootIsThere = new Map<string, boolean>();
+    const ownerless: OwnerlessCollaborationFile[] = [];
+    for (const documentPath of documentPaths) {
+      const root = innermostRoot(documentPath, openWorkspaces);
+      if (root === undefined || loaded.has(documentPath)) {
+        continue;
+      }
+      if (!rootIsThere.has(root)) {
+        rootIsThere.set(root, await this._app.fsal.testAccess(root, FSConstants.F_OK));
+      }
+      if (
+        rootIsThere.get(root) === true &&
+        !(await this._app.fsal.testAccess(documentPath, FSConstants.F_OK))
+      ) {
+        ownerless.push({
+          file: this._reviewApplication.sidecarFileOf(documentPath),
+          documentPath,
+        });
+      }
+    }
+    return ownerless;
+  }
+
+  /**
+   * The name of a sidecar file is a hash of the path of its document, so the
+   * document of an unreadable file is known only among the given paths. The
+   * hashes are computed only when a file is unreadable.
+   */
+  private _documentsOfUnreadableFiles(
+    unreadable: ReadonlyArray<{ file: string; cause: string }>,
+    paths: ReadonlySet<string>,
+  ): UnreadableCollaborationFile[] {
+    if (unreadable.length === 0) {
+      return [];
+    }
+    const documentOfFile = new Map(
+      [...paths].map((filePath) => [this._reviewApplication.sidecarFileOf(filePath), filePath]),
+    );
+    return unreadable.map((entry) => ({ ...entry, documentPath: documentOfFile.get(entry.file) }));
   }
 
   /**

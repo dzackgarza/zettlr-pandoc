@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import {
   phraseCompletionSource,
   phraseCompletionsField,
@@ -10,7 +11,6 @@ import {
   texDocumentKind,
   texMacroSourcesField,
 } from "source/common/modules/markdown-editor/autocomplete/tex";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 
 const bs = String.fromCharCode(92);
 
@@ -75,6 +75,22 @@ describe("package-aware TeX command completion", function () {
     assert.ok(optionLabels(result).includes(bs + "xmapsto"));
   });
 
+  // The metadata block is the one that Pandoc and the descriptor read (#203)
+  it("reads the tex packages of the metadata block that Pandoc reads", async function () {
+    const metadata = ["---", "tex:", "  packages: [mathtools]", "---"];
+    const afterParagraph = ["Intro", "", ...metadata, "", "$" + bs + "xma"].join("\n");
+    assert.ok(
+      optionLabels(await completionFor(stateFor(afterParagraph))).includes(bs + "xmapsto"),
+      "a block after a paragraph",
+    );
+
+    const blankAfterOpener = ["---", "", ...metadata.slice(1), "", "$" + bs + "xma"].join("\n");
+    assert.ok(
+      !optionLabels(await completionFor(stateFor(blankAfterOpener))).includes(bs + "xmapsto"),
+      "an opener that a blank line follows opens no block",
+    );
+  });
+
   it("works in LaTeX documents and Pandoc YAML header-includes", async function () {
     const latex = [bs + "usepackage{mathtools}", bs + "xma"].join("\n");
     assert.ok(optionLabels(await completionFor(stateFor(latex, "latex"))).includes(bs + "xmapsto"));
@@ -122,6 +138,30 @@ describe("package-aware TeX command completion", function () {
     const labels = optionLabels(await completionFor(state));
     assert.ok(labels.includes(bs + "Pic"));
     assert.ok(labels.includes(bs + "xmapsto"));
+  });
+
+  // The declaration forms of the central macro tree, without braces around the name (#203)
+  it("offers each macro that a macro source declares, in each declaration form", async function () {
+    const macroSource = {
+      path: "/notes/tex/macros.tex",
+      content: [
+        bs + "newcommand" + bs + "Restriction[2]{" + bs + "mathrm{Res}^{#1}_{#2}}",
+        bs + "renewcommand*" + bs + "Rring{" + bs + "mathbb{R}}",
+        bs + "DeclareMathOperator" + bs + "Rank{rank}",
+        bs + "DeclarePairedDelimiter" + bs + "Rabs{" + bs + "lvert}{" + bs + "rvert}",
+        bs + "NewDocumentCommand" + bs + "Rset{m}{" + bs + "{#1" + bs + "}}",
+        bs + "newcommand{" + bs + "Rbraced}{x}",
+      ].join("\n"),
+    };
+    const state = stateFor("$" + bs + "R", "markdown", [macroSource]);
+    const userMacros = (await completionFor(state))?.options
+      .filter((option) => option.detail === "[user macro]")
+      .map((option) => option.label)
+      .sort();
+    assert.deepEqual(
+      userMacros,
+      ["Rabs", "Rank", "Rbraced", "Restriction", "Rring", "Rset"].map((name) => bs + name),
+    );
   });
 
   it("keeps prose dictionaries out of backslash command contexts", async function () {

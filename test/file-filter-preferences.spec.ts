@@ -1,15 +1,17 @@
 import { strict as assert } from "assert";
 import { DEFAULT_FILE_FILTER_INCLUDE } from "source/app/service-providers/config/get-config-template";
+import {
+  createIgnoreFilter,
+  EVERY_FILE_TYPE,
+  type FileTypeVisibility,
+} from "source/common/util/ignore-rules";
 import type {
+  AnyDescriptor,
   CodeFileDescriptor,
   DirDescriptor,
   MDFileDescriptor,
   OtherFileDescriptor,
 } from "source/types/common/fsal";
-import {
-  createFileManagerVisibilityFilter,
-  type FileManagerVisibilityConfig,
-} from "source/win-main/file-manager/util/filter-children";
 import { buildFilePickerCache } from "source/win-main/file-manager/util/match-query";
 import { getFileManagerFields } from "source/win-preferences/schema/file-manager";
 
@@ -30,6 +32,7 @@ const markdown = {
   wordCount: 1,
   charCount: 1,
   firstHeading: "Theorem",
+  firstSentence: null,
   yamlTitle: undefined,
   aliases: [],
   frontmatter: null,
@@ -101,27 +104,21 @@ const directory = {
     quartoManifest: null,
   },
   isGitRepository: false,
+  metadataProblems: [],
 } satisfies DirDescriptor;
 
-function visibilityConfig(include: string[]): FileManagerVisibilityConfig {
-  return {
-    attachmentExtensions: [],
-    fileManager: {
-      filters: { include },
-    },
-    files: {
-      builtin: { showInFilemanager: true, openWith: "zettlr" },
-      images: { showInFilemanager: true, openWith: "system" },
-      pdf: { showInFilemanager: true, openWith: "system" },
-      msoffice: { showInFilemanager: true, openWith: "system" },
-      openOffice: { showInFilemanager: true, openWith: "system" },
-      dataFiles: { showInFilemanager: true, openWith: "system" },
-      dotFiles: { showInFilemanager: false, openWith: "system" },
-    },
-  };
+/** Whether the one filter lists a descriptor below the workspace root "/notes". */
+function listedBy(fileTypes: FileTypeVisibility): (descriptor: AnyDescriptor) => boolean {
+  const filter = createIgnoreFilter({
+    globalRules: [],
+    workspaceRules: new Map([["/notes", ""]]),
+    showIgnored: false,
+    fileTypes,
+  });
+  return (descriptor) => !filter.hides(descriptor.path, descriptor.type === "directory");
 }
 
-describe("file type filter of the file manager", function () {
+describe("file type filter", function () {
   it("defaults Include to all Markdown extensions", function () {
     assert.deepEqual(DEFAULT_FILE_FILTER_INCLUDE, [
       ".md",
@@ -134,42 +131,58 @@ describe("file type filter of the file manager", function () {
     ]);
   });
 
-  it("shows only files with an included extension, and every folder", function () {
-    const visible = createFileManagerVisibilityFilter(visibilityConfig([".md", ".yaml"]));
+  it("lists only files with an included extension, and every folder", function () {
+    const listed = listedBy({ ...EVERY_FILE_TYPE, include: [".md", ".yaml"] });
 
-    assert.equal(visible(markdown), true);
-    assert.equal(visible(yaml), true);
-    assert.equal(visible(latex), false);
-    assert.equal(visible(pdf), false);
-    assert.equal(visible(directory), true);
+    assert.equal(listed(markdown), true);
+    assert.equal(listed(yaml), true);
+    assert.equal(listed(latex), false);
+    assert.equal(listed(pdf), false);
+    assert.equal(listed({ ...directory, path: "/notes/sub" }), true);
   });
 
-  it("builds the Ctrl+Shift+P cache from the exact file-manager-visible set", function () {
-    const visible = createFileManagerVisibilityFilter(visibilityConfig([".md", ".yaml"]));
-    const cache = buildFilePickerCache([markdown, yaml, latex, pdf, directory], visible);
+  it("lists every file type that its type setting allows when Include is empty", function () {
+    assert.equal(listedBy(EVERY_FILE_TYPE)(latex), true);
+    assert.equal(listedBy(EVERY_FILE_TYPE)(pdf), true);
+    assert.equal(listedBy({ ...EVERY_FILE_TYPE, pdf: false })(pdf), false);
+  });
 
-    assert.deepEqual(cache.paths, [markdown.path, yaml.path]);
-    assert.equal(cache.pathSet.has(latex.path), false);
+  it("lists a dot path only when dot files are on, a file below a dot folder included", function () {
+    const dotFile = { ...markdown, path: "/notes/.hidden.md" };
+    const belowDotFolder = { ...markdown, path: "/notes/.git-notes/theorem.md" };
+    const off = listedBy({ ...EVERY_FILE_TYPE, dotFiles: false });
+    assert.equal(off(dotFile), false);
+    assert.equal(off(belowDotFolder), false);
+    assert.equal(listedBy(EVERY_FILE_TYPE)(belowDotFolder), true);
+  });
+
+  it("lists an unknown file type only with an extension in attachmentExtensions", function () {
+    const archive = { ...pdf, path: "/notes/data.zip", ext: ".zip" };
+    assert.equal(listedBy(EVERY_FILE_TYPE)(archive), false);
+    assert.equal(listedBy({ ...EVERY_FILE_TYPE, attachmentExtensions: [".zip"] })(archive), true);
+  });
+
+  it("builds the Ctrl+Shift+P cache from every file the FSAL lists", function () {
+    const cache = buildFilePickerCache([markdown, yaml, latex, pdf, directory]);
+
+    assert.deepEqual(cache.paths, [markdown.path, yaml.path, latex.path, pdf.path]);
     assert.equal(cache.pathSet.has(directory.path), false);
   });
 
-  it("uses an empty Include list as all file types permitted by File Treatment", function () {
-    const visible = createFileManagerVisibilityFilter(visibilityConfig([]));
+  it("edits the file filters on the File Manager page of Preferences only through the file filter window", function () {
+    const fields = getFileManagerFields({ fileNameDisplay: "filename" }).flatMap(
+      (fieldset) => fieldset.fields,
+    );
+    const models = fields.flatMap((field) => ("model" in field ? [field.model] : []));
+    const labels = fields.flatMap((field) => (field.type === "button" ? [field.label] : []));
 
-    assert.equal(visible(markdown), true);
-    assert.equal(visible(latex), true);
-    assert.equal(visible(yaml), true);
-    assert.equal(visible(pdf), true);
-    assert.equal(visible(directory), true);
-  });
-
-  it("exposes the file types, the ignore rules and the reveal toggle on the File Manager page of Preferences", function () {
-    const models = getFileManagerFields({ fileNameDisplay: "filename" })
-      .flatMap((fieldset) => fieldset.fields)
-      .flatMap((field) => ("model" in field ? [field.model] : []));
-
-    assert.ok(models.includes("fileManager.filters.include"));
-    assert.ok(models.includes("fileManager.ignoreRules"));
-    assert.ok(models.includes("fileManager.showIgnored"));
+    for (const model of [
+      "fileManager.filters.include",
+      "fileManager.ignoreRules",
+      "fileManager.showIgnored",
+    ]) {
+      assert.ok(!models.includes(model), `${model} has no second editor in Preferences`);
+    }
+    assert.ok(labels.includes("Edit file filters…"));
   });
 });

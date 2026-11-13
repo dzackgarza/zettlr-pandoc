@@ -168,7 +168,7 @@ const noResultsLabel = trans("No matching commands");
 const defaultLabel = trans("Default");
 const userLabel = trans("User");
 
-const commands = commandRegistry.all();
+const commands = commandRegistry.bindable();
 
 const filteredCommands = computed(() => {
   const search = query.value.trim().toLowerCase();
@@ -320,10 +320,8 @@ function captureKeybinding(event: KeyboardEvent): void {
 .keybindings-row {
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(145px, 2fr) minmax(100px, 1.2fr) minmax(
-      90px,
-      1fr
-    ) 72px 68px;
+  /* The key column holds four keys (Ctrl, Alt, Shift and a key) on one line. */
+  grid-template-columns: minmax(120px, 2fr) minmax(140px, 1.2fr) minmax(90px, 1fr) 72px 68px;
   min-height: 46px;
   border-bottom: 1px solid var(--grey-1);
 
@@ -359,7 +357,8 @@ function captureKeybinding(event: KeyboardEvent): void {
   justify-content: center;
   gap: 2px;
 
-  strong {
+  strong,
+  code {
     overflow: hidden;
     max-width: 100%;
     text-overflow: ellipsis;
@@ -401,9 +400,11 @@ function captureKeybinding(event: KeyboardEvent): void {
   white-space: nowrap;
 }
 
-.actions-cell {
+.keybindings-row > .actions-cell {
   justify-content: flex-end;
   gap: 4px;
+  /* Two buttons of 26px and the gap fill the 68px of the column. */
+  padding-inline: 6px;
 
   button {
     width: 26px;

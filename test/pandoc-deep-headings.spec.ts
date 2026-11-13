@@ -2,9 +2,9 @@
 
 import { foldable, syntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
 import { markdownFolding } from "source/common/modules/markdown-editor/code-folding/markdown";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { tocField } from "source/common/modules/markdown-editor/plugins/toc-field";
 import { markdownToAST } from "source/common/modules/markdown-utils";
 import { nodeToHTML } from "source/common/modules/markdown-utils/markdown-to-html";

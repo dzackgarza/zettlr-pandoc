@@ -37,12 +37,14 @@ import {
   type AnnotationMutationPlan,
   type AnnotationTransitionError,
   emptyAnnotationSet,
+  prepareAnnotationBulkResolution,
   prepareAnnotationCreation,
   prepareAnnotationDeletion,
   prepareAnnotationMessage,
   prepareAnnotationReattachment,
   prepareAnnotationReopen,
   prepareAnnotationResolution,
+  prepareAnnotationResolvedCleanup,
 } from "source/app/service-providers/documents/annotation-transitions";
 import type {
   AnnotationFailure,
@@ -205,10 +207,11 @@ describe("pure annotation transitions", function () {
     );
   });
 
-  it("refuses distinct annotations with the same normalized creation reason", function () {
+  it("admits a second annotation that repeats an earlier instruction verbatim", function () {
     const annotations = oneAnnotation();
     const secondFrom = BASELINE.indexOf("lazy dog");
-    const duplicate = rejected(
+    const repeated = "  SAY   WHAT kind of fox this is.  ";
+    const plan = planned(
       prepareAnnotationCreation({
         annotations,
         actor: "owner",
@@ -216,13 +219,16 @@ describe("pure annotation transitions", function () {
         workingText: BASELINE,
         from: secondFrom,
         to: secondFrom + "lazy dog".length,
-        instruction: "  SAY   WHAT kind of fox this is.  ",
+        instruction: repeated,
         expectedAnnotationGeneration: 1,
       }),
     );
 
-    assert.equal(duplicate.code, "INVALID_PARAMS");
-    assert.match(duplicate.message, /same creation instruction/);
+    // An instruction is owner prose, not an identifier: repeating one
+    // earlier in the document is commentary, not a collision.
+    assert.equal(plan.nextAnnotations.generation, 2);
+    assert.equal(plan.nextAnnotations.items.length, 2);
+    assert.equal(plan.nextAnnotations.items[1].messages[0].text, repeated);
   });
 
   it("refuses every lifecycle move an agent asks for, and leaves the set untouched (I3)", function () {
@@ -583,6 +589,266 @@ describe("pure annotation transitions", function () {
       workingText: BASELINE,
       expectedAnnotationGeneration: 1,
     });
+    assert.deepEqual(annotations, before);
+  });
+});
+
+describe("bulk annotation moves", function () {
+  /**
+   * The complete remediation backlog shape: one open annotation an agent
+   * disposed on (acted), one open annotation it has not touched (pending),
+   * and one the owner already resolved. Generation ends at 5.
+   */
+  function backlog(): AnnotationSet {
+    const annotations = oneAnnotation();
+    const acted = planned(
+      prepareAnnotationMessage({
+        annotations,
+        actor: "agent",
+        annotationId: only(annotations).annotationId,
+        text: "Implemented the requested correction in commit abc123.",
+        clientRequestId: "bulk-backlog-disposition",
+        markActed: true,
+        expectedAnnotationGeneration: 1,
+      }),
+    ).nextAnnotations;
+    const withPending = planned(
+      prepareAnnotationCreation({
+        annotations: acted,
+        actor: "owner",
+        documentId: DOCUMENT_ID,
+        workingText: BASELINE,
+        from: 4,
+        to: 9,
+        instruction: "a second thread the agent has not finished",
+        expectedAnnotationGeneration: 2,
+      }),
+    ).nextAnnotations;
+    const withResolvedSource = planned(
+      prepareAnnotationCreation({
+        annotations: withPending,
+        actor: "owner",
+        documentId: DOCUMENT_ID,
+        workingText: BASELINE,
+        from: 0,
+        to: 3,
+        instruction: "a third thread the owner already settled",
+        expectedAnnotationGeneration: 3,
+      }),
+    ).nextAnnotations;
+    return planned(
+      prepareAnnotationResolution({
+        annotations: withResolvedSource,
+        actor: "owner",
+        annotationId: withResolvedSource.items[2].annotationId,
+        expectedAnnotationGeneration: 4,
+      }),
+    ).nextAnnotations;
+  }
+
+  it("resolves exactly the acted open annotations, in one generation bump", function () {
+    const annotations = backlog();
+    const plan = planned(
+      prepareAnnotationBulkResolution({
+        annotations,
+        actor: "owner",
+        expectedAnnotationGeneration: 5,
+        scope: "acted",
+      }),
+    );
+    assert.deepEqual(
+      plan.nextAnnotations.items.map((item) => item.state),
+      ["resolved", "open", "resolved"],
+      "the acted thread resolves, the pending thread stays open",
+    );
+    assert.equal(plan.nextAnnotations.generation, 6);
+    assert.deepEqual(
+      plan.events.map((event) => event.event),
+      ["annotation.resolved"],
+    );
+    const resolved = plan.response[0];
+    assert.equal(resolved.annotationId, annotations.items[0].annotationId);
+    assert.ok(resolved.resolvedAt !== undefined);
+  });
+
+  it("keeps a resolved thread's agentStatus and thread exactly as a single Resolve does", function () {
+    const annotations = backlog();
+    const actedItem = annotations.items[0];
+    const plan = planned(
+      prepareAnnotationBulkResolution({
+        annotations,
+        actor: "owner",
+        expectedAnnotationGeneration: 5,
+        scope: "acted",
+      }),
+    );
+    const resolved = plan.nextAnnotations.items.find(
+      (item) => item.annotationId === actedItem.annotationId,
+    )!;
+    assert.equal(resolved.messages.length, actedItem.messages.length);
+    assert.deepEqual(resolved.agentStatus, actedItem.agentStatus);
+    assert.deepEqual(resolved.anchor, actedItem.anchor);
+  });
+
+  it("refuses with nothing acted, without spending a generation", function () {
+    const annotations = oneAnnotation();
+    const refusedNothing = rejected(
+      prepareAnnotationBulkResolution({
+        annotations,
+        actor: "owner",
+        expectedAnnotationGeneration: 1,
+        scope: "acted",
+      }),
+    );
+    assert.equal(refusedNothing.code, "INVALID_PARAMS");
+    assert.match(refusedNothing.message, /No acted annotation/);
+    assert.equal(only(annotations).state, "open");
+    assert.equal(annotations.generation, 1);
+  });
+
+  it("scope open resolves EVERY open thread, acted or not, in one generation bump", function () {
+    const annotations = backlog();
+    const plan = planned(
+      prepareAnnotationBulkResolution({
+        annotations,
+        actor: "owner",
+        expectedAnnotationGeneration: 5,
+        scope: "open",
+      }),
+    );
+    assert.deepEqual(
+      plan.nextAnnotations.items.map((item) => item.state),
+      ["resolved", "resolved", "resolved"],
+      "both open threads resolve; the already-resolved one is skipped",
+    );
+    assert.equal(plan.nextAnnotations.generation, 6);
+    assert.deepEqual(
+      plan.events.map((event) => event.event),
+      ["annotation.resolved", "annotation.resolved"],
+    );
+    assert.deepEqual(
+      plan.response.map((item) => item.annotationId),
+      annotations.items.filter((item) => item.state === "open").map((item) => item.annotationId),
+    );
+  });
+
+  it("scope open is the only way a plain pending open thread joins a bulk batch", function () {
+    // The backlog's second thread is open with a PENDING agent status: the
+    // acted scope must leave it exactly where it is.
+    const annotations = backlog();
+    const actedOnly = planned(
+      prepareAnnotationBulkResolution({
+        annotations,
+        actor: "owner",
+        expectedAnnotationGeneration: 5,
+        scope: "acted",
+      }),
+    ).nextAnnotations;
+    assert.equal(
+      actedOnly.items.some((item) => item.state === "open" && item.agentStatus.state === "pending"),
+      true,
+      "the acted scope never touches an open thread the agent has not disposed on",
+    );
+  });
+
+  it("refuses scope open with nothing open, without spending a generation", function () {
+    const annotations = oneAnnotation();
+    const resolvedSet = planned(
+      prepareAnnotationResolution({
+        annotations,
+        actor: "owner",
+        annotationId: only(annotations).annotationId,
+        expectedAnnotationGeneration: 1,
+      }),
+    ).nextAnnotations;
+    const refusedNothing = rejected(
+      prepareAnnotationBulkResolution({
+        annotations: resolvedSet,
+        actor: "owner",
+        expectedAnnotationGeneration: 2,
+        scope: "open",
+      }),
+    );
+    assert.equal(refusedNothing.code, "INVALID_PARAMS");
+    assert.match(refusedNothing.message, /No annotation to resolve/);
+    assert.equal(resolvedSet.generation, 2);
+  });
+
+  it("is owner-only (I3) and leaves the input untouched", function () {
+    const annotations = backlog();
+    const before = structuredClone(annotations);
+    assert.equal(
+      rejected(
+        prepareAnnotationBulkResolution({
+          annotations,
+          actor: "agent",
+          expectedAnnotationGeneration: 5,
+          scope: "acted",
+        }),
+      ).code,
+      "ANNOTATION_OWNER_ONLY",
+    );
+    const stale = rejected(
+      prepareAnnotationBulkResolution({
+        annotations,
+        actor: "owner",
+        expectedAnnotationGeneration: 4,
+        scope: "acted",
+      }),
+    );
+    assert.equal(stale.code, "ANNOTATION_GENERATION_MISMATCH");
+    assert.deepEqual(annotations, before);
+  });
+
+  it("cleanup deletes exactly the resolved annotations, in one generation bump", function () {
+    const annotations = backlog();
+    const plan = planned(
+      prepareAnnotationResolvedCleanup({
+        annotations,
+        actor: "owner",
+        expectedAnnotationGeneration: 5,
+      }),
+    );
+    assert.deepEqual(
+      plan.nextAnnotations.items.map((item) => item.state),
+      ["open", "open"],
+      "both open threads survive the cleanup",
+    );
+    assert.equal(plan.nextAnnotations.generation, 6);
+    assert.deepEqual(
+      plan.events.map((event) => event.event),
+      ["annotation.deleted"],
+    );
+    assert.deepEqual(
+      plan.response.map((item) => item.annotationId),
+      annotations.items
+        .filter((item) => item.state === "resolved")
+        .map((item) => item.annotationId),
+    );
+  });
+
+  it("cleanup refuses with nothing resolved, and is owner-only", function () {
+    const annotations = oneAnnotation();
+    const refusedNothing = rejected(
+      prepareAnnotationResolvedCleanup({
+        annotations,
+        actor: "owner",
+        expectedAnnotationGeneration: 1,
+      }),
+    );
+    assert.equal(refusedNothing.code, "INVALID_PARAMS");
+    assert.match(refusedNothing.message, /No resolved annotation/);
+    const before = structuredClone(annotations);
+    assert.equal(
+      rejected(
+        prepareAnnotationResolvedCleanup({
+          annotations,
+          actor: "agent",
+          expectedAnnotationGeneration: 1,
+        }),
+      ).code,
+      "ANNOTATION_OWNER_ONLY",
+    );
     assert.deepEqual(annotations, before);
   });
 });

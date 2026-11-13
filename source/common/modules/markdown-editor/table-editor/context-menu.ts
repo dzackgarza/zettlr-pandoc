@@ -1,13 +1,17 @@
 import { type EditorView } from "@codemirror/view";
+import { editMenuItems, editorCommandMenuItems } from "@common/commands/editing-menu-items";
 import { trans } from "@common/i18n-renderer";
-import { cmShortcutToElectron } from "source/common/util/shortcuts";
 import showPopupMenu, { type AnyMenuItem } from "../../window-register/application-menu-helper";
-import { applyBold, applyItalic, insertLink } from "../commands/markdown";
+import {
+  editorCommandItem,
+  editorMenuAccelerator,
+  roleItem,
+  viewItem,
+} from "../context-menu/menu-accelerator";
 import { getTransformSubmenu } from "../context-menu/transform-items";
-import { type EditorShortcutName, getCustomShortcut } from "../keymaps/shortcuts";
+import { type EditorShortcutName } from "../keymaps/shortcuts";
 import { selectAllCommand } from "../keymaps/table-editor";
-import { configField } from "../util/configuration";
-import { copyAsHTML, copyAsPlain, cut, paste, pasteAsPlain } from "../util/copy-paste-cut";
+import { copyAsHTML, pasteAsPlain } from "../util/copy-paste-cut";
 import {
   addColAfter,
   addColBefore,
@@ -31,96 +35,24 @@ export function displayTableContextMenu(
   mainView: EditorView,
   subviewOrView: EditorView,
 ): void {
-  const customShortcutMap = mainView.state.field(configField).shortcuts;
-  const sc = (name: EditorShortcutName) => {
-    return cmShortcutToElectron(getCustomShortcut(name, customShortcutMap));
-  };
+  const sc = (name: EditorShortcutName) => editorMenuAccelerator(mainView, name);
+  const items = editorCommandMenuItems(trans);
+  const edit = editMenuItems(trans);
 
   const template: AnyMenuItem[] = [
-    {
-      label: trans("Bold"),
-      accelerator: "CmdOrCtrl+B",
-      type: "normal",
-      action() {
-        applyBold(subviewOrView);
-      },
-    },
-    {
-      label: trans("Italic"),
-      accelerator: "CmdOrCtrl+I",
-      type: "normal",
-      action() {
-        applyItalic(subviewOrView);
-      },
-    },
-    {
-      type: "separator",
-    },
-    {
-      label: trans("Insert link"),
-      accelerator: "CmdOrCtrl+K",
-      type: "normal",
-      action() {
-        insertLink(subviewOrView);
-      },
-    },
-    {
-      type: "separator",
-    },
-    {
-      label: trans("Cut"),
-      accelerator: "CmdOrCtrl+X",
-      type: "normal",
-      action() {
-        cut(subviewOrView);
-      },
-    },
-    {
-      label: trans("Copy"),
-      accelerator: "CmdOrCtrl+C",
-      type: "normal",
-      action() {
-        copyAsPlain(subviewOrView);
-      },
-    },
-    {
-      label: trans("Copy as HTML"),
-      accelerator: "CmdOrCtrl+Alt+C",
-      type: "normal",
-      action() {
-        copyAsHTML(subviewOrView);
-      },
-    },
-    {
-      label: trans("Paste"),
-      accelerator: "CmdOrCtrl+V",
-      type: "normal",
-      action() {
-        paste(subviewOrView);
-      },
-    },
-    {
-      label: trans("Paste without style"),
-      accelerator: "CmdOrCtrl+Shift+V",
-      type: "normal",
-      action() {
-        pasteAsPlain(subviewOrView);
-      },
-    },
-    {
-      type: "separator",
-    },
-    {
-      label: trans("Select all"),
-      accelerator: "CmdOrCtrl+A",
-      type: "normal",
-      action() {
-        selectAllCommand(subviewOrView);
-      },
-    },
-    {
-      type: "separator",
-    },
+    editorCommandItem(subviewOrView, items.bold),
+    editorCommandItem(subviewOrView, items.italic),
+    { type: "separator" },
+    editorCommandItem(subviewOrView, items.link),
+    { type: "separator" },
+    roleItem(subviewOrView, edit.cut),
+    roleItem(subviewOrView, edit.copy),
+    viewItem(subviewOrView, edit.copyAsHtml, copyAsHTML),
+    roleItem(subviewOrView, edit.paste),
+    viewItem(subviewOrView, edit.pasteAsPlain, pasteAsPlain),
+    { type: "separator" },
+    viewItem(subviewOrView, edit.selectAll, selectAllCommand),
+    { type: "separator" },
     getTransformSubmenu(subviewOrView),
     {
       type: "separator",
@@ -133,7 +65,7 @@ export function displayTableContextMenu(
         {
           type: "normal",
           label: trans("Insert new row above"),
-          accelerator: process.platform === "darwin" ? "Ctrl+Shift+Up" : "Alt+Shift+Up",
+          accelerator: sc("table-add-row-before"),
           action() {
             addRowBefore(mainView);
           },
@@ -141,7 +73,7 @@ export function displayTableContextMenu(
         {
           type: "normal",
           label: trans("Insert new row below"),
-          accelerator: process.platform === "darwin" ? "Ctrl+Shift+Down" : "Alt+Shift+Down",
+          accelerator: sc("table-add-row-after"),
           action() {
             addRowAfter(mainView);
           },
@@ -150,7 +82,7 @@ export function displayTableContextMenu(
         {
           type: "normal",
           label: trans("Move row up"),
-          accelerator: process.platform === "darwin" ? "Ctrl+Up" : "Alt+Up",
+          accelerator: sc("table-swap-prev-row"),
           action() {
             swapPrevRow(mainView);
           },
@@ -158,7 +90,7 @@ export function displayTableContextMenu(
         {
           type: "normal",
           label: trans("Move row down"),
-          accelerator: process.platform === "darwin" ? "Ctrl+Down" : "Alt+Down",
+          accelerator: sc("table-swap-next-row"),
           action() {
             swapNextRow(mainView);
           },
@@ -187,7 +119,7 @@ export function displayTableContextMenu(
         {
           type: "normal",
           label: trans("Insert new column left"),
-          accelerator: process.platform === "darwin" ? "Ctrl+Shift+Left" : "Alt+Shift+Left",
+          accelerator: sc("table-add-col-before"),
           action() {
             addColBefore(mainView);
           },
@@ -195,7 +127,7 @@ export function displayTableContextMenu(
         {
           type: "normal",
           label: trans("Insert new column right"),
-          accelerator: process.platform === "darwin" ? "Ctrl+Shift+Right" : "Alt+Shift+Right",
+          accelerator: sc("table-add-col-after"),
           action() {
             addColAfter(mainView);
           },
@@ -204,7 +136,7 @@ export function displayTableContextMenu(
         {
           type: "normal",
           label: trans("Move column left"),
-          accelerator: process.platform === "darwin" ? "Ctrl+Left" : "Alt+Left",
+          accelerator: sc("table-swap-prev-col"),
           action() {
             swapPrevCol(mainView);
           },
@@ -212,7 +144,7 @@ export function displayTableContextMenu(
         {
           type: "normal",
           label: trans("Move column right"),
-          accelerator: process.platform === "darwin" ? "Ctrl+Right" : "Alt+Right",
+          accelerator: sc("table-swap-next-col"),
           action() {
             swapNextCol(mainView);
           },

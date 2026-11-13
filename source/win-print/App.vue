@@ -34,12 +34,14 @@
 
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
-import { pathBasename, pathDirname, resolvePath } from "@common/util/renderer-path-polyfill";
+import { imageSourceUri } from "@common/util/image-source-uri";
+import { pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
+import { showRefusal } from "@common/util/show-refusal";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import { type ToolbarControl } from "@common/vue/window/WindowToolbar.vue";
 import { md2html } from "source/common/modules/markdown-utils";
-import extractYamlFrontmatter from "source/common/util/extract-yaml-frontmatter";
-import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
+import { documentCitationDatabase } from "source/common/util/document-citation-database";
+import type { CitationDatabase } from "source/types/common/citeproc";
 import { computed, onMounted, ref } from "vue";
 
 const ipcRenderer = window.ipc;
@@ -73,24 +75,29 @@ const windowTitle = computed(() => {
 
 const printContainer = ref<HTMLDivElement | null>(null);
 
-onMounted(async () => {
+onMounted(() => {
   if (filePath === "" || printContainer.value === null) {
     return;
   }
 
-  const fileContents: string = await ipcRenderer.invoke("application", {
-    command: "get-file-contents",
-    payload: filePath,
-  });
+  // The bibliography comes from the text of the document, so the window asks
+  // for it after the text: a file that cannot be read is one failure.
+  ipcRenderer
+    .invoke("application", { command: "get-document-text", payload: filePath })
+    .then(async (fileContents: string) => {
+      render(fileContents, await documentCitationDatabase(filePath));
+    })
+    // The dispatcher showed the failure of the command in this window.
+    .catch((failure: Error) => reportError(failure));
+});
 
+/**
+ * Shows the document in the window. A document that md2html cannot render
+ * (a citation while the citation style does not load) shows the cause and
+ * no part of the document.
+ */
+function render(fileContents: string, library: CitationDatabase): void {
   const base = pathDirname(filePath);
-  const { frontmatter } = extractYamlFrontmatter(fileContents);
-  const library =
-    frontmatter !== null &&
-    "bibliography" in frontmatter &&
-    typeof frontmatter.bibliography === "string"
-      ? frontmatter.bibliography
-      : CITEPROC_MAIN_DB;
   md2html(fileContents, {
     referenceSectionTitle: trans("References"),
     onCitation: window.getCitationCallback(library),
@@ -102,14 +109,12 @@ onMounted(async () => {
     },
     zknLinkFormat: window.config.get("zkn.linkFormat") ?? "link|title",
     onImageSrc(src) {
-      return "safe-file://" + resolvePath(base, src);
+      return imageSourceUri(src, base);
     },
-  })
-    .then((html) => {
-      printContainer.value!.innerHTML = html;
-    })
-    .catch((err) => reportError(err));
-});
+  }).then((html) => {
+    printContainer.value!.innerHTML = html;
+  }, showRefusal);
+}
 
 function handleClick(buttonID?: string): void {
   if (buttonID === "print") {

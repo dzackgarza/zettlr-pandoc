@@ -24,6 +24,7 @@ import "@mathjax/src/cjs/input/tex/configmacros/ConfigMacrosConfiguration.js";
 import "@mathjax/src/cjs/input/tex/mhchem/MhchemConfiguration.js";
 import "@mathjax/src/cjs/input/tex/newcommand/NewcommandConfiguration.js";
 import "@mathjax/src/cjs/input/tex/noundefined/NoUndefinedConfiguration.js";
+import { type MathJaxMacro, mathJaxPackages } from "@dzack/tikz-render/mathjax-config";
 import { MathJaxMhchemFontExtension } from "@mathjax/mathjax-mhchem-font-extension/cjs/chtml.js";
 import { MathJaxNewcmFont } from "@mathjax/mathjax-newcm-font/cjs/chtml.js";
 import { type LiteDocument } from "@mathjax/src/cjs/adaptors/lite/Document.js";
@@ -34,7 +35,6 @@ import { type MmlNode } from "@mathjax/src/cjs/core/MmlTree/MmlNode.js";
 import { HTMLDocument } from "@mathjax/src/cjs/handlers/html/HTMLDocument.js";
 import { HandlerType } from "@mathjax/src/cjs/input/tex/HandlerTypes.js";
 import { AbstractParseMap } from "@mathjax/src/cjs/input/tex/TokenMap.js";
-import { type MathJaxMacro, mathJaxPackages } from "tikz-workbench/src/mathjax-config";
 
 import "./mathjax-newcm-dynamic";
 
@@ -229,6 +229,9 @@ export function initializeMathJax(macros: Record<string, MathJaxMacro>): Promise
       // Emit the complete stylesheet: widgets render incrementally, so
       // adaptive CSS would miss constructs first used after initialization.
       adaptiveCSS: false,
+      // A display equation wider than its pane scrolls inside its own box;
+      // it does not widen the pane.
+      displayOverflow: "scroll",
     });
     browserRenderer = new HTMLDocument(documentElement, browserAdaptorInstance, {
       InputJax: tex,

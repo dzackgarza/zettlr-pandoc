@@ -287,6 +287,47 @@ describe("the sidebar views", () => {
     screenshots.set("search-results.png", await activePage.screenshot());
   });
 
+  it("ends a section drag that collapses a section, so the file tree takes clicks again", async () => {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    await activePage.locator(ICON("explorer")).click();
+    await activePage.locator(VIEW("explorer")).waitFor({ timeout: 10_000 });
+    if ((await activePage.locator(`${SECTION("outline")}[data-state="open"]`).count()) === 0) {
+      await activePage.locator(SECTION_HEADER("outline")).click();
+      await activePage
+        .locator(`${SECTION("outline")}[data-state="open"]`)
+        .waitFor({ timeout: 10_000 });
+    }
+    // The handle between Files and Outline is enabled while both are open.
+    const handle = activePage.locator(`${DRAWER} .view-container-handle:not([data-disabled])`);
+    const box = await handle.first().boundingBox();
+    const drawer = await activePage.locator(DRAWER).boundingBox();
+    if (box === null || drawer === null) {
+      throw new Error("The Files/Outline handle or the drawer has no box");
+    }
+    const x = box.x + box.width / 2;
+    await activePage.mouse.move(x, box.y + box.height / 2);
+    await activePage.mouse.down();
+    await activePage.mouse.move(x, drawer.y + drawer.height - 2, { steps: 20 });
+    await activePage.mouse.up();
+    await activePage
+      .locator(`${SECTION("outline")}[data-state="closed"]`)
+      .waitFor({ timeout: 10_000 });
+    const panelPointerEvents = await activePage
+      .locator(`${DRAWER} .view-container-panel[data-section-panel="files"]`)
+      .evaluate((element) => getComputedStyle(element).pointerEvents);
+    assert.equal(panelPointerEvents, "auto", "the Files panel takes pointer events after the drag");
+    await activePage
+      .locator(
+        `${SECTION("files")} #file-manager .tree-item.file[data-path$="/index.md"] .display-name`,
+      )
+      .first()
+      .click({ timeout: 5_000 });
+    screenshots.set("section-drag-collapse.png", await activePage.screenshot());
+    // The next case opens the Explorer from its icon; leave the drawer on Search.
+    await activePage.locator(ICON("search")).click();
+    await activePage.locator(VIEW("search")).waitFor({ timeout: 10_000 });
+  });
+
   it("lists the active file's citations and its related files in the References view", async () => {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await activePage.locator(ICON("explorer")).click();

@@ -7,166 +7,195 @@
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     The importer module for Zettlr.
+ * Description:     The importer module for Zettlr. An import puts new files
+ *                  into a folder of the author and replaces no file there.
  *
  * END HEADER
  */
 
 import { trans } from "@common/i18n-main";
-import { SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
+import { EXT2READER, SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
 import { hasMarkdownExt } from "@common/util/file-extention-checks";
 import type { DirDescriptor } from "@dts/common/fsal";
 import type AssetsProvider from "@providers/assets";
 import type { ValidPandocProfile } from "@providers/assets";
-import { spawn } from "child_process";
 import { app, dialog } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
 import YAML from "yaml";
-// Module utilities
-import checkImportIntegrity from "./check-import-integrity";
-import importTextbundle from "./import-textbundle";
+import { runPandoc } from "../../../util/run-pandoc";
+import { isTaken } from "../../fsal/util/fs";
+import { importTextbundle, importTextpack } from "./import-textbundle";
+import { destinationExists, filesystemFailure, type ImportStep, placeFile } from "./place-file";
 
+/** The result of the import of one file of a list. */
+export type ImportOutcome = ImportStep & { source: string };
+
+/**
+ * Imports each file of a list into a folder. A file that is not imported
+ * does not stop the files after it.
+ *
+ * @param   {string[]}        fileList        The files to import
+ * @param   {DirDescriptor}   dirToImport     The import folder
+ * @param   {AssetsProvider}  assetsProvider  The owner of the import profiles
+ *
+ * @return  {Promise<ImportOutcome[]>}        One result for each file, in the order of the list
+ */
 export default async function makeImport(
   fileList: string[],
   dirToImport: DirDescriptor,
   assetsProvider: AssetsProvider,
-  errorCallback: null | ((filePath: string, errorMessage: string) => void) = null,
-  successCallback: null | ((filePath: string) => void) = null,
-): Promise<string[]> {
-  const files = await checkImportIntegrity(fileList);
-  const failedFiles: string[] = [];
+): Promise<ImportOutcome[]> {
+  const outcomes: ImportOutcome[] = [];
+  for (const source of fileList) {
+    const step = await importFile(source, dirToImport.path, assetsProvider).catch(
+      filesystemFailure,
+    );
+    outcomes.push({ source, ...step });
+  }
+  return outcomes;
+}
 
-  // This for loop will initiate all pandoc instances at once. The return of
-  // these processes will come in asynchronously, so we can let chokidar handle
-  // the detection.
-  for (const file of files) {
-    if ([".textbundle", ".textpack"].includes(path.extname(file.path))) {
-      // We need to import using a special importer.
-      try {
-        await importTextbundle(file, dirToImport);
-        if (successCallback !== null) {
-          successCallback(file.path);
-        }
-      } catch (err: unknown) {
-        failedFiles.push(file.path);
-        if (errorCallback !== null) {
-          errorCallback(file.path, err instanceof Error ? err.message : "Unknown error");
-        }
+/** What is at the path of a file to import. */
+async function kindOf(source: string): Promise<"file" | "directory" | "missing"> {
+  return await fs.stat(source).then(
+    (stats) => (stats.isDirectory() ? "directory" : "file"),
+    (failure: NodeJS.ErrnoException) => {
+      if (failure.code === "ENOENT") {
+        return "missing";
       }
-    } else if (hasMarkdownExt(file.path)) {
-      // In this case we should just copy it over
-      try {
-        const newName =
-          path.join(dirToImport.path, path.basename(file.path, path.extname(file.path))) + ".md";
-        await fs.copyFile(file.path, newName);
-        if (successCallback !== null) {
-          successCallback(file.path);
-        }
-      } catch (err: unknown) {
-        failedFiles.push(file.path);
-        if (errorCallback !== null) {
-          errorCallback(file.path, err instanceof Error ? err.message : "Unknown error");
-        }
-      }
-    } else if (file.availableReaders.length > 0) {
-      // The file is known -> let's import it!
-      const newName =
-        path.join(dirToImport.path, path.basename(file.path, path.extname(file.path))) + ".md";
+      throw failure;
+    },
+  );
+}
 
-      // Retrieve the corresponding defaults file ...
-      const potentialProfiles = (await assetsProvider.listDefaults())
-        .filter((profile): profile is ValidPandocProfile => !profile.isInvalid)
-        .filter((profile) => SUPPORTED_READERS.includes(profile.writer))
-        .filter((profile) => file.availableReaders.includes(profile.reader));
-
-      // Case 1: Not a single defaults file found. We require one so that users
-      // can properly import them.
-      if (potentialProfiles.length === 0) {
-        failedFiles.push(file.path);
-        if (errorCallback !== null) {
-          errorCallback(
-            file.path,
-            trans(
-              "Zettlr can import this file, but it requires an import profile. Please create one first.",
-            ),
-          );
-        }
-        continue;
-      }
-
-      let profileToUse = potentialProfiles[0];
-
-      // Case 2: More than one suitable profile found -> let the user decide.
-      if (potentialProfiles.length > 1) {
-        const fileName = path.basename(file.path);
-        const response = await dialog.showMessageBox({
-          title: trans("Select import profile"),
-          message: trans("Select import profile"),
-          detail: trans(
-            "There are multiple profiles that can import %s. Please choose one.",
-            fileName,
-          ),
-          buttons: potentialProfiles.map((profile) => {
-            return `${profile.name} (${profile.writer})`;
-          }),
-          defaultId: 0,
-        });
-
-        profileToUse = potentialProfiles[response.response];
-      }
-
-      const defaults = await assetsProvider.getDefaultsFile(profileToUse.name);
-
-      // ... supply our file paths ...
-      defaults["input-files"] = [file.path];
-      defaults["output-file"] = newName;
-
-      // ... get a temporary file name ...
-      const defaultsFile = path.join(app.getPath("temp"), "defaults.yml");
-
-      // ... cast the defaults to string ...
-      const YAMLOptions = {
-        indent: 4,
-        simpleKeys: false,
-      };
-
-      // ... write to disk ...
-      await fs.writeFile(defaultsFile, YAML.stringify(defaults, YAMLOptions), { encoding: "utf8" });
-
-      // ... and finally run pandoc, providing the file.
-      const pandocProcess = spawn("pandoc", ["--defaults", defaultsFile]);
-
-      try {
-        await new Promise<void>((resolve, reject) => {
-          pandocProcess.on("message", (message, _handle) => {
-            console.log(message);
-          });
-          pandocProcess.on("close", (code, _signal) => {
-            if (code === 0) {
-              resolve();
-            } else {
-              reject(new Error(`Could not import file: Pandoc exited with code ${String(code)}`));
-            }
-          });
-
-          pandocProcess.on("error", (err) => {
-            reject(err);
-          });
-        });
-        if (successCallback !== null) {
-          successCallback(file.path);
-        }
-      } catch (err: unknown) {
-        failedFiles.push(file.path);
-        if (errorCallback !== null) {
-          errorCallback(file.path, err instanceof Error ? err.message : "Unknown error");
-        }
-      }
-    } else {
-      failedFiles.push(file.path);
-    }
+async function importFile(
+  source: string,
+  folder: string,
+  assetsProvider: AssetsProvider,
+): Promise<ImportStep> {
+  const kind = await kindOf(source);
+  if (kind === "missing") {
+    return { result: "source-missing", cause: trans("the file is not there") };
   }
 
-  return failedFiles; // All good if the array is empty
+  const extension = path.extname(source);
+  const name = path.basename(source, extension);
+  const destination = path.join(folder, `${name}.md`);
+
+  // A TextBundle is a directory.
+  if (extension === ".textbundle") {
+    return kind === "directory"
+      ? await importTextbundle(source, name, folder)
+      : { result: "malformed-bundle", cause: trans("the TextBundle is not a folder") };
+  }
+
+  if (kind === "directory") {
+    return { result: "unknown-format", cause: trans("a folder that is no TextBundle") };
+  }
+
+  if (extension === ".textpack") {
+    return await importTextpack(source, name, folder);
+  }
+
+  if (hasMarkdownExt(source)) {
+    return await placeFile(source, folder, destination);
+  }
+
+  const readers = EXT2READER[extension.substring(1).toLowerCase()];
+  if (readers === undefined) {
+    return { result: "unknown-format", cause: trans("no import reads this file type") };
+  }
+
+  // The check comes before the conversion, so the author chooses no profile
+  // and waits for no pandoc run for a file that is refused.
+  if (await isTaken(destination)) {
+    return destinationExists(folder, destination);
+  }
+
+  return await convertFile(source, folder, destination, readers, assetsProvider);
+}
+
+/** Lets the author choose one of several profiles that read a file. */
+async function chooseProfile(
+  profiles: ValidPandocProfile[],
+  fileName: string,
+): Promise<ValidPandocProfile> {
+  const response = await dialog.showMessageBox({
+    title: trans("Select import profile"),
+    message: trans("Select import profile"),
+    detail: trans("There are multiple profiles that can import %s. Please choose one.", fileName),
+    buttons: profiles.map((profile) => `${profile.name} (${profile.writer})`),
+    defaultId: 0,
+  });
+  return profiles[response.response];
+}
+
+/**
+ * Lets pandoc make Markdown of a file. Pandoc writes to a temporary
+ * directory of this conversion, so it replaces nothing in the import folder.
+ */
+async function convertFile(
+  source: string,
+  folder: string,
+  destination: string,
+  readers: string[],
+  assetsProvider: AssetsProvider,
+): Promise<ImportStep> {
+  const profiles = (await assetsProvider.listDefaults())
+    .filter((profile): profile is ValidPandocProfile => !profile.isInvalid)
+    .filter((profile) => SUPPORTED_READERS.includes(profile.writer))
+    .filter((profile) => readers.includes(profile.reader));
+
+  if (profiles.length === 0) {
+    return {
+      result: "no-profile",
+      cause: trans("no import profile reads this file type; create one in the Assets Manager"),
+    };
+  }
+
+  const profile =
+    profiles.length === 1 ? profiles[0] : await chooseProfile(profiles, path.basename(source));
+  const defaults = await assetsProvider.getDefaultsFile(profile.name);
+
+  const scratch = await fs.mkdtemp(path.join(app.getPath("temp"), "zettlr-import-"));
+  return await convertIn(scratch, source, folder, destination, defaults).finally(async () => {
+    await fs.rm(scratch, { recursive: true, force: true });
+  });
+}
+
+async function convertIn(
+  scratch: string,
+  source: string,
+  folder: string,
+  destination: string,
+  defaults: Record<string, unknown>,
+): Promise<ImportStep> {
+  const converted = path.join(scratch, "converted.md");
+  const defaultsFile = path.join(scratch, "defaults.yml");
+  await fs.writeFile(
+    defaultsFile,
+    YAML.stringify(
+      { ...defaults, "input-files": [source], "output-file": converted },
+      { indent: 4, simpleKeys: false },
+    ),
+    { encoding: "utf8" },
+  );
+
+  const refusal = await runPandoc(defaultsFile, undefined, process.env).then(
+    (output): ImportStep | undefined => {
+      if (output.code === 0) {
+        return undefined;
+      }
+      return {
+        result: "conversion-failed",
+        cause: trans("pandoc ended with code %s: %s", output.code, output.stderr.join(" ")),
+      };
+    },
+    (failure: Error): ImportStep => {
+      return { result: "conversion-failed", cause: failure.message };
+    },
+  );
+
+  return refusal === undefined ? await placeFile(converted, folder, destination) : refusal;
 }

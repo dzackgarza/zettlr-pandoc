@@ -21,10 +21,10 @@
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
 import { readFileSync } from "fs";
 import path from "path";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   openReferenceSearchEffect,
   type ReferenceSearchRequest,
@@ -235,5 +235,31 @@ describe("Reference definition badges (issue #1 Phase 4)", function () {
       "2",
       "the emitted intent belongs to the badge that shows the citing count",
     );
+  });
+
+  it("puts one anchor for the badges at the end of each line of a definition", function () {
+    // The anchor is the room of the badges in the flow of the text (#212).
+    const { view, payload } = createEditor(COBLE_PATH);
+    const { doc } = view.state;
+    const { from, to } = view.viewport;
+
+    const definitionLines = [
+      ...new Set(
+        payload.snapshot.definitions
+          .filter((definition) => definition.range.to >= from && definition.range.to <= to)
+          .map((definition) => doc.lineAt(definition.range.to).number),
+      ),
+    ].sort((a, b) => a - b);
+    assert.ok(definitionLines.length >= 5, "the fixture has definitions in the viewport");
+
+    const anchors = [...view.contentDOM.querySelectorAll<HTMLElement>(".reference-badge-anchor")];
+    assert.deepStrictEqual(
+      anchors.map((anchor) => doc.lineAt(view.posAtDOM(anchor)).number),
+      definitionLines,
+    );
+    for (const anchor of anchors) {
+      const position = view.posAtDOM(anchor);
+      assert.strictEqual(position, doc.lineAt(position).to, "the anchor ends its line");
+    }
   });
 });

@@ -31,7 +31,7 @@ const LOG_FILES_TO_KEEP = 30;
  * Available LogLevels BUG: Somehow I have to declare this twice. That happens
  * if you devise a system for typings where you can put types "somewhere."
  */
-enum LogLevel {
+export enum LogLevel {
   verbose = 1,
   info = 2,
   warning = 3,
@@ -153,6 +153,16 @@ export default class LogProvider extends ProviderContract {
    * Shuts down the provider
    * @return {Boolean} Whether or not the shutdown was successful
    */
+  /**
+   * Writes each pending entry to the logfile before the caller goes on. A
+   * caller that next stops the main process (a native error box) or ends the
+   * app waits for it. A failed write is reported as for each append, and its
+   * entries stay pending.
+   */
+  async flush(): Promise<void> {
+    await this._append();
+  }
+
   async shutdown(): Promise<void> {
     this.verbose("Log provider shutting down ...");
     const result = await this._append(); // One final append to flush the log

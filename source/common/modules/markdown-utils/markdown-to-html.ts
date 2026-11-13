@@ -21,10 +21,9 @@
  * END HEADER
  */
 
-import { mathDisplayForOpen, mathFromCodeNode } from "@common/util/math-delimiters";
 import { mathJaxToHTML } from "@common/util/mathtex-to-html";
+import { mathDisplayForOpen, mathFromCodeNode } from "@dzack/pandoc-editor/util/math-delimiters";
 import _ from "underscore";
-import { type MarkdownParserConfig } from "../markdown-editor/parser/markdown-parser";
 import { extractASTNodes, markdownToAST } from ".";
 import type { ASTNode, CitationNode, FootnoteRef, GenericNode } from "./markdown-ast";
 
@@ -282,7 +281,7 @@ export function nodeToHTML(
     addAttribute(node, "href", node.url);
     addAttribute(node, "title", title);
     const attr = renderNodeAttributes(node);
-    return `${node.whitespaceBefore}<a${attr}>${title}</a>`;
+    return `${node.whitespaceBefore}<a${attr}>${nodeToHTML(node.children, options, indent)}</a>`;
   } else if (node.type === "OrderedList") {
     if (node.startsAt > 1) {
       addAttribute(node, "start", String(node.startsAt));
@@ -435,11 +434,7 @@ function footnotesToHTML(fn: FootnoteRef[], options: MD2HTMLOptions): string {
  * @return  {string}                      The resulting HTML
  */
 export async function md2html(markdown: string, options: MD2HTMLOptions): Promise<string> {
-  const config: MarkdownParserConfig = {
-    zknLinkParserConfig: { format: options.zknLinkFormat },
-  };
-
-  const ast = markdownToAST(markdown, undefined, config);
+  const ast = markdownToAST(markdown, null, options.zknLinkFormat);
 
   if (ast.type !== "Document") {
     throw new Error("Could not turn Markdown to HTML: No Document top node returned from parser.");

@@ -7,8 +7,11 @@ import {
   isSeq,
   type Node,
   parseDocument,
-  type YAMLSeq,
+  type YAMLMap,
+  YAMLSeq,
 } from "yaml";
+import { writeTextFile } from "../service-providers/fsal/util/write-text-file";
+import { quartoPartFile } from "./quarto-project";
 import { resolveRealPath } from "./real-path";
 
 export type QuartoChapterPlacement =
@@ -83,12 +86,66 @@ function chaptersSequence(document: Document<Node>): YAMLSeq<unknown> {
   return chapters;
 }
 
+/** The book item as a part: a map with a `part` value. */
+function partNode(node: unknown): YAMLMap<unknown, unknown> | undefined {
+  return isMap(node) && scalarString(node.get("part", true)) !== undefined ? node : undefined;
+}
+
 function partChapters(node: unknown): YAMLSeq<unknown> | undefined {
-  if (!isMap(node)) return undefined;
-  const part = node.get("part", true);
-  if (scalarString(part) === undefined) return undefined;
-  const chapters = node.get("chapters", true);
+  const chapters = partNode(node)?.get("chapters", true);
   return isSeq(chapters) ? chapters : undefined;
+}
+
+/** The chapter list of a part. A part with no list gets an empty one. */
+function ensurePartChapters(part: YAMLMap<unknown, unknown>): YAMLSeq<unknown> {
+  const existing = partChapters(part);
+  if (existing !== undefined) return existing;
+  const chapters = new YAMLSeq<unknown>();
+  part.set("chapters", chapters);
+  return chapters;
+}
+
+interface PartFileLocation {
+  index: number;
+  part: YAMLMap<unknown, unknown>;
+}
+
+/**
+ * The part whose `part` value names the given document. That document is in
+ * the book, but in no chapter list.
+ */
+function findPartFile(
+  rootPath: string,
+  manifestPath: string,
+  chapters: YAMLSeq<unknown>,
+  projectPath: string,
+): PartFileLocation | undefined {
+  const manifestDirectory = path.dirname(manifestPath);
+  for (let index = 0; index < chapters.items.length; index++) {
+    const part = partNode(chapters.items[index]);
+    const value = scalarString(part?.get("part", true));
+    if (part === undefined || value === undefined) continue;
+    const file = quartoPartFile(manifestDirectory, value);
+    if (file !== undefined && projectRelative(rootPath, file) === projectPath) {
+      return { index, part };
+    }
+  }
+  return undefined;
+}
+
+/** Throws when the document is in the book: a chapter, or the file of a part. */
+function assertNotInBook(
+  rootPath: string,
+  manifestPath: string,
+  chapters: YAMLSeq<unknown>,
+  projectPath: string,
+): void {
+  if (
+    findChapter(rootPath, manifestPath, chapters, projectPath) !== undefined ||
+    findPartFile(rootPath, manifestPath, chapters, projectPath) !== undefined
+  ) {
+    throw new Error(`${projectPath} is already in the book`);
+  }
 }
 
 function findChapter(
@@ -144,14 +201,25 @@ function insertAtPlacement(
   }
 
   if (placement.kind === "part-end") {
-    const part = chapters.items[placement.partIndex];
-    const nested = partChapters(part);
-    if (nested === undefined) {
+    const part = partNode(chapters.items[placement.partIndex]);
+    if (part === undefined) {
       throw new Error(
         `Book item ${placement.partIndex + 1} is not a part that can contain chapters`,
       );
     }
-    nested.items.push(node);
+    ensurePartChapters(part).items.push(node);
+    return;
+  }
+
+  // The file of a part comes before the chapters of the part: the place after
+  // it is the start of the part, and the place before it is before the part.
+  const partFile = findPartFile(rootPath, manifestPath, chapters, placement.chapterPath);
+  if (partFile !== undefined) {
+    if (placement.kind === "after-chapter") {
+      ensurePartChapters(partFile.part).items.unshift(node);
+    } else {
+      chapters.items.splice(partFile.index, 0, node);
+    }
     return;
   }
 
@@ -188,9 +256,7 @@ export function editQuartoBookSource(
 
   if (edit.kind === "add-chapter") {
     absoluteChapterPath(rootPath, edit.chapterPath);
-    if (findChapter(rootPath, manifestPath, chapters, edit.chapterPath) !== undefined) {
-      throw new Error(`${edit.chapterPath} is already in the book`);
-    }
+    assertNotInBook(rootPath, manifestPath, chapters, edit.chapterPath);
     const node = document.createNode(authoredPathFor(rootPath, manifestPath, edit.chapterPath));
     insertAtPlacement(rootPath, manifestPath, chapters, node, edit.placement);
     return document.toString();
@@ -211,13 +277,16 @@ export function editQuartoBookSource(
     throw new Error("A Quarto part needs a title");
   }
   absoluteChapterPath(rootPath, edit.chapterPath);
+  if (findPartFile(rootPath, manifestPath, chapters, edit.chapterPath) !== undefined) {
+    throw new Error(`${edit.chapterPath} is the file of a part of the book`);
+  }
 
   const existing = findChapter(rootPath, manifestPath, chapters, edit.chapterPath);
   const chapterNode =
     existing === undefined
       ? document.createNode(authoredPathFor(rootPath, manifestPath, edit.chapterPath))
       : removeChapter(existing);
-  const partNode = document.createNode({
+  const newPart = document.createNode({
     part: title,
     chapters: [
       scalarString(chapterNode) ?? authoredPathFor(rootPath, manifestPath, edit.chapterPath),
@@ -225,13 +294,13 @@ export function editQuartoBookSource(
   });
   // Keep the original Scalar node (and any chapter comment) when an existing
   // chapter is moved into the new part.
-  if (existing !== undefined && isMap(partNode)) {
-    const nested = partNode.get("chapters", true);
+  if (existing !== undefined && isMap(newPart)) {
+    const nested = newPart.get("chapters", true);
     if (isSeq(nested)) {
       nested.items[0] = chapterNode;
     }
   }
-  chapters.items.push(partNode);
+  chapters.items.push(newPart);
   return document.toString();
 }
 
@@ -243,5 +312,5 @@ export async function editQuartoBookManifest(
 ): Promise<void> {
   const source = await fs.readFile(manifestPath, "utf8");
   const edited = editQuartoBookSource(rootPath, manifestPath, source, edit);
-  await fs.writeFile(manifestPath, edited, "utf8");
+  await writeTextFile(manifestPath, edited);
 }

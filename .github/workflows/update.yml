@@ -2,15 +2,15 @@ name: Update static assets
 on:
   push:
     paths:
-      - '.github/workflows/update.yml'
+      - ".github/workflows/update.yml"
   workflow_dispatch: {} # Used to manually trigger a nightly build.
   schedule:
     # Run on 1st and 15th of each month
-    - cron: '1 2 1,15 * *'
+    - cron: "1 2 1,15 * *"
 permissions:
   contents: write
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: "22"
 jobs:
   update:
     name: Update static assets

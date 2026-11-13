@@ -26,7 +26,7 @@ describe("Wikilink resolutions for an export", function () {
       },
       { path: `${root}/programs/chain.md`, markdown: CHAIN },
     ];
-    deepStrictEqual(wikilinkExportMap(inputs, index), {
+    deepStrictEqual(wikilinkExportMap(inputs, { index, linkFormat: "link|title" }), {
       inputs: [{ headings: 1 }, { headings: 2 }],
       links: {
         "chain#second step": { input: 1, heading: 1 },
@@ -44,7 +44,10 @@ describe("Wikilink resolutions for an export", function () {
         markdown: CHAIN.replace("[[#First step]]", "[[#Second step]]"),
       },
     ];
-    throws(() => wikilinkExportMap(inputs, index), /leads to different places/);
+    throws(
+      () => wikilinkExportMap(inputs, { index, linkFormat: "link|title" }),
+      /leads to different places/,
+    );
   });
 
   it("fails when a link leads to a document without a heading", function () {
@@ -52,6 +55,9 @@ describe("Wikilink resolutions for an export", function () {
       { path: `${root}/index.md`, markdown: "# Index\n\n[[basis]]\n" },
       { path: `${root}/notes/basis.md`, markdown: "No heading.\n" },
     ];
-    throws(() => wikilinkExportMap(inputs, index), /no heading to link to/);
+    throws(
+      () => wikilinkExportMap(inputs, { index, linkFormat: "link|title" }),
+      /no heading to link to/,
+    );
   });
 });

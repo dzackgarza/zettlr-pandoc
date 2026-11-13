@@ -71,27 +71,22 @@ export function explodeAccelerator(accelerator: string): ExplodedShortcut {
 
 /**
  * Takes a CodeMirror-style shortcut (`Mod-Shift-t`) apart into its modifiers
- * and its key.
+ * and its key, as CodeMirror reads the name (`parseKeyName`): `Mod-Alt--`
+ * has the key `-`, and an upper-case letter is the letter with Shift.
  *
  * @param   {string}            shortcut  The shortcut
  *
  * @return  {ExplodedShortcut}            The exploded shortcut
  */
 export function explodeShortcut(shortcut: string): ExplodedShortcut {
-  const keys = shortcut.toLowerCase().split(/-/);
-  const altKey = keys.includes("alt") || keys.includes("option");
-  const shiftKey = keys.includes("shift");
-  const modKey =
-    keys.includes("mod") ||
-    (process.platform === "darwin" && keys.includes("cmd")) ||
-    (process.platform !== "darwin" && keys.includes("mod"));
-  const ctrlKey = keys.includes("ctrl");
+  const parsed = parseKeyName(shortcut);
+  const upperCaseLetter = /^[A-Z]$/.test(parsed.key);
   return {
-    altKey,
-    shiftKey,
-    modKey,
-    ctrlKey,
-    key: keys[keys.length - 1],
+    altKey: parsed.alt,
+    shiftKey: parsed.shift || upperCaseLetter,
+    modKey: parsed.mod || (process.platform === "darwin" && parsed.meta),
+    ctrlKey: parsed.ctrl,
+    key: upperCaseLetter ? parsed.key.toLowerCase() : parsed.key,
   };
 }
 
@@ -145,56 +140,122 @@ export function getDefaultKeybinding<T extends Record<string, DefaultShortcut>>(
   }
 }
 
+/** The parts of a CodeMirror key name: its modifiers and its key. */
+interface ParsedKeyName {
+  /** The name has `Mod`: Cmd on macOS, Ctrl elsewhere. */
+  mod: boolean;
+  alt: boolean;
+  ctrl: boolean;
+  meta: boolean;
+  shift: boolean;
+  key: string;
+}
+
+/**
+ * Takes a CodeMirror key name apart as CodeMirror does: the parts are apart
+ * by a `-` that is not the last character. Reference: `normalizeKeyName` of
+ * @codemirror/view (src/keymap.ts), which throws for an unknown modifier as
+ * this function does.
+ */
+function parseKeyName(name: string): ParsedKeyName {
+  const parts = name.trim().split(/-(?!$)/);
+  const parsed: ParsedKeyName = {
+    mod: false,
+    alt: false,
+    ctrl: false,
+    meta: false,
+    shift: false,
+    key: parts[parts.length - 1],
+  };
+  for (const modifier of parts.slice(0, -1)) {
+    if (/^(cmd|meta|m)$/i.test(modifier)) {
+      parsed.meta = true;
+    } else if (/^a(lt)?$/i.test(modifier)) {
+      parsed.alt = true;
+    } else if (/^(c|ctrl|control)$/i.test(modifier)) {
+      parsed.ctrl = true;
+    } else if (/^s(hift)?$/i.test(modifier)) {
+      parsed.shift = true;
+    } else if (/^mod$/i.test(modifier)) {
+      parsed.mod = true;
+    } else {
+      throw new Error(`The shortcut "${name}" has the unknown modifier "${modifier}".`);
+    }
+  }
+  return parsed;
+}
+
+/**
+ * The one spelling of the key that a CodeMirror key name binds on a
+ * platform, in CodeMirror's order (`Shift-Meta-Ctrl-Alt-key`). CodeMirror
+ * reads an upper-case letter as the letter with Shift: a press of
+ * Ctrl+Shift+C runs both `Mod-C` and `Mod-Shift-c` (`runHandlers` of
+ * @codemirror/view tries the name of the key and the name of its base key).
+ * So on Linux both have the spelling `Shift-Ctrl-c`.
+ */
+export function normalizeShortcut(shortcut: string, platform: NodeJS.Platform): string {
+  const parsed = parseKeyName(shortcut);
+  let key = parsed.key === "Space" ? " " : parsed.key;
+  let shift = parsed.shift;
+  if (/^[A-Z]$/.test(key)) {
+    key = key.toLowerCase();
+    shift = true;
+  }
+  const meta = parsed.meta || (parsed.mod && platform === "darwin");
+  const ctrl = parsed.ctrl || (parsed.mod && platform !== "darwin");
+  return [
+    shift ? "Shift-" : "",
+    meta ? "Meta-" : "",
+    ctrl ? "Ctrl-" : "",
+    parsed.alt ? "Alt-" : "",
+    key,
+  ].join("");
+}
+
 /**
  * Takes a CodeMirror style shortcut and transforms it to conform to Electron
- * accelerator syntax. Example: `Mod-Shift-c` -> `CmdOrCtrl+Shift+C`.
+ * accelerator syntax. Example: `Mod-Shift-c` -> `CmdOrCtrl+Shift+C`. An
+ * upper-case letter is the letter with Shift, as CodeMirror reads it
+ * (`Mod-C` -> `CmdOrCtrl+Shift+C`). Meta is Cmd on macOS and Super
+ * elsewhere. The key names are those of the Electron accelerator
+ * documentation: `Plus` for `+`, `Space` for a space, `Up` for `ArrowUp`.
  *
- * Two NOTEs:
+ * @param   {string}  cmShortcut  The CM shortcut; the empty string and
+ *                                undefined are no shortcut
  *
- * 1. Also accepts undefined, and returns that if applicable, for easy pass-
- * through.
- * 2. The empty string is considered undefined.
- *
- *
- * @param   {string}  cmShortcut  The CM shortcut
- *
- * @return  {string}              The Electron shortcut.
+ * @return  {string}              The Electron accelerator.
  */
 export function cmShortcutToElectron(cmShortcut?: string): string | undefined {
   if (cmShortcut === undefined || cmShortcut.trim() === "") {
     return undefined;
   }
-
-  const keys = cmShortcut.trim().split("-");
-
-  const outputKeys: string[] = [];
-
-  for (const key of keys) {
-    switch (key) {
-      case "Mod":
-        outputKeys.push("CmdOrCtrl");
-        break;
-      case "Ctrl":
-        outputKeys.push("Ctrl");
-        break;
-      case "Alt":
-        outputKeys.push("Alt");
-        break;
-      case "Shift":
-        outputKeys.push("Shift");
-        break;
-      case "ArrowRight":
-      case "ArrowLeft":
-      case "ArrowUp":
-      case "ArrowDown":
-        outputKeys.push(key.slice(5));
-        break;
-      default:
-        // NOTE: Electron wants keys in uppercase format, not lowercase as
-        // CodeMirror.
-        outputKeys.push(key.toUpperCase());
-    }
+  const parsed = parseKeyName(cmShortcut);
+  let key = parsed.key;
+  let shift = parsed.shift;
+  if (/^[A-Z]$/.test(key)) {
+    shift = true;
+  } else if (key === "+") {
+    key = "Plus";
+  } else if (key === " ") {
+    key = "Space";
+  } else if (key.startsWith("Arrow")) {
+    key = key.slice(5);
   }
-
-  return outputKeys.join("+");
+  const modifiers: string[] = [];
+  if (parsed.mod) {
+    modifiers.push("CmdOrCtrl");
+  }
+  if (parsed.meta) {
+    modifiers.push(process.platform === "darwin" ? "Cmd" : "Super");
+  }
+  if (parsed.ctrl) {
+    modifiers.push("Ctrl");
+  }
+  if (parsed.alt) {
+    modifiers.push("Alt");
+  }
+  if (shift) {
+    modifiers.push("Shift");
+  }
+  return [...modifiers, key.length === 1 ? key.toUpperCase() : key].join("+");
 }

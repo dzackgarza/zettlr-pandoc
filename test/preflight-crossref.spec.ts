@@ -20,17 +20,17 @@
  *                  - crossrefCompatibilityFailure names BOTH versions in its
  *                    failure message (preflight() surfaces it exactly like a
  *                    missing requirement).
- *                  - The executing check (checkCrossrefCompatibility) runs
+ *                  - The executing check (checkCrossrefCompatibility) reads
  *                    the real tools on this machine and reports the same
  *                    versions the tools themselves print.
  *
  *                  Fixture strings are REAL captured outputs of the tools
  *                  provisioned for this fork (pandoc-crossref v0.3.24 /
  *                  pandoc 3.9.0.2); the mismatch case doctors only the
- *                  version number inside the real format. The injectable
- *                  VersionOutputRunner follows preflight.ts's existing
- *                  injection style (showError/exit); the real-execution path
- *                  is proven by the integration case below.
+ *                  version number inside the real format. The boot gate
+ *                  runs on a PATH whose pandoc-crossref and pandoc print
+ *                  those outputs; the real-execution path is proven by the
+ *                  integration case below.
  *
  *                  Kept separate from test/preflight.spec.ts so the existing
  *                  six preflight proofs stay untouched.
@@ -40,6 +40,9 @@
 
 import { strict as assert } from "assert";
 import { execFile } from "child_process";
+import { chmod, mkdtemp, rm, writeFile } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
 import { promisify } from "util";
 import {
   assessCrossrefCompatibility,
@@ -47,7 +50,6 @@ import {
   crossrefCompatibilityFailure,
   preflight,
   REQUIRED_COMMANDS,
-  type VersionOutputRunner,
 } from "../source/app/util/preflight";
 
 const execFileAsync = promisify(execFile);
@@ -62,6 +64,19 @@ const CROSSREF_OUTPUT_MISMATCHED =
 
 /** Real captured `pandoc --version` output (first lines). */
 const PANDOC_OUTPUT = "pandoc 3.9.0.2\nFeatures: +server +lua\n";
+
+/** A PATH whose pandoc-crossref and pandoc print the given `--version` outputs. */
+async function toolchainPrinting(crossrefOutput: string, pandocOutput: string): Promise<string> {
+  const bin = await mkdtemp(path.join(tmpdir(), "zettlr-crossref-gate-"));
+  for (const [tool, output] of [
+    ["pandoc-crossref", crossrefOutput],
+    ["pandoc", pandocOutput],
+  ]) {
+    await writeFile(path.join(bin, tool), `#!/bin/sh\nprintf '%s' ${JSON.stringify(output)}\n`);
+    await chmod(path.join(bin, tool), 0o755);
+  }
+  return bin;
+}
 
 describe("pandoc-crossref preflight compatibility (issue #1 Phase 7)", function () {
   it("registers pandoc-crossref as a hard required command", function () {
@@ -99,14 +114,10 @@ describe("pandoc-crossref preflight compatibility (issue #1 Phase 7)", function 
     assert.strictEqual(noPandoc.pandocVersion, undefined);
   });
 
-  it("produces a preflight failure naming both versions on mismatch", async function () {
-    const runner: VersionOutputRunner = async (command, _args) => {
-      return command === "pandoc-crossref"
-        ? { stdout: CROSSREF_OUTPUT_MISMATCHED }
-        : { stdout: PANDOC_OUTPUT };
-    };
-
-    const failure = await crossrefCompatibilityFailure(runner);
+  it("produces a preflight failure naming both versions on mismatch", function () {
+    const failure = crossrefCompatibilityFailure(
+      assessCrossrefCompatibility(CROSSREF_OUTPUT_MISMATCHED, PANDOC_OUTPUT),
+    );
     assert.ok(failure !== null, "a mismatched toolchain must fail preflight");
     assert.ok(
       failure.includes("3.6.4"),
@@ -139,7 +150,8 @@ describe("pandoc-crossref preflight compatibility (issue #1 Phase 7)", function 
       `this machine's pandoc-crossref must be built with the installed pandoc (${pandocVersion}): ${JSON.stringify(crossrefOut)}`,
     );
 
-    const result = await checkCrossrefCompatibility();
+    const result = await checkCrossrefCompatibility(process.env);
+    assert.ok(result !== undefined, "both tools answer their probes");
     assert.strictEqual(result.status, "compatible");
     assert.strictEqual(result.crossrefBuiltWithPandoc, pandocVersion);
     assert.strictEqual(result.pandocVersion, pandocVersion);
@@ -150,13 +162,8 @@ describe("pandoc-crossref preflight compatibility (issue #1 Phase 7)", function 
     // and fold its failure into the missing-requirement surface. Deleting
     // the crossrefFailure() call from preflight() must turn this spec red.
     // Commands and paths are empty so the ONLY failure source is the gate;
-    // the gate itself is the real crossrefCompatibilityFailure over the
-    // captured mismatched outputs.
-    const runner: VersionOutputRunner = async (command, _args) => {
-      return command === "pandoc-crossref"
-        ? { stdout: CROSSREF_OUTPUT_MISMATCHED }
-        : { stdout: PANDOC_OUTPUT };
-    };
+    // the tools of the PATH print the captured mismatched outputs.
+    const mismatched = await toolchainPrinting(CROSSREF_OUTPUT_MISMATCHED, PANDOC_OUTPUT);
 
     const shown: Array<{ title: string; message: string }> = [];
     const exits: number[] = [];
@@ -167,10 +174,11 @@ describe("pandoc-crossref preflight compatibility (issue #1 Phase 7)", function 
       (code) => {
         exits.push(code);
       },
+      { PATH: mismatched },
       [],
       [],
-      async () => await crossrefCompatibilityFailure(runner),
     );
+    await rm(mismatched, { recursive: true });
 
     assert.strictEqual(passed, false, "a mismatched toolchain must fail the boot preflight");
     assert.strictEqual(exits.length, 1, "preflight must terminate the process exactly once");
@@ -186,11 +194,7 @@ describe("pandoc-crossref preflight compatibility (issue #1 Phase 7)", function 
     );
 
     // The complementary compatible path: the same boot gate passes silently.
-    const compatibleRunner: VersionOutputRunner = async (command, _args) => {
-      return command === "pandoc-crossref"
-        ? { stdout: CROSSREF_OUTPUT_MATCHING }
-        : { stdout: PANDOC_OUTPUT };
-    };
+    const matching = await toolchainPrinting(CROSSREF_OUTPUT_MATCHING, PANDOC_OUTPUT);
     const cleanPassed = await preflight(
       (title, message) => {
         shown.push({ title, message });
@@ -198,10 +202,11 @@ describe("pandoc-crossref preflight compatibility (issue #1 Phase 7)", function 
       (code) => {
         exits.push(code);
       },
+      { PATH: matching },
       [],
       [],
-      async () => await crossrefCompatibilityFailure(compatibleRunner),
     );
+    await rm(matching, { recursive: true });
     assert.strictEqual(cleanPassed, true, "a matching toolchain must boot");
     assert.strictEqual(shown.length, 1, "no additional message may appear on the clean path");
     assert.strictEqual(exits.length, 1, "no additional exit may occur on the clean path");

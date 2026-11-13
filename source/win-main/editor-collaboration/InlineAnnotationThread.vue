@@ -1,6 +1,6 @@
 <template>
   <div
-    class="annotation-inline-thread"
+    class="annotation-inline-thread self-painted-controls"
     data-annotation-detail
     v-bind:data-annotation-id="card.annotation.annotationId"
     v-bind:class="card.annotation.state"
@@ -30,13 +30,14 @@
          one needs its text spelled out, since nothing marks it any more. -->
     <blockquote
       v-if="actionRow.canReattach"
-      v-annotation-markdown="card.quotedText"
+      v-annotation-markdown="{ text: card.quotedText, documentPath }"
       class="annotation-selected-quote"
     />
 
     <AnnotationThread
       v-bind:messages="card.annotation.messages"
       v-bind:now="now"
+      v-bind:document-path="documentPath"
       :acted-message-id="card.annotation.agentStatus.state === 'acted' ? card.annotation.agentStatus.messageId : undefined"
     ></AnnotationThread>
 
@@ -98,7 +99,7 @@
     <AlertDialogRoot v-model:open="confirmingDelete">
       <AlertDialogPortal>
         <AlertDialogOverlay class="annotation-dialog-backdrop"></AlertDialogOverlay>
-        <AlertDialogContent class="annotation-dialog">
+        <AlertDialogContent class="annotation-dialog self-painted-controls">
           <AlertDialogTitle class="annotation-dialog-title">{{ trans('Delete this annotation?') }}</AlertDialogTitle>
           <AlertDialogDescription class="annotation-dialog-body">
             {{ trans('Its thread and any proposed changes go with it. This cannot be undone.') }}
@@ -171,6 +172,8 @@ const props = defineProps<{
   now: DateTime;
   /** The document's review is frozen, so its chunks are not in the editor. */
   reviewFrozen: boolean;
+  /** The document of the annotation; its citations use its bibliography. */
+  documentPath: string;
 }>();
 
 const emit = defineEmits<{

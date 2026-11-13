@@ -179,8 +179,9 @@ export class DocumentAuthority implements CollaborationDocumentAuthority {
     };
   }
 
-  async releaseTemporaryDocument(documentId: string): Promise<void> {
+  async releaseTemporaryDocument(documentId: string): Promise<boolean> {
     assert.equal(documentId, this.documentId);
+    return false;
   }
 
   broadcastCollaborationState(documentId: string): void {

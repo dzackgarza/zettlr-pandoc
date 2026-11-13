@@ -49,8 +49,9 @@ Further Markdown content.`,
     },
   },
   {
-    input: `This file does not start with a YAML frontmatter, so it should not
-be detected, even if it's valid.
+    // Pandoc reads a metadata block after other blocks (#203)
+    input: `This file does not start with a YAML frontmatter, and Pandoc reads
+the block after this paragraph.
 
 ---
 title: "Here is some title"
@@ -62,7 +63,11 @@ keywords:
 ---
 
 Further Markdown content .`,
-    expected: null,
+    expected: {
+      title: "Here is some title",
+      author: "Jane Doe",
+      keywords: [123, "hello", true],
+    },
   },
 ];
 

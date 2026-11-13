@@ -39,8 +39,6 @@
             :active-file="activeDescriptor"
             :index="0"
             :window-id="windowId"
-            @create-file="handleOperation('file-new', item.id)"
-            @create-dir="handleOperation('dir-new', item.id)"
             @begin-dragging="emit('lock-file-tree')"
           />
         </RecycleScroller>
@@ -58,8 +56,6 @@
         :item="item.props"
         :window-id="windowId"
         :active-file="activeDescriptor"
-        @create-file="handleOperation('file-new', item.id)"
-        @create-dir="handleOperation('dir-new', item.id)"
       />
       <div
         v-if="getDirectoryContents[0].props.type === 'directory'"
@@ -99,7 +95,7 @@ import {
   effectiveExplorerDisplayForDirectory,
   sortExplorerChildren,
 } from "@common/util/explorer-ordering";
-import { isInsideRoot } from "@common/util/renderer-path-polyfill";
+import { isAtOrInsideRoot } from "@common/util/renderer-path-polyfill";
 import type { AnyDescriptor } from "@dts/common/fsal";
 import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from "source/pinia";
@@ -108,7 +104,6 @@ import tippy, { type Instance } from "tippy.js";
 import { computed, nextTick, onUpdated, ref, watch } from "vue";
 import { RecycleScroller } from "vue-virtual-scroller";
 import FileItem from "./FileItem.vue";
-import { filterDescriptorChildren } from "./util/filter-children";
 import matchQuery from "./util/match-query";
 import { retrieveChildrenAndSort } from "./util/retrieve-children-and-sort";
 
@@ -154,7 +149,7 @@ const displayMode = computed(() => {
   return dir?.type === "directory"
     ? effectiveExplorerDisplayForDirectory(
         dir,
-        workspaceStore.rootDescriptors,
+        workspaceStore.projectDirectories,
         configStore.config.fileNameDisplay,
       )
     : configStore.config.fileNameDisplay;
@@ -172,7 +167,7 @@ const getDirectoryContents = computed<RecycleScrollerData[]>(() => {
 
   // Fetch all descriptors ...
   const allDescriptors = [...workspaceStore.descriptorMap.keys()]
-    .filter((absPath) => absPath === dir.path || isInsideRoot(absPath, dir.path))
+    .filter((absPath) => isAtOrInsideRoot(absPath, dir.path))
     .map((absPath) => workspaceStore.descriptorMap.get(absPath)!);
 
   // ... sort them recursively ...
@@ -182,20 +177,18 @@ const getDirectoryContents = computed<RecycleScrollerData[]>(() => {
     fileNameDisplay: configStore.config.fileNameDisplay,
     appLang: configStore.config.appLang,
     fileMetaTime: configStore.config.fileMetaTime,
+    showMarkdownExtensions: configStore.config.display.markdownFileExtensions,
   } as const;
 
   // ... and add them to our RecycleScroller.
-  const filter = filterDescriptorChildren();
   const sortedDescendants = retrieveChildrenAndSort(dir, allDescriptors, (directory, children) => {
-    return sortExplorerChildren(directory, children, defaults, workspaceStore.rootDescriptors);
-  })
-    .filter(filter)
-    .map((props, id) => {
-      return {
-        id, // This helps the virtual scroller to adequately position the items
-        props, // The actual item
-      };
-    });
+    return sortExplorerChildren(directory, children, defaults, workspaceStore.projectDirectories);
+  }).map((props, id) => {
+    return {
+      id, // This helps the virtual scroller to adequately position the items
+      props, // The actual item
+    };
+  });
 
   return sortedDescendants;
 });
@@ -429,19 +422,6 @@ function updateDynamics(): void {
       });
     }
   }
-}
-
-async function handleOperation(type: "dir-new" | "file-new", idx: number): Promise<void> {
-  // Creates files and directories, or duplicates a file.
-  const source = getDirectoryContents.value.find((item) => item.id === idx)?.props;
-  if (source === undefined) {
-    throw new Error("Could not handle file list operation: Source was undefined");
-  }
-
-  await ipcRenderer.invoke("application", {
-    command: type,
-    payload: { path: source.path },
-  });
 }
 
 defineExpose({ navigate, stopNavigate, getRootElement });

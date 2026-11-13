@@ -18,9 +18,11 @@
  * END HEADER
  */
 
+import fs from "node:fs/promises";
 import type {
   AgentErrorCode,
   ZoteroAddedItem,
+  ZoteroExtractionsResponse,
   ZoteroIdentifierImportRequest,
   ZoteroIdentifierImportResponse,
   ZoteroSearchItem,
@@ -30,9 +32,6 @@ import type {
   ZoteroUrlImportResponse,
 } from "@dts/common/agent-api";
 import type CiteprocProvider from "@providers/citeproc";
-
-/** Zotero's local HTTP server, at the default of its httpServer.port preference. */
-const ZOTERO_ORIGIN = "http://127.0.0.1:23119";
 
 /**
  * How long an import waits for its key to reach the main citation database.
@@ -80,7 +79,12 @@ interface AddonError {
 
 /** The add-on operations this API sends to POST /write. */
 type AddonWriteRequest =
-  | { operation: "import_by_identifier"; identifier: string; collection_keys?: string[] }
+  | { operation: "get_item_children"; item_key: string }
+  | {
+      operation: "import_by_identifier";
+      identifier: string;
+      collection_keys?: string[];
+    }
   | {
       operation: "import_from_url";
       url: string;
@@ -108,11 +112,66 @@ interface AddonUrlImport {
   };
 }
 
+interface AddonChildrenEnvelope {
+  success: boolean;
+  details: {
+    children: Array<{
+      item_key: string;
+      title: string;
+      child_type: "attachment" | "note";
+      content_type?: string;
+      file?: { state: "on_disk"; path: string } | { state: "missing" | "linked_url" };
+    }>;
+  };
+}
+
 export default class ZoteroLibrary {
-  constructor(readonly citeproc: CiteprocProvider) {}
+  /** `origin` is the address of Zotero's local HTTP server. */
+  constructor(
+    readonly citeproc: CiteprocProvider,
+    readonly origin: string,
+  ) {}
+
+  async extractions(itemKey: string): Promise<ZoteroResult<ZoteroExtractionsResponse>> {
+    const response = await this.request<AddonChildrenEnvelope>(new URL("/write", this.origin), {
+      operation: "get_item_children",
+      item_key: itemKey,
+    });
+    if (!response.ok) return response;
+    if (!response.body.success) {
+      throw new Error("Zotero returned an unsuccessful child listing with HTTP 200");
+    }
+    const extractions: ZoteroExtractionsResponse["extractions"] = [];
+    for (const child of response.body.details.children) {
+      if (child.child_type !== "attachment" || child.content_type !== "text/markdown") continue;
+      if (child.file?.state !== "on_disk") {
+        return {
+          ok: false,
+          status: 502,
+          code: "ZOTERO_REQUEST_FAILED",
+          message: `Markdown extraction ${child.item_key} has no local file`,
+        };
+      }
+      try {
+        extractions.push({
+          attachmentKey: child.item_key,
+          title: child.title,
+          content: await fs.readFile(child.file.path, "utf8"),
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          status: 502,
+          code: "ZOTERO_REQUEST_FAILED",
+          message: `Cannot read markdown extraction ${child.item_key}: ${String(error)}`,
+        };
+      }
+    }
+    return { ok: true, body: { itemKey, extractions } };
+  }
 
   async search(query: string, limit: number): Promise<ZoteroResult<ZoteroSearchResponse>> {
-    const url = new URL("/api/users/0/items/top", ZOTERO_ORIGIN);
+    const url = new URL("/api/users/0/items/top", this.origin);
     url.search = new URLSearchParams({
       q: query,
       limit: String(limit),
@@ -213,13 +272,14 @@ export default class ZoteroLibrary {
   }
 
   private async write<Body>(body: AddonWriteRequest): Promise<ZoteroResult<Body>> {
-    return await this.request<Body>(new URL("/write", ZOTERO_ORIGIN), body);
+    return await this.request<Body>(new URL("/write", this.origin), body);
   }
 
   /**
    * One request to Zotero. An add-on error keeps its status, except that a
    * Zotero-side failure (5xx) is a 502 of this API; the 422 of a source that
-   * no method identifies carries the add-on's remediation.
+   * no method identifies carries the add-on's remediation. Zotero without the
+   * add-on is ZOTERO_UNAVAILABLE, as Zotero that does not answer is.
    */
   private async request<Body>(
     url: URL,
@@ -241,7 +301,7 @@ export default class ZoteroLibrary {
         ok: false,
         status: 503,
         code: "ZOTERO_UNAVAILABLE",
-        message: `Zotero does not answer at ${ZOTERO_ORIGIN}: ${String(error.cause ?? error.message)}`,
+        message: `Zotero does not answer at ${this.origin}: ${String(error.cause ?? error.message)}`,
       };
     }
     const text = await response.text();
@@ -254,6 +314,16 @@ export default class ZoteroLibrary {
         status: 502,
         code: "ZOTERO_REQUEST_FAILED",
         message: `Zotero ${response.status}: ${text}`,
+      };
+    }
+    // The add-on answers each request with JSON. A route that no endpoint
+    // serves gets Zotero's own text/plain 404: the add-on is not installed.
+    if (response.headers.get("content-type") !== "application/json") {
+      return {
+        ok: false,
+        status: 503,
+        code: "ZOTERO_UNAVAILABLE",
+        message: `Zotero answers at ${this.origin} without the local-write-api add-on: HTTP ${response.status} ${text}`,
       };
     }
     const error = JSON.parse(text) as AddonError;

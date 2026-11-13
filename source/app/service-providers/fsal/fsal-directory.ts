@@ -12,21 +12,47 @@
  * END HEADER
  */
 
+import { trans } from "@common/i18n-main";
 import { hasErrnoCode } from "@common/util/is-errno-exception";
 import isFile from "@common/util/is-file";
 import safeAssign from "@common/util/safe-assign";
 import type {
   DirDescriptor,
+  DirectoryMetadataProblem,
   DirectorySettings,
+  ProjectNavigationItem,
   ProjectSettings,
   SortMethod,
 } from "@dts/common/fsal";
-import assert, { AssertionError } from "assert";
 import { promises as fs } from "fs";
 import path from "path";
-import { parseQuartoProject } from "source/app/util/quarto-project";
+import { readQuartoManifest } from "source/app/util/quarto-project";
 import { resolveRealPath } from "source/app/util/real-path";
+import { schemaIssueSentence } from "source/app/util/schema-issues";
+import { z } from "zod";
 import { getFilesystemMetadata } from "./util/get-fs-metadata";
+import { writeTextFile } from "./util/write-text-file";
+
+/** The file of a directory that holds the settings of the author. */
+const SETTINGS_FILE = ".ztr-directory";
+
+/** The manifest of a Quarto project that sits in the directory it describes. */
+export const QUARTO_MANIFEST_NAME = "_quarto.yml";
+
+/**
+ * The shape of a settings file: an object, whose nested settings are objects.
+ * The values themselves are taken as they are.
+ */
+const settingsFileSchema = z.looseObject({
+  explorer: z.looseObject({}).optional(),
+  project: z
+    .looseObject({
+      manifest: z.looseObject({}).optional(),
+      templates: z.looseObject({}).optional(),
+    })
+    .nullable()
+    .optional(),
+});
 
 /**
  * Determines what will be written to file (.ztr-directory)
@@ -62,18 +88,37 @@ const PROJECT_TEMPLATE: ProjectSettings = {
 };
 
 /**
- * The manifest this directory is described by: the one it is bound to, or the
- * one in the directory itself.
+ * A change of the settings of a directory whose settings file could not be
+ * read. The file holds what the author set, so no write replaces it.
+ */
+export class DirectorySettingsUnreadableError extends Error {
+  constructor(directory: DirDescriptor, problem: DirectoryMetadataProblem) {
+    super(
+      trans(
+        "The settings of %s were not changed: the settings file %s could not be read (%s).",
+        directory.path,
+        problem.path,
+        problem.message,
+      ),
+    );
+    this.name = "DirectorySettingsUnreadableError";
+  }
+}
+
+/**
+ * Where the manifest of this directory is: the path it is bound to, or the
+ * manifest in the directory itself. This is the path as the author and the
+ * watcher name it; the manifest is read through its real path.
  *
  * @param   {DirDescriptor}  dir  The directory
  *
- * @return  {string}              The manifest's real path
+ * @return  {string}              The path of the manifest
  */
-function quartoManifestPath(dir: DirDescriptor): string {
+export function quartoManifestLocation(dir: DirDescriptor): string {
   const manifest = dir.settings.quartoManifest;
-  return resolveRealPath(
-    manifest === null ? path.join(dir.path, "_quarto.yml") : path.resolve(dir.path, manifest),
-  );
+  return manifest === null
+    ? path.join(dir.path, QUARTO_MANIFEST_NAME)
+    : path.resolve(dir.path, manifest);
 }
 
 /**
@@ -99,23 +144,53 @@ function projectRelative(dirPath: string, filePath: string): string {
  * A project the user wrote themselves is not derived from anything, and is
  * left alone.
  *
+ * A manifest that gives no book leaves the directory without a Project. The
+ * directory names the manifest and the cause when the manifest cannot be
+ * read, is not YAML, or is the manifest of a book without the fields of a
+ * book. A manifest of another kind of Quarto project is a problem only for a
+ * binding: the author said that the bound file describes this directory.
+ *
  * @param   {DirDescriptor}  dir  The directory
  */
 async function parseQuartoManifest(dir: DirDescriptor): Promise<void> {
+  dir.metadataProblems = dir.metadataProblems.filter((problem) => problem.source !== "manifest");
   if (dir.settings.project !== null && dir.settings.project.manifest.kind !== "quarto") {
     return;
   }
 
   dir.settings.project = null;
-  const manifestPath = quartoManifestPath(dir);
-  if (!isFile(manifestPath)) {
+  const location = quartoManifestLocation(dir);
+  const isBound = dir.settings.quartoManifest !== null;
+  const unusable = (message: string): void => {
+    dir.metadataProblems.push({ source: "manifest", path: location, message });
+  };
+
+  const manifestPath = resolveRealPath(location);
+  const read = await fs.readFile(manifestPath, "utf8").then(
+    (source) => ({ source }),
+    (cause: NodeJS.ErrnoException) => ({ cause }),
+  );
+  if ("cause" in read) {
+    // A directory without a manifest is a plain directory.
+    const isAbsent = hasErrnoCode(read.cause, "ENOENT", "ENOTDIR", "EISDIR");
+    if (isBound || !isAbsent) {
+      unusable(read.cause.message);
+    }
     return;
   }
 
-  const quarto = parseQuartoProject(
-    path.dirname(manifestPath),
-    await fs.readFile(manifestPath, "utf8"),
-  );
+  const reading = readQuartoManifest(path.dirname(manifestPath), read.source);
+  if (reading.kind === "unusable") {
+    unusable(reading.message);
+    return;
+  }
+  if (reading.kind === "not-a-book") {
+    if (isBound) {
+      unusable(trans("The file is not the manifest of a Quarto book."));
+    }
+    return;
+  }
+  const quarto = reading.project;
   // The manifest resolves its chapters to real files, which may lie anywhere
   // under this directory. The project names each one the way every reader
   // expects: relative to the directory it belongs to.
@@ -129,11 +204,15 @@ async function parseQuartoManifest(dir: DirDescriptor): Promise<void> {
       kind: "quarto",
       path: manifestPath,
       bibliographies: quarto.bibliographies,
-      navigation: quarto.navigation.map((item) =>
-        item.kind === "chapter"
-          ? { kind: "chapter", path: chapter(item.path) }
-          : { kind: "part", title: item.title, chapters: item.chapters.map(chapter) },
-      ),
+      navigation: quarto.navigation.map((item): ProjectNavigationItem => {
+        if (item.kind === "chapter") {
+          return { kind: "chapter", path: chapter(item.path) };
+        }
+        const chapters = item.chapters.map(chapter);
+        return item.kind === "part"
+          ? { kind: "part", title: item.title, chapters }
+          : { kind: "part-file", path: chapter(item.path), chapters };
+      }),
     },
   };
 }
@@ -188,7 +267,11 @@ export function hasDefaultSettings(dir: DirDescriptor): boolean {
  * @param   {DirDescriptor}  dir  The directory descriptor
  */
 async function persistSettings(dir: DirDescriptor): Promise<void> {
-  const settingsFile = path.join(dir.path, ".ztr-directory");
+  const unread = dir.metadataProblems.find((problem) => problem.source === "settings");
+  if (unread !== undefined) {
+    throw new DirectorySettingsUnreadableError(dir, unread);
+  }
+  const settingsFile = path.join(dir.path, SETTINGS_FILE);
   if (hasDefaultSettings(dir)) {
     // Only persist the settings if they are not default. If they are default,
     // remove a possible .ztr-directory-file
@@ -204,56 +287,58 @@ async function persistSettings(dir: DirDescriptor): Promise<void> {
     }
     return;
   }
-  await fs.writeFile(settingsFile, JSON.stringify(authoredSettings(dir)));
+  await writeTextFile(settingsFile, JSON.stringify(authoredSettings(dir)));
 }
 
 /**
- * Parses a settings file for the given directory.
+ * Reads the settings file of a directory. A file that cannot be read, is not
+ * JSON or does not hold settings stays on disk as it is: the directory gets
+ * the default settings and names the file and the cause. A load changes
+ * nothing on disk.
  *
  * @param   {DirDescriptor}  dir  The directory descriptor.
  */
 async function parseSettings(dir: DirDescriptor): Promise<void> {
-  const configPath = path.join(dir.path, ".ztr-directory");
+  const settingsFile = path.join(dir.path, SETTINGS_FILE);
+  const unusable = (message: string): void => {
+    dir.metadataProblems.push({ source: "settings", path: settingsFile, message });
+  };
 
-  try {
-    const settingsText = await fs.readFile(configPath, { encoding: "utf8" });
-    const settings = JSON.parse(settingsText) as typeof SETTINGS_TEMPLATE;
-
-    dir.settings = safeAssign(settings, SETTINGS_TEMPLATE);
-
-    if (settings.project !== null) {
-      // We have a project, so we need to sanitize the values (in case
-      // that there have been changes to the config). We'll just use
-      // the code from the config provider.
-      dir.settings.project = safeAssign(settings.project, PROJECT_TEMPLATE);
+  const read = await fs
+    .readFile(settingsFile, "utf8")
+    .then((text) => settingsFileSchema.safeParse(JSON.parse(text)))
+    .then(
+      (parsed) => ({ parsed }),
+      (cause: Error) => ({ cause }),
+    );
+  if ("cause" in read) {
+    // A directory without a settings file has the default settings.
+    if (!hasErrnoCode(read.cause, "ENOENT")) {
+      unusable(read.cause.message);
     }
+    return;
+  }
+  if (!read.parsed.success) {
+    unusable(schemaIssueSentence(read.parsed.error));
+    return;
+  }
 
-    try {
-      assert.deepStrictEqual(dir.settings, SETTINGS_TEMPLATE);
-      // The settings are the default, so no need to write them to file
-      await fs.unlink(configPath);
-    } catch (err: unknown) {
-      if (err instanceof AssertionError) {
-        // Settings are non-default -> do nothing with the file.
-      } else {
-        throw err; // Something else went wrong
-      }
-    }
-  } catch (err: unknown) {
-    // Ignore file-not-found errors
-    if (err instanceof Error && "code" in err && err.code === "ENOENT") {
-      return;
-    }
-
-    // Something went wrong. Unlink the malformed file. Do not throw an error
-    // since a malformed settings file should never stop loading a directory.
-    await fs.unlink(configPath);
+  dir.settings = safeAssign(read.parsed.data as Partial<DirectorySettings>, SETTINGS_TEMPLATE);
+  if (dir.settings.project !== null) {
+    // We have a project, so we need to sanitize the values (in case
+    // that there have been changes to the config). We'll just use
+    // the code from the config provider.
+    dir.settings.project = safeAssign(dir.settings.project, PROJECT_TEMPLATE);
   }
 }
 
 /**
  * Reads in a directory, returning a corresponding descriptor object. Does NOT
  * read in the entire sub-tree of the filesystem.
+ *
+ * A directory that refuses its content (no read or no search permission) has
+ * a descriptor that names the cause; its settings and its manifest are not
+ * read.
  *
  * @param   {string}              currentPath  The directory's path
  *
@@ -268,35 +353,41 @@ export async function parse(currentPath: string): Promise<DirDescriptor> {
     size: 0,
     type: "directory",
     isGitRepository: false,
+    metadataProblems: [],
     modtime: 0, // You know when something has gone wrong: 01.01.1970
     creationtime: 0,
     settings: JSON.parse(JSON.stringify(SETTINGS_TEMPLATE)),
   };
 
-  try {
-    dir.isGitRepository = (await fs.lstat(path.join(dir.path, ".git"))).isDirectory();
-  } catch (err) {
-    // A directory without a .git entry is not a repository.
-    if (!hasErrnoCode(err, "ENOENT", "ENOTDIR")) {
-      throw err;
+  const metadata = await getFilesystemMetadata(dir.path);
+  dir.modtime = metadata.modtime;
+  dir.creationtime = metadata.birthtime;
+
+  const refusal = await fs.access(dir.path, fs.constants.R_OK | fs.constants.X_OK).then(
+    () => undefined,
+    (cause: NodeJS.ErrnoException) => cause,
+  );
+  if (refusal !== undefined) {
+    if (!hasErrnoCode(refusal, "EACCES", "EPERM")) {
+      throw refusal;
     }
+    dir.metadataProblems.push({ source: "directory", path: dir.path, message: refusal.message });
+    return dir;
   }
 
-  // Retrieve the metadata
-  try {
-    const metadata = await getFilesystemMetadata(dir.path);
-    dir.modtime = metadata.modtime;
-    dir.creationtime = metadata.birthtime;
-    await parseSettings(dir);
-    await parseQuartoManifest(dir);
-  } catch (err) {
-    if (err instanceof Error) {
-      err.message = `Error reading metadata for directory ${dir.path}!`;
-    }
-    // Re-throw so that the caller knows something's afoul
-    throw err;
-  }
+  dir.isGitRepository = await fs.lstat(path.join(dir.path, ".git")).then(
+    (stats) => stats.isDirectory(),
+    (cause: NodeJS.ErrnoException) => {
+      // A directory without a .git entry is not a repository.
+      if (hasErrnoCode(cause, "ENOENT", "ENOTDIR")) {
+        return false;
+      }
+      throw cause;
+    },
+  );
 
+  await parseSettings(dir);
+  await parseQuartoManifest(dir);
   return dir;
 }
 
@@ -316,6 +407,7 @@ export function getDirNotFoundDescriptor(dirPath: string): DirDescriptor {
     size: 0,
     type: "directory",
     isGitRepository: false,
+    metadataProblems: [],
     modtime: 0, // ¯\_(ツ)_/¯
     creationtime: 0,
     // Settings are expected by some functions

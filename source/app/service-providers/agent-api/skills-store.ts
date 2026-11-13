@@ -15,7 +15,7 @@
  * END HEADER
  */
 
-import { hasErrnoCode } from "@common/util/is-errno-exception";
+import isErrnoException from "@common/util/is-errno-exception";
 import { isUtf8 } from "buffer";
 import { createHash } from "crypto";
 import fs from "fs/promises";
@@ -24,6 +24,14 @@ import path from "path";
 export class SkillsDirectoryUnavailableError extends Error {}
 export class SkillsPathInputError extends Error {}
 export class SkillFileNotFoundError extends Error {}
+/** A path of the skills directory whose entry or content the filesystem refuses. */
+export class SkillFileUnreadableError extends Error {}
+
+/** A path of the skills directory that a listing could not read, with the cause. */
+export interface SkillNotRead {
+  path: string;
+  cause: string;
+}
 
 export interface SkillTreeEntry {
   path: string;
@@ -109,6 +117,20 @@ async function realSkillsRoot(root: string): Promise<string> {
   return realRoot;
 }
 
+/**
+ * The error of a skill path that the filesystem refuses: a path that is gone
+ * is not found, and each other filesystem error is the cause of a refusal.
+ */
+function notReadable(error: NodeJS.ErrnoException, normalizedPath: string): Error {
+  if (error.code === "ENOENT") {
+    return new SkillFileNotFoundError(`Skill file not found: ${normalizedPath}`);
+  }
+  return new SkillFileUnreadableError(
+    `Skill file ${normalizedPath} cannot be read: ${error.message}`,
+    { cause: error },
+  );
+}
+
 async function validateSkillPathEntry(
   absolutePath: string,
   normalizedPath: string,
@@ -118,10 +140,8 @@ async function validateSkillPathEntry(
   try {
     stats = await fs.lstat(absolutePath);
   } catch (error) {
-    if (hasErrnoCode(error, "ENOENT")) {
-      throw new SkillFileNotFoundError(`Skill file not found: ${normalizedPath}`);
-    }
-    throw error;
+    if (!isErrnoException(error)) throw error;
+    throw notReadable(error, normalizedPath);
   }
   if (stats.isSymbolicLink()) {
     throw new SkillsPathInputError("Skill paths may not traverse symbolic links");
@@ -159,8 +179,16 @@ async function appendSkillTreeEntry(
   absolute: string,
   relative: string,
   entries: SkillTreeEntry[],
+  notListed: SkillNotRead[],
 ): Promise<boolean> {
-  const stats = await fs.lstat(absolute);
+  let stats;
+  try {
+    stats = await fs.lstat(absolute);
+  } catch (error) {
+    if (!isErrnoException(error)) throw error;
+    notListed.push({ path: relative, cause: error.message });
+    return false;
+  }
   if (stats.isSymbolicLink()) {
     return false;
   }
@@ -184,11 +212,18 @@ async function appendSkillTreeEntry(
   return false;
 }
 
+/**
+ * The Markdown files and folders below the skills directory. A folder whose
+ * content the filesystem refuses is an entry and is in `notListed`; so is a
+ * child whose metadata cannot be read. A root that refuses its content is an
+ * unavailable skills directory.
+ */
 export async function listSkillTree(
   root: string,
-): Promise<{ root: string; entries: SkillTreeEntry[] }> {
+): Promise<{ root: string; entries: SkillTreeEntry[]; notListed: SkillNotRead[] }> {
   const realRoot = await realSkillsRoot(root);
   const entries: SkillTreeEntry[] = [];
+  const notListed: SkillNotRead[] = [];
   const queue: Array<{ absolute: string; relative: string }> = [
     { absolute: realRoot, relative: "" },
   ];
@@ -197,17 +232,30 @@ export async function listSkillTree(
     if (current === undefined) {
       break;
     }
-    const children = await fs.readdir(current.absolute, { withFileTypes: true });
+    let children;
+    try {
+      children = await fs.readdir(current.absolute, { withFileTypes: true });
+    } catch (error) {
+      if (!isErrnoException(error)) throw error;
+      if (current.relative === "") {
+        throw new SkillsDirectoryUnavailableError(
+          `Configured skills directory cannot be read: ${root}: ${error.message}`,
+          { cause: error },
+        );
+      }
+      notListed.push({ path: current.relative, cause: error.message });
+      continue;
+    }
     children.sort((left, right) => left.name.localeCompare(right.name));
     for (const child of children) {
       const absolute = path.join(current.absolute, child.name);
       const relative = current.relative === "" ? child.name : `${current.relative}/${child.name}`;
-      if (await appendSkillTreeEntry(absolute, relative, entries)) {
+      if (await appendSkillTreeEntry(absolute, relative, entries, notListed)) {
         queue.push({ absolute, relative });
       }
     }
   }
-  return { root: realRoot, entries };
+  return { root: realRoot, entries, notListed };
 }
 
 export async function readSkillMarkdown(
@@ -215,7 +263,14 @@ export async function readSkillMarkdown(
   relativePath: string,
 ): Promise<SkillMarkdownFile> {
   const resolved = await resolveMarkdownFile(root, relativePath);
-  const [buffer, stats] = await Promise.all([fs.readFile(resolved.path), fs.stat(resolved.path)]);
+  let buffer: Buffer;
+  let stats;
+  try {
+    [buffer, stats] = await Promise.all([fs.readFile(resolved.path), fs.stat(resolved.path)]);
+  } catch (error) {
+    if (!isErrnoException(error)) throw error;
+    throw notReadable(error, resolved.relativePath);
+  }
   if (!isUtf8(buffer)) {
     throw new SkillsPathInputError(
       `Skill file is not valid UTF-8 Markdown: ${resolved.relativePath}`,

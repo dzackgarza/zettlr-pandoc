@@ -39,6 +39,10 @@ const userData = fs.mkdtempSync(
 fs.mkdirSync(path.join(userData, "logs"), { recursive: true });
 fs.mkdirSync(path.join(userData, "lang"), { recursive: true });
 
+// Webpack's DefinePlugin puts the build date into the bundle
+// (webpack.main.config.js). The configuration template reads it.
+globalThis.__BUILD_DATE__ = new Date(0).toISOString();
+
 /**
  * Records every ipcMain.handle registration made by main-process modules
  * loaded under this harness, keyed by channel. The recorded listener is the
@@ -49,6 +53,15 @@ fs.mkdirSync(path.join(userData, "lang"), { recursive: true });
  * @type {Map<string, Function>}
  */
 const ipcMainHandlers = new Map();
+/**
+ * Records every ipcMain.on registration the same way: the REAL listener of
+ * the last registration on a channel. A spec calls it with its own event
+ * object to exercise a synchronous request (`sendSync`), whose answer the
+ * listener writes to `event.returnValue`.
+ *
+ * @type {Map<string, Function>}
+ */
+const ipcMainListeners = new Map();
 const sentMessages = new WeakMap();
 const openWindows = new Set();
 
@@ -65,6 +78,21 @@ const appListeners = new Map();
 const appQuitRequests = [];
 
 /**
+ * The code of each app.exit() call made by the code under proof.
+ *
+ * @type {number[]}
+ */
+const appExitCodes = [];
+
+/**
+ * Every dialog.showErrorBox() call. The box blocks the main process until the
+ * author closes it, so it has no answer.
+ *
+ * @type {Array<{ title: string, content: string }>}
+ */
+const errorBoxes = [];
+
+/**
  * Every dialog.showMessageBox() call, with the options it was shown. A spec
  * sets `answer` to the response the user gives; while it is unset a dialog
  * throws, because a dialog nobody scripted is a defect in the code under
@@ -74,6 +102,23 @@ const appQuitRequests = [];
  */
 const messageBoxes = { shown: [], answer: undefined };
 
+/**
+ * Every dialog.showSaveDialog() call, with the options it was shown. A spec
+ * sets `answer` to the path that the user chooses, or to `null` for a user
+ * who cancels; while it is unset a dialog throws, as a message box does.
+ *
+ * @type {{ shown: Array<{ title?: string, defaultPath?: string }>, answer: string | null | undefined }}
+ */
+const saveDialogs = { shown: [], answer: undefined };
+
+/**
+ * Every desktop notification that the application showed, with its title and
+ * its body.
+ *
+ * @type {{ shown: Array<{ title: string, body: string }> }}
+ */
+const notifications = { shown: [] };
+
 class HeadlessBrowserWindow {
   constructor() {
     const messages = [];
@@ -81,6 +126,10 @@ class HeadlessBrowserWindow {
     this.webContents = {
       send(...args) {
         messages.push(args);
+      },
+      // A window of the harness has a renderer for its whole life.
+      isCrashed() {
+        return false;
       },
     };
     openWindows.add(this);
@@ -134,19 +183,26 @@ Module._load = function (request, ...rest) {
         quit() {
           appQuitRequests.push(Date.now());
         },
+        exit(code) {
+          appExitCodes.push(code);
+        },
         whenReady: async () => {},
       },
       ipcMain: {
         handle(channel, listener) {
           ipcMainHandlers.set(channel, listener);
         },
-        on() {},
+        on(channel, listener) {
+          ipcMainListeners.set(channel, listener);
+        },
         removeHandler(channel) {
           ipcMainHandlers.delete(channel);
         },
       },
       dialog: {
-        showErrorBox() {},
+        showErrorBox(title, content) {
+          errorBoxes.push({ title, content });
+        },
         async showMessageBox(...args) {
           const options = args[args.length - 1];
           messageBoxes.shown.push(options);
@@ -155,15 +211,30 @@ Module._load = function (request, ...rest) {
           }
           return { response: messageBoxes.answer, checkboxChecked: false };
         },
+        async showSaveDialog(...args) {
+          const options = args[args.length - 1];
+          saveDialogs.shown.push(options);
+          if (saveDialogs.answer === undefined) {
+            throw new Error(`Unscripted dialog: ${options.title}`);
+          }
+          return saveDialogs.answer === null
+            ? { canceled: true, filePath: "" }
+            : { canceled: false, filePath: saveDialogs.answer };
+        },
       },
       shell: { openPath: async () => "" },
       nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
       nativeTheme: { shouldUseDarkColors: false },
       Notification: class {
+        constructor(options) {
+          this.options = options;
+        }
         static isSupported() {
           return true;
         }
-        show() {}
+        show() {
+          notifications.shown.push({ title: this.options.title, body: this.options.body });
+        }
         on() {}
       },
       BrowserWindow: HeadlessBrowserWindow,
@@ -177,10 +248,15 @@ Module._load = function (request, ...rest) {
 // directory must ask the harness that created it rather than recomputing the
 // path, which is what coupled the two to a fixed location in the first place.
 module.exports = {
+  appExitCodes,
   appListeners,
   appQuitRequests,
+  errorBoxes,
   ipcMainHandlers,
+  ipcMainListeners,
   messageBoxes,
+  notifications,
+  saveDialogs,
   sentMessagesFor,
   userData,
 };

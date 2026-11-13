@@ -68,8 +68,7 @@ export default class FileNew extends ZettlrCommand {
     const windowId = arg.windowId;
 
     if (windowId === undefined) {
-      this._app.log.error("Cannot create new file: No window id provided");
-      return;
+      throw new Error("Cannot create a new file: no main window is open.");
     }
 
     // Assume there is no directory we could salvage, so choose the documents
@@ -163,7 +162,11 @@ export default class FileNew extends ZettlrCommand {
         } else {
           // Remove the file before creating it anew. We'll use the
           // corresponding command for that.
-          await this._app.documents.closeFileEverywhere(absPath);
+          if (!(await this._app.documents.closeFileEverywhere(absPath))) {
+            throw new Error(
+              trans("%s was not replaced: the open document could not be closed.", filename),
+            );
+          }
           await this._app.fsal.removeFile(absPath);
         }
       }

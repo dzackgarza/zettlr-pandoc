@@ -3,10 +3,12 @@ import type {
   DirDescriptor,
   FileNameDisplay,
   MDFileDescriptor,
+  ProjectDirDescriptor,
   ProjectFileFilter,
   SortMethod,
 } from "@dts/common/fsal";
-import { isInsideRoot } from "./renderer-path-polyfill";
+import { listedDocumentName } from "./document-title";
+import { innermostRoot } from "./renderer-path-polyfill";
 
 export interface ExplorerSortDefaults {
   sortingType: "natural" | "ascii";
@@ -14,6 +16,8 @@ export interface ExplorerSortDefaults {
   fileNameDisplay: FileNameDisplay;
   appLang: string;
   fileMetaTime: "modtime" | "creationtime";
+  /** The setting `display.markdownFileExtensions`. */
+  showMarkdownExtensions: boolean;
 }
 
 export interface ProjectMembership {
@@ -37,32 +41,36 @@ export function projectRelativePath(filePath: string, rootPath: string): string 
     .replace(/\\/g, "/");
 }
 
-/** The most specific visible Project root containing a path. */
+/**
+ * The Project of a path: the Project directory that is the path, or else the
+ * innermost Project directory that holds it. The callers pass every loaded
+ * Project directory (`projectDirectories` of the workspace store).
+ */
 export function projectRootForPath(
   filePath: string,
-  roots: readonly AnyDescriptor[],
-): DirDescriptor | undefined {
-  return roots
-    .filter((root): root is DirDescriptor => {
-      return (
-        root.type === "directory" &&
-        root.settings.project !== null &&
-        (filePath === root.path || isInsideRoot(filePath, root.path))
-      );
-    })
-    .sort((a, b) => b.path.length - a.path.length)[0];
+  projects: readonly ProjectDirDescriptor[],
+): ProjectDirDescriptor | undefined {
+  const own = projects.find((project) => project.path === filePath);
+  if (own !== undefined) {
+    return own;
+  }
+  const rootPath = innermostRoot(
+    filePath,
+    projects.map((project) => project.path),
+  );
+  return projects.find((project) => project.path === rootPath);
 }
 
 /** How one file relates to the Project root that contains it. */
 export function projectMembershipForPath(
   filePath: string,
-  roots: readonly AnyDescriptor[],
+  roots: readonly ProjectDirDescriptor[],
 ): ProjectMembership | undefined {
   const root = projectRootForPath(filePath, roots);
-  const project = root?.settings.project;
-  if (root === undefined || project === null || project === undefined) {
+  if (root === undefined) {
     return undefined;
   }
+  const project = root.settings.project;
 
   const index = project.files.indexOf(projectRelativePath(filePath, root.path));
   return {
@@ -89,7 +97,7 @@ export function effectiveExplorerDisplay(
  */
 export function effectiveExplorerDisplayForDirectory(
   directory: DirDescriptor,
-  roots: readonly AnyDescriptor[],
+  roots: readonly ProjectDirDescriptor[],
   fallback: FileNameDisplay,
 ): FileNameDisplay {
   const projectRoot = projectRootForPath(directory.path, roots);
@@ -110,7 +118,7 @@ export function effectiveFoldersFirst(directory: DirDescriptor, fallback: boolea
 export function matchesProjectFilter(
   descriptor: AnyDescriptor,
   filter: ProjectFileFilter,
-  roots: readonly AnyDescriptor[],
+  roots: readonly ProjectDirDescriptor[],
 ): boolean {
   if (filter === "all" || descriptor.type === "directory") {
     return true;
@@ -125,23 +133,6 @@ function splitSortMethod(method: SortMethod): { key: SortKey; direction: "up" | 
     key: method.slice(0, split) as SortKey,
     direction: method.slice(split + 1) as "up" | "down",
   };
-}
-
-function documentDisplayValue(descriptor: AnyDescriptor, display: FileNameDisplay): string {
-  if (descriptor.type !== "file") {
-    return descriptor.name;
-  }
-
-  const title = descriptor.frontmatter?.title;
-  const hasHeading = descriptor.firstHeading != null && descriptor.firstHeading.trim() !== "";
-
-  if (display.includes("title") && typeof title === "string" && title.trim() !== "") {
-    return title;
-  }
-  if (display.includes("heading") && hasHeading) {
-    return descriptor.firstHeading!;
-  }
-  return descriptor.name;
 }
 
 function scalarMetadataValue(
@@ -184,12 +175,12 @@ function compareScalars(
 
 function bookRank(
   descriptor: AnyDescriptor,
-  projectRoot: DirDescriptor | undefined,
+  projectRoot: ProjectDirDescriptor | undefined,
 ): number | undefined {
-  const project = projectRoot?.settings.project;
-  if (projectRoot === undefined || project === null || project === undefined) {
+  if (projectRoot === undefined) {
     return undefined;
   }
+  const project = projectRoot.settings.project;
 
   const relative = projectRelativePath(descriptor.path, projectRoot.path);
   if (descriptor.type !== "directory") {
@@ -214,35 +205,22 @@ function compareByKey(
   sortOwner: DirDescriptor,
   displayOwner: DirDescriptor,
   defaults: ExplorerSortDefaults,
-  projectRoot: DirDescriptor | undefined,
+  projectRoot: ProjectDirDescriptor | undefined,
 ): number {
   const display = effectiveExplorerDisplay(displayOwner, defaults.fileNameDisplay);
+  // A sort by title or by heading sorts the name that this display would list
+  const listed = (descriptor: AnyDescriptor, by: FileNameDisplay): string =>
+    listedDocumentName(descriptor, by, defaults.showMarkdownExtensions);
 
   switch (key) {
     case "name":
-      return compareStrings(
-        documentDisplayValue(a, display),
-        documentDisplayValue(b, display),
-        defaults,
-      );
+      return compareStrings(listed(a, display), listed(b, display), defaults);
     case "filename":
       return compareStrings(a.name, b.name, defaults);
     case "title":
-      return compareStrings(
-        a.type === "file" && typeof a.frontmatter?.title === "string"
-          ? a.frontmatter.title
-          : a.name,
-        b.type === "file" && typeof b.frontmatter?.title === "string"
-          ? b.frontmatter.title
-          : b.name,
-        defaults,
-      );
+      return compareStrings(listed(a, "title"), listed(b, "title"), defaults);
     case "heading":
-      return compareStrings(
-        a.type === "file" && a.firstHeading != null ? a.firstHeading : a.name,
-        b.type === "file" && b.firstHeading != null ? b.firstHeading : b.name,
-        defaults,
-      );
+      return compareStrings(listed(a, "heading"), listed(b, "heading"), defaults);
     case "time": {
       // Preserve the historical `time-up` contract: "up" means newest first.
       const field = defaults.fileMetaTime;
@@ -281,7 +259,7 @@ export function sortExplorerChildren(
   directory: DirDescriptor,
   children: readonly AnyDescriptor[],
   defaults: ExplorerSortDefaults,
-  roots: readonly AnyDescriptor[],
+  roots: readonly ProjectDirDescriptor[],
 ): AnyDescriptor[] {
   const projectRoot = projectRootForPath(directory.path, roots);
   // The two legacy methods are historically per-directory. Explicit modern
@@ -341,11 +319,6 @@ export function sortExplorerChildren(
   const directories = visible.filter((child): child is DirDescriptor => child.type === "directory");
   const files = visible.filter((child) => child.type !== "directory");
   return [...directories.sort(compare), ...files.sort(compare)];
-}
-
-/** Convenience predicate for UI that offers Book-only controls. */
-export function hasProjectForPath(filePath: string, roots: readonly AnyDescriptor[]): boolean {
-  return projectRootForPath(filePath, roots) !== undefined;
 }
 
 /** Convenience narrowing for callers that need Markdown-only omitted choices. */

@@ -16,9 +16,12 @@
  * END HEADER
  */
 
+// The harness must load before any FSAL module: file-parser.ts reaches
+// modules that read Electron when they load.
+import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { realpathSync } from "fs";
-import { cp, mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import {
@@ -27,7 +30,11 @@ import {
   parse as parseDirectory,
   unbindQuartoManifest,
 } from "source/app/service-providers/fsal/fsal-directory";
+import { parse as parseFile } from "source/app/service-providers/fsal/fsal-file";
+import getMarkdownFileParser from "source/app/service-providers/fsal/util/file-parser";
+import { documentTitle } from "source/common/util/document-title";
 import type { DirectorySettings, ProjectSettings } from "source/types/common/fsal";
+import { buildQuartoBookOutline } from "source/win-main/file-manager/quarto-book-outline";
 
 const FIXTURE = path.resolve("test", "fixtures", "quarto-bound-book");
 const BINDING = path.join(".book", "_quarto.yml");
@@ -51,6 +58,22 @@ function quartoManifest(
   const manifest = (project as ProjectSettings).manifest;
   assert.equal(manifest.kind, "quarto", `the project was derived from a ${manifest.kind} manifest`);
   return manifest as Extract<ProjectSettings["manifest"], { kind: "quarto" }>;
+}
+
+/**
+ * The title that the app shows for each Markdown file of the prose below a
+ * directory: the one in the FSAL descriptor of the file.
+ */
+async function documentTitles(directory: string): Promise<Map<string, string>> {
+  const parser = getMarkdownFileParser("(\\d{14})", "link|title");
+  const titles = new Map<string, string>();
+  for (const name of await readdir(directory, { recursive: true })) {
+    if (name.endsWith(".md") && !name.startsWith(".book")) {
+      const descriptor = await parseFile(path.join(directory, name), null, parser);
+      titles.set(descriptor.path, documentTitle(descriptor));
+    }
+  }
+  return titles;
 }
 
 describe("a workspace bound to a manifest that lives elsewhere in it", function () {
@@ -131,8 +154,8 @@ describe("a workspace bound to a manifest that lives elsewhere in it", function 
     assert.equal(directory.settings.project?.title, "Writing", "the manifest owns the title");
     assert.equal(
       quartoManifest(directory.settings.project).navigation.length,
-      3,
-      "the manifest owns the chapter order: one chapter and two parts",
+      4,
+      "the manifest owns the chapter order: one chapter and three parts",
     );
   });
 
@@ -152,16 +175,68 @@ describe("a workspace bound to a manifest that lives elsewhere in it", function 
         title: "Coble surfaces",
         chapters: ["coble/lattices-and-moduli/coble-lattice-table.md"],
       },
+      {
+        kind: "part-file",
+        path: "lattice-theory/index.md",
+        chapters: ["lattice-theory/discriminant-forms.md"],
+      },
     ]);
-    assert.deepEqual(directory.settings.project?.files, [
-      "index.md",
-      "category-theory/framework/Bilinear-and-Quadratic-Forms.md",
-      "coble/lattices-and-moduli/coble-lattice-table.md",
-    ]);
+    assert.deepEqual(
+      directory.settings.project?.files,
+      [
+        "index.md",
+        "category-theory/framework/Bilinear-and-Quadratic-Forms.md",
+        "coble/lattices-and-moduli/coble-lattice-table.md",
+        "lattice-theory/index.md",
+        "lattice-theory/discriminant-forms.md",
+      ],
+      "the file that names a part is a document of the book, before the chapters of its part",
+    );
     assert.deepEqual(
       quartoManifest(directory.settings.project).bibliographies,
       [path.join(realpathSync(workspace), "references.bib")],
       "the bibliography the manifest inherits is the one file it names, reached through the assembly",
+    );
+  });
+
+  it("titles a part that a file names from that file, and gives the file a place in the book", async function () {
+    const directory = await parseDirectory(workspace);
+    await bindQuartoManifest(directory, path.join(workspace, BINDING));
+    const titles = await documentTitles(directory.path);
+    const part = path.join(directory.path, "lattice-theory", "index.md");
+    const chapter = path.join(directory.path, "lattice-theory", "discriminant-forms.md");
+
+    const outline = buildQuartoBookOutline(
+      directory.path,
+      quartoManifest(directory.settings.project).navigation,
+      (filePath) => {
+        const title = titles.get(filePath);
+        assert.ok(title !== undefined, `the workspace holds no document at ${filePath}`);
+        return title;
+      },
+    );
+
+    assert.deepEqual(
+      outline.items.at(-1),
+      {
+        kind: "part-file",
+        path: part,
+        title: "Lattice theory",
+        position: 4,
+        chapters: [
+          {
+            path: chapter,
+            title: "The discriminant form of an even lattice is a finite quadratic form.",
+            position: 5,
+          },
+        ],
+      },
+      "the part has the title of its file and a row that opens the file",
+    );
+    assert.deepEqual(
+      outline.orderedPaths.slice(-2),
+      [part, chapter],
+      "previous and next reach the file of the part",
     );
   });
 

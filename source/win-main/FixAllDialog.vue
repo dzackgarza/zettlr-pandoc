@@ -2,7 +2,7 @@
   <AlertDialogRoot v-model:open="open">
     <AlertDialogPortal>
       <AlertDialogOverlay class="fix-all-backdrop"></AlertDialogOverlay>
-      <AlertDialogContent class="fix-all-dialog" data-fix-all-dialog>
+      <AlertDialogContent class="fix-all-dialog self-painted-controls" data-fix-all-dialog>
         <AlertDialogTitle class="fix-all-title">{{ title }}</AlertDialogTitle>
         <AlertDialogDescription class="fix-all-body" data-fix-all-summary>{{ summary }}</AlertDialogDescription>
         <template v-if="plan !== undefined && fixCount > 0">
@@ -30,7 +30,7 @@
           </ul>
         </template>
         <p v-if="plan !== undefined && plan.unlinted.length > 0" class="fix-all-body" data-fix-all-unlinted>
-          {{ trans('Flowmark could not lint %s; they stay as they are.', documentsPhrase(plan.unlinted.length)) }}
+          {{ trans('The lint gave no result for %s; they stay as they are.', documentsPhrase(plan.unlinted.length)) }}
         </p>
         <div class="fix-all-actions">
           <AlertDialogCancel class="fix-all-button">{{ fixCount > 0 ? trans('Cancel') : trans('Close') }}</AlertDialogCancel>
@@ -67,6 +67,7 @@
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
+import { showUnsavedDocuments } from "@common/util/save-refusal-action";
 import showToast from "@common/util/show-toast";
 import type { FixAllPlan, FixAllRequest } from "@dts/common/fix-all";
 import {
@@ -176,6 +177,7 @@ function commit(): void {
           documentsPhrase(outcome.documentsChanged.length),
         ),
       );
+      showUnsavedDocuments(outcome.unsaved);
     })
     .catch((error) => {
       reportError(error);
@@ -207,7 +209,7 @@ defineExpose({ start });
   border: 1px solid var(--chrome-border);
   border-radius: 8px;
   background-color: var(--chrome-surface);
-  color: inherit;
+  color: var(--chrome-text);
   font-size: 12px;
 
   .fix-all-title { margin: 0; font-size: 13px; font-weight: 600; }

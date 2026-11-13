@@ -13,11 +13,13 @@
  * END HEADER
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import type {
   ExternalLinterRunRequest,
   ExternalLinterRunResponse,
 } from "@common/diagnostics/external-linter";
+import { trans } from "@common/i18n-main";
 import type { FormatResult } from "@common/modules/markdown-editor/commands/format-document";
 import type {
   CommitRenameOutcome,
@@ -27,23 +29,31 @@ import type {
 import enumDictFiles from "@common/util/enum-dict-files";
 import enumLangFiles from "@common/util/enum-lang-files";
 import type { LinkPreviewResult } from "@common/util/fetch-link-preview";
+import type { CitationDatabase } from "@dts/common/citeproc";
+import { COMMAND_FAILED_CHANNEL, type CommandFailedBroadcast } from "@dts/common/command-failure";
 import type { DocumentType } from "@dts/common/documents";
 import type { FixAllOutcome, FixAllPlan, FixAllRequest } from "@dts/common/fix-all";
 import type { ProjectSettings } from "@dts/common/fsal";
-import type { JustRepositoryCommands, RunJustRecipeRequest } from "@dts/common/justfile-commands";
+import type { JustfileListing, RunJustRecipeRequest } from "@dts/common/justfile-commands";
 import type { PreferenceNavigationTarget } from "@dts/common/preferences";
 import type {
   ApplyProblemFixRequest,
   ListProblemsRequest,
   WorkspaceProblems,
 } from "@dts/common/problems";
-import type { WorkspaceReferenceEdit } from "@dts/common/references";
+import type { CrossReferenceSystem, WorkspaceReferenceEdit } from "@dts/common/references";
+import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tikz-render";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
-import { clipboard, ipcMain, nativeImage, shell } from "electron";
+import { clipboard, ipcMain, nativeImage, type WebContents } from "electron";
 import { type AppServiceContainer } from "source/app/app-service-container";
+import {
+  documentBibliography,
+  documentCrossReferenceSystem,
+} from "source/app/util/document-bibliographies";
+import { filePathOfUri } from "source/app/util/file-uri-path";
 import { discoverJustfileCommands } from "source/app/util/justfile-commands";
 import { justRecipeCommand, launchKitty } from "source/app/util/kitty-launch";
-import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
+import { openPath, revealPath } from "source/app/util/open-path";
 import type { LanguageToolIgnoredRuleEntry } from "../config/get-config-template";
 import type { RecentFiles } from "../recent-docs";
 import AddLanguageToolIgnoreRule from "./add-language-tool-ignore-rule";
@@ -61,7 +71,6 @@ import DirRename from "./dir-rename";
 import DirRescan from "./dir-rescan";
 import type { DirSettingsCommandAPI } from "./dir-settings";
 import DirSettings from "./dir-settings";
-import DirSort from "./dir-sort";
 import type { CustomExportIPCAPI, ExportIPCAPI } from "./export";
 import Export from "./export";
 import FetchLinkPreview from "./fetch-link-preview";
@@ -74,7 +83,6 @@ import type {
 import FileFindAndReturnMetaData from "./file-find-and-return-meta-data";
 import FileNew from "./file-new";
 import FileRename from "./file-rename";
-import FileSearch from "./file-search";
 import FixAll from "./fix-all";
 import type { ForceOpenAPI } from "./force-open";
 import ForceOpen from "./force-open";
@@ -95,13 +103,13 @@ import RootOpen from "./root-open";
 import RunExternalLinter from "./run-external-linter";
 import type { SaveImageFromClipboardAPI } from "./save-image-from-clipboard";
 import SaveImageFromClipboard from "./save-image-from-clipboard";
+import TikzEdit, { type TikzEditOpenRequest, type TikzEditOutcome } from "./tikz-edit";
 import TikzRender from "./tikz-render";
 import TutorialOpen from "./tutorial-open";
 import UpdateProjectProperties from "./update-project-properties";
 import UpdateUserDictionary from "./update-user-dictionary";
 import WorkspaceSort from "./ws-sort";
-import type ZettlrCommand from "./zettlr-command";
-import type { CommandWireValue } from "./zettlr-command";
+import type { CommandWireValue, DispatchedCommand } from "./zettlr-command";
 
 export const commands = [
   DirBindQuartoManifest,
@@ -113,14 +121,12 @@ export const commands = [
   DirRename,
   DirRescan,
   DirSettings,
-  DirSort,
   Export,
   FetchLinkPreview,
   FileDelete,
   FileDuplicate,
   FileNew,
   FileRename,
-  FileSearch,
   FixAll,
   FileFindAndReturnMetaData,
   ForceOpen,
@@ -140,6 +146,7 @@ export const commands = [
   RootClose,
   RootOpen,
   SaveImageFromClipboard,
+  TikzEdit,
   TikzRender,
   TutorialOpen,
   UpdateProjectProperties,
@@ -214,8 +221,8 @@ export type ApplicationIPCContract = {
     request: { payload: { path: string; name: string } };
     response: unknown;
   };
-  "dir-sort": {
-    request: { payload: { path: string; sorting: string } };
+  "rescan-dir": {
+    request: { payload: { path: string } };
     response: unknown;
   };
   export: {
@@ -264,20 +271,45 @@ export type ApplicationIPCContract = {
     request: { payload?: undefined };
     response: string[];
   };
-  // Answered inline by run(): fsal.loadAnySupportedFile(), Promise<string>.
-  "get-file-contents": {
+  // Answered inline by run(): documents.readDocumentText(), Promise<string>.
+  "get-document-text": {
     request: { payload: string };
     response: string;
+  };
+  // Answered inline by run(): the citation database of the document at the
+  // path, from its buffer text or its file (`documentBibliography`), after
+  // the reads of its libraries ended.
+  "get-document-bibliography": {
+    request: { payload: string };
+    response: CitationDatabase;
+  };
+  // Answered inline by run(): the cross-reference system that renders the
+  // document at the path (`documentCrossReferenceSystem`).
+  "get-cross-reference-system": {
+    request: { payload: string };
+    response: CrossReferenceSystem;
   };
   "open-attachment": {
     request: { payload: { citekey: string; filePath: string } };
     response: unknown;
   };
-  // Answered inline by run(): Electron delegates the path to the desktop's
-  // configured MIME handler and returns an empty string on success.
+  // Answered inline by run(): the clipboard takes the image of the file that
+  // the URI names. A file that is no image rejects.
+  "copy-img-to-clipboard": {
+    request: { payload: string };
+    response: void;
+  };
+  // Answered inline by run(): the desktop opens the path with the
+  // application of its type (`openPath`). A refusal rejects.
   "open-desktop-path": {
     request: { payload: string };
-    response: string;
+    response: void;
+  };
+  // Answered inline by run(): the desktop shows a folder, or the folder of a
+  // file, in its file browser (`revealPath`). A refusal rejects.
+  "reveal-path": {
+    request: { payload: { path: string } | { uri: string } };
+    response: void;
   };
   "edit-text-file": {
     request: { payload: string };
@@ -285,7 +317,7 @@ export type ApplicationIPCContract = {
   };
   "list-justfile-commands": {
     request: { payload: string[] };
-    response: JustRepositoryCommands[];
+    response: JustfileListing;
   };
   // Answered inline by run(): the recently opened and recently edited files.
   "list-recent-files": {
@@ -295,6 +327,12 @@ export type ApplicationIPCContract = {
   "open-aux-window": {
     request: { payload: { window: ProgrammaticallyOpenableWindows; hash?: string } };
     response: unknown;
+  };
+  // Answered inline by run(): opens the file filter dialog in the last
+  // active main window, the one editor of the ignore rules.
+  "edit-ignore-rules": {
+    request: { payload?: undefined };
+    response: boolean;
   };
   // Answered inline by run(): shows the window, then returns true.
   "open-preferences": {
@@ -352,9 +390,13 @@ export type ApplicationIPCContract = {
     request: { payload: { from: string; to: string } };
     response: unknown;
   };
+  "retry-workspace-lint": {
+    request: { payload?: undefined };
+    response: undefined;
+  };
   "root-close": {
-    request: { payload: string };
-    response: unknown;
+    request: { payload: string[] };
+    response: boolean;
   };
   "root-open-workspaces": {
     request: { payload?: undefined };
@@ -373,7 +415,7 @@ export type ApplicationIPCContract = {
     response: ExternalLinterRunResponse;
   };
   "save-image-from-clipboard": {
-    request: { payload: SaveImageFromClipboardAPI | { startPath: string } };
+    request: { payload: SaveImageFromClipboardAPI };
     response: string | undefined;
   };
   "set-directory-setting": {
@@ -383,6 +425,14 @@ export type ApplicationIPCContract = {
   "sort-workspaces": {
     request: { payload: string[] };
     response: unknown;
+  };
+  "tikz-edit-close": {
+    request: { payload: string };
+    response: undefined;
+  };
+  "tikz-edit-open": {
+    request: { payload: TikzEditOpenRequest };
+    response: TikzEditOutcome;
   };
   "tikz-render": {
     request: { payload: TikzRenderRequest };
@@ -400,8 +450,32 @@ export type ApplicationIPCContract = {
 
 export type ApplicationIPCAPI = IPCMessage<ApplicationIPCContract>;
 
+/**
+ * Commands that a window runs on its own, not on an action of the author: a
+ * lint pass, a figure render, a hover preview, a refresh of the Problems view.
+ * The caller shows a failure of these in its own place (the tooltip, the
+ * figure, the view). A message in the window for each one would repeat with
+ * each keystroke or pointer move. The preview of a reference rename is here
+ * because its one caller shows each failure of the rename protocol.
+ */
+const CALLER_SHOWS_FAILURE: ReadonlySet<string> = new Set([
+  "fetch-link-preview",
+  "file-find-and-return-meta-data",
+  "list-workspace-lint",
+  "preview-reference-rename",
+  "run-external-linter",
+  "tikz-render",
+]);
+
 export default class CommandProvider extends ProviderContract {
-  private readonly _commands: ZettlrCommand[];
+  private readonly _commands: DispatchedCommand[];
+  /** The errors that a window already shows: a command can run a command. */
+  private readonly _shownFailures = new WeakSet<Error>();
+  /**
+   * The window whose renderer started the command that runs. A command that
+   * a command runs has the window of the first one.
+   */
+  private readonly _startedBy = new AsyncLocalStorage<WebContents>();
 
   // TODO: Right now this just injects the full service container into the
   // commands, but it mayt be better to only provide those which are actually
@@ -414,7 +488,7 @@ export default class CommandProvider extends ProviderContract {
     // Set up the command listener
     ipcMain.handle("application", async (event, { command, payload }) => {
       if (typeof command === "string") {
-        return await this.run(command, payload);
+        return await this._startedBy.run(event.sender, () => this.run(command, payload));
       } else {
         throw new Error(`[Commands] Could not run command "${String(command)}": Not a string`);
       }
@@ -422,7 +496,10 @@ export default class CommandProvider extends ProviderContract {
   }
 
   /**
-   * Runs a command through the application pipeline
+   * Runs a command through the application pipeline. A command that throws
+   * rejects: its caller receives the value of the contract or the error, never
+   * a substitute. Most callers only log a rejection, so one window shows the
+   * cause of each failure once.
    *
    * @param   {string}  command  The command to run
    * @param   {CommandWireValue}  payload  The payload the command requires
@@ -430,43 +507,89 @@ export default class CommandProvider extends ProviderContract {
    * @return  {Promise<CommandWireValue>}  The return from running the command
    */
   async run(command: string, payload: CommandWireValue): Promise<CommandWireValue> {
+    try {
+      return await this._dispatch(command, payload);
+    } catch (err: unknown) {
+      const failure = err instanceof Error ? err : new Error(String(err));
+      if (!this._shownFailures.has(failure)) {
+        this._shownFailures.add(failure);
+        this._app.log.error(`[Application] The command ${command} failed: ${failure.message}`, err);
+        if (!CALLER_SHOWS_FAILURE.has(command)) {
+          this._showFailure({ command, message: failure.message });
+        }
+      }
+      throw failure;
+    }
+  }
+
+  /**
+   * Sends a failure to the one window that shows it: the window that started
+   * the command. The main window shows the failure of a command that the
+   * application started (a menu item, a second instance) and of a command
+   * whose window is gone.
+   */
+  private _showFailure(failure: CommandFailedBroadcast): void {
+    const candidates = [
+      this._startedBy.getStore(),
+      this._app.windows.getFirstMainWindow()?.webContents,
+    ];
+    const window = candidates.find(
+      (candidate) => candidate !== undefined && !candidate.isDestroyed() && !candidate.isCrashed(),
+    );
+    if (window === undefined) {
+      return;
+    }
+    window.send(COMMAND_FAILED_CHANNEL, failure);
+  }
+
+  private async _dispatch(command: string, payload: CommandWireValue): Promise<CommandWireValue> {
     // FIRST: Try to run a minimal command for which its own custom function
     // wouldn't make sense.
-    if (command === "copy-img-to-clipboard") {
-      // We should copy the contents of an image file to clipboard. Payload
-      // contains the image path. We can rely on the Electron framework here.
-      if (typeof payload !== "string") {
-        return false;
+    if (command === "copy-img-to-clipboard" && typeof payload === "string") {
+      // The payload is the URI of the image file.
+      const imagePath = filePathOfUri(payload);
+      const image = nativeImage.createFromPath(imagePath);
+      // Electron gives an empty image for a file that it cannot read or decode.
+      if (image.isEmpty()) {
+        throw new Error(trans("%s is not an image that can be copied.", imagePath));
       }
-
-      let imgPath = payload;
-      if (imgPath.startsWith("safe-file://")) {
-        imgPath = imgPath.replace("safe-file://", "");
-      } else if (imgPath.startsWith("file://")) {
-        imgPath = imgPath.replace("file://", "");
+      clipboard.writeImage(image);
+      return;
+    } else if (command === "get-document-text" && typeof payload === "string") {
+      return await this._app.documents.readDocumentText(payload);
+    } else if (command === "get-document-bibliography" && typeof payload === "string") {
+      const text = await this._app.documents.readDocumentText(payload);
+      const { database } = await documentBibliography(this._app.fsal, payload, text);
+      // The answer comes after the reads of its libraries, so a window that
+      // renders the citations once renders them from the loaded libraries.
+      await this._app.citeproc.loadDatabases(database);
+      return database;
+    } else if (command === "get-cross-reference-system" && typeof payload === "string") {
+      return await documentCrossReferenceSystem(this._app.fsal, payload);
+    } else if (command === "edit-ignore-rules") {
+      const mainWindow = this._app.windows.getFirstMainWindow();
+      if (mainWindow === undefined) {
+        throw new Error("The file filter dialog has no main window to open in.");
       }
-
-      // Due to the colons in the drive letters on Windows, the pathname will
-      // look like this: /C:/Users/Documents/test.jpg
-      // See: https://github.com/Zettlr/Zettlr/issues/5489
-      if (/^\/[A-Z]:/i.test(imgPath)) {
-        imgPath = imgPath.slice(1);
-      }
-
-      const img = nativeImage.createFromPath(imgPath);
-
-      if (!img.isEmpty()) {
-        clipboard.writeImage(img);
-      }
+      mainWindow.show();
+      mainWindow.webContents.send("shortcut", "edit-ignore-rules");
       return true;
-    } else if (command === "get-file-contents" && typeof payload === "string") {
-      // Some renderer's editor has requested a file
-      return await this._app.fsal.loadAnySupportedFile(payload);
     } else if (command === "open-preferences") {
       this._app.windows.showPreferences(payload as PreferenceNavigationTarget | undefined);
       return true;
     } else if (command === "open-desktop-path" && typeof payload === "string") {
-      return await shell.openPath(payload);
+      await openPath(payload);
+      return;
+    } else if (command === "reveal-path" && typeof payload === "object" && payload !== null) {
+      if ("path" in payload && typeof payload.path === "string") {
+        await revealPath(payload.path);
+        return;
+      }
+      if ("uri" in payload && typeof payload.uri === "string") {
+        await revealPath(filePathOfUri(payload.uri));
+        return;
+      }
+      throw new Error("reveal-path takes a path or a file URI");
     } else if (command === "edit-text-file" && typeof payload === "string") {
       return await launchKitty(path.dirname(payload), ["nvim", payload]);
     } else if (
@@ -474,9 +597,11 @@ export default class CommandProvider extends ProviderContract {
       Array.isArray(payload) &&
       payload.every((root) => typeof root === "string")
     ) {
-      return await discoverJustfileCommands(payload, undefined, (message) => {
-        this._app.log.warning(`[Justfile commands] ${message}`);
-      });
+      const listing = await discoverJustfileCommands(payload);
+      for (const { repoRoot, cause } of listing.notListed) {
+        this._app.log.warning(`[Justfile commands] No recipes of ${repoRoot}: ${cause}`);
+      }
+      return listing;
     } else if (command === "list-recent-files") {
       return {
         opened: this._app.recentDocs.get(),
@@ -510,21 +635,10 @@ export default class CommandProvider extends ProviderContract {
     } else {
       // ELSE: If the command has not yet been found, try to run one of the
       // bigger commands
-      const cmd: ZettlrCommand | undefined = this._commands.find((elem: ZettlrCommand) =>
-        elem.respondsTo(command),
-      );
+      const cmd = this._commands.find((elem) => elem.respondsTo(command));
       if (cmd !== undefined) {
         // Return the return value of the command, if there is any
-        try {
-          return await cmd.run(command, payload);
-        } catch (err: unknown) {
-          this._app.log.error(
-            "[Application] Error received while running command: " +
-              (err instanceof Error ? err.message : "Unknown error"),
-            err,
-          );
-          return false;
-        }
+        return await cmd.run(command, payload);
       } else if (command === "get-available-languages") {
         return enumLangFiles().map((elem) => elem.tag);
       } else if (command === "get-available-dictionaries") {
@@ -542,5 +656,6 @@ export default class CommandProvider extends ProviderContract {
 
   async shutdown(): Promise<void> {
     this._app.log.verbose("Command Provider shutting down ...");
+    await Promise.all(this._commands.map(async (command) => await command.shutdown()));
   }
 }

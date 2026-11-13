@@ -36,7 +36,10 @@
 // Installs process-wide test doubles; it must load before the modules that read them.
 import "./headless-electron-harness.cjs";
 import type { AnnotationMessage, TextAnnotation } from "@dts/common/annotation-domain";
-import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
+import type {
+  DocumentCollaborationSession,
+  WorkspaceCollaborationListing,
+} from "@dts/common/document-collaboration";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
@@ -126,10 +129,12 @@ describe("Document annotation IPC (M6, WU-14)", function () {
         },
         getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
         getFilesystemMetadata: async (_filePath: string) => ({ modtime: 0 }),
-        readDirectoryRecursively: async (workspacePath: string) =>
-          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
+        readDirectoryRecursively: async (workspacePath: string) => ({
+          paths: readdirSync(workspacePath, { recursive: true, withFileTypes: true })
             .filter((entry) => entry.isFile())
             .map((entry) => path.join(entry.parentPath, entry.name)),
+          notListed: [],
+        }),
       },
       citeproc: { synchronizeDatabases: async (_libraries: string[]) => {} },
       recentDocs: { add: (_path: string) => {}, markEdited: (_path: string) => {} },
@@ -198,9 +203,9 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     assert.equal(annotation.messages[0].text, "Expand this with concrete examples.");
   });
 
-  it("refuses a second annotation with the same normalized creation reason", async function () {
+  it("admits a second annotation that repeats an earlier creation instruction", async function () {
     const content = "First target here. Second target here.\n";
-    const filePath = await openFile("duplicate-reason.md", content);
+    const filePath = await openFile("repeated-reason.md", content);
     const firstFrom = content.indexOf("First target");
     const firstTo = firstFrom + "First target".length;
     const secondFrom = content.indexOf("Second target");
@@ -215,19 +220,16 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     });
     assert.ok(!isFailure(first), "the first annotation must be admitted");
 
-    const duplicate = await invoke<TextAnnotation | AnnotationFailure>(
-      "documents:create-annotation",
-      {
-        path: filePath,
-        from: secondFrom,
-        to: secondTo,
-        instruction: "  explain   WHY this assumption is needed.  ",
-        expectedAnnotationGeneration: 1,
-      },
-    );
-    assert.ok(isFailure(duplicate), "a duplicate creation reason must be refused");
-    assert.equal(duplicate.code, "INVALID_PARAMS");
-    assert.match(duplicate.message, /same creation instruction/);
+    // The instruction is owner prose, not an identifier: repeating it, even
+    // restyled, for another passage must be admitted like any other.
+    const second = await invoke<TextAnnotation | AnnotationFailure>("documents:create-annotation", {
+      path: filePath,
+      from: secondFrom,
+      to: secondTo,
+      instruction: "  explain   WHY this assumption is needed.  ",
+      expectedAnnotationGeneration: 1,
+    });
+    assert.ok(!isFailure(second), `expected a second annotation, got ${JSON.stringify(second)}`);
 
     const session = await invoke<
       { annotations: { generation: number; items: TextAnnotation[] } } | undefined
@@ -235,13 +237,18 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     assert.ok(session !== undefined);
     assert.equal(
       session.annotations.generation,
-      1,
-      "a refused duplicate must not advance the annotation fence",
+      2,
+      "the repeated instruction must commit like any other",
     );
     assert.equal(
       session.annotations.items.length,
-      1,
-      "a refused duplicate must not enter annotation state",
+      2,
+      "both annotations must be in annotation state",
+    );
+    assert.equal(
+      session.annotations.items[1].messages[0].text,
+      "  explain   WHY this assumption is needed.  ",
+      "the instruction is stored verbatim",
     );
   });
 
@@ -265,10 +272,15 @@ describe("Document annotation IPC (M6, WU-14)", function () {
 
     await provider.closeFileEverywhere(filePath);
 
-    const sessions = await invoke<DocumentCollaborationSession[]>("documents-provider", {
-      command: "get-workspace-collaboration-sessions",
-      payload: { paths: [filePath] },
-    });
+    const { sessions, unreadable } = await invoke<WorkspaceCollaborationListing>(
+      "documents-provider",
+      {
+        command: "get-workspace-collaboration-sessions",
+        payload: { paths: [filePath] },
+      },
+    );
+
+    assert.deepEqual(unreadable, []);
 
     assert.equal(sessions.length, 1);
     assert.equal(sessions[0].documentPath, filePath);
@@ -510,5 +522,238 @@ describe("Document annotation IPC (M6, WU-14)", function () {
       false,
       "the deleted annotation must be gone from the session",
     );
+  });
+
+  /**
+   * Marks one annotation acted the way the REAL agent path does — a real
+   * agent disposition through the application service, not a hand-written
+   * sidecar. Returns the annotation generation after the disposition.
+   */
+  async function actAnnotation(
+    filePath: string,
+    annotationId: string,
+    generation: number,
+  ): Promise<number> {
+    const documentId = provider.getDocumentId(filePath);
+    assert.ok(documentId !== undefined, "the fixture document must be loaded");
+    const disposition = await provider.addAnnotationMessage(
+      documentId,
+      annotationId,
+      "agent",
+      "Implemented the requested correction in commit abc123.",
+      `bulk-ipc-disposition-${annotationId}`,
+      generation,
+      true,
+    );
+    assert.ok(!isFailure(disposition), "the fixture agent disposition must be admitted");
+    return generation + 1;
+  }
+
+  it("wires documents:resolve-acted-annotations to the acted open annotations of a document", async function () {
+    const content = "Remediated target here. Open target here.\n";
+    const filePath = await openFile("bulk-acted.md", content);
+    const firstFrom = content.indexOf("Remediated target");
+    const firstTo = firstFrom + "Remediated target".length;
+    const secondFrom = content.indexOf("Open target");
+    const secondTo = secondFrom + "Open target".length;
+
+    const first = await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from: firstFrom,
+      to: firstTo,
+      instruction: "fix this",
+      expectedAnnotationGeneration: 0,
+    });
+    const second = await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from: secondFrom,
+      to: secondTo,
+      instruction: "and this",
+      expectedAnnotationGeneration: 1,
+    });
+    const actedGeneration = await actAnnotation(filePath, first.annotationId, 2);
+
+    const resolved = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
+      "documents:resolve-acted-annotations",
+      { path: filePath, expectedAnnotationGeneration: actedGeneration, scope: "acted" },
+    );
+    assert.ok(!isFailure(resolved), `expected a committed batch, got ${JSON.stringify(resolved)}`);
+    assert.deepEqual(
+      resolved.resolved.map((annotation) => annotation.annotationId),
+      [first.annotationId],
+      "exactly the acted annotation resolves, the untouched thread stays open",
+    );
+    assert.equal((resolved.resolved[0] as TextAnnotation).state, "resolved");
+
+    const session = await invoke<{ annotations: { items: TextAnnotation[] } } | undefined>(
+      "documents-provider",
+      { command: "get-collaboration-session", payload: { path: filePath } },
+    );
+    assert.ok(session !== undefined);
+    assert.equal(
+      session.annotations.items.find((item) => item.annotationId === first.annotationId)?.state,
+      "resolved",
+    );
+    assert.equal(
+      session.annotations.items.find((item) => item.annotationId === second.annotationId)?.state,
+      "open",
+    );
+  });
+
+  it("wires documents:resolve-acted-annotations to a CLOSED document through its sidecar", async function () {
+    const content = "A remediation backlog outlives the pane.\n";
+    const filePath = await openFile("bulk-acted-closed.md", content);
+    const from = content.indexOf("backlog");
+    const to = from + "backlog".length;
+
+    const created = await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from,
+      to,
+      instruction: "fix this when you can",
+      expectedAnnotationGeneration: 0,
+    });
+    const actedGeneration = await actAnnotation(filePath, created.annotationId, 1);
+    await provider.closeFileEverywhere(filePath);
+
+    const resolved = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
+      "documents:resolve-acted-annotations",
+      { path: filePath, expectedAnnotationGeneration: actedGeneration, scope: "acted" },
+    );
+    assert.ok(
+      !isFailure(resolved),
+      `a closed document's acted backlog must resolve: ${JSON.stringify(resolved)}`,
+    );
+    assert.deepEqual(
+      resolved.resolved.map((annotation) => annotation.annotationId),
+      [created.annotationId],
+    );
+  });
+
+  it("scope open through documents:resolve-acted-annotations resolves plain pending threads too", async function () {
+    const content = "First target here. Second target here.\n";
+    const filePath = await openFile("bulk-open-scope.md", content);
+    const firstFrom = content.indexOf("First target");
+    const firstTo = firstFrom + "First target".length;
+    const secondFrom = content.indexOf("Second target");
+    const secondTo = secondFrom + "Second target".length;
+
+    const first = await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from: firstFrom,
+      to: firstTo,
+      instruction: "nothing acted on this thread",
+      expectedAnnotationGeneration: 0,
+    });
+    const second = await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from: secondFrom,
+      to: secondTo,
+      instruction: "nor this one",
+      expectedAnnotationGeneration: 1,
+    });
+
+    const resolved = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
+      "documents:resolve-acted-annotations",
+      { path: filePath, expectedAnnotationGeneration: 2, scope: "open" },
+    );
+    assert.ok(
+      !isFailure(resolved),
+      `expected the open-scope batch, got ${JSON.stringify(resolved)}`,
+    );
+    assert.deepEqual(
+      (resolved as { resolved: TextAnnotation[] }).resolved.map(
+        (annotation) => annotation.annotationId,
+      ),
+      [first.annotationId, second.annotationId],
+    );
+  });
+
+  it("refuses documents:resolve-acted-annotations with nothing acted", async function () {
+    const content = "Nothing acted here.\n";
+    const filePath = await openFile("bulk-nothing-acted.md", content);
+    const from = content.indexOf("Nothing");
+    const to = from + "Nothing".length;
+    await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from,
+      to,
+      instruction: "pending thread",
+      expectedAnnotationGeneration: 0,
+    });
+    const result = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
+      "documents:resolve-acted-annotations",
+      { path: filePath, expectedAnnotationGeneration: 1, scope: "acted" },
+    );
+    assert.ok(isFailure(result), "an empty batch must be refused");
+    assert.equal(result.code, "INVALID_PARAMS");
+  });
+
+  it("wires documents:clear-resolved-annotations to the resolved annotations of a document", async function () {
+    const content = "Settled target here. Live target here.\n";
+    const filePath = await openFile("bulk-cleanup.md", content);
+    const firstFrom = content.indexOf("Settled target");
+    const firstTo = firstFrom + "Settled target".length;
+    const secondFrom = content.indexOf("Live target");
+    const secondTo = secondFrom + "Live target".length;
+
+    const first = await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from: firstFrom,
+      to: firstTo,
+      instruction: "settled thread",
+      expectedAnnotationGeneration: 0,
+    });
+    await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from: secondFrom,
+      to: secondTo,
+      instruction: "live thread",
+      expectedAnnotationGeneration: 1,
+    });
+    await invoke<TextAnnotation | AnnotationFailure>("documents:resolve-annotation", {
+      path: filePath,
+      annotationId: first.annotationId,
+      expectedAnnotationGeneration: 2,
+    });
+
+    const cleared = await invoke<{ deleted: TextAnnotation[] } | AnnotationFailure>(
+      "documents:clear-resolved-annotations",
+      { path: filePath, expectedAnnotationGeneration: 3 },
+    );
+    assert.ok(
+      !isFailure(cleared),
+      `expected the cleanup to succeed, got ${JSON.stringify(cleared)}`,
+    );
+    const deletedAnnotation = cleared as { deleted: TextAnnotation[] };
+    assert.deepEqual(
+      deletedAnnotation.deleted.map((annotation) => annotation.annotationId),
+      [first.annotationId],
+      "exactly the resolved annotation is deleted, the open thread survives",
+    );
+
+    const session = await invoke<{ annotations: { items: TextAnnotation[] } } | undefined>(
+      "documents-provider",
+      { command: "get-collaboration-session", payload: { path: filePath } },
+    );
+    assert.ok(session !== undefined);
+    assert.equal(session.annotations.items.length, 1);
+  });
+
+  it("refuses both bulk channels for a path with no document and no sidecar", async function () {
+    const neverOpened = path.join(scratch, "never-opened-bulk.md");
+    const resolveResult = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
+      "documents:resolve-acted-annotations",
+      { path: neverOpened, expectedAnnotationGeneration: 0, scope: "acted" },
+    );
+    assert.ok(isFailure(resolveResult), "an unresolved path must be refused, not throw");
+    assert.equal(resolveResult.code, "DOCUMENT_NOT_FOUND");
+
+    const clearResult = await invoke<{ deleted: TextAnnotation[] } | AnnotationFailure>(
+      "documents:clear-resolved-annotations",
+      { path: neverOpened, expectedAnnotationGeneration: 0 },
+    );
+    assert.ok(isFailure(clearResult), "an unresolved path must be refused, not throw");
+    assert.equal(clearResult.code, "DOCUMENT_NOT_FOUND");
   });
 });

@@ -19,21 +19,32 @@
         <div ref="editorHost" class="main-editor-host" />
       </SplitterPanel>
       <SplitterResizeHandle
-        v-if="tikzPreviewTarget !== null && tikzWorkbenchHost !== null"
+        v-if="tikzPreviewTarget !== null"
         class="tikz-editor-resize-handle"
-        aria-label="Resize TikZ editor pane"
+        aria-label="Resize TikZ preview pane"
       />
       <SplitterPanel
-        v-if="tikzPreviewTarget !== null && tikzWorkbenchHost !== null"
+        v-if="tikzPreviewTarget !== null"
         :default-size="42"
         :min-size="20"
       >
-        <TikzWorkbench
+        <TikzPreviewPane
           :target="tikzPreviewTarget"
-          :host="tikzWorkbenchHost"
-          :requested-mode="tikzRequestedMode"
+          :host="tikzPreviewHost"
           :theme="configStore.config.darkMode ? 'dark' : 'light'"
-        />
+        >
+          <template #actions>
+            <button
+              type="button"
+              class="tikz-edit-external"
+              :disabled="!tikzPreviewEditable"
+              :title="tikzPreviewEditable ? '' : 'Visual TikZ Editor opens a diagram whose source is one range of the document. Move this diagram out of the quote or list.'"
+              @click="editActiveTikzExternally()"
+            >
+              {{ EDIT_IN_VISUAL_TIKZ_EDITOR }}
+            </button>
+          </template>
+        </TikzPreviewPane>
       </SplitterPanel>
     </SplitterGroup>
     <RenameReferencePreviewDialog
@@ -81,6 +92,7 @@
  * END HEADER
  */
 
+import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { isCommandId, runRegisteredEditorCommand } from "@common/commands/command-registry";
@@ -104,10 +116,15 @@ import {
   selectNextReviewChunk,
   selectPreviousReviewChunk,
 } from "@common/modules/markdown-editor/plugins/review-chunks";
-import { OPEN_TIKZ_VISUAL_EDITOR_EVENT } from "@common/modules/markdown-editor/renderers/render-tikz";
 import { activeTikzBlock as findActiveTikzBlock } from "@common/modules/markdown-editor/tikz-block";
+import {
+  EDIT_IN_VISUAL_TIKZ_EDITOR,
+  editTikzInVisualEditor,
+} from "@common/modules/markdown-editor/tikz-edit-client";
 import { type EditorWindowConfiguration } from "@common/modules/markdown-editor/util/configuration";
 import { documentAuthorityIPCAPI } from "@common/modules/markdown-editor/util/ipc-api";
+import { saveBuffer } from "@common/modules/markdown-editor/util/save-buffer";
+import { markdownToAST } from "@common/modules/markdown-utils";
 import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
@@ -120,37 +137,27 @@ import {
   type UndoRenameOutcome,
 } from "@common/pandoc-util/compute-reference-edits";
 import { annotateCompletionEntries } from "@common/pandoc-util/project-reference-status";
+import { documentCitationDatabase } from "@common/util/document-citation-database";
+import { documentTitle } from "@common/util/document-title";
 import { reportError } from "@common/util/error-reporting";
 import { getDocumentTypeForExtension, hasMarkdownExt } from "@common/util/file-extention-checks";
-import {
-  getBibliographyForDescriptor as getBibliography,
-  resolveProjectForDescriptor,
-} from "@common/util/get-bibliography-for-descriptor";
-import {
-  isAbsolutePath,
-  pathBasename,
-  pathDirname,
-  resolvePath,
-} from "@common/util/renderer-path-polyfill";
+import makeValidUri from "@common/util/make-valid-uri";
+import { pathBasename, pathDirname, resolvePath } from "@common/util/renderer-path-polyfill";
 import { runRecoverably } from "@common/util/run-recoverably";
 import showToast from "@common/util/show-toast";
 import {
   declaredTexMacroSources,
   type TexDocumentKind,
   type TexMacroSource,
+  texDocument,
 } from "@common/util/tex-context";
 import { resolveTexMacroSourcePaths } from "@common/util/tex-macro-source-resolution";
-import { wikilinkTargetsIn } from "@common/util/wikilink-resolution";
+import { wikilinkTargetsIn } from "@common/util/wikilink-target";
 import type { AnnotationSet } from "@dts/common/annotation-domain";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import { DocumentType, DP_EVENTS, type OpenDocument } from "@dts/common/documents";
-import type {
-  AnyDescriptor,
-  CodeFileDescriptor,
-  DirDescriptor,
-  MDFileDescriptor,
-} from "@dts/common/fsal";
+import type { CodeFileDescriptor, DirDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type {
   DocumentLocation,
   ProjectRootSpec,
@@ -160,6 +167,13 @@ import type {
 } from "@dts/common/references";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import { isEditorCommandName } from "@dts/common/shortcut-names";
+import type { TikzPreviewHost } from "@dzack/tikz-render/host";
+import type { TikzLivePreviewTarget } from "@dzack/tikz-render/live-preview";
+import {
+  type TikzSourceBlock,
+  tikzBlockHasContiguousSource,
+} from "@dzack/tikz-render/source-block";
+import TikzPreviewPane from "@dzack/tikz-render/ui/TikzPreviewPane.vue";
 import { storeToRefs } from "pinia";
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
 import type { DocumentsUpdateContext } from "source/app/service-providers/documents";
@@ -178,10 +192,6 @@ import {
   useWindowStateStore,
   useWorkspaceStore,
 } from "source/pinia";
-import type { TikzLivePreviewTarget } from "tikz-workbench/src/live-preview";
-import type { TikzPreviewModeId } from "tikz-workbench/src/preview-modes";
-import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
-import TikzWorkbench from "tikz-workbench/src/ui/TikzWorkbench.vue";
 import _ from "underscore";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, toRef, watch } from "vue";
 import AnnotationCreateDialog from "./AnnotationCreateDialog.vue";
@@ -190,13 +200,10 @@ import InlineCollaborationControls, {
   type CollaborationBlock,
 } from "./editor-collaboration/InlineCollaborationControls.vue";
 import RenameReferencePreviewDialog from "./RenameReferencePreviewDialog.vue";
-import { zettlrTikzWorkbenchHost } from "./tikz-workbench-host";
 import { resolveReattachSelection } from "./util/annotation-reattach-selection";
 import getDocumentTitle from "./util/get-document-title";
 import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
-import surfaceDocumentLoadError, {
-  surfaceDocumentLoadFailure,
-} from "./util/surface-document-load-error";
+import surfaceDocumentLoadError from "./util/surface-document-load-error";
 
 const ipcRenderer = window.ipc;
 
@@ -204,38 +211,6 @@ const ipcRenderer = window.ipc;
 // authority already streams every edit in through collab push-updates, and
 // the references provider derives the live overlay from that authority
 // text. This window reports nothing and keeps no per-document counters.
-
-// This function overwrites the getBibliographyForDescriptor function to ensure
-// the library is always absolute. We have to do it this ridiculously since the
-// function is called in both main and renderer processes, and we still have the
-// issue that path-browserify is entirely unusable.
-async function fsalDirectoryLookup(dirPath: string): Promise<AnyDescriptor | undefined> {
-  const descriptor = await ipcRenderer.invoke("fsal", {
-    command: "get-descriptor",
-    payload: dirPath,
-  });
-  return Array.isArray(descriptor) ? undefined : descriptor;
-}
-
-async function getBibliographyForDescriptor(
-  descriptor: MDFileDescriptor,
-): Promise<CitationDatabase> {
-  // The workspace descriptor map is still empty while the workspace walk runs,
-  // so fall back to the FSAL for any parent directory it does not know yet.
-  // Without that fallback, files in a Quarto project opened at boot resolve to
-  // the main database and their citations do not render.
-  const project = await resolveProjectForDescriptor(
-    descriptor,
-    workspaceStore.descriptorMap,
-    fsalDirectoryLookup,
-  );
-  const library = getBibliography(descriptor, project);
-  const resolveLibrary = (filename: string): string =>
-    filename !== CITEPROC_MAIN_DB && !isAbsolutePath(filename)
-      ? resolvePath(descriptor.dir, filename)
-      : filename;
-  return Array.isArray(library) ? library.map(resolveLibrary) : resolveLibrary(library);
-}
 
 const props = defineProps<{
   leafId: string;
@@ -249,7 +224,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "globalSearch", query: string): void;
   (e: "referenceSearch", request: ReferenceSearchRequest): void;
-  (e: "fileSearch"): void;
   (e: "createReferenceLabel", prompt: CreateReferenceLabelDialogPrompt): void;
   (e: "openPandocQuickHelp"): void;
 }>();
@@ -368,11 +342,20 @@ async function updateTexMacroSources(
   editor: MarkdownEditor | null = currentEditor,
   force = false,
 ): Promise<void> {
-  if (editor === null) return;
+  // An editor without its document declares no sources yet; its `loaded`
+  // event reads them.
+  if (editor === null || !editor.documentLoaded) return;
   const kind = texDocumentKindForPath(editor.documentPath);
   if (kind === undefined) return;
 
-  const patterns = declaredTexMacroSources(editor.value, kind);
+  // The metadata block of the whole syntax tree: a block after the first
+  // screen declares sources too.
+  const state = editor.instance.state;
+  const tree = ensureSyntaxTree(state, state.doc.length, Number.POSITIVE_INFINITY);
+  if (tree === null) {
+    throw new Error(`The editor of ${editor.documentPath} has no syntax tree`);
+  }
+  const patterns = declaredTexMacroSources(texDocument(state.doc.toString(), kind, tree));
   const descriptors = workspaceStore.descriptorMap;
   const workspacePaths =
     patterns.length === 0
@@ -409,13 +392,29 @@ async function updateTexMacroSources(
 let editorLoadPromise: Promise<void> | null = null;
 const activeTikzSource = shallowRef<TikzSourceBlock | null>(null);
 const activeEditorView = shallowRef<EditorView | null>(null);
-const tikzRequestedMode = ref<TikzPreviewModeId>("tikz");
 
-function openInlineTikzVisualEditor(event: Event): void {
-  if (!(event instanceof CustomEvent)) {
+/** The main process compiles; the window shows the figure file that it wrote. */
+const tikzPreviewHost: TikzPreviewHost = {
+  render: async (request) =>
+    await ipcRenderer.invoke("application", { command: "tikz-render", payload: request }),
+  figureUrl: (figure) => makeValidUri(figure.svgPath),
+  reportError,
+};
+
+function editActiveTikzExternally(): void {
+  const block = activeTikzSource.value;
+  const view = activeEditorView.value;
+  if (block === null || view === null) {
     return;
   }
-  tikzRequestedMode.value = event.detail === "tikzcd" ? "quiver" : "visual";
+  editTikzInVisualEditor(view, {
+    from: block.sourceFrom,
+    to: block.sourceTo,
+    language: block.language,
+    docPath: props.file.path,
+  }).catch((error: unknown) => {
+    reportError("Could not open Visual TikZ Editor", error);
+  });
 }
 
 function ownsWindowActiveState(
@@ -433,11 +432,7 @@ function updateActiveTikzSource(editor: MarkdownEditor): void {
   if (!ownsWindowActiveState(editor) || !hasMarkdownExt(editor.documentPath)) {
     return;
   }
-  const next = findActiveTikzBlock(editor.instance.state);
-  if (next?.from !== activeTikzSource.value?.from) {
-    tikzRequestedMode.value = next?.language === "tikzcd" ? "quiver" : "tikz";
-  }
-  activeTikzSource.value = next;
+  activeTikzSource.value = findActiveTikzBlock(editor.instance.state);
 }
 
 function publishActiveEditorState(editor: MarkdownEditor): void {
@@ -450,7 +445,29 @@ function publishActiveEditorState(editor: MarkdownEditor): void {
 }
 
 function reportDocumentLoadError(error: unknown): void {
-  surfaceDocumentLoadError(props.file.path, error);
+  surfaceDocumentLoadError(props.file.path, error, loadAgain);
+}
+
+/** True after the tab of this pane closed: the pane has no place for an editor. */
+let paneClosed = false;
+
+/**
+ * The action of the message of a failed load. A pane without an editor
+ * loads its document, a pane with an editor loads the text again, and for a
+ * pane that closed the window opens the file.
+ */
+function loadAgain(): void {
+  if (paneClosed) {
+    ipcRenderer
+      .invoke("documents-provider", {
+        command: "open-file",
+        payload: { path: props.file.path, windowId: props.windowId },
+      })
+      .catch((error: unknown) => reportError(error));
+    return;
+  }
+  const load = currentEditor === null ? activateTab() : currentEditor.reload();
+  load.catch(reportDocumentLoadError);
 }
 
 /**
@@ -540,7 +557,7 @@ const stopCiteprocUpdates = ipcRenderer.on(
       return; // Nothing to do
     }
 
-    getBibliographyForDescriptor(descriptor)
+    documentCitationDatabase(descriptor.path)
       .then(async (library) => {
         await updateCitationKeys(library);
         if (activeFileDescriptor.value?.path !== descriptor.path) {
@@ -575,57 +592,51 @@ const stopReferenceUpdates = ipcRenderer.on("references", (_event) => {
   });
 });
 
+/**
+ * Whether a save is for the document of this editor. The editor that holds
+ * the focus saves. When no editor of the window holds it (the focus is on a
+ * message, in the file manager or in a sidebar), the save is for the active
+ * document of the pane that the author used last: a save never does nothing
+ * while a document is open.
+ */
+function savesThisDocument(editor: MarkdownEditor): boolean {
+  if (editor.hasFocusWithin()) {
+    return true;
+  }
+  const focusInAnEditor = document.activeElement?.closest(".cm-editor") != null;
+  return !focusInAnEditor && isActiveTab.value && documentTreeStore.lastLeafId === props.leafId;
+}
+
 const stopShortcuts = ipcRenderer.on("shortcut", (event, command) => {
-  if (currentEditor?.hasFocusWithin() !== true) {
-    return; // None of our business
+  if (currentEditor === null) {
+    return;
   }
 
   if (command === "save-file") {
-    // Main is telling us to save, so tell main to save the current file.
+    if (!savesThisDocument(currentEditor)) {
+      return; // The save is for another editor
+    }
+    const editor = currentEditor;
+    // saveBuffer waits until the document authority holds the whole buffer:
+    // the on-disk write goes through the authority.
     const doSave = (): void => {
-      ipcRenderer
-        .invoke("documents:save-file", { path: props.file.path })
-        .then((result) => {
-          if (result.ok) {
-            return;
-          }
-          // The provider refuses saves it cannot perform (an unresolved review,
-          // an external edit). It deliberately does not present this itself: a
-          // blocking main-process modal freezes the app until dismissed. Show
-          // the closable toast surface instead, and never swallow the reason.
-          const message =
-            result.refusal?.message ?? trans('Could not save "%s".', pathBasename(props.file.path));
-          reportError(
-            `[MainEditor] Main refused to save ${props.file.path}` +
-              (result.refusal !== undefined
-                ? ` (${result.refusal.reason}): ${result.refusal.message}`
-                : ""),
-          );
-          showToast(message, "error", 12000);
-        })
-        .catch((e) => reportError(e));
+      void saveBuffer(() => editor.instance.state, props.file.path);
     };
 
     // Format-on-save (issue #26): when enabled for a Markdown file, run flowmark
-    // over the buffer first and wait for the format's collab update to reach the
-    // document authority, so the on-disk write sees the formatted bytes. The
-    // format is a single undo step, so one undo reverts an unwanted auto-format.
+    // over the buffer first. The format is a single undo step, so one undo
+    // reverts an unwanted auto-format. saveBuffer then waits for the format's
+    // collab update to reach the authority, so the write sees the formatted
+    // bytes; when it cannot, it refuses the save and says so.
     //
     // A formatter that reports a typed failure (flowmark absent, bad exit) left
     // the buffer untouched, surfaceFormatResult tells the author why, and the
-    // save proceeds on the unchanged text. But if the format DID change the
-    // buffer and whenSynced cannot promise those bytes reached the authority,
-    // saving would write the pre-format text and report an ordinary success —
-    // the author would find out by diffing the file. Refuse the save and say so
-    // instead; the buffer keeps the formatted text and pressing save again
-    // retries the whole thing.
-    if (configStore.config.editor.formatOnSave && isMarkdown.value && currentEditor !== undefined) {
-      const editor = currentEditor;
+    // save proceeds on the unchanged text.
+    if (configStore.config.editor.formatOnSave && isMarkdown.value) {
       editor
         .runFormatter(ipcMarkdownFormatter(props.file.path))
-        .then(async (result) => {
+        .then((result) => {
           surfaceFormatResult(result);
-          await editor.whenSynced();
           doSave();
         })
         .catch((e) => {
@@ -645,7 +656,14 @@ const stopShortcuts = ipcRenderer.on("shortcut", (event, command) => {
     } else {
       doSave();
     }
-  } else if (command === "search") {
+    return;
+  }
+
+  if (!currentEditor.hasFocusWithin()) {
+    return; // The other shortcuts act on the editor that holds the focus
+  }
+
+  if (command === "search") {
     currentEditor.toggleSearchPanel();
   } else if (command === "toggle-typewriter-mode") {
     currentEditor.hasTypewriterMode = !currentEditor.hasTypewriterMode;
@@ -679,14 +697,7 @@ const stopDocumentUpdates = ipcRenderer.on(
       applyPendingNavigation();
     }
 
-    if (event === DP_EVENTS.FILE_REMOTE_CHANGE_ERROR && context.filePath === props.file.path) {
-      if (context.documentLoadError === undefined) {
-        throw new Error(
-          `Received ${DP_EVENTS.FILE_REMOTE_CHANGE_ERROR} without a diagnostic for ${context.filePath}`,
-        );
-      }
-      surfaceDocumentLoadFailure(context.filePath, context.documentLoadError);
-    } else if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
+    if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
       // The currently loaded document has been changed remotely. This event indicates
       // that the document provider has already reloaded the document and we only
       // need to tell the main editor to reload it as well.
@@ -718,7 +729,9 @@ const stopDocumentUpdates = ipcRenderer.on(
 
           activeFileDescriptor.value = descriptor;
           const library =
-            descriptor.type === "file" ? await getBibliographyForDescriptor(descriptor) : undefined;
+            descriptor.type === "file"
+              ? await documentCitationDatabase(descriptor.path)
+              : undefined;
           if (library !== undefined) {
             updateCitationKeys(library).catch((e) =>
               reportError("Could not update citation keys", e),
@@ -763,16 +776,28 @@ const stopLinkUpdates = ipcRenderer.on("links", (_e) => {
   updateFileDatabase().catch((err) => reportError("Could not update file database", err));
 });
 
+// The author started the lint again (the Problems view). The editor of
+// the active tab lints its text again; an editor in a background tab does
+// it when its tab becomes active.
+let lintAgainOnActivation = false;
+const stopLintRetries = ipcRenderer.on("document-lint-retried", (_e) => {
+  if (!isActiveTab.value) {
+    lintAgainOnActivation = true;
+    return;
+  }
+  currentEditor?.lintAgain();
+});
+
 // MOUNTED HOOK
 onMounted(() => {
   mainEditorWrapper.value?.addEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer);
-  editorHost.value?.addEventListener(OPEN_TIKZ_VISUAL_EDITOR_EVENT, openInlineTikzVisualEditor);
   if (isActiveTab.value) {
     activateTab().catch(reportDocumentLoadError);
   }
 });
 
 onBeforeUnmount(() => {
+  paneClosed = true;
   for (const stop of [
     stopCiteprocUpdates,
     stopReferenceUpdates,
@@ -780,6 +805,7 @@ onBeforeUnmount(() => {
     stopDocumentUpdates,
     stopReloads,
     stopLinkUpdates,
+    stopLintRetries,
   ]) {
     stop();
   }
@@ -788,7 +814,6 @@ onBeforeUnmount(() => {
   activeTikzSource.value = null;
   activeEditorView.value = null;
   mainEditorWrapper.value?.removeEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer);
-  editorHost.value?.removeEventListener(OPEN_TIKZ_VISUAL_EDITOR_EVENT, openInlineTikzVisualEditor);
   if (currentEditor !== null) {
     currentEditor.unmount();
   }
@@ -849,8 +874,8 @@ const quickTex = computed(() => windowStateStore.quickTex);
 const phraseCompletions = computed(() => windowStateStore.phraseCompletions);
 const tags = computed(() => tagStore.tags);
 const isMarkdown = computed(() => hasMarkdownExt(props.file.path));
-const tikzWorkbenchHost = computed(() =>
-  activeEditorView.value === null ? null : zettlrTikzWorkbenchHost(activeEditorView.value),
+const tikzPreviewEditable = computed(
+  () => activeTikzSource.value !== null && tikzBlockHasContiguousSource(activeTikzSource.value),
 );
 const tikzPreviewTarget = computed<TikzLivePreviewTarget | null>(() =>
   activeTikzSource.value === null || activeEditorView.value === null
@@ -962,7 +987,7 @@ function updateProjectInfo(): ProjectInfo | null {
       wordCount: descriptor.wordCount,
       charCount: descriptor.charCount,
       path: descriptor.path,
-      displayName: descriptor.yamlTitle ?? descriptor.firstHeading ?? descriptor.name,
+      displayName: documentTitle(descriptor),
     }));
 
   const metadataByPath = new Map(extractedMetadata.map((file) => [file.path, file]));
@@ -984,16 +1009,19 @@ function updateProjectInfo(): ProjectInfo | null {
             return entry === null ? [] : [entry];
           }
 
+          // The file of a part gives the part its title, and it is the first
+          // document of the part.
+          const partFile = item.kind === "part-file" ? makeChapter(item.path) : null;
+          const title =
+            item.kind === "part" ? item.title : (partFile?.displayName ?? pathBasename(item.path));
           return [
             {
               kind: "part" as const,
-              title: item.title,
-              chapters: item.chapters
-                .map(makeChapter)
-                .filter(
-                  (entry): entry is Extract<ProjectInfoNavigationItem, { kind: "chapter" }> =>
-                    entry !== null,
-                ),
+              title,
+              chapters: [partFile, ...item.chapters.map(makeChapter)].filter(
+                (entry): entry is Extract<ProjectInfoNavigationItem, { kind: "chapter" }> =>
+                  entry !== null,
+              ),
             },
           ];
         })
@@ -1233,23 +1261,33 @@ const EMPTY_ANNOTATION_SET: AnnotationSet = { generation: 0, items: [] };
 // forwards the current set — the editor's own field only distinguishes and
 // re-renders locators, never mutates them. `immediate` covers the pane that
 // mounts onto a document another pane already cached the session for.
-// The set plus editor locator selection/resolved visibility travel together;
-// the workspace sidebar does not own a duplicate detail view. A document swap
-// builds a fresh editor state, so
-// pushing the set alone would leave the new state with no selection and the
-// resolved switch back at its default.
+// The store gives a new set object only for a changed set, so the editor
+// draws its locators again only then. The selection and the resolved switch
+// each have a watcher of their own: a change of one is one effect in the
+// editor. A document swap builds a fresh editor state, and loadDocument
+// gives that state all three values.
 watch(
-  [
-    () => collaborationSession.value?.annotations,
-    () => collaborationStore.selectedAnnotationId,
-    () => collaborationStore.showResolved,
-  ],
-  ([annotations, selectedAnnotationId, showResolved]) => {
+  () => collaborationSession.value?.annotations,
+  (annotations) => {
     currentEditor?.setAnnotations(annotations ?? EMPTY_ANNOTATION_SET);
+  },
+  { immediate: true },
+);
+
+watch(
+  () => collaborationStore.selectedAnnotationId,
+  (selectedAnnotationId) => {
     currentEditor?.setActiveAnnotation(selectedAnnotationId);
+  },
+  { immediate: true },
+);
+
+watch(
+  () => collaborationStore.showResolved,
+  (showResolved) => {
     currentEditor?.setShowResolvedAnnotations(showResolved);
   },
-  { immediate: true, deep: true },
+  { immediate: true },
 );
 
 // METHODS
@@ -1346,16 +1384,11 @@ async function getEditorFor(doc: string): Promise<MarkdownEditor> {
     emit("globalSearch", tag);
   });
 
-  // The workspace reference search overlay was requested (issue #1 Phase
-  // 3b) — plain Mod-P (null) or a count badge's keyed reverse lookup
-  // ({ key }, Phase 8); relay the request payload up the component tree to
+  // A count badge asked for the citing locations of its key ({ key },
+  // issue #1 Phase 8); relay the request payload up the component tree to
   // App.vue.
   editor.on("reference-search", (request: ReferenceSearchRequest) => {
     emit("referenceSearch", request);
-  });
-
-  editor.on("file-search", () => {
-    emit("fileSearch");
   });
 
   // A gutter chip was clicked: open that annotation's inline thread, or
@@ -1398,6 +1431,7 @@ async function getEditorFor(doc: string): Promise<MarkdownEditor> {
     emit("createReferenceLabel", {
       family: request.family,
       proposedSlug: request.proposedSlug,
+      documentPath: editor.documentPath,
       applyCreate: (intent: CreateReferenceLabelIntent): ConfirmReferenceLabelOutcome => {
         const view = currentEditor?.instance;
         if (view === undefined) {
@@ -1470,7 +1504,7 @@ async function loadDocument(): Promise<void> {
   activeFileDescriptor.value = descriptor;
 
   const library =
-    descriptor.type === "file" ? await getBibliographyForDescriptor(descriptor) : undefined;
+    descriptor.type === "file" ? await documentCitationDatabase(descriptor.path) : undefined;
   if (library !== undefined) {
     updateCitationKeys(library).catch((e) => reportError("Could not update citation keys", e));
   }
@@ -1535,7 +1569,7 @@ function refreshActiveEditorAuxiliaryState(): void {
 
   const descriptor = activeFileDescriptor.value;
   if (descriptor?.type === "file") {
-    getBibliographyForDescriptor(descriptor)
+    documentCitationDatabase(descriptor.path)
       .then(updateCitationKeys)
       .catch((err) => reportError("Could not update citation keys", err));
   }
@@ -1576,8 +1610,14 @@ async function activateTab(): Promise<void> {
   if (!editor.hasFocus() && !isTypingOutsideLeaf()) {
     editor.focus();
   }
+  // An editor that loaded now lints its text on its own.
+  const lintAgain = lintAgainOnActivation && !loadedNow;
+  lintAgainOnActivation = false;
   if (!loadedNow) {
     refreshActiveEditorAuxiliaryState();
+  }
+  if (lintAgain) {
+    editor.lintAgain();
   }
 }
 
@@ -1684,16 +1724,10 @@ async function updateCitationKeys(library: CitationDatabase): Promise<void> {
  * absolute path plus the ordered project-relative ProjectSettings.files list.
  */
 function collectProjectRoots(): ProjectRootSpec[] {
-  const roots: ProjectRootSpec[] = [];
-  for (const descriptor of workspaceStore.descriptorMap.values()) {
-    if (descriptor.type === "directory" && descriptor.settings.project !== null) {
-      roots.push({
-        rootPath: descriptor.path,
-        files: [...descriptor.settings.project.files],
-      });
-    }
-  }
-  return roots;
+  return workspaceStore.projectDirectories.map((directory) => ({
+    rootPath: directory.path,
+    files: [...directory.settings.project.files],
+  }));
 }
 
 let latestReferenceRequestId = 0;
@@ -2059,7 +2093,14 @@ async function updateWikilinkResolutions(force: boolean): Promise<void> {
   if (editor === null) {
     return;
   }
-  const targets = wikilinkTargetsIn(editor.value);
+  // The links of the syntax tree of the editor, which reads them with the
+  // link format of the settings. The request waits for the whole tree.
+  const state = editor.instance.state;
+  const tree = ensureSyntaxTree(state, state.doc.length, Number.POSITIVE_INFINITY);
+  if (tree === null) {
+    throw new Error(`The editor of ${props.file.path} has no Markdown syntax tree`);
+  }
+  const targets = wikilinkTargetsIn(markdownToAST(state.doc.toString(), tree));
   const key = targets.join("\n");
   if (!force && key === requestedWikilinkTargets) {
     return;
@@ -2128,8 +2169,24 @@ function maybeHighlightSearchResults(): void {
     height: 100%;
     min-height: 0;
     overflow: hidden;
+    // The size container of the side padding of the scroller.
+    container-type: inline-size;
 
     > .cm-editor { width: 100%; }
+  }
+
+  .tikz-edit-external {
+    min-height: 36px;
+    padding: 4px 12px;
+    border: 1px solid currentColor;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: color-mix(in srgb, currentColor 8%, transparent); }
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
   }
 
   .tikz-editor-resize-handle {
@@ -2142,7 +2199,9 @@ function maybeHighlightSearchResults(): void {
   }
 
   .cm-editor {
-    .cm-scroller { padding: 50px 50px; }
+    // 50 px on each side from a pane of 600 px, 8 px up to a pane of 300 px:
+    // a narrow pane gives its width to the text column.
+    .cm-scroller { padding: 50px ~"clamp(8px, 14cqi - 34px, 50px)"; }
     .cm-content { min-width: 0; }
   }
 

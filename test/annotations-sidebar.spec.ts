@@ -45,6 +45,7 @@ import {
   suggestionIdsForPacketIds,
   unresolvedCollaborationCount,
 } from "source/win-main/sidebar/annotations/annotation-panel-model";
+import { nextTick } from "vue";
 import {
   buildSceneReview,
   buildSceneSession,
@@ -298,7 +299,7 @@ describe("useDocumentCollaborationStore panel surface", function () {
     documentCollaborationIpcDouble.reset();
   });
 
-  it("precomputes cards in the background upon ensureSession and getCards reads them directly", async function () {
+  it("gives the cards of a session that ensureSession read", async function () {
     documentCollaborationIpcDouble.setInvokeResponder(async () => session);
     const store = useDocumentCollaborationStore();
     await store.ensureSession(session.documentPath);
@@ -309,7 +310,7 @@ describe("useDocumentCollaborationStore panel surface", function () {
     assert.ok(cards[0].lineLocator.startsWith("Ln ") || cards[0].lineLocator === "Orphaned");
   });
 
-  it("precomputes cards in the background upon document-collaboration broadcast", function () {
+  it("gives the cards of a session that a broadcast carried", function () {
     const store = useDocumentCollaborationStore();
     documentCollaborationIpcDouble.emit("documents-update", {
       event: "document-collaboration",
@@ -321,10 +322,69 @@ describe("useDocumentCollaborationStore panel surface", function () {
 
     const cards = store.getCards(session.documentPath);
     assert.equal(cards.length, session.annotations.items.length);
+  });
+
+  /** The broadcast of one session, as the main process sends it. */
+  function broadcast(sent: typeof session): void {
+    documentCollaborationIpcDouble.emit("documents-update", {
+      event: "document-collaboration",
+      context: { filePath: sent.documentPath, collaborationSession: sent },
+    });
+  }
+
+  it("holds the session that the main process sent, not a reactive copy of it (#126)", function () {
+    const store = useDocumentCollaborationStore();
+    broadcast(session);
+
+    assert.equal(store.getSession(session.documentPath), session);
+  });
+
+  it("keeps the cards of a document when the session of another document arrives (#126)", async function () {
+    const store = useDocumentCollaborationStore();
+    const other = { ...session, documentId: "doc-other", documentPath: "/tmp/other-note.md" };
+    broadcast(session);
+    const cards = store.getCards(session.documentPath);
+
+    broadcast(other);
+    await nextTick();
+
+    assert.equal(store.getCards(session.documentPath), cards);
+    assert.equal(store.getCards(other.documentPath).length, other.annotations.items.length);
+  });
+
+  it("keeps the annotation set of a document when a broadcast changes only its text (#126)", function () {
+    const store = useDocumentCollaborationStore();
+    broadcast(session);
+    const shown = store.getSession(session.documentPath)?.annotations;
+
+    broadcast({ ...structuredClone(session), workingText: `${session.workingText}\nA last line.` });
+
+    assert.equal(store.getSession(session.documentPath)?.annotations, shown);
     assert.equal(
-      store.cardsByDocumentPath[session.documentPath]?.length,
-      session.annotations.items.length,
+      store.getSession(session.documentPath)?.workingText,
+      `${session.workingText}\nA last line.`,
     );
+  });
+
+  it("builds the review rows of a document one time for one session (#126)", async function () {
+    const store = useDocumentCollaborationStore();
+    const reviewed = buildSceneSessionWithReview();
+    const other = { ...session, documentId: "doc-other", documentPath: "/tmp/other-note.md" };
+    broadcast(reviewed);
+    const rows = store.getSuggestionRows(reviewed.documentPath);
+    assert.deepEqual(
+      rows.map((row) => row.suggestionId),
+      reviewed.review?.suggestions.map((suggestion) => suggestion.suggestionId),
+    );
+
+    broadcast(other);
+    await nextTick();
+    assert.equal(store.getSuggestionRows(reviewed.documentPath), rows);
+
+    // A new session of the document has new rows.
+    broadcast(structuredClone(reviewed));
+    assert.notEqual(store.getSuggestionRows(reviewed.documentPath), rows);
+    assert.deepEqual(store.getSuggestionRows(reviewed.documentPath), rows);
   });
 
   it("toggleShowResolved flips the disclosure, and accepts an explicit value", function () {
@@ -763,7 +823,9 @@ describe("useDocumentCollaborationStore review surface", function () {
       },
     };
     documentCollaborationIpcDouble.setInvokeResponder(async (message) =>
-      message.command === "get-workspace-collaboration-sessions" ? [session, second] : undefined,
+      message.command === "get-workspace-collaboration-sessions"
+        ? { sessions: [session, second], unreadable: [], ownerless: [] }
+        : undefined,
     );
     const store = useDocumentCollaborationStore();
 
@@ -790,7 +852,11 @@ describe("useDocumentCollaborationStore review surface", function () {
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       seen.push({ command: message.command, payload: message.payload });
       if (message.command === "get-workspace-collaboration-sessions") {
-        return acceptanceAttempts === 0 ? [session] : [freshSession];
+        return {
+          sessions: [acceptanceAttempts === 0 ? session : freshSession],
+          unreadable: [],
+          ownerless: [],
+        };
       }
       if (message.command === "get-collaboration-session") {
         return freshSession;
@@ -850,7 +916,11 @@ describe("useDocumentCollaborationStore review surface", function () {
       }
       if (message.command === "get-workspace-collaboration-sessions") {
         workspaceReads += 1;
-        return workspaceReads === 1 ? [session] : [freshSession];
+        return {
+          sessions: [workspaceReads === 1 ? session : freshSession],
+          unreadable: [],
+          ownerless: [],
+        };
       }
       if (message.command === "documents:accept-all-workspace-review-chunks") {
         acceptanceAttempts += 1;
@@ -896,7 +966,7 @@ describe("useDocumentCollaborationStore review surface", function () {
     const accepted: string[] = [];
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       if (message.command === "get-workspace-collaboration-sessions") {
-        return [session, second];
+        return { sessions: [session, second], unreadable: [], ownerless: [] };
       }
       if (message.command === "documents:accept-all-workspace-review-chunks") {
         accepted.push((message.payload as { path: string }).path);
@@ -935,7 +1005,7 @@ describe("useDocumentCollaborationStore review surface", function () {
     const logged: unknown[] = [];
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       if (message.command === "get-workspace-collaboration-sessions") {
-        return [session, second];
+        return { sessions: [session, second], unreadable: [], ownerless: [] };
       }
       if (message.command === "documents:accept-all-workspace-review-chunks") {
         return (message.payload as { path: string }).path === secondPath

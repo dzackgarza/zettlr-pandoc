@@ -12,7 +12,7 @@ include-after-body: []
 include-in-header: []
 bibliography: []
 filters:
-- type: citeproc
+  - type: citeproc
 pdf-engine: xelatex
 wrap: none
 columns: 78

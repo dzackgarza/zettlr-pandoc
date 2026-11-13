@@ -29,6 +29,7 @@ import path from "path";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import { referenceFamilyDisplayName, referenceFamilyOf } from "source/types/common/references";
 import { promisify } from "util";
+import { runProbe } from "./visual/display-probe";
 
 const execFileAsync = promisify(execFile);
 
@@ -101,11 +102,9 @@ describe("Mod-P reference search overlay", function () {
       ],
       { maxBuffer: 8 * 1024 * 1024 },
     );
-    const { stdout } = await execFileAsync(
-      "xvfb-run",
-      ["-a", "node", path.join(root, "test/reference-search-overlay-probe.mjs"), outputDirectory],
-      { maxBuffer: 8 * 1024 * 1024 },
-    );
+    const { stdout } = await runProbe(path.join(root, "test/reference-search-overlay-probe.mjs"), [
+      outputDirectory,
+    ]);
     const jsonLine = stdout.trim().split("\n").at(-1);
     assert.ok(jsonLine !== undefined, "the overlay probe must return its observed result object");
     result = JSON.parse(jsonLine) as OverlayProbeResult;

@@ -32,15 +32,15 @@
  * END HEADER
  */
 
-import { mathDisplayForOpen } from "@common/util/math-delimiters";
 import { rawBlockLineRangesFromNode, rawBlockSourceFromNode } from "@common/util/raw-latex-block";
+import { type Citation, nodeToCiteItem } from "@dzack/pandoc-editor/parser/citation-parser";
+import { mathDisplayForOpen } from "@dzack/pandoc-editor/util/math-delimiters";
 import { type SyntaxNode } from "@lezer/common";
 import { scanPandocAttributeList } from "@lezer/markdown";
 import {
   type ParsedPandocAttributes,
   parsePandocAttributes,
 } from "source/common/pandoc-util/parse-pandoc-attributes";
-import { type Citation, nodeToCiteItem } from "../../markdown-editor/parser/citation-parser";
 import { genericTextNode } from "./generic-text-node";
 import { getWhitespaceBeforeNode } from "./get-whitespace-before-node";
 import { parseChildren } from "./parse-children";
@@ -111,6 +111,11 @@ export interface Footnote extends MDNode {
    * The label of the footnote (sans the formatting, i.e. [^1] -> 1)
    */
   label: string;
+  /**
+   * The inlines of an inline note `^[…]`, as Pandoc reads them; empty for a
+   * reference `[^id]`.
+   */
+  children: ASTNode[];
 }
 
 /**
@@ -161,6 +166,11 @@ export interface LinkOrImage extends MDNode {
    * ALT text of the link or image (i.e. what's written in square brackets)
    */
   alt: TextNode;
+  /**
+   * The inlines of the text in square brackets, as Pandoc reads them: a
+   * citation, emphasis or code in the text of a link is an element of it.
+   */
+  children: ASTNode[];
   /**
    * Optional title text (i.e. what can be added after the URL in quotes)
    */
@@ -588,6 +598,28 @@ export type ASTNode =
 export type ASTNodeType = ASTNode["type"];
 
 /**
+ * The nodes directly inside an AST node: the children, the items of a list,
+ * the rows of a table and the cells of a row. Every walk of the AST descends
+ * through this function, so a node type with content is read by each reader.
+ *
+ * @param   {ASTNode}    node  The node
+ *
+ * @return  {ASTNode[]}        The nodes inside it, in source order
+ */
+export function childNodes(node: ASTNode): ASTNode[] {
+  if ("children" in node) {
+    return node.children;
+  } else if ("items" in node) {
+    return node.items;
+  } else if ("rows" in node) {
+    return node.rows;
+  } else if ("cells" in node) {
+    return node.cells;
+  }
+  return [];
+}
+
+/**
  * The AST attributes of a Pandoc div or span. As in Pandoc's HTML writer, `id`
  * appears only when the source names an identifier, and `class` only when the
  * attribute list or the div's bare class names at least one class.
@@ -684,6 +716,38 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
         return parseChildren(genericLink, node, markdown);
       }
 
+      const alt =
+        marks.length >= 2
+          ? genericTextNode(
+              marks[0].to,
+              marks[1].from,
+              markdown.substring(marks[0].to, marks[1].from),
+            )
+          : genericTextNode(url.from, url.to, markdown.substring(url.from, url.to));
+
+      // Pandoc reads the text in square brackets as inlines (`Markdown.hs`:
+      // `source`, `regLink`): the parsed children between the two first link
+      // marks are the content of the link.
+      const parsed = parseChildren<GenericNode>(
+        {
+          type: "Generic",
+          name: node.name,
+          attributes: {},
+          from: node.from,
+          to: node.to,
+          whitespaceBefore: "",
+          children: [],
+        },
+        node,
+        markdown,
+      );
+      const children =
+        marks.length >= 2
+          ? parsed.children.filter(
+              (child) => child.from >= marks[0].to && child.to <= marks[1].from,
+            )
+          : [alt];
+
       const astNode: LinkOrImage = {
         type: node.name,
         name: node.name,
@@ -696,14 +760,8 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
             ? undefined
             : genericTextNode(title.from, title.to, markdown.substring(title.from, title.to)),
         url: markdown.substring(url.from, url.to),
-        alt:
-          marks.length >= 2
-            ? genericTextNode(
-                marks[0].to,
-                marks[1].from,
-                markdown.substring(marks[0].to, marks[1].from),
-              )
-            : genericTextNode(url.from, url.to, markdown.substring(url.from, url.to)),
+        alt,
+        children,
       };
 
       return astNode;
@@ -723,6 +781,7 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         url,
         alt: genericTextNode(node.from, node.to, url),
+        children: [genericTextNode(node.from, node.to, url)],
       };
       return astNode;
     }
@@ -773,16 +832,36 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
       return astNode;
     }
     case "Footnote": {
-      const contents = markdown.substring(node.from + 2, node.to - 1); // [^1] --> 1
+      // [^1] --> 1, ^[text] --> text
+      const contents = markdown.substring(node.from + 2, node.to - 1);
+      // Pandoc reads the text of an inline note as inlines (`Markdown.hs`:
+      // `inlineNote`); the grammar parses them as the children of the node.
+      const inline = markdown.charAt(node.from) === "^";
+      const children = inline
+        ? parseChildren<GenericNode>(
+            {
+              type: "Generic",
+              name: node.name,
+              attributes: {},
+              from: node.from,
+              to: node.to,
+              whitespaceBefore: "",
+              children: [],
+            },
+            node,
+            markdown,
+          ).children.filter((child) => child.from >= node.from + 2 && child.to <= node.to - 1)
+        : [];
       const astNode: Footnote = {
         type: "Footnote",
         name: "Footnote",
         attributes: {},
         from: node.from,
-        inline: contents.endsWith("^"),
+        inline,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        label: contents.endsWith("^") ? contents.substring(0, contents.length - 1) : contents,
+        label: contents,
+        children,
       };
       return astNode;
     }
@@ -976,10 +1055,10 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
       const mark = node.getChild("CodeMark");
       if (mark !== null) {
         const codeMark = markdown.substring(mark.from, mark.to);
-        if (codeMark === "$$" || codeMark === "\\[") {
+        if (mathDisplayForOpen(codeMark) !== null) {
           // Exchange the (nonexistent) infostring with the opening math
-          // delimiter ($$ or \[) so that consumers can detect that this is
-          // MathTex and its display mode.
+          // delimiter so that consumers can detect that this is MathTex and
+          // its display mode.
           info = mark;
         }
       }

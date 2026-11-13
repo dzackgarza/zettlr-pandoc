@@ -70,12 +70,13 @@
               Copy
             </button>
             <button
-              v-if="entry.action !== undefined"
+              v-for="(action, index) in entry.actions"
+              v-bind:key="index"
               type="button"
               data-notification-action
-              v-on:click="runNotificationAction(entry.id)"
+              v-on:click="runNotificationAction(entry.id, index)"
             >
-              {{ entry.action.label }}
+              {{ action.label }}
             </button>
             <button
               type="button"
@@ -241,6 +242,7 @@ body #notification-center {
 
   .notification-entry {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
     gap: 10px;
     padding: 8px 10px;
@@ -258,8 +260,10 @@ body #notification-center {
     font-variant-numeric: tabular-nums;
   }
 
+  // The message keeps a line of readable length: controls that leave it
+  // less go to a row of their own below it.
   .notification-message {
-    flex: 1 1 auto;
+    flex: 1 1 20em;
     min-width: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -269,6 +273,7 @@ body #notification-center {
     display: flex;
     flex: 0 0 auto;
     gap: 6px;
+    margin-left: auto;
   }
 }
 </style>

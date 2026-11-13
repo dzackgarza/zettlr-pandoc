@@ -42,6 +42,7 @@ const VIEW = '#navigation-sidebar[data-view="search"] #search-view';
 const QUERY = `${VIEW} input[name="search-input"]`;
 const REPLACEMENT = `${VIEW} input[name="replace-input"]`;
 const MESSAGE = `${VIEW} .search-message`;
+const NOT_SEARCHED = `${VIEW} [data-search-not-searched]`;
 const FILE_ROW = `${VIEW} .file-match`;
 const ACTION = (name: string): string => `[data-search-action="${name}"]`;
 const TOGGLE = (name: string): string => `${VIEW} [data-search-toggle="${name}"]`;
@@ -52,8 +53,57 @@ async function clickRowAction(row: Locator, action: string): Promise<void> {
   await row.locator(ACTION(action)).click();
 }
 
+interface ConfirmationPainting {
+  centre: [number, number];
+  viewportCentre: [number, number];
+  replace: string;
+  cancel: string;
+  accent: string;
+  surface: string;
+  text: string;
+  chromeText: string;
+}
+
+/**
+ * Where the Replace All confirmation is, the background of its two actions,
+ * and what the colour tokens of the window resolve to on an element of
+ * `body`, which is where the confirmation is.
+ */
+async function confirmationPainting(page: Page): Promise<ConfirmationPainting> {
+  return await page.evaluate(() => {
+    const replace = document.querySelector('[data-search-confirm="replace-all"]');
+    const dialog = replace?.closest('[role="alertdialog"]');
+    const cancel = dialog?.querySelector("button:not([data-search-confirm])");
+    if (replace == null || dialog == null || cancel == null) {
+      throw new Error("The Replace All confirmation is not open");
+    }
+    const box = dialog.getBoundingClientRect();
+    const probe = document.createElement("span");
+    document.body.append(probe);
+    probe.style.backgroundColor = "var(--chrome-row-accent)";
+    const accent = getComputedStyle(probe).backgroundColor;
+    probe.style.backgroundColor = "var(--chrome-surface)";
+    const surface = getComputedStyle(probe).backgroundColor;
+    probe.style.color = "var(--chrome-text)";
+    const chromeText = getComputedStyle(probe).color;
+    probe.remove();
+    return {
+      text: getComputedStyle(dialog).color,
+      chromeText,
+      centre: [Math.round(box.left + box.width / 2), Math.round(box.top + box.height / 2)],
+      viewportCentre: [Math.round(innerWidth / 2), Math.round(innerHeight / 2)],
+      replace: getComputedStyle(replace).backgroundColor,
+      cancel: getComputedStyle(cancel).backgroundColor,
+      accent,
+      surface,
+    };
+  });
+}
+
 const TERM = "subgroupoid";
 const REPLACES_WITH = "subcategory";
+// A word of both files that no case replaces.
+const IN_BOTH_FILES = "maximal";
 
 async function waitUntil(
   probe: () => Promise<boolean>,
@@ -244,6 +294,28 @@ describe("the Search view", function () {
       /3 occurrences across 2 files/,
       "the confirmation counts what it is about to change",
     );
+    screenshots.set("replace-all-confirmation.png", await activePage.screenshot());
+    const painted = await confirmationPainting(activePage);
+    assert.deepEqual(
+      painted.centre,
+      painted.viewportCentre,
+      "the confirmation is in the middle of the window",
+    );
+    assert.equal(
+      painted.replace,
+      painted.accent,
+      "the action that replaces has the accent colour of the window",
+    );
+    assert.equal(
+      painted.cancel,
+      painted.surface,
+      "the action that cancels has the surface colour of the window",
+    );
+    assert.equal(
+      painted.text,
+      painted.chromeText,
+      "the confirmation has the text colour of the window chrome",
+    );
     await confirm.click();
 
     await waitUntil(
@@ -369,7 +441,7 @@ describe("the Search view", function () {
     await search(activePage, TERM, /result/);
   });
 
-  it("stops and names the file when it cannot read one, instead of counting a search that skipped it", async function () {
+  it("searches the other files and names the file that it cannot read", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await chmod(closedFile(), 0o000);
     await assert.rejects(
@@ -377,22 +449,77 @@ describe("the Search view", function () {
       "the fixture file must really be unreadable for this to prove anything",
     );
 
+    // sage.md is before categories.md in the order of the workspace: the
+    // search reads the file that it cannot read first.
+    // The view shows no message while a search runs, and the search of the
+    // case before can end after this one starts. The wait is therefore for
+    // a message of this search: its count, or an error.
     await activePage.locator(QUERY).fill("");
-    await activePage.locator(QUERY).fill(TERM);
+    await activePage.locator(QUERY).fill(IN_BOTH_FILES);
+    const refused = activePage.locator(`${MESSAGE}.search-message-error`);
+    const counted = activePage.locator(MESSAGE, { hasText: /^1 result in 1 file/ });
     await waitUntil(
-      async () =>
-        await activePage
-          .locator(MESSAGE)
-          .evaluate((el) => el.classList.contains("search-message-error")),
-      "the view to report the file it could not read",
+      async () => (await refused.count()) + (await counted.count()) > 0,
+      "the search to end with a message",
+    );
+    screenshots.set("search-unreadable-file.png", await activePage.screenshot());
+    assert.deepEqual(
+      // The list keeps the rows that it recycles in the document, hidden.
+      await activePage.locator(`${FILE_ROW}:visible .file-match-name`).allTextContents(),
+      ["categories.md"],
+      "the file that can be read is searched",
     );
     assert.match(
       await activePage.locator(MESSAGE).innerText(),
-      /sage\.md/,
-      "the reason names the file the search could not read",
+      /1 result in 1 file/,
+      "the count is that of the files that were searched",
     );
-    screenshots.set("search-unreadable-file.png", await activePage.screenshot());
+    const notSearched = activePage.locator(NOT_SEARCHED);
+    assert.equal(await notSearched.count(), 1, "the view says that a file was not searched");
+    assert.match(await notSearched.innerText(), /sage\.md/, "the view names the file");
 
+    // The file can be read again: the next search reads it, and the view
+    // names no file.
     await chmod(closedFile(), 0o644);
+    await activePage.locator(QUERY).fill("");
+    await search(activePage, IN_BOTH_FILES, /2 results in 2 files/);
+    assert.equal(await notSearched.count(), 0, "each file was searched");
+  });
+
+  it("searches the other files and names the folder that it cannot list (#210)", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const folder = path.dirname(closedFile());
+    await chmod(folder, 0o000);
+    try {
+      await assert.rejects(
+        readFile(closedFile(), "utf-8"),
+        "the fixture folder must really refuse its content for this to prove anything",
+      );
+      await activePage.locator(QUERY).fill("");
+      await activePage.locator(QUERY).fill(IN_BOTH_FILES);
+      await waitUntil(
+        async () =>
+          (await activePage.locator(MESSAGE, { hasText: /^1 result in 1 file/ }).count()) > 0,
+        "the search to end with its count",
+      );
+      screenshots.set("search-unlistable-folder.png", await activePage.screenshot());
+      assert.deepEqual(
+        await activePage.locator(`${FILE_ROW}:visible .file-match-name`).allTextContents(),
+        ["categories.md"],
+        "the file beside the folder is searched",
+      );
+      const notSearched = activePage.locator(NOT_SEARCHED);
+      assert.equal(await notSearched.count(), 1, "the view says that a folder was not searched");
+      assert.match(
+        await notSearched.innerText(),
+        /^1 folder was not searched:\s+computation/,
+        "the view names the folder as a folder",
+      );
+    } finally {
+      await chmod(folder, 0o755);
+    }
+    await activePage.locator(QUERY).fill("");
+    await search(activePage, IN_BOTH_FILES, /2 results in 2 files/);
+    assert.equal(await activePage.locator(NOT_SEARCHED).count(), 0, "each file was searched");
   });
 });

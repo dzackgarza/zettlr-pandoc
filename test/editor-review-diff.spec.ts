@@ -20,8 +20,10 @@
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import type { ReviewSuggestionView } from "@dts/common/review-diff";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { renderLinks } from "@dzack/pandoc-editor/renderers/render-links";
+import { rangeInPreviewSuppression } from "@dzack/pandoc-editor/util/range-in-preview-suppression";
 import { strict as assert } from "assert";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   getReviewChunks,
   reviewChunksExtension,
@@ -30,9 +32,7 @@ import {
   selectNextReviewChunk,
   selectPreviousReviewChunk,
 } from "source/common/modules/markdown-editor/plugins/review-chunks";
-import { renderLinks } from "source/common/modules/markdown-editor/renderers/render-links";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
-import { rangeInPreviewSuppression } from "source/common/modules/markdown-editor/util/range-in-preview-suppression";
 
 function replacementSuggestion(
   workingText: string,

@@ -1,20 +1,95 @@
 <template>
   <div
     id="annotations-panel"
-    class="annotations-tab workspace-annotations-tab"
+    class="annotations-tab workspace-annotations-tab self-painted-controls"
   >
     <AnnotationHeader
       v-bind:outstanding-count="collaborationStore.workspaceUnresolvedCount"
       v-bind:accept-all-count="outstandingSuggestionCount"
+      v-bind:resolve-all-count="workspaceOpenCount"
       v-bind:query="filterQuery"
-      v-bind:busy="globalAcceptBusy"
+      v-bind:busy="globalAcceptBusy || globalBulkBusy"
       v-on:update:query="filterQuery = $event"
       v-on:accept-all="acceptAllWorkspace"
+      v-on:resolve-all="resolveAllWorkspace"
       v-on:close="emit('close')"
     ></AnnotationHeader>
 
+    <div
+      v-if="loadFailure !== undefined"
+      class="annotation-notice annotation-load-failure"
+    >
+      <p class="annotation-notice-reason">
+        {{ trans('The annotations of this workspace could not be loaded.') }}
+      </p>
+      <p class="annotation-notice-cause annotation-muted">{{ loadFailure }}</p>
+    </div>
+
+    <!--
+      A file of collaboration state that the application cannot read hides
+      no other document. It is named here until the author moves it aside.
+    -->
+    <div
+      v-for="entry in collaborationStore.unreadableFiles"
+      v-bind:key="entry.file"
+      class="annotation-notice annotation-unreadable-file"
+      v-bind:data-unreadable-file="entry.file"
+    >
+      <p class="annotation-notice-reason">
+        {{
+          entry.documentPath === undefined
+            ? trans('A file of annotations and reviews cannot be read.')
+            : trans(
+              'The annotations and the review of %s cannot be read.',
+              pathBasename(entry.documentPath),
+            )
+        }}
+      </p>
+      <p class="annotation-notice-cause annotation-muted">{{ entry.cause }}</p>
+      <div class="annotation-frozen-actions">
+        <button
+          type="button"
+          class="annotation-button annotation-unreadable-set-aside"
+          v-bind:title="trans('Rename the file, so that the document can take new annotations. The file is kept.')"
+          v-bind:disabled="settingAside.has(entry.file)"
+          v-on:click="setAside(entry.file)"
+        >{{ trans('Move the file aside') }}</button>
+      </div>
+    </div>
+
+    <!--
+      A file of collaboration state whose document has no file belongs to no
+      document of the workspace. It is named here until the author moves it
+      aside.
+    -->
+    <div
+      v-for="entry in collaborationStore.ownerlessFiles"
+      v-bind:key="entry.file"
+      class="annotation-notice annotation-ownerless-file"
+      v-bind:data-ownerless-file="entry.file"
+    >
+      <p class="annotation-notice-reason">
+        {{
+          trans(
+            'The annotations and the review of %s belong to no document: no file is at that path.',
+            pathBasename(entry.documentPath),
+          )
+        }}
+      </p>
+      <p class="annotation-notice-cause annotation-muted">{{ entry.documentPath }}</p>
+      <div class="annotation-frozen-actions">
+        <button
+          type="button"
+          class="annotation-button annotation-ownerless-set-aside"
+          v-bind:title="trans('Rename the file, so that a new document at that path starts without this state. The file is kept.')"
+          v-bind:disabled="settingAside.has(entry.file)"
+          v-on:click="setAside(entry.file)"
+        >{{ trans('Move the file aside') }}</button>
+      </div>
+    </div>
+
     <p
-      v-if="groups.length === 0"
+      v-if="groups.length === 0 && loadFailure === undefined && collaborationStore.unreadableFiles.length === 0 && collaborationStore.ownerlessFiles.length === 0"
       class="annotation-workspace-empty annotation-muted"
     >
       {{ trans('No pending annotations or proposed changes in this workspace.') }}
@@ -36,6 +111,22 @@
         <span class="annotation-document-count annotation-muted">
           {{ trans('%s pending', String(group.annotations.length + group.suggestions.length)) }}
         </span>
+        <button
+          v-if="group.openCount > 0"
+          type="button"
+          class="annotation-button annotation-document-resolve-acted"
+          v-bind:title="trans('Resolve every open annotation of this document.')"
+          v-bind:disabled="globalBulkBusy || bulkDocuments.has(group.documentPath)"
+          v-on:click="resolveAllDocument(group.documentPath)"
+        >{{ trans('Resolve all') }}</button>
+        <button
+          v-if="group.resolvedCount > 0"
+          type="button"
+          class="annotation-button annotation-document-clear-resolved"
+          v-bind:title="trans('Delete every resolved annotation of this document.')"
+          v-bind:disabled="globalBulkBusy || bulkDocuments.has(group.documentPath)"
+          v-on:click="clearTarget = group.documentPath"
+        >{{ trans('Clear resolved') }}</button>
         <button
           v-if="group.suggestions.length > 0 && !group.frozen"
           type="button"
@@ -89,12 +180,12 @@
           <span class="annotation-ordinal">{{ card.ordinal }}</span>
           <span class="annotation-workspace-copy">
             <div
-              v-annotation-markdown="card.instructionText"
+              v-annotation-markdown="{ text: card.instructionText, documentPath: group.documentPath }"
               class="annotation-workspace-summary"
             />
             <div
               v-if="card.quotedText.length > 0"
-              v-annotation-markdown="card.quotedText"
+              v-annotation-markdown="{ text: card.quotedText, documentPath: group.documentPath }"
               class="annotation-workspace-context"
             />
           </span>
@@ -123,6 +214,35 @@
         </button>
       </div>
     </section>
+
+    <!--
+      Clearing the resolved annotations deletes their threads for good, like
+      the single Delete asks first.
+    -->
+    <AlertDialogRoot v-model:open="clearDialogOpen">
+      <AlertDialogPortal>
+        <AlertDialogOverlay class="annotation-dialog-backdrop"></AlertDialogOverlay>
+        <AlertDialogContent class="annotation-dialog self-painted-controls">
+          <AlertDialogTitle class="annotation-dialog-title">{{
+            trans('Delete every resolved annotation?')
+          }}</AlertDialogTitle>
+          <AlertDialogDescription class="annotation-dialog-body">
+            {{
+              trans(
+                "The document's resolved threads are deleted for good. This cannot be undone.",
+              )
+            }}
+          </AlertDialogDescription>
+          <div class="annotation-dialog-actions">
+            <AlertDialogCancel class="annotation-button">{{ trans('Cancel') }}</AlertDialogCancel>
+            <AlertDialogAction
+              class="annotation-button annotation-button-danger"
+              v-on:click="clearResolvedDocument(clearTarget)"
+            >{{ trans('Delete') }}</AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialogPortal>
+    </AlertDialogRoot>
   </div>
 </template>
 
@@ -151,19 +271,35 @@
 
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
+import { remoteErrorMessage } from "@common/util/ipc-rejection";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
+import { showRefusal } from "@common/util/show-refusal";
 import showToast from "@common/util/show-toast";
 import type { SourceRange } from "@dts/common/references";
-import type { ReviewFailure } from "source/app/service-providers/documents/document-collaboration-application-service";
+import {
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogOverlay,
+  AlertDialogPortal,
+  AlertDialogRoot,
+  AlertDialogTitle,
+} from "reka-ui";
+import type {
+  AnnotationFailure,
+  ReviewFailure,
+} from "source/app/service-providers/documents/document-collaboration-application-service";
 import { useDocumentCollaborationStore } from "source/pinia";
 import { computed, reactive, ref, watch } from "vue";
 import { vAnnotationMarkdown } from "../editor-collaboration/annotation-markdown";
 import AnnotationHeader from "./annotations/AnnotationHeader.vue";
 import {
   type AnnotationCardView,
-  buildSuggestionNavigatorRows,
   describeAcceptFailures,
   filterCards,
+  openAnnotationCount,
+  resolvedAnnotationCount,
   type SuggestionNavigatorView,
 } from "./annotations/annotation-panel-model";
 
@@ -174,6 +310,10 @@ interface WorkspaceAnnotationGroup {
   suggestions: SuggestionNavigatorView[];
   /** The review is frozen: see ReviewDiffSession.frozenText. */
   frozen: boolean;
+  /** Open annotations: the per-document Resolve all. */
+  openCount: number;
+  /** Resolved annotations: the per-document Clear resolved. */
+  resolvedCount: number;
 }
 
 const props = defineProps<{
@@ -193,15 +333,50 @@ const filterQuery = ref("");
 const globalAcceptBusy = ref(false);
 const acceptingDocuments = reactive(new Set<string>());
 const recoveringDocuments = reactive(new Set<string>());
+const globalBulkBusy = ref(false);
+const bulkDocuments = reactive(new Set<string>());
+/** The files of collaboration state that a set-aside request is running for. */
+const settingAside = reactive(new Set<string>());
+/** Why the last read of the workspace state failed. */
+const loadFailure = ref<string | undefined>(undefined);
+/** The document whose resolved annotations the confirmation dialog is open for. */
+const clearTarget = ref<string | null>(null);
+const clearDialogOpen = computed({
+  get: () => clearTarget.value !== null,
+  set: (open: boolean) => {
+    if (!open) {
+      clearTarget.value = null;
+    }
+  },
+});
 
+function bulkBusy(documentPath: string): boolean {
+  return globalBulkBusy.value || bulkDocuments.has(documentPath);
+}
+
+// The owner of the view makes a new array for each change of a file
+// descriptor in the workspace. Only a change of the list is a reason to
+// read the workspace state from the main process again; each change of a
+// session arrives as a broadcast.
 watch(
   () => props.workspacePaths,
-  (paths) => {
-    collaborationStore
-      .refreshWorkspaceSessions(paths)
-      .catch((err) =>
-        reportError("[AnnotationsTab] Could not load workspace collaboration state", err),
-      );
+  (paths, shown) => {
+    if (
+      shown !== undefined &&
+      shown.length === paths.length &&
+      shown.every((path, index) => path === paths[index])
+    ) {
+      return;
+    }
+    collaborationStore.refreshWorkspaceSessions(paths).then(
+      () => {
+        loadFailure.value = undefined;
+      },
+      (err: Error) => {
+        reportError("[AnnotationsTab] Could not load workspace collaboration state", err);
+        loadFailure.value = err.message;
+      },
+    );
   },
   { immediate: true },
 );
@@ -217,19 +392,23 @@ const groups = computed<WorkspaceAnnotationGroup[]>(() =>
           .filter((card) => card.annotation.state === "open"),
         filterQuery.value,
       );
-      const suggestions = (
-        session.review === undefined ? [] : buildSuggestionNavigatorRows(session.review)
-      ).filter(
-        (card) =>
-          normalizedFilter.value.length === 0 ||
-          card.description.toLowerCase().includes(normalizedFilter.value),
-      );
+      const suggestions = collaborationStore
+        .getSuggestionRows(session.documentPath)
+        .filter(
+          (card) =>
+            normalizedFilter.value.length === 0 ||
+            card.description.toLowerCase().includes(normalizedFilter.value),
+        );
       return {
         documentPath: session.documentPath,
         documentName: pathBasename(session.documentPath),
         annotations,
         suggestions,
         frozen: session.review?.frozenText !== undefined,
+        /** The open threads this document's header can bulk-resolve. */
+        openCount: openAnnotationCount(session.annotations.items),
+        /** The resolved threads this document's header can bulk-delete. */
+        resolvedCount: resolvedAnnotationCount(session.annotations.items),
       };
     })
     .filter((group) => group.annotations.length > 0 || group.suggestions.length > 0)
@@ -238,6 +417,13 @@ const groups = computed<WorkspaceAnnotationGroup[]>(() =>
         left.documentName.localeCompare(right.documentName) ||
         left.documentPath.localeCompare(right.documentPath),
     ),
+);
+
+const workspaceOpenCount = computed(() =>
+  collaborationStore.workspaceSessions.reduce(
+    (count, session) => count + openAnnotationCount(session.annotations.items),
+    0,
+  ),
 );
 
 const outstandingSuggestionCount = computed(() =>
@@ -274,6 +460,22 @@ function navigateAnnotation(documentPath: string, card: AnnotationCardView): voi
   });
 }
 
+/** Moves one file of collaboration state aside and says where it is. */
+async function setAside(file: string): Promise<void> {
+  if (settingAside.has(file)) {
+    return;
+  }
+  settingAside.add(file);
+  await collaborationStore
+    .setAsideCollaborationFile(file)
+    .then(
+      (aside) => showToast(trans("The file is kept as %s.", aside), "info", 12000),
+      (err: Error) =>
+        showToast(trans("Could not move the file aside: %s", err.message), "error", 12000),
+    )
+    .finally(() => settingAside.delete(file));
+}
+
 /** Shows which documents an Accept all could not accept, and why. */
 function reportAcceptFailures(failures: Array<{ path: string; result: ReviewFailure }>): void {
   const heading =
@@ -288,15 +490,43 @@ async function acceptAllDocument(documentPath: string): Promise<void> {
     return;
   }
   acceptingDocuments.add(documentPath);
-  try {
-    const result = await collaborationStore.acceptAllWorkspaceReviewChunks(documentPath);
-    if (!result.ok) {
-      reportAcceptFailures([{ path: documentPath, result }]);
-    }
-  } catch (err) {
-    reportError("[AnnotationsTab] Could not accept document review", err);
-  } finally {
-    acceptingDocuments.delete(documentPath);
+  await collaborationStore
+    .acceptAllWorkspaceReviewChunks(documentPath)
+    .then(
+      (result) => {
+        if (!result.ok) {
+          reportAcceptFailures([{ path: documentPath, result }]);
+        }
+      },
+      (rejection: Error) => reportRefusal(documentPath, rejection),
+    )
+    .finally(() => acceptingDocuments.delete(documentPath));
+}
+
+/** Reapply the frozen review of one document, and say what it withdrew. */
+async function reapply(documentPath: string): Promise<void> {
+  const result = await collaborationStore.reapplyReview(documentPath);
+  if (!result.ok) {
+    showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
+  } else if (result.withdrawnChunkIds.length > 0) {
+    showToast(
+      trans(
+        "%s suggestions no longer match the text and were withdrawn.",
+        String(result.withdrawnChunkIds.length),
+      ),
+      "info",
+    );
+  }
+}
+
+/** Return or discard the frozen review of one document. */
+async function settle(documentPath: string, action: "return" | "discard"): Promise<void> {
+  const result =
+    action === "return"
+      ? await collaborationStore.returnReview(documentPath)
+      : await collaborationStore.discardReview(documentPath);
+  if (!result.ok) {
+    showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
   }
 }
 
@@ -309,34 +539,9 @@ async function recover(
     return;
   }
   recoveringDocuments.add(documentPath);
-  try {
-    if (action === "reapply") {
-      const result = await collaborationStore.reapplyReview(documentPath);
-      if (!result.ok) {
-        showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
-      } else if (result.withdrawnChunkIds.length > 0) {
-        showToast(
-          trans(
-            "%s suggestions no longer match the text and were withdrawn.",
-            String(result.withdrawnChunkIds.length),
-          ),
-          "info",
-        );
-      }
-      return;
-    }
-    const result =
-      action === "return"
-        ? await collaborationStore.returnReview(documentPath)
-        : await collaborationStore.discardReview(documentPath);
-    if (!result.ok) {
-      showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
-    }
-  } catch (err) {
-    reportError("[AnnotationsTab] Could not recover the review", err);
-  } finally {
-    recoveringDocuments.delete(documentPath);
-  }
+  await (action === "reapply" ? reapply(documentPath) : settle(documentPath, action))
+    .catch((rejection: Error) => reportRefusal(documentPath, rejection))
+    .finally(() => recoveringDocuments.delete(documentPath));
 }
 
 async function acceptAllWorkspace(): Promise<void> {
@@ -344,17 +549,99 @@ async function acceptAllWorkspace(): Promise<void> {
     return;
   }
   globalAcceptBusy.value = true;
-  try {
-    const results = await collaborationStore.acceptAllWorkspaceReviews();
-    const failures = results.flatMap(({ path, result }) => (result.ok ? [] : [{ path, result }]));
-    if (failures.length > 0) {
-      reportAcceptFailures(failures);
-    }
-  } catch (err) {
-    reportError("[AnnotationsTab] Could not accept workspace reviews", err);
-  } finally {
-    globalAcceptBusy.value = false;
+  await collaborationStore
+    .acceptAllWorkspaceReviews()
+    .then((results) => {
+      const failures = results.flatMap((entry) =>
+        "result" in entry && !entry.result.ok ? [{ path: entry.path, result: entry.result }] : [],
+      );
+      if (failures.length > 0) {
+        reportAcceptFailures(failures);
+      }
+      for (const entry of results) {
+        if ("rejection" in entry) {
+          reportRefusal(entry.path, entry.rejection);
+        }
+      }
+    }, showRefusal)
+    .finally(() => {
+      globalAcceptBusy.value = false;
+    });
+}
+
+/** Toasts one document's bulk refusal with the reason nothing changed. */
+function reportBulkFailure(documentPath: string, result: AnnotationFailure): void {
+  showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
+}
+
+/**
+ * Shows the author a request about one document that the main process
+ * rejected, with the name of the document, and records the rejection.
+ */
+function reportRefusal(documentPath: string, rejection: Error): void {
+  reportError(rejection);
+  showToast(`${pathBasename(documentPath)}: ${remoteErrorMessage(rejection)}`, "error", 12000);
+}
+
+/** Resolves every open annotation of one document, in one batch. */
+async function resolveAllDocument(documentPath: string): Promise<void> {
+  if (bulkBusy(documentPath)) {
+    return;
   }
+  bulkDocuments.add(documentPath);
+  await collaborationStore
+    .resolveOpenAnnotations(documentPath)
+    .then(
+      (result) => {
+        if ("ok" in result) {
+          reportBulkFailure(documentPath, result);
+        }
+      },
+      (rejection: Error) => reportRefusal(documentPath, rejection),
+    )
+    .finally(() => bulkDocuments.delete(documentPath));
+}
+
+/** Deletes every resolved annotation of one document, after the confirmation. */
+async function clearResolvedDocument(documentPath: string | null): Promise<void> {
+  if (documentPath === null || bulkBusy(documentPath)) {
+    return;
+  }
+  bulkDocuments.add(documentPath);
+  clearTarget.value = null;
+  await collaborationStore
+    .deleteResolvedAnnotations(documentPath)
+    .then(
+      (result) => {
+        if ("ok" in result) {
+          reportBulkFailure(documentPath, result);
+        }
+      },
+      (rejection: Error) => reportRefusal(documentPath, rejection),
+    )
+    .finally(() => bulkDocuments.delete(documentPath));
+}
+
+/** Workspace-wide: every open annotation of the projected documents. */
+async function resolveAllWorkspace(): Promise<void> {
+  if (globalBulkBusy.value) {
+    return;
+  }
+  globalBulkBusy.value = true;
+  await collaborationStore
+    .resolveOpenAnnotationsWorkspace()
+    .then((results) => {
+      for (const entry of results) {
+        if ("rejection" in entry) {
+          reportRefusal(entry.path, entry.rejection);
+        } else if ("ok" in entry.result) {
+          reportBulkFailure(entry.path, entry.result);
+        }
+      }
+    }, showRefusal)
+    .finally(() => {
+      globalBulkBusy.value = false;
+    });
 }
 </script>
 
@@ -388,15 +675,19 @@ body {
     border-bottom: 1px solid var(--annotation-border);
   }
 
+  // The actions of a document go to a second line when the panel is too
+  // narrow for them. The name keeps a line with the count: its basis is
+  // small, so its length does not decide where the row breaks.
   .annotation-document-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 4px 6px;
     min-width: 0;
   }
 
   .annotation-document-name {
-    flex: 1 1 auto;
+    flex: 1 1 60px;
     min-width: 0;
     padding: 0;
     overflow: hidden;
@@ -420,7 +711,8 @@ body {
     flex: 0 0 auto;
   }
 
-  .annotation-frozen-review {
+  .annotation-frozen-review,
+  .annotation-notice {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -430,9 +722,15 @@ body {
     background: var(--annotation-surface-muted);
   }
 
-  .annotation-frozen-reason {
+  .annotation-frozen-reason,
+  .annotation-notice-reason,
+  .annotation-notice-cause {
     margin: 0;
     font-size: var(--annotation-small-font-size);
+  }
+
+  .annotation-notice-cause {
+    overflow-wrap: anywhere;
   }
 
   .annotation-frozen-actions {

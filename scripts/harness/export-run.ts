@@ -2,10 +2,10 @@
  * Headless app-level export harness.
  *
  * Runs the LITERAL command the GUI runs on export — the real makeExport — with
- * no window, so exports can be exercised from the terminal. Crucially it builds
- * the export-profile list EXACTLY like the `list-export-profiles` IPC does
- * (userData/defaults + getCustomProfiles), so it sees the same profiles (and the
- * same stale/duplicate ones) the running app sees — not a hand-picked subset.
+ * no window, so exports can be exercised from the terminal. It builds the
+ * export-profile list with `exportProfiles`, the function of the
+ * `list-export-profiles` IPC and of the Project export, so it sees the profiles
+ * that the running app sees.
  *
  * Usage (via the electron shim preload):
  *   node --require ./scripts/harness/electron-stub.cjs --import tsx \
@@ -13,13 +13,15 @@
  *
  * Or `just export-headless <ProfileName.yaml> <source.md>`.
  */
-import { makeExport, getCustomProfiles } from '../../source/app/service-providers/commands/exporter/index'
+import { makeExport, exportProfiles } from '../../source/app/service-providers/commands/exporter/index'
 import { promises as fs, readFileSync } from 'fs'
 import path from 'path'
 import os from 'os'
 import YAML from 'yaml'
 import { WikilinkIndex } from '../../source/common/util/wikilink-resolution'
 import { hasMarkdownExt } from '../../source/common/util/file-extention-checks'
+import { parse as parseDirectory } from '../../source/app/service-providers/fsal/fsal-directory'
+import { copyExportMathJax } from '../export-mathjax.js'
 
 function stderr (message: string): void {
   process.stderr.write(`${message}\n`)
@@ -52,21 +54,16 @@ async function main (): Promise<void> {
   const appConfig = JSON.parse(readFileSync(path.join(userData, 'config.json'), 'utf8'))
   const defaultsDir = path.join(userData, 'defaults')
 
-  // Reproduce `list-export-profiles`: defaults from userData + custom profiles.
+  // The defaults files of userData, as `listDefaults` reads them.
   const files = (await fs.readdir(defaultsDir)).filter(f => f.endsWith('.yaml'))
   const defaultsProfiles = files.map(f => {
     const parsed = YAML.parse(readFileSync(path.join(defaultsDir, f), 'utf8'))
-    return { name: f, reader: parsed.reader, writer: parsed.writer, isInvalid: false }
+    return { name: f, reader: parsed.reader, writer: parsed.writer, isInvalid: false as const }
   })
-  const allProfiles = [ ...defaultsProfiles, ...getCustomProfiles(appConfig.export.scripts) ]
+  const allProfiles = exportProfiles(defaultsProfiles, appConfig.export.scripts)
 
-  const byName: Record<string, string[]> = {}
-  for (const p of allProfiles) { (byName[p.name] ??= []).push(p.writer) }
   console.log('=== profiles the GUI lists (name -> writer) ===')
-  for (const [ name, writers ] of Object.entries(byName)) {
-    const dup = writers.length > 1 ? '   <<< DUPLICATE NAME' : ''
-    console.log(`  ${name}: ${writers.join(', ')}${dup}`)
-  }
+  for (const p of allProfiles) { console.log(`  ${p.name}: ${p.writer}`) }
 
   const profile = allProfiles.find(p => p.name === profileName)
   if (profile === undefined) {
@@ -77,7 +74,12 @@ async function main (): Promise<void> {
 
   await fs.mkdir(targetDir, { recursive: true })
   const config: any = { get: () => appConfig }
+  // An exported HTML file loads its MathJax from this folder, so it stays
+  // beside the output.
+  const exportMathJaxDirectory = path.join(targetDir, 'mathjax')
+  await copyExportMathJax(exportMathJaxDirectory)
   const assets: any = {
+    exportMathJaxDirectory,
     getDefaultsFile: async (filename: string) => YAML.parse(readFileSync(path.join(defaultsDir, filename), 'utf8')),
     listDefaults: async () => defaultsProfiles
   }
@@ -85,11 +87,20 @@ async function main (): Promise<void> {
   const options: any = {
     profile,
     targetDirectory: targetDir,
-    sourceFiles: [ { path: sourceFile, name: path.basename(sourceFile), ext: path.extname(sourceFile) } ],
+    sourceFiles: [
+      {
+        path: sourceFile,
+        name: path.basename(sourceFile),
+        ext: path.extname(sourceFile),
+        textFile: sourceFile,
+      },
+    ],
     cwd: path.dirname(sourceFile)
   }
 
-  const out = await makeExport(options, log, config, assets, await workspaceIndex(sourceFile, appConfig))
+  // The folders of the document are read from disk, as the FSAL reads them.
+  const folders = { getAnyDirectoryDescriptor: async (dirPath: string) => await parseDirectory(dirPath) }
+  const out = await makeExport(options, log, config, assets, await workspaceIndex(sourceFile, appConfig), folders)
   console.log('EXIT', out.code, 'TARGET', out.targetFile)
   console.log('STDERR TAIL:', out.stderr.slice(-2).join(' | '))
 }

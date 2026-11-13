@@ -13,14 +13,13 @@
  * END HEADER
  */
 
-import markdownParser, {
-  type MarkdownParserConfig,
-} from "@common/modules/markdown-editor/parser/markdown-parser";
-import { type Tree } from "@lezer/common";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { type Parser, type Tree } from "@lezer/common";
 import { LRUCache } from "lru-cache";
 import {
   type ASTNode,
   type ASTNodeType,
+  childNodes,
   type Document,
   parseNode,
   type TextNode,
@@ -28,7 +27,27 @@ import {
 
 export { md2html } from "./markdown-to-html";
 
-// The ASTs of the sources that were parsed last with the default parser. One
+/**
+ * How a wikilink names its document: `[[link|title]]` or `[[title|link]]`
+ * (the setting `zkn.linkFormat`). The parser reads the target of a wikilink
+ * by it; no other node depends on it.
+ */
+export type WikilinkFormat = "link|title" | "title|link";
+
+// The parser of each link format.
+const parsers = new Map<WikilinkFormat, Parser>();
+
+function parserFor(linkFormat: WikilinkFormat): Parser {
+  const known = parsers.get(linkFormat);
+  if (known !== undefined) {
+    return known;
+  }
+  const { parser } = markdownParser({ zknLinkParserConfig: { format: linkFormat } }).language;
+  parsers.set(linkFormat, parser);
+  return parser;
+}
+
+// The ASTs of the sources that were parsed last, for each link format. One
 // version of a document has several readers (references, citations, TikZ
 // blocks, the lint context, the file parser, the save path); they share one
 // parse. Eight entries hold the buffer text and the saved text of the
@@ -49,31 +68,30 @@ const parsedSources = new LRUCache<string, Document | ASTNode>({ max: 8 });
  *                               since otherwise the offsets in the parse tree
  *                               will be wrong!
  *
+ * @param   {WikilinkFormat} linkFormat  How a wikilink names its document.
+ *                               A reader of wikilinks passes the setting
+ *                               `zkn.linkFormat`; a tree carries its own.
+ *
  * @return  {ASTNode}            The root node of the AST. Callers share it
  *                               and must not change it.
  */
 export function markdownToAST(
   markdown: string,
   tree: Tree | null = null,
-  parserConfig?: MarkdownParserConfig,
+  linkFormat: WikilinkFormat = "link|title",
 ): Document | ASTNode {
   if (tree !== null) {
     return parseNode(tree.topNode, markdown);
   }
 
-  if (parserConfig !== undefined) {
-    const { parser } = markdownParser(parserConfig).language;
-    return parseNode(parser.parse(markdown).topNode, markdown);
-  }
-
-  const known = parsedSources.get(markdown);
+  const key = `${linkFormat}\n${markdown}`;
+  const known = parsedSources.get(key);
   if (known !== undefined) {
     return known;
   }
 
-  const { parser } = markdownParser().language;
-  const ast = parseNode(parser.parse(markdown).topNode, markdown);
-  parsedSources.set(markdown, ast);
+  const ast = parseNode(parserFor(linkFormat).parse(markdown).topNode, markdown);
+  parsedSources.set(key, ast);
   return ast;
 }
 
@@ -102,49 +120,11 @@ export function extractASTNodes(
     return [];
   }
 
-  let returnNodes: ASTNode[] = [];
-
-  switch (ast.type) {
-    case nodeType: {
-      returnNodes.push(ast);
-      break;
-    }
-
-    case "Generic":
-    case "Heading":
-    case "Emphasis":
-    case "FootnoteRef":
-    case "Highlight":
-    case "ListItem":
-    case "PandocSpan":
-    case "PandocDiv": {
-      for (const child of ast.children) {
-        returnNodes = returnNodes.concat(extractASTNodes(child, nodeType, filter));
-      }
-      break;
-    }
-
-    case "OrderedList":
-    case "BulletList": {
-      for (const item of ast.items) {
-        returnNodes = returnNodes.concat(extractASTNodes(item, nodeType, filter));
-      }
-      break;
-    }
-
-    case "Table": {
-      for (const row of ast.rows) {
-        for (const cell of row.cells) {
-          returnNodes = returnNodes.concat(
-            cell.children.flatMap((c) => extractASTNodes(c, nodeType, filter)),
-          );
-        }
-      }
-      break;
-    }
+  if (ast.type === nodeType) {
+    return [ast];
   }
 
-  return returnNodes;
+  return childNodes(ast).flatMap((child) => extractASTNodes(child, nodeType, filter));
 }
 
 /**
@@ -167,62 +147,17 @@ export function extractTextnodes(ast: ASTNode, filter?: (node: ASTNode) => boole
     return [];
   }
 
-  let textNodes: TextNode[] = [];
-
-  switch (ast.type) {
-    case "Text": {
-      textNodes.push(ast);
-      break;
-    }
-
-    case "Generic":
-    case "Heading":
-    case "Emphasis":
-    case "FootnoteRef":
-    case "Highlight":
-    case "ListItem":
-    case "PandocSpan":
-    case "PandocDiv": {
-      for (const child of ast.children) {
-        textNodes = textNodes.concat(extractTextnodes(child, filter));
-      }
-      break;
-    }
-
-    case "Image":
-    case "Link": {
-      textNodes.push(ast.alt);
-      if (ast.title !== undefined) {
-        textNodes.push(ast.title);
-      }
-      break;
-    }
-
-    case "ZettelkastenLink": {
-      if (ast.title !== undefined) {
-        textNodes.push(ast.title);
-      }
-      break;
-    }
-
-    case "OrderedList":
-    case "BulletList": {
-      for (const item of ast.items) {
-        textNodes = textNodes.concat(extractTextnodes(item, filter));
-      }
-      break;
-    }
-
-    case "Table": {
-      for (const row of ast.rows) {
-        for (const cell of row.cells) {
-          const nodes = cell.children.flatMap((c) => extractTextnodes(c, filter));
-          textNodes = textNodes.concat(nodes);
-        }
-      }
-      break;
-    }
+  if (ast.type === "Text") {
+    return [ast];
   }
 
-  return textNodes;
+  const titles =
+    (ast.type === "Link" || ast.type === "Image" || ast.type === "ZettelkastenLink") &&
+    ast.title !== undefined
+      ? [ast.title]
+      : [];
+
+  return childNodes(ast)
+    .flatMap((child) => extractTextnodes(child, filter))
+    .concat(titles);
 }

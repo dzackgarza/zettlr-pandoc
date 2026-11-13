@@ -22,6 +22,17 @@ function blockInput (ctx: BlockContext): Input {
   return (ctx as unknown as BlockContextInput).input
 }
 
+/**
+ * Pandoc `blankline` (`skipMany spaceChar >> newline`) after a fence: spaces
+ * and tabs to the line end. Pandoc reads CRLF text as LF text, so a CR before
+ * the line feed belongs to the line end.
+ */
+const FENCE_LINE_END = /^[ \t]*\r?$/u
+
+function isFenceLine (text: string, fence: string): boolean {
+  return text.startsWith(fence) && FENCE_LINE_END.test(text.slice(fence.length))
+}
+
 interface FrontmatterExtent {
   bodyFrom: number
   bodyTo: number
@@ -38,14 +49,17 @@ interface FrontmatterExtent {
 function frontmatterExtent (ctx: BlockContext, openingStart: number): FrontmatterExtent | undefined {
   const input = blockInput(ctx)
   let bodyFrom = -1
+  // The end of the last body line, before its line end (LF or CRLF)
+  let bodyTo = -1
   let linesToClose = 0
 
   for (const line of linesFrom(input, openingStart)) {
     if (bodyFrom < 0) {
-      if (!line.text.startsWith('---')) return undefined
+      if (!isFenceLine(line.text, '---')) return undefined
       bodyFrom = line.from + line.text.length + 1
       // The opener must end in a line feed.
       if (bodyFrom > input.length) return undefined
+      bodyTo = bodyFrom
       continue
     }
 
@@ -55,15 +69,16 @@ function frontmatterExtent (ctx: BlockContext, openingStart: number): Frontmatte
       return undefined
     }
 
-    if (/^(?:---|\.\.\.)[ \t]*$/u.test(line.text)) {
+    if (isFenceLine(line.text, '---') || isFenceLine(line.text, '...')) {
       return {
         bodyFrom,
-        bodyTo: Math.max(bodyFrom, line.from - 1),
+        bodyTo,
         closeFrom: line.from,
         closeTo: line.from + line.text.length,
         linesToClose,
       }
     }
+    bodyTo = line.from + line.text.replace(/\r$/u, '').length
   }
   return undefined
 }
@@ -75,7 +90,7 @@ export const frontmatterParser: BlockParser = {
     // Pandoc's YAML metadata block is a block parser, not a document-prologue
     // parser. It may occur after ordinary blocks as long as `---` starts the
     // current block.
-    if (line.text !== '---') {
+    if (!isFenceLine(line.text, '---')) {
       return false
     }
 

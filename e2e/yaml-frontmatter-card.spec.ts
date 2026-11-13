@@ -54,7 +54,7 @@ describe("assembled app: the YAML front matter card", function () {
     const fixture = await createFixture("zettlr-yaml-card-e2e-", {
       documentName: "note.md",
       documentContents: DOCUMENT,
-      config: { darkMode: true, autoDarkMode: "off" },
+      config: { darkMode: true },
     });
     fixtureRoot = fixture.root;
     const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());

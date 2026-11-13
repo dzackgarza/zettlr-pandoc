@@ -2,17 +2,13 @@
 
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { renderEmphasis } from "@dzack/pandoc-editor/renderers/render-emphasis";
+import { renderLinks } from "@dzack/pandoc-editor/renderers/render-links";
+import { renderMath } from "@dzack/pandoc-editor/renderers/render-math";
+import { defaultDark, defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
 import { renderCitations } from "source/common/modules/markdown-editor/renderers/render-citations";
-import { renderEmphasis } from "source/common/modules/markdown-editor/renderers/render-emphasis";
-import { renderLinks } from "source/common/modules/markdown-editor/renderers/render-links";
-import { renderMath } from "source/common/modules/markdown-editor/renderers/render-math";
 import { renderPandoc } from "source/common/modules/markdown-editor/renderers/render-pandoc-div-span";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "source/common/modules/markdown-editor/theme/editor";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { initializeMathJax } from "source/common/util/mathtex-to-html";
 
@@ -97,6 +93,40 @@ By [@Ols04 Lem. 7.1, 7.2], some result follows.
 Outside the active div.
 `;
 
+// Divs with an identifier, a title, and both (#177). A title that is longer
+// than a narrow editor wraps; it is not cut off.
+const titled = `## Orbits and stabilizers
+
+::: {.definition #def:orbit-stabilizer-fixed-points title="Orbit, stabilizer, and the set of fixed points of a group action"}
+
+Let $G$ be a group that acts on a set $X$, and let $x\\in X$.
+
+The **orbit** of $x$ is
+$$
+G\\cdot x
+=
+\\{g\\cdot x \\mid g\\in G\\}
+.
+$$
+The **stabilizer** of $x$ is the subgroup $G_x=\\{g\\in G\\mid g\\cdot x=x\\}$.
+:::
+
+::: {.remark title="Standard terminology and the convention of the database"}
+
+The database fields \`action.orbit_representatives\`, \`action.stabilizer_generators\`, and \`action.fixed_point_count\` use this convention.
+:::
+
+::: {.definition #def:transitive-action title="Transitive actions"}
+
+The action is **transitive** if $X$ is one orbit.
+:::
+
+::: {.theorem title="The orbit of $x$ is in bijection with the cosets $G/G_x$ of its stabilizer"}
+
+The map $gG_x\\mapsto g\\cdot x$ is a bijection.
+:::
+`;
+
 async function mount(): Promise<void> {
   await initializeMathJax({ RR: "\\mathbb{R}" });
   window.getCitationCallback = () => (citations) =>
@@ -114,7 +144,9 @@ async function mount(): Promise<void> {
     ? active
     : scene === "nested"
       ? nested
-      : overview;
+      : scene === "titled"
+        ? titled
+        : overview;
   const anchor =
     scene === "active"
       ? doc.indexOf("*proper") + 2

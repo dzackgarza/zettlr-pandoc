@@ -13,8 +13,8 @@
  * END HEADER
  */
 
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { markdownToAST } from "source/common/modules/markdown-utils";
 
 /** Paragraphs with a raw TeX command on a line of its own, as in a document of mathematics. */

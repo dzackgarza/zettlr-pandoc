@@ -14,11 +14,16 @@
 
 import { trans } from "@common/i18n-main";
 import { hasAnyRecognizedFileExtension } from "@common/util/file-extention-checks";
+import { pathExists } from "@providers/fsal/util/fs";
 import { dialog } from "electron";
+import { constants as FSConstants } from "fs";
 import path from "path";
 import sanitize from "sanitize-filename";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import pathExists from "source/common/util/path-exists";
+import type { WikilinkSnapshot } from "source/app/service-providers/links";
+import { runEachStep } from "source/app/util/run-each-step";
+import { systemErrorCause } from "source/app/util/system-error-cause";
+import type { PathMove } from "source/common/util/replace-links";
 import ZettlrCommand from "./zettlr-command";
 
 export default class FileRename extends ZettlrCommand {
@@ -87,7 +92,7 @@ export default class FileRename extends ZettlrCommand {
 
     const file = await this._app.fsal.getDescriptorForAnySupportedFile(arg.path);
     if (file === undefined) {
-      return this._app.log.error(`Could not find file ${String(arg.path)}`);
+      throw new Error(`Could not rename the file: ${String(arg.path)} was not found.`);
     }
 
     if (this._app.documents.isModified(file.path)) {
@@ -125,7 +130,7 @@ export default class FileRename extends ZettlrCommand {
 
     if (await this._app.fsal.pathExists(newPath)) {
       // The file system reports the newPath already exists.
-      if (caseChangeOnly && (await pathExists(newPath))) {
+      if (caseChangeOnly && (await pathExists(newPath, FSConstants.F_OK))) {
         // The user only changed the case. Based on the second check, it appears
         // that this file system is case-insensitive, which means that the
         // reason `pathExists()` has returned true is because it confirms the
@@ -140,55 +145,65 @@ export default class FileRename extends ZettlrCommand {
       }
     }
 
-    try {
-      // The links resolve against the workspace as it is before the rename.
-      const linksBefore = this._app.links.snapshot();
+    // The links resolve against the workspace as it is before the rename.
+    const linksBefore = this._app.links.snapshot();
 
-      // Before renaming the file, let's see if it is a root file. Because if it
-      // is, we have to close it first.
-      const { openFiles } = this._app.config.getConfig().app;
-      const isRoot = openFiles.includes(file.path);
+    // Before renaming the file, let's see if it is a root file. Because if it
+    // is, we have to close it first.
+    const { openFiles } = this._app.config.getConfig().app;
+    const isRoot = openFiles.includes(file.path);
 
-      if (isRoot) {
-        this._app.config.removePath(file.path);
-      }
+    if (isRoot) {
+      this._app.config.removePath(file.path);
+    }
 
-      // Now, rename the file.
-      await this._app.fsal.rename(file.path, newPath);
-      // Notify the documents provider so it can exchange any files if necessary
-      await this._app.documents.hasMovedFile(file.path, newPath);
-
-      if (isRoot) {
-        this._app.config.addPath(newPath);
-      }
-
-      // Finally, let's check if we can update some internal links to that file.
-      const move = { from: file.path, to: newPath };
-      const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
-      if (changedFiles.length > 0) {
-        const response = await dialog.showMessageBox({
-          title: trans("Confirm"),
-          message: trans("Update %s internal links to file %s?", changedFiles.length, newName),
-          buttons: [trans("Yes"), trans("No")],
-          defaultId: 1,
+    // Now, rename the file. The root follows it: to its new path, or back to
+    // its old path when the rename failed. A later failure leaves it open.
+    const renamed = this._app.fsal
+      .rename(file.path, newPath)
+      .catch((failure: NodeJS.ErrnoException) => {
+        throw new Error(trans("Could not rename %s: %s.", file.name, systemErrorCause(failure)), {
+          cause: failure,
         });
-
-        if (response.response === 1) {
-          return; // Do not update the links.
-        }
-
-        await this._app.links.retargetAfterMove(
-          linksBefore,
-          move,
-          changedFiles,
-          this._app.documents,
-        );
-      }
-    } catch (err: unknown) {
-      this._app.log.error(
-        `Error during renaming file: ${err instanceof Error ? err.message : "Unknown error"}`,
-        err,
+      });
+    if (isRoot) {
+      await renamed.then(
+        () => this._app.config.addPath(newPath),
+        () => this._app.config.addPath(file.path),
       );
     }
+    await renamed;
+
+    // The file has its new name. Each step that follows runs, also when the
+    // step before it failed: the links follow a document whose collaboration
+    // state could not.
+    const move = { from: file.path, to: newPath };
+    await runEachStep([
+      // Notify the documents provider so it can exchange any files if necessary
+      async () => await this._app.documents.hasMovedFile(file.path, newPath),
+      async () => await this._offerLinkUpdate(linksBefore, move, newName),
+    ]);
+  }
+
+  /** Asks whether the links to the renamed file follow it, and updates them for "Yes". */
+  private async _offerLinkUpdate(
+    linksBefore: WikilinkSnapshot,
+    move: PathMove,
+    newName: string,
+  ): Promise<void> {
+    const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
+    if (changedFiles.length === 0) {
+      return;
+    }
+    const response = await dialog.showMessageBox({
+      title: trans("Confirm"),
+      message: trans("Update %s internal links to file %s?", changedFiles.length, newName),
+      buttons: [trans("Yes"), trans("No")],
+      defaultId: 1,
+    });
+    if (response.response === 1) {
+      return; // Do not update the links.
+    }
+    await this._app.links.retargetAfterMove(linksBefore, move, changedFiles, this._app.documents);
   }
 }

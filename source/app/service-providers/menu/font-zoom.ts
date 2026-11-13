@@ -9,11 +9,13 @@
  *
  * Description:     The exported functions from this file are used to create
  *                  callbacks for the menu which allow solely the editor font
- *                  size to be changed by the zoom items
+ *                  size to be changed by the zoom items. A zoom stays in the
+ *                  range of the setting: at an end it leaves the size as it is.
  *
  * END HEADER
  */
 
+import { EDITOR_FONT_SIZE } from "../config/config-validation";
 import type { MenuConfig } from "./menu-dependencies";
 
 /**
@@ -25,11 +27,11 @@ import type { MenuConfig } from "./menu-dependencies";
  */
 function fontZoom(config: MenuConfig, dir: "in" | "out"): void {
   const { fontSize } = config.get().editor;
-  if (dir === "in") {
-    config.set("editor.fontSize", fontSize + 1);
-  } else {
-    config.set("editor.fontSize", fontSize - 1);
-  }
+  const next = dir === "in" ? fontSize + 1 : fontSize - 1;
+  config.set(
+    "editor.fontSize",
+    Math.min(EDITOR_FONT_SIZE.max, Math.max(EDITOR_FONT_SIZE.min, next)),
+  );
 }
 
 /**

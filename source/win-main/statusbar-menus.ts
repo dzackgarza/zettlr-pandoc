@@ -90,9 +90,14 @@ function flagOf(code: string): string {
 
 /**
  * The MagicQuotes menu: off, custom (shown, never selectable), and every
- * language pair, with the pairs equal to the current one checked.
+ * language pair, with the pairs equal to the current one checked. A typed
+ * quote is a MagicQuote only while autocorrect is on (`handleQuote`), so
+ * with autocorrect off the menu shows the pair and offers no choice.
  */
-export function magicQuotesMenuItems(current: QuotePair): AnyMenuItem[] {
+export function magicQuotesMenuItems(
+  current: QuotePair,
+  autoCorrectActive: boolean,
+): AnyMenuItem[] {
   const disabled =
     current.primary === PLAIN_QUOTES.primary && current.secondary === PLAIN_QUOTES.secondary;
   const matching = Object.entries(MAGIC_QUOTES_PAIRS)
@@ -100,8 +105,26 @@ export function magicQuotesMenuItems(current: QuotePair): AnyMenuItem[] {
       ([_key, pair]) => pair.primary === current.primary && pair.secondary === current.secondary,
     )
     .map(([key]) => key);
-  const items: AnyMenuItem[] = [
-    { type: "checkbox", id: "disabled", label: trans("Disabled"), checked: disabled },
+  const items: AnyMenuItem[] = [];
+  if (!autoCorrectActive) {
+    items.push(
+      {
+        type: "normal",
+        id: "autocorrect-off",
+        label: trans("MagicQuotes require Autocorrect, which is off"),
+        enabled: false,
+      },
+      { type: "separator" },
+    );
+  }
+  items.push(
+    {
+      type: "checkbox",
+      id: "disabled",
+      label: trans("Disabled"),
+      enabled: autoCorrectActive,
+      checked: disabled,
+    },
     {
       type: "checkbox",
       id: "custom",
@@ -110,12 +133,13 @@ export function magicQuotesMenuItems(current: QuotePair): AnyMenuItem[] {
       checked: !disabled && matching.length === 0,
     },
     { type: "separator" },
-  ];
+  );
   for (const key of Object.keys(MAGIC_QUOTES_PAIRS)) {
     items.push({
       type: "checkbox",
       id: key,
       label: `${flagOf(key)} ${resolveLangCode(key, "name")}`,
+      enabled: autoCorrectActive,
       checked: matching.includes(key),
     });
   }

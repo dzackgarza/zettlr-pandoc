@@ -13,6 +13,8 @@
  */
 
 import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import { UPDATE_CHECKS_BUILT_IN } from "@common/util/setting-choices";
 import type { EnvironmentInfo } from "@dts/common/environment";
 import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
 import { PreferencesGroups } from "./_preferences-groups";
@@ -115,51 +117,23 @@ export function getAdvancedFields(config: ConfigOptions): PreferencesFieldset[] 
     {
       title: trans("File Treatment"),
       infoString: trans(
-        "Decide where broad file-type groups are displayed, and how to open them. Permanent File filters in the File Manager preferences can further narrow what is visible.",
+        "Decide how to open images and PDF documents. Which files the app lists is set in the File filters window.",
       ),
       group: PreferencesGroups.Advanced,
-      help: undefined, // TODO
+      help: undefined,
       fields: [
         {
           type: "separator",
         },
         {
           type: "control-grid",
-          header: [
-            "",
-            trans("Display in file manager"),
-            trans("Display in sidebar"),
-            trans("Open with"),
-          ],
+          header: ["", trans("Open with")],
           rows: [
-            /* First row: Built-in Markdown and code files, to show how it's supposed to work */
-            [
-              {
-                type: "form-text",
-                display: "plain",
-                contents: trans("Built-in Markdown and Code files"),
-              },
-              {
-                type: "checkbox",
-                disabled: true,
-                model: "files.builtin.showInFilemanager",
-              },
-              {
-                type: "form-text",
-                display: "plain",
-                contents: "Zettlr",
-              },
-            ],
-            // Image files
             [
               {
                 type: "form-text",
                 display: "plain",
                 contents: trans("Images"),
-              },
-              {
-                type: "checkbox",
-                model: "files.images.showInFilemanager",
               },
               {
                 type: "select",
@@ -170,16 +144,11 @@ export function getAdvancedFields(config: ConfigOptions): PreferencesFieldset[] 
                 model: "files.images.openWith",
               },
             ],
-            /* PDF files */
             [
               {
                 type: "form-text",
                 display: "plain",
                 contents: trans("PDF documents"),
-              },
-              {
-                type: "checkbox",
-                model: "files.pdf.showInFilemanager",
               },
               {
                 type: "select",
@@ -190,85 +159,16 @@ export function getAdvancedFields(config: ConfigOptions): PreferencesFieldset[] 
                 model: "files.pdf.openWith",
               },
             ],
-            // Office documents
-            [
-              {
-                type: "form-text",
-                display: "plain",
-                contents: trans("MS Office Documents"),
-              },
-              {
-                type: "checkbox",
-                model: "files.msoffice.showInFilemanager",
-              },
-              {
-                type: "form-text",
-                display: "plain",
-                contents: trans("System default"),
-              },
-            ],
-            // Open Office documents
-            [
-              {
-                type: "form-text",
-                display: "plain",
-                contents: trans("Open Office Documents"),
-              },
-              {
-                type: "checkbox",
-                model: "files.openOffice.showInFilemanager",
-              },
-              {
-                type: "form-text",
-                display: "plain",
-                contents: trans("System default"),
-              },
-            ],
-            // Data files (tsv, csv, etc.)
-            [
-              {
-                type: "form-text",
-                display: "plain",
-                contents: trans("Data files (tsv, csv, etc.)"),
-              },
-              {
-                type: "checkbox",
-                model: "files.dataFiles.showInFilemanager",
-              },
-              {
-                type: "form-text",
-                display: "plain",
-                contents: trans("System default"),
-              },
-            ],
-            [
-              {
-                type: "form-text",
-                display: "plain",
-                contents: trans("Dot Files and Folders"),
-              },
-              {
-                type: "checkbox",
-                model: "files.dotFiles.showInFilemanager",
-              },
-              {
-                type: "form-text",
-                display: "plain",
-                contents: trans("System default"),
-              },
-            ],
           ],
         },
         {
-          type: "separator",
-        },
-        {
-          type: "token",
-          label: trans(
-            'Add additional file extensions you wish to see in the file manager and sidebar below. Include the leading period, e.g., ".xml".',
-          ),
-          placeholder: trans("Enter an extension and press enter"),
-          model: "attachmentExtensions",
+          type: "button",
+          label: trans("Edit file filters…"),
+          onClick: () => {
+            window.ipc
+              .invoke("application", { command: "edit-ignore-rules" })
+              .catch((err) => reportError(err));
+          },
         },
       ],
     },
@@ -337,6 +237,6 @@ export function getAdvancedFields(config: ConfigOptions): PreferencesFieldset[] 
         },
       ],
     },
-    ...(__UPDATES_DISABLED__ === "0" ? [betaReleaseItem] : []),
+    ...(UPDATE_CHECKS_BUILT_IN ? [betaReleaseItem] : []),
   ];
 }

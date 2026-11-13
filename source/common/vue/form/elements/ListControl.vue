@@ -644,6 +644,26 @@ body {
           td {
             padding: 4px;
             margin: 0;
+            // A long value (a command, a path) wraps in its column.
+            overflow-wrap: anywhere;
+
+            // A field of a row takes the width of its column, not its own
+            // size, so the row fits the pane.
+            div.form-control {
+              .input-text-button-group {
+                grid-template-columns: 20px minmax(0, 1fr) 20px;
+              }
+
+              input {
+                width: 100%;
+                min-width: 0;
+                box-sizing: border-box;
+              }
+            }
+
+            button {
+              white-space: nowrap;
+            }
             &:focus {
               outline: 0;
               background-color: var(--system-accent-color, rgb(230, 230, 230));

@@ -14,5 +14,8 @@ book:
     - part: Coble surfaces
       chapters:
         - coble-lattice-table.md
+    - part: lattice-theory/index.md
+      chapters:
+        - lattice-theory/discriminant-forms.md
 bibliography:
   - references.bib

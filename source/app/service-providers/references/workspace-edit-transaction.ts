@@ -33,12 +33,15 @@
 
 import { ChangeSet, Text } from "@codemirror/state";
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
-import type { SaveFileResult } from "@dts/common/documents";
+import isErrnoException from "@common/util/is-errno-exception";
+import type { SaveFileResult, UnsavedDocument } from "@dts/common/documents";
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import { randomUUID } from "crypto";
+import { diffChars } from "diff";
 import { readFile, unlink } from "fs/promises";
 import path from "path";
 import writeFileAtomic from "write-file-atomic";
+import { writeTextFile } from "../fsal/util/write-text-file";
 
 /** The one journal file; a workspace transaction is never concurrent. */
 const JOURNAL_FILE = "workspace-edit-journal.json";
@@ -105,20 +108,64 @@ interface WorkspaceEditJournal {
  * @return  {string}                       The target text
  */
 function computeTarget(source: string, edits: WorkspaceTextEdit[]): string {
-  const changes = ChangeSet.of(
+  return changeSetOf(source, edits)
+    .apply(Text.of(source.split("\n")))
+    .toString();
+}
+
+function changeSetOf(source: string, edits: WorkspaceTextEdit[]): ChangeSet {
+  return ChangeSet.of(
     edits.map((edit) => ({ from: edit.range.from, to: edit.range.to, insert: edit.insert })),
     source.length,
   );
-  return changes.apply(Text.of(source.split("\n"))).toString();
 }
 
-/** The edit that replaces a live buffer's entire text with `text`. */
-function wholeDocumentEdit(
-  documentPath: string,
-  currentLength: number,
-  text: string,
-): WorkspaceTextEdit {
-  return { documentPath, range: { from: 0, to: currentLength }, insert: text };
+/**
+ * The changes that take `before` to `after`, from a character diff (jsdiff's
+ * `diffChars`, the Myers algorithm).
+ */
+function changesBetween(before: string, after: string): ChangeSet {
+  const changes: Array<{ from: number; to?: number; insert?: string }> = [];
+  let position = 0;
+  for (const part of diffChars(before, after)) {
+    if (part.added) {
+      changes.push({ from: position, insert: part.value });
+    } else if (part.removed) {
+      changes.push({ from: position, to: position + part.value.length });
+      position += part.value.length;
+    } else {
+      position += part.value.length;
+    }
+  }
+  return ChangeSet.of(changes, before.length);
+}
+
+/**
+ * The edits that take a live buffer from `current` back to `original`
+ * without the text that the author typed after the transaction. The buffer
+ * held the target of `edits`, and then the changes of its author: the
+ * inverse of `edits` is mapped over those changes, as an editor rebases a
+ * change over a concurrent one. Each edit changes only the text that the
+ * transaction changed, so the typed text, the review and the annotations of
+ * the document keep their places through a rollback.
+ */
+function restoringEdits(
+  entry: JournaledDocument,
+  current: string,
+  edits: WorkspaceTextEdit[],
+): WorkspaceTextEdit[] {
+  const inverse = changeSetOf(entry.original, edits).invert(Text.of(entry.original.split("\n")));
+  const restoring: WorkspaceTextEdit[] = [];
+  inverse
+    .map(changesBetween(entry.target, current))
+    .iterChanges((from, to, _fromCurrent, _toCurrent, inserted) => {
+      restoring.push({
+        documentPath: entry.documentPath,
+        range: { from, to },
+        insert: inserted.toString(),
+      });
+    });
+  return restoring;
 }
 
 /**
@@ -187,6 +234,9 @@ export async function runWorkspaceEditTransaction(
   await writeFileAtomic(journalFile, JSON.stringify(journal), "utf-8");
 
   const installed: string[] = [];
+  // The open buffers that held the target of the transaction when it
+  // checked them; later text in such a buffer is text of its author.
+  const verified = new Set<string>();
   let openBuffersUpdated: string[] = [];
   try {
     // The authority prepares every ChangeSet before it mutates any buffer and
@@ -212,15 +262,16 @@ export async function runWorkspaceEditTransaction(
             `workspace-edit: the document authority holds different content for ${documentPath}`,
           );
         }
+        verified.add(documentPath);
       }
     }
 
     for (const { documentPath, target } of closedFiles) {
-      await writeFileAtomic(documentPath, target, "utf-8");
+      await writeTextFile(documentPath, target);
       installed.push(documentPath);
     }
   } catch (err) {
-    await rollback(authority, journalFile, journal, installed);
+    await rollback(authority, journalFile, journal, installed, verified, input.edits);
     throw err;
   }
 
@@ -244,21 +295,42 @@ export async function runWorkspaceEditTransaction(
  * @param   {string}                  journalFile  The journal's path
  * @param   {WorkspaceEditJournal}    journal      The journal
  * @param   {string[]}                installed    Files already installed
+ * @param   {Set<string>}             verified     Open buffers that held the target
+ * @param   {WorkspaceTextEdit[]}     edits        The edits of the transaction
  */
 async function rollback(
   authority: WorkspaceEditAuthority,
   journalFile: string,
   journal: WorkspaceEditJournal,
   installed: string[],
+  verified: Set<string>,
+  edits: WorkspaceTextEdit[],
 ): Promise<void> {
   await writeFileAtomic(journalFile, JSON.stringify({ ...journal, phase: "rollback" }), "utf-8");
 
   const restoreBuffers: WorkspaceTextEdit[] = [];
   for (const entry of journal.openBuffers) {
     const current = authority.readMarkdownBufferContent(entry.documentPath);
-    if (current !== undefined && current !== entry.original) {
-      restoreBuffers.push(wholeDocumentEdit(entry.documentPath, current.length, entry.original));
+    if (current === undefined || current === entry.original) {
+      continue;
     }
+    // A buffer that the authority did not take to the target holds no text
+    // of its author: only the whole original restores it.
+    if (!verified.has(entry.documentPath)) {
+      restoreBuffers.push({
+        documentPath: entry.documentPath,
+        range: { from: 0, to: current.length },
+        insert: entry.original,
+      });
+      continue;
+    }
+    restoreBuffers.push(
+      ...restoringEdits(
+        entry,
+        current,
+        edits.filter((edit) => edit.documentPath === entry.documentPath),
+      ),
+    );
   }
   if (restoreBuffers.length > 0) {
     await authority.applyWorkspaceTextEdits(restoreBuffers);
@@ -267,7 +339,7 @@ async function rollback(
   for (const documentPath of installed) {
     const entry = journal.closedFiles.find((candidate) => candidate.documentPath === documentPath);
     if (entry !== undefined) {
-      await writeFileAtomic(documentPath, entry.original, "utf-8");
+      await writeTextFile(documentPath, entry.original);
     }
   }
 
@@ -278,25 +350,26 @@ async function rollback(
  * Saves the open buffers a transaction updated, so that a workspace edit
  * ends on disk for every document it touched: the transaction writes the
  * closed files itself (VS Code's Replace All saves the edited files the same
- * way).
+ * way). Each buffer is saved: a refused save leaves its document with the
+ * edit and does not stop the saves of the others.
  *
  * @param   {Function}  saveFile       The document authority's save
  * @param   {string[]}  documentPaths  The open buffers the transaction updated
+ *
+ * @return  {Promise<UnsavedDocument[]>}  Each document whose save was refused
  */
 export async function saveUpdatedBuffers(
   saveFile: (filePath: string) => Promise<SaveFileResult>,
   documentPaths: string[],
-): Promise<void> {
+): Promise<UnsavedDocument[]> {
+  const unsaved: UnsavedDocument[] = [];
   for (const documentPath of documentPaths) {
     const saved = await saveFile(documentPath);
     if (!saved.ok) {
-      const reason =
-        saved.refusal === undefined
-          ? "the documents provider refused the save and named no reason"
-          : saved.refusal.message;
-      throw new Error(`[Workspace Edit] Could not save ${documentPath} after the edit: ${reason}`);
+      unsaved.push({ documentPath, refusal: saved.refusal });
     }
   }
+  return unsaved;
 }
 
 /**
@@ -323,9 +396,16 @@ export async function recoverWorkspaceEditJournal(journalDirectory: string): Pro
 
   const restored: string[] = [];
   for (const entry of journal.closedFiles) {
-    const current = await readFile(entry.documentPath, "utf-8").catch(() => undefined);
+    const current = await readFile(entry.documentPath, "utf-8").catch((error: unknown) => {
+      // A file that is gone holds no text of the author: the original
+      // restores it. Each other failure stops the recovery.
+      if (isErrnoException(error) && error.code === "ENOENT") {
+        return undefined;
+      }
+      throw error;
+    });
     if (current !== entry.original) {
-      await writeFileAtomic(entry.documentPath, entry.original, "utf-8");
+      await writeTextFile(entry.documentPath, entry.original);
       restored.push(entry.documentPath);
     }
   }

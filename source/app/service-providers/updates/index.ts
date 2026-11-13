@@ -20,11 +20,12 @@ import { initializeMathJax } from "@common/util/mathtex-to-html";
 import { showNativeNotification } from "@common/util/show-notification";
 import type ConfigProvider from "@providers/config";
 import crypto from "crypto";
-import { app, ipcMain, net, shell } from "electron";
+import { app, ipcMain, net } from "electron";
 import { createWriteStream, promises as fs, type WriteStream } from "fs";
 import got, { RequestError, type Response } from "got";
 import path from "path";
 import semver from "semver";
+import { openPath } from "source/app/util/open-path";
 import PACKAGE_JSON from "../../../../package.json";
 import { loadCanonicalMathJaxMacros } from "../../util/load-mathjax-macros";
 import type CommandProvider from "../commands";
@@ -775,10 +776,10 @@ export default class UpdateProvider extends ProviderContract {
     try {
       if (this._updateState.full_path.endsWith(".AppImage")) {
         // AppImages need to be manually moved by the user
-        await shell.openPath(path.dirname(this._updateState.full_path));
+        await openPath(path.dirname(this._updateState.full_path));
       } else {
         // Everything else can be opened as is
-        await shell.openPath(this._updateState.full_path);
+        await openPath(this._updateState.full_path);
       }
       app.quit();
     } catch (err: unknown) {

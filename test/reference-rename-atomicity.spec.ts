@@ -113,6 +113,7 @@ function makeDescriptor(documentPath: string): MDFileDescriptor {
     creationtime: 0,
     linefeed: "\n",
     firstHeading: null,
+    firstSentence: null,
     yamlTitle: undefined,
     aliases: [],
     frontmatter: null,
@@ -179,6 +180,15 @@ interface ScratchWorkspace {
   };
   /** Original on-disk bytes at setup time, by absolute scratch path */
   originals: Map<string, string>;
+}
+
+/** The text that a scratch file had at setup. Each scratch file has one. */
+function originalText(originals: Map<string, string>, documentPath: string): string {
+  const text = originals.get(documentPath);
+  if (text === undefined) {
+    throw new Error(`${documentPath} is no file of the scratch workspace`);
+  }
+  return text;
 }
 
 async function setUpScratchWorkspace(
@@ -282,7 +292,7 @@ async function setUpScratchWorkspace(
   // Halphen_Surfaces.md is OPEN in the document authority (content identical
   // to disk), and the authority reported the load (issue #53). The commit
   // must route Halphen through the authority, never through a disk write.
-  authorityBuffers.set(paths.halphen, originals.get(paths.halphen) ?? "");
+  authorityBuffers.set(paths.halphen, originalText(originals, paths.halphen));
   provider.reportAuthorityBuffer(paths.halphen);
   fireScheduled();
 
@@ -350,16 +360,16 @@ describe("Workspace rename commit protocol", function () {
         edit.expectedSourceHashes,
         {
           [scratch.paths.theorems]: hashDocumentSource(
-            scratch.originals.get(scratch.paths.theorems) ?? "",
+            originalText(scratch.originals, scratch.paths.theorems),
           ),
           [scratch.paths.otherPaper]: hashDocumentSource(
-            scratch.originals.get(scratch.paths.otherPaper) ?? "",
+            originalText(scratch.originals, scratch.paths.otherPaper),
           ),
           [scratch.paths.halphen]: hashDocumentSource(
-            scratch.originals.get(scratch.paths.halphen) ?? "",
+            originalText(scratch.originals, scratch.paths.halphen),
           ),
           [scratch.paths.standalone]: hashDocumentSource(
-            scratch.originals.get(scratch.paths.standalone) ?? "",
+            originalText(scratch.originals, scratch.paths.standalone),
           ),
         },
         "every touched document must be fenced at its current workspace content",
@@ -377,7 +387,7 @@ describe("Workspace rename commit protocol", function () {
       // preview, with NO FSAL event — the provider's index still holds the
       // stale snapshot, so the commit must RE-READ THE DISK to notice.
       const mutated =
-        (scratch.originals.get(scratch.paths.standalone) ?? "") + "\nAppended concurrent edit.\n";
+        originalText(scratch.originals, scratch.paths.standalone) + "\nAppended concurrent edit.\n";
       writeFileSync(scratch.paths.standalone, mutated, "utf-8");
 
       const expectedBytes = new Map(scratch.originals);
@@ -427,7 +437,7 @@ describe("Workspace rename commit protocol", function () {
       const halphen = state.snapshots.find((s) => s.documentPath === scratch.paths.halphen);
       assert.equal(
         halphen?.sourceHash,
-        hashDocumentSource(scratch.originals.get(scratch.paths.halphen) ?? ""),
+        hashDocumentSource(originalText(scratch.originals, scratch.paths.halphen)),
         "a conflicted commit must leave the open buffer overlay untouched",
       );
     });
@@ -482,7 +492,7 @@ describe("Workspace rename commit protocol", function () {
         expectedBytes.set(
           closedPath,
           applyEdits(
-            scratch.originals.get(closedPath) ?? "",
+            originalText(scratch.originals, closedPath),
             previewedEdit.edits.filter((e) => e.documentPath === closedPath),
           ),
         );
@@ -501,7 +511,7 @@ describe("Workspace rename commit protocol", function () {
       assert.equal(
         scratch.authorityBuffers.get(scratch.paths.halphen),
         applyEdits(
-          scratch.originals.get(scratch.paths.halphen) ?? "",
+          originalText(scratch.originals, scratch.paths.halphen),
           previewedEdit.edits.filter((e) => e.documentPath === scratch.paths.halphen),
         ),
         "the central authority owns the renamed open-buffer text",
@@ -532,7 +542,7 @@ describe("Workspace rename commit protocol", function () {
       );
 
       const renamedTheorems = applyEdits(
-        scratch.originals.get(scratch.paths.theorems) ?? "",
+        originalText(scratch.originals, scratch.paths.theorems),
         previewedEdit.edits.filter((e) => e.documentPath === scratch.paths.theorems),
       );
 
@@ -636,14 +646,13 @@ describe("Workspace edit transaction rollback and recovery", function () {
     });
 
     after(async function () {
-      chmodSync(path.join(scratch.root, "ProjectB"), 0o755);
       await scratch.provider.shutdown();
       await rm(scratch.root, { recursive: true, force: true });
     });
 
     it("restores every installed file and every mutated buffer, and leaves no journal", async function () {
       if (process.getuid?.() === 0) {
-        this.skip(); // root ignores the directory permission this injection needs
+        this.skip(); // root ignores the file permission this injection needs
       }
 
       const preview = (await scratch.command.run("preview-reference-rename", {
@@ -664,10 +673,10 @@ describe("Workspace edit transaction rollback and recovery", function () {
         `the injected failure must follow at least one installation, got ${JSON.stringify(closedOrder)}`,
       );
 
-      // Real failure injection, no filesystem mock: ProjectB becomes
-      // unwritable, so write-file-atomic cannot stage its temp file there.
+      // Real failure injection, no filesystem mock: the author takes the
+      // write permission of Other_Paper.md, so its write is refused (§16).
       // The transaction fails with earlier installations already on disk.
-      chmodSync(path.join(scratch.root, "ProjectB"), 0o555);
+      chmodSync(scratch.paths.otherPaper, 0o444);
 
       await assert.rejects(
         async () => await scratch.command.run("commit-reference-rename", { edit }),
@@ -699,6 +708,57 @@ describe("Workspace edit transaction rollback and recovery", function () {
         undefined,
       )) as UndoRenameOutcome;
       assert.deepEqual(undone, { status: "no-pending-undo" });
+    });
+  });
+
+  describe("a closed file in a folder without write permission", function () {
+    let scratch: ScratchWorkspace;
+
+    before(async function () {
+      scratch = await setUpScratchWorkspace();
+    });
+
+    after(async function () {
+      chmodSync(path.join(scratch.root, "ProjectB"), 0o755);
+      await scratch.provider.shutdown();
+      await rm(scratch.root, { recursive: true, force: true });
+    });
+
+    it("takes the edit in place, as a save of the file does", async function () {
+      const preview = (await scratch.command.run("preview-reference-rename", {
+        oldKey: OLD_KEY,
+        newKey: NEW_KEY,
+      })) as ReferenceRenamePreview;
+      const edit = editOf(preview, "read-only folder preview");
+      // The author may write the file but not create a file beside it, so
+      // no temporary file can take its place (§16).
+      chmodSync(path.join(scratch.root, "ProjectB"), 0o555);
+
+      const outcome = (await scratch.command.run("commit-reference-rename", {
+        edit,
+      })) as CommitRenameOutcome;
+
+      assert.equal(outcome.status, "applied", `the commit applies, got ${JSON.stringify(outcome)}`);
+      const expected = new Map(scratch.originals);
+      for (const documentPath of Object.keys(edit.expectedSourceHashes)) {
+        if (documentPath === scratch.paths.halphen) {
+          continue; // An open buffer: its file is saved by the authority
+        }
+        expected.set(
+          documentPath,
+          applyEdits(
+            originalText(scratch.originals, documentPath),
+            edit.edits.filter((textEdit) => textEdit.documentPath === documentPath),
+          ),
+        );
+      }
+      assert.notEqual(
+        expected.get(scratch.paths.otherPaper),
+        scratch.originals.get(scratch.paths.otherPaper),
+        "the rename changes Other_Paper.md",
+      );
+      assertWorkspaceBytes(scratch, expected, "after a commit into a read-only folder");
+      assert.deepEqual(readdirSync(path.join(scratch.root, "ProjectB")), ["Other_Paper.md"]);
     });
   });
 

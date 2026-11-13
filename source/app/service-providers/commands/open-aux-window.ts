@@ -40,10 +40,9 @@ export default class OpenAuxWindow extends ZettlrCommand {
         this._app.windows.showDefaultsWindow(arg.hash);
         return true;
       default:
-        this._app.log.error(
-          `Cannot programmatically open window ${arg.window as string}: Not available for opening`,
+        throw new Error(
+          `Cannot open the window ${arg.window as string}: it is not available for opening.`,
         );
-        return false;
     }
   }
 }

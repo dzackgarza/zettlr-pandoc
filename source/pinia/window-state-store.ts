@@ -24,7 +24,7 @@ import type { FileSearchResult } from "source/app/service-providers/search";
 import type { DocumentInfo } from "source/common/modules/markdown-editor";
 import type { ToCEntry } from "source/common/modules/markdown-editor/plugins/toc-field";
 import type { PhraseDictionaryEntry } from "source/common/util/phrase-dictionary";
-import { type Ref, ref, shallowRef, watch } from "vue";
+import { computed, type Ref, ref, shallowRef, watch } from "vue";
 import { useConfigStore } from "./config";
 
 const ipcRenderer = window.ipc;
@@ -50,6 +50,9 @@ async function updatePhraseCompletions(phrases: Ref<PhraseDictionaryEntry[]>): P
   });
 }
 
+/** The saved setting that holds whether a pane of the main window is shown. */
+export type PaneSetting = "window.fileManagerVisible" | "window.sidebarVisible";
+
 export const useWindowStateStore = defineStore("window-state", () => {
   const configStore = useConfigStore();
   const isFullscreen = ref(false);
@@ -57,6 +60,23 @@ export const useWindowStateStore = defineStore("window-state", () => {
     ...configStore.config.fileManager.expandedDirectories,
   ]);
   const distractionFreeMode = ref<undefined | string>(undefined);
+  // Distraction-free mode is a state of this window. The saved pane settings
+  // are the arrangement of the author: the mode hides the panes without a
+  // change of them, so a quit in the mode saves the panes of the author.
+  const navigationSidebarShown = computed(
+    () => configStore.config.window.fileManagerVisible && distractionFreeMode.value === undefined,
+  );
+  const annotationPanelShown = computed(
+    () => configStore.config.window.sidebarVisible && distractionFreeMode.value === undefined,
+  );
+
+  /** Shows or hides a pane of the window. A pane that is shown ends distraction-free mode. */
+  function setPaneVisible(setting: PaneSetting, visible: boolean): void {
+    if (visible) {
+      distractionFreeMode.value = undefined;
+    }
+    configStore.setConfigValue(setting, visible);
+  }
   const activeDocumentInfo = ref<undefined | DocumentInfo>(undefined);
   // The file-manager/editor path that most recently held the user's working
   // focus. Modal UI such as the command launcher may temporarily take DOM
@@ -175,6 +195,9 @@ export const useWindowStateStore = defineStore("window-state", () => {
   return {
     uncollapsedDirectories,
     distractionFreeMode,
+    navigationSidebarShown,
+    annotationPanelShown,
+    setPaneVisible,
     activeDocumentInfo,
     desktopFocusPath,
     tableOfContents,

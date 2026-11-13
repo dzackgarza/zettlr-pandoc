@@ -54,20 +54,20 @@ on:
   # Releases must be manually started.
   workflow_dispatch: {}
   schedule: # Every Monday at noon (UTC) we run a scheduled nightly build
-    - cron: '0 12 * * 1'
+    - cron: "0 12 * * 1"
 # Defaults for every job and step in this workflow
 defaults:
   run:
     shell: bash # Run everything using bash
 # Global environment variables
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: "22"
   # Specify the branch name which will cause regular nightly builds
-  NIGHTLY_BRANCH: 'develop'
+  NIGHTLY_BRANCH: "develop"
   # Specify the branch name which will cause beta releases to be published
-  RC_BRANCH: 'release-candidate'
+  RC_BRANCH: "release-candidate"
   # Specify the branch name which will cause release drafts to be published
-  RELEASE_BRANCH: 'master'
+  RELEASE_BRANCH: "master"
   # DEBUG: '*' # Uncomment to debug Electron building packages
 # Ensure only a single build workflow runs at any one time
 concurrency:
@@ -79,7 +79,7 @@ concurrency:
 jobs:
   # First, ensure that nothing breaks before attempting to build
   preflight:
-    name: 'Preflight'
+    name: "Preflight"
     uses: ./.github/workflows/check.yml
   # If we're building a full release, we have to make sure that nobody (that is:
   # Hendrik) forgot to increment the tag version. If we already have a tag with
@@ -87,7 +87,7 @@ jobs:
   # overwriting of the files in the previous release. That doesn't wreak any
   # havoc because we don't push unstable code to master, BUT it looks bad.
   verify_version:
-    name: 'Preflight: Verify version tag'
+    name: "Preflight: Verify version tag"
     runs-on: ubuntu-22.04
     steps:
       - name: Clone repository (${{ github.ref_name }} branch)
@@ -497,8 +497,8 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.NIGHTLY_SSH_PRIVATE_KEY }}
           # --delete so that no old releases remain on the server. Each iteration is approx. 1GB in size.
-          ARGS: '-vzhr --delete' # verbose, compress, human-readble, recursive, delete
-          SOURCE: 'release/'
+          ARGS: "-vzhr --delete" # verbose, compress, human-readble, recursive, delete
+          SOURCE: "release/"
           REMOTE_HOST: ${{ secrets.NIGHTLY_REMOTE_HOST }}
           REMOTE_USER: ${{ secrets.NIGHTLY_REMOTE_USER }}
           TARGET: ${{ secrets.NIGHTLY_TARGET }}

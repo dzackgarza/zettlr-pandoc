@@ -18,6 +18,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { promisify } from "util";
+import { runProbe } from "./visual/display-probe";
 
 const execFileAsync = promisify(execFile);
 
@@ -50,11 +51,9 @@ describe("Pandoc fenced-div clicks preserve CodeMirror source positions", functi
       `--tsconfig=${path.join(root, "tsconfig.json")}`,
       `--outfile=${path.join(outputDirectory, "pandoc-div-click-bundle.js")}`,
     ]);
-    const { stdout } = await execFileAsync(
-      "xvfb-run",
-      ["-a", "node", path.join(root, "test/editor-pandoc-div-click-probe.mjs"), outputDirectory],
-      { maxBuffer: 1024 * 1024 },
-    );
+    const { stdout } = await runProbe(path.join(root, "test/editor-pandoc-div-click-probe.mjs"), [
+      outputDirectory,
+    ]);
     const jsonLine = stdout.trim().split("\n").at(-1);
     assert.ok(
       jsonLine !== undefined,

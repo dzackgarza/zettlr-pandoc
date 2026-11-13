@@ -801,7 +801,11 @@ describe("CollaborationApplicationService", function () {
     assert.equal(secondSubmission.ok, true);
     await service.detachCollaboration(DOCUMENT_ID);
     assert.equal(service.getReview(DOCUMENT_ID), undefined);
+    // The document has no state in memory now. Its sidecar is the state of
+    // the detach, and a discard leaves that file as it is.
+    const detached = await service.readSidecar(DOCUMENT_PATH);
+    assert.equal(detached?.workingText, "ALPHA\nBETA again\n");
     await service.discardCollaboration(DOCUMENT_ID, DOCUMENT_PATH, baseline);
-    assert.equal(await service.readSidecar(DOCUMENT_PATH), undefined);
+    assert.deepEqual(await service.readSidecar(DOCUMENT_PATH), detached);
   });
 });

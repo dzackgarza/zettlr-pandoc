@@ -53,10 +53,10 @@ import type {
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type CiteprocProvider from "@providers/citeproc";
-import { CiteprocRenderInvariantError } from "@providers/citeproc";
+import { CitationStyleError, CiteprocRenderInvariantError } from "@providers/citeproc";
 import type { AgentApiConfig, ConfigOptions } from "@providers/config/get-config-template";
 import type DocumentLintProvider from "@providers/document-lint";
-import type { DocumentLintRecord } from "@providers/document-lint";
+import type { DocumentLintRecord, DocumentLintSource } from "@providers/document-lint";
 import type DocumentManager from "@providers/documents";
 import type {
   AnnotationFailure,
@@ -71,13 +71,13 @@ import {
   toWirePacket,
 } from "@providers/documents/review-diff-store";
 import type FSAL from "@providers/fsal";
+import type { DirectoryListing } from "@providers/fsal/util/read-directory";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
 import type { SearchProvider } from "@providers/search";
 import crypto from "crypto";
 import { app } from "electron";
-import { get as levenshteinDistance } from "fast-levenshtein";
 import fs from "fs";
 import http from "http";
 import OpenAPIBackend, {
@@ -87,12 +87,15 @@ import OpenAPIBackend, {
 } from "openapi-backend";
 import path from "path";
 import { workspaceLintRows } from "source/app/util/workspace-lint-results";
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import { fileURLToPath } from "url";
 import { type Document, parseDocument } from "yaml";
 import {
   CentralFigureAlreadyExistsError,
   CentralFigureInputError,
   CentralFigureNotFoundError,
+  CentralFiguresDirectoryNotFoundError,
+  CentralFigureUnreadableError,
   createCentralTikzFigure,
   listCentralFigures,
   readCentralFigure,
@@ -101,8 +104,14 @@ import {
   writeCentralFigure,
 } from "../../util/central-figures-store";
 import { documentCrossReferenceSystem } from "../../util/document-bibliographies";
-import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
+import {
+  loadCanonicalMacroInventory,
+  MacroSourcesUnavailableError,
+} from "../../util/load-mathjax-macros";
+import { CollaborationSidecarUnreadableError } from "../documents/collaboration-sidecar-store";
 import AgentDocumentQueries, {
+  canonicalPath,
+  DocumentUnreadableError,
   SEARCH_DEADLINE_MS,
   SearchPatternError,
   SearchTimeoutError,
@@ -114,6 +123,7 @@ import {
   readSkillMarkdown,
   resolveSkillsDirectory,
   SkillFileNotFoundError,
+  SkillFileUnreadableError,
   SkillsDirectoryUnavailableError,
   SkillsPathInputError,
 } from "./skills-store";
@@ -135,53 +145,6 @@ const ZOTERO_TAG = "zotero";
  */
 const REQUEST_BODY_DEADLINE_MS = 30_000;
 
-interface ClaimDescriptionCollision {
-  firstIndex: number;
-  secondIndex: number;
-  similarity: number;
-}
-
-function normalizeClaimDescription(description: string): string {
-  return description.normalize("NFKC").toLocaleLowerCase("en-US").replace(/\s+/gu, "");
-}
-
-/**
- * Descriptions are per-claim review justifications, not batch labels. The
- * configured threshold (`agentApi.claimDescriptionSimilarityThreshold`)
- * catches copy/paste variants while leaving room for genuinely related edits
- * to share some vocabulary. Whitespace and case are ignored so superficial
- * formatting changes cannot evade the check.
- */
-function findClaimDescriptionCollision(
-  claims: readonly { description: string }[],
-  threshold: number,
-): ClaimDescriptionCollision | undefined {
-  const normalized = claims.map((claim) => normalizeClaimDescription(claim.description));
-  for (let firstIndex = 0; firstIndex < normalized.length; firstIndex += 1) {
-    for (let secondIndex = firstIndex + 1; secondIndex < normalized.length; secondIndex += 1) {
-      const first = normalized[firstIndex];
-      const second = normalized[secondIndex];
-      const maxLength = Math.max(first.length, second.length);
-      const minLength = Math.min(first.length, second.length);
-
-      if (maxLength === 0) {
-        return { firstIndex, secondIndex, similarity: 1 };
-      }
-      // Levenshtein similarity cannot exceed minLength / maxLength, so skip
-      // pairs that cannot possibly cross the rejection threshold.
-      if (minLength / maxLength < threshold) {
-        continue;
-      }
-
-      const similarity = 1 - levenshteinDistance(first, second) / maxLength;
-      if (similarity >= threshold) {
-        return { firstIndex, secondIndex, similarity };
-      }
-    }
-  }
-  return undefined;
-}
-
 /**
  * The HTTP status an AgentErrorCode earns when a route has no code-specific
  * reason to answer otherwise. `Record<AgentErrorCode, number>` is exhaustive
@@ -197,9 +160,12 @@ function findClaimDescriptionCollision(
 const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   APP_NOT_RUNNING: 503,
   PROTOCOL_MISMATCH: 400,
+  UNAUTHORIZED: 401,
   NO_FOCUSED_DOCUMENT: 404,
   DOCUMENT_NOT_FOUND: 404,
   DOCUMENT_CLOSED: 409,
+  DOCUMENT_UNREADABLE: 409,
+  COLLABORATION_STATE_UNREADABLE: 409,
   REVISION_MISMATCH: 409,
   BASELINE_MISMATCH: 412,
   REVIEW_GENERATION_MISMATCH: 409,
@@ -227,16 +193,20 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   METHOD_NOT_FOUND: 404,
   INVALID_PARAMS: 400,
   PERSISTENCE_FAILED: 500,
-  CITATION_DATABASE_NOT_LOADED: 404,
+  CITATION_DATABASE_NOT_LOADED: 503,
   CITATION_NOT_FOUND: 404,
+  CITATION_STYLE_NOT_LOADED: 503,
   FIGURE_NOT_FOUND: 404,
+  FIGURES_DIRECTORY_NOT_FOUND: 404,
   FIGURE_ALREADY_EXISTS: 409,
   SKILLS_NOT_CONFIGURED: 503,
   SKILL_NOT_FOUND: 404,
+  FILE_UNREADABLE: 409,
+  MACROS_UNAVAILABLE: 503,
   WORKSPACE_NOT_FOUND: 404,
   WORKSPACE_OUTSIDE_SCOPE: 403,
   WORKSPACE_ENTRY_EXISTS: 409,
-  DUPLICATE_CLAIM_DESCRIPTION: 400,
+  DUPLICATE_CLAIM: 400,
   INTERNAL_ERROR: 500,
   ZOTERO_UNAVAILABLE: 503,
   ZOTERO_SOURCE_NOT_IDENTIFIED: 422,
@@ -334,14 +304,15 @@ export interface AgentApiHost {
       agentApi: AgentApiConfig;
       app: { openWorkspaces: string[] };
       export: { cslLibrary: string };
-      tikz: ConfigOptions["tikz"];
+      tikz: Pick<ConfigOptions["tikz"], "dataDir" | "figuresDir">;
+      zotero: ConfigOptions["zotero"];
       editor: {
         lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] };
       };
     };
   };
   references?: { getSnapshot(): WorkspaceReferenceState };
-  documentLint: Pick<DocumentLintProvider, "lint" | "lookup">;
+  documentLint: Pick<DocumentLintProvider, "lint" | "lookup" | "queueStopped">;
   search: Pick<SearchProvider, "searchWorkspace">;
   fsal?: Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
   /**
@@ -352,7 +323,7 @@ export interface AgentApiHost {
    */
   workspaceFsal?: {
     isDir: (absPath: string) => Promise<boolean>;
-    readDirectoryRecursively: (directoryPath: string) => Promise<string[]>;
+    readDirectoryRecursively: (directoryPath: string) => Promise<DirectoryListing>;
     createDir: (dirPath: string) => Promise<void>;
     createFile: (filePath: string, content: string) => Promise<void>;
   };
@@ -362,6 +333,26 @@ export interface AgentApiHost {
 export interface AgentApiRuntimeEnvironment {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
+}
+
+/** The routes that answer a caller without the token: the specification. */
+const ANONYMOUS_GET_ROUTES: ReadonlySet<string> = new Set(["/openapi.yaml", "/openapi.json"]);
+
+/** The SHA-256 of a token: the value that two tokens are compared by. */
+function tokenDigest(token: string): Buffer {
+  return crypto.createHash("sha256").update(token, "utf8").digest();
+}
+
+/** An enabled Agent API was started in an environment without its token. */
+export class AgentApiTokenRequiredError extends Error {
+  constructor() {
+    super(
+      "The Agent API is enabled, and the environment of the app has no ZETTLR_AGENT_API_TOKEN. " +
+        "Start the app from a launcher that gives the variable, or turn the Agent API off " +
+        "(agentApi.enabled in config.json).",
+    );
+    this.name = "AgentApiTokenRequiredError";
+  }
 }
 
 /**
@@ -397,9 +388,10 @@ export default class AgentHTTPProvider extends ProviderContract {
    * document: the operations tagged zotero at /zotero/mcp, all others at /mcp.
    */
   private _mcp: AgentMcpEndpoint | undefined;
+  /** The SHA-256 of the token. Absent until boot read the token. */
+  private _tokenDigest: Buffer | undefined;
   private _zoteroMcp: AgentMcpEndpoint | undefined;
   /** The Zotero operations. Absent when the app has no citation provider. */
-  private readonly _zotero: ZoteroLibrary | undefined;
   /** The published protocol version — `info.version` of the document. */
   private readonly _protocolVersion: string;
   /** The routes of the operations tagged zotero, which the served document leaves out. */
@@ -410,6 +402,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     private readonly _log: LogProvider,
     private readonly _documents: DocumentManager,
     private readonly _app: AgentApiHost,
+    /** The home directory and the environment variables of the app. */
+    private readonly _runtimeEnvironment: AgentApiRuntimeEnvironment,
     private readonly _citeproc?: CiteprocProvider,
     /**
      * Injectable so the request-body lifecycle tests can exercise the
@@ -417,12 +411,10 @@ export default class AgentHTTPProvider extends ProviderContract {
      * pass nothing.
      */
     private readonly _bodyDeadlineMs: number = REQUEST_BODY_DEADLINE_MS,
-    private readonly _runtimeEnvironment?: Partial<AgentApiRuntimeEnvironment>,
   ) {
     super();
     this._instanceId = crypto.randomUUID();
     this._helpText = HELP_DOCUMENT;
-    this._zotero = _citeproc === undefined ? undefined : new ZoteroLibrary(_citeproc);
     this._queries = new AgentDocumentQueries(
       _documents,
       _documents.reviewQueries,
@@ -509,6 +501,11 @@ export default class AgentHTTPProvider extends ProviderContract {
       // (`default:`). Ajv writes those defaults into the validated query and
       // body, so handlers read the document's value rather than restating it.
       ajvOpts: { useDefaults: true },
+      // The document declares the bearer scheme for every operation. The
+      // router asks this handler before it calls an operation.
+      securityHandlers: {
+        bearerToken: (c: Context) => this.holdsToken(c.request.headers.authorization),
+      },
       handlers: this.operationHandlers(),
     });
   }
@@ -519,6 +516,16 @@ export default class AgentHTTPProvider extends ProviderContract {
       this._log.info("[AgentHTTPProvider] Disabled by config, skipping boot");
       return;
     }
+
+    // An API that answers every caller is not a state that the app runs in:
+    // a caller of this API reads and changes the documents of the author.
+    // The launcher of the app gives the token in this variable, and each
+    // client reads the same variable.
+    const token = this._runtimeEnvironment.env.ZETTLR_AGENT_API_TOKEN;
+    if (token === undefined || token === "") {
+      throw new AgentApiTokenRequiredError();
+    }
+    this._tokenDigest = tokenDigest(token);
 
     // Compiles the document's route table and validation schemas. Done before
     // the listener binds, so the first request does not pay for it.
@@ -690,6 +697,25 @@ export default class AgentHTTPProvider extends ProviderContract {
         );
         return;
       }
+      if (err instanceof DocumentUnreadableError) {
+        // The author's file refuses its read: a state of that file, not a
+        // defect of this provider.
+        this._log.warning(`[AgentHTTPProvider] ${method} ${pathname}: ${err.message}`);
+        this.sendError(res, 409, "DOCUMENT_UNREADABLE", err.message);
+        return;
+      }
+      if (err instanceof CollaborationSidecarUnreadableError) {
+        // A sidecar of the author that this version cannot read. The author
+        // decides what happens to its bytes, so the answer names the action.
+        this._log.warning(`[AgentHTTPProvider] ${method} ${pathname}: ${err.message}`);
+        this.sendError(
+          res,
+          409,
+          "COLLABORATION_STATE_UNREADABLE",
+          `${err.message}. The author can keep the bytes of each such file and free its document with "Move the file aside" in the Annotations view.`,
+        );
+        return;
+      }
       if (err instanceof RequestAbandonedError) {
         // The client hung up mid-body. There is no one left to answer and
         // nothing failed on this side; an error logged here would be an
@@ -734,6 +760,20 @@ export default class AgentHTTPProvider extends ProviderContract {
     method: string,
     requestUrl: string,
   ): Promise<void> {
+    // The token is verified before anything of the request is read or
+    // parsed. No caller is exempt for its address: each tunnel to this
+    // listener arrives from loopback.
+    const target = requestUrl.split("?")[0];
+    const credentials = req.headers.authorization;
+    const anonymousRoute = method === "GET" && ANONYMOUS_GET_ROUTES.has(target);
+    if (!anonymousRoute && !this.holdsToken(credentials)) {
+      this._log.warning(
+        `[AgentHTTPProvider] Refused ${method} ${target}: the caller did not send the token`,
+      );
+      res.setHeader("WWW-Authenticate", "Bearer");
+      this.sendError(res, 401, "UNAUTHORIZED", "Authentication required.");
+      return;
+    }
     const url = new URL(requestUrl, "http://127.0.0.1");
     const rawBody = await this.readBody(req);
     let body: unknown;
@@ -751,13 +791,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       const address = this._server?.address();
       if (
         endpoint === undefined ||
+        credentials === undefined ||
         address === undefined ||
         address === null ||
         typeof address === "string"
       ) {
         throw new Error("Agent API received an MCP request before boot finished");
       }
-      await endpoint.handle(req, res, body, `http://127.0.0.1:${address.port}`);
+      await endpoint.handle(req, res, body, `http://127.0.0.1:${address.port}`, credentials);
       return;
     }
     if (method === "GET") {
@@ -790,6 +831,27 @@ export default class AgentHTTPProvider extends ProviderContract {
       req,
       res,
     );
+  }
+
+  /**
+   * Whether an `Authorization` header holds the token of the app as a bearer
+   * token (RFC 6750, section 2.1; the scheme name is case-insensitive, RFC
+   * 9110, section 11.1). The comparison is `crypto.timingSafeEqual` over two
+   * SHA-256 digests: the function needs inputs of one length, and its time
+   * does not follow the position of the first byte that differs.
+   */
+  private holdsToken(authorization: string | string[] | undefined): boolean {
+    if (this._tokenDigest === undefined) {
+      throw new Error("Agent API received a request before boot read its token");
+    }
+    if (typeof authorization !== "string") {
+      return false;
+    }
+    const match = /^bearer +(.*)$/i.exec(authorization);
+    if (match === null) {
+      return false;
+    }
+    return crypto.timingSafeEqual(tokenDigest(match[1]), this._tokenDigest);
   }
 
   /** Identity and instance facts, shared by /health and /v1/ping. */
@@ -1022,11 +1084,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         res: http.ServerResponse,
       ) => this.handleWaitForReviewEvents(res, c.request.params.reviewId, c.request.query),
 
-      queryCitations: (
+      queryCitations: async (
         c: DefaultedOperationContext<"queryCitations", "database">,
         _req,
         res: http.ServerResponse,
       ) => {
+        await this.citationDatabasesRead();
         if (c.request.query.citeKey) {
           return this.handleGetCitationItem(res, c.request.query.citeKey, c.request.query.database);
         }
@@ -1035,7 +1098,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         return this.handleListCitationItems(res, c.request.query.database);
       },
-      renderCitations: (c: OperationContext<"renderCitations">, _req, res: http.ServerResponse) => {
+      renderCitations: async (
+        c: OperationContext<"renderCitations">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        await this.citationDatabasesRead();
         const body = c.request.requestBody;
         if (body.mode === "bibliography") {
           if (body.citekeys === undefined) {
@@ -1124,9 +1192,19 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => {
-        const zotero = this.zoteroLibrary(res);
+        const zotero = await this.zoteroLibrary(res);
         if (zotero !== undefined) {
           this.sendZoteroResult(res, await zotero.search(c.request.query.q, c.request.query.limit));
+        }
+      },
+      getZoteroExtractions: async (
+        c: OperationContext<"getZoteroExtractions">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        const zotero = await this.zoteroLibrary(res);
+        if (zotero !== undefined) {
+          this.sendZoteroResult(res, await zotero.extractions(c.request.params.itemKey));
         }
       },
       importZoteroIdentifier: async (
@@ -1134,7 +1212,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => {
-        const zotero = this.zoteroLibrary(res);
+        const zotero = await this.zoteroLibrary(res);
         if (zotero !== undefined) {
           this.sendZoteroResult(res, await zotero.importIdentifier(c.request.requestBody));
         }
@@ -1144,7 +1222,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => {
-        const zotero = this.zoteroLibrary(res);
+        const zotero = await this.zoteroLibrary(res);
         if (zotero !== undefined) {
           this.sendZoteroResult(res, await zotero.importUrl(c.request.requestBody));
         }
@@ -1218,9 +1296,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    */
   private async handleListWorkspaceFiles(res: http.ServerResponse): Promise<void> {
     try {
-      this.sendJson(res, 200, {
-        files: await this._queries.listWorkspaceFiles(),
-      });
+      this.sendJson(res, 200, await this._queries.listWorkspaceFiles());
     } catch (error) {
       this.sendError(
         res,
@@ -1257,12 +1333,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     workspaceId: string,
   ): Promise<void> {
     try {
-      const files = await this._queries.listWorkspaceFilesByWorkspace(workspaceId);
-      if (files === undefined) {
+      const listing = await this._queries.listWorkspaceFilesByWorkspace(workspaceId);
+      if (listing === undefined) {
         this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
         return;
       }
-      this.sendJson(res, 200, { files });
+      this.sendJson(res, 200, listing);
     } catch (error) {
       this.sendError(
         res,
@@ -1361,14 +1437,18 @@ export default class AgentHTTPProvider extends ProviderContract {
         documentId: this._documents.ensureDocumentId(result.documentPath),
         path: result.documentPath,
         name: path.basename(result.documentPath),
-        workspaceId: workspaces.find((workspace) =>
-          result.documentPath.startsWith(`${workspace}${path.sep}`),
-        ),
+        workspaceId: innermostRoot(result.documentPath, workspaces),
         open: loaded.has(result.documentPath),
         matches: result.matches,
       })),
       matchCount: outcome.matchCount,
       truncated: outcome.truncated,
+      notSearched: outcome.notSearched.map((entry) => ({
+        path: entry.documentPath,
+        name: path.basename(entry.documentPath),
+        kind: entry.kind,
+        cause: entry.cause,
+      })),
     });
   }
 
@@ -1395,7 +1475,16 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleGetDocument(res: http.ServerResponse, documentId: string): Promise<void> {
-    const summary = await this._queries.getDocumentSummary(documentId);
+    const summary = await this._queries.describeDocument(documentId);
+    if (summary === "OUTSIDE_WORKSPACE") {
+      this.sendError(
+        res,
+        404,
+        "DOCUMENT_NOT_FOUND",
+        "Document is outside configured workspace scope",
+      );
+      return;
+    }
     if (summary === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
@@ -1429,23 +1518,13 @@ export default class AgentHTTPProvider extends ProviderContract {
     // request parameter's default describes what the server assumes when the
     // caller omits it, so this is where it is applied.
     const side = query.side ?? "working";
-    let response;
-    try {
-      response = await this._queries.readDocumentContent(
-        documentId,
-        side,
-        query.startLine ?? 1,
-        query.endLine ?? Number.MAX_SAFE_INTEGER,
-      );
-    } catch (error) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
-      return;
-    }
+    // A failure of the read reaches the dispatcher, which answers it.
+    const response = await this._queries.readDocumentContent(
+      documentId,
+      side,
+      query.startLine ?? 1,
+      query.endLine ?? Number.MAX_SAFE_INTEGER,
+    );
     if (response === "OUTSIDE_WORKSPACE") {
       this.sendError(
         res,
@@ -1594,7 +1673,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       );
       return;
     }
-    const filePath = await fs.promises.realpath(requestedPath);
+    const filePath = await canonicalPath(requestedPath);
     const documentId = this._documents.ensureDocumentId(filePath);
     const baseline = await this._queries.readDocumentContent(
       documentId,
@@ -1639,29 +1718,6 @@ export default class AgentHTTPProvider extends ProviderContract {
     proposal: SubmitProposalRequest,
     staleBaselineCode: "REVISION_MISMATCH" | "BASELINE_MISMATCH",
   ): Promise<void> {
-    const similarityThreshold = this._app.config.get().agentApi.claimDescriptionSimilarityThreshold;
-    const descriptionCollision = findClaimDescriptionCollision(
-      proposal.claims,
-      similarityThreshold,
-    );
-    if (descriptionCollision !== undefined) {
-      const { firstIndex, secondIndex, similarity } = descriptionCollision;
-      const similarityPercent = Math.round(similarity * 100);
-      this.sendError(
-        res,
-        STATUS_BY_CODE.DUPLICATE_CLAIM_DESCRIPTION,
-        "DUPLICATE_CLAIM_DESCRIPTION",
-        `claims[${firstIndex}] and claims[${secondIndex}] have descriptions that are ${similarityPercent}% similar ` +
-          `(limit: ${Math.round(similarityThreshold * 100)}%). ` +
-          "Give each claim its own description of the specific problem, change, and reason.",
-        {
-          conflictingClaimIndices: [firstIndex, secondIndex],
-          descriptionSimilarity: similarity,
-        },
-      );
-      return;
-    }
-
     // No request headers are read here. Concurrency rides in the body, because
     // an OpenAPI consumer that generates calls from the published document
     // drops header parameters and could never satisfy a header requirement.
@@ -1709,6 +1765,10 @@ export default class AgentHTTPProvider extends ProviderContract {
           res.setHeader("ETag", `"sha256:${sha256Text(current.document.toString())}"`);
         }
         this.sendError(res, 412, staleBaselineCode, result.message);
+      } else if ("conflictingClaimIndices" in result) {
+        this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message, {
+          conflictingClaimIndices: result.conflictingClaimIndices,
+        });
       } else {
         // Every other refusal, including ANNOTATION_NOT_FOUND — a claim's
         // addressesAnnotationIds named an id this document does not have.
@@ -2148,20 +2208,29 @@ export default class AgentHTTPProvider extends ProviderContract {
   // ==========================================================================
 
   /**
+   * Ends when the citation provider read each database that it keeps. The
+   * provider reads a database on a thread and the app does not wait for it,
+   * so a request that arrives during a read waits here: its answer is of the
+   * databases after the read, not of a provider without them.
+   */
+  private async citationDatabasesRead(): Promise<void> {
+    await this._citeproc?.loadsEnded();
+  }
+
+  /**
    * The Zotero operations report whether a citation key is citable, so they
    * need the main citation database. Without it the request is a 503.
    */
-  private zoteroLibrary(res: http.ServerResponse): ZoteroLibrary | undefined {
-    if (this._zotero === undefined || !this._zotero.citeproc.hasMainLibrary()) {
-      this.sendError(
-        res,
-        503,
-        "CITATION_DATABASE_NOT_LOADED",
-        "The Zotero operations need the main citation database (export.cslLibrary)",
-      );
+  private async zoteroLibrary(res: http.ServerResponse): Promise<ZoteroLibrary | undefined> {
+    await this.citationDatabasesRead();
+    if (this._citeproc === undefined) {
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return undefined;
     }
-    return this._zotero;
+    // The setting of each request: a change of the address needs no restart.
+    return this.citationDatabaseAvailable(res, this._citeproc, CITEPROC_MAIN_DB)
+      ? new ZoteroLibrary(this._citeproc, this._app.config.get().zotero.localServer)
+      : undefined;
   }
 
   private sendZoteroResult<Body extends AgentApiResponseBody>(
@@ -2185,12 +2254,83 @@ export default class AgentHTTPProvider extends ProviderContract {
   // Citation handlers
   // ==========================================================================
 
+  /**
+   * Whether the provider has the items of a database. A database that it
+   * does not have answers 503 with the file and the cause, which the windows
+   * show too (`citeproc-problems`).
+   */
+  private citationDatabaseAvailable(
+    res: http.ServerResponse,
+    citeproc: CiteprocProvider,
+    database: string,
+  ): boolean {
+    const availability = citeproc.databaseAvailability(database);
+    if (availability.state === "loaded") {
+      return true;
+    }
+    if (availability.state === "not-configured") {
+      this.sendError(
+        res,
+        503,
+        "CITATION_DATABASE_NOT_LOADED",
+        "The settings name no main citation library (export.cslLibrary).",
+      );
+      return false;
+    }
+    const { path: databasePath, cause } = availability;
+    this.sendError(
+      res,
+      503,
+      "CITATION_DATABASE_NOT_LOADED",
+      `The citation library ${databasePath} is not loaded: ${cause}`,
+      { database: { path: databasePath, cause } },
+    );
+    return false;
+  }
+
+  /** Answers 404 when the database does not hold each cite key of a request. */
+  private citekeysHeld(
+    res: http.ServerResponse,
+    citeproc: CiteprocProvider,
+    database: string,
+    citekeys: string[],
+  ): boolean {
+    const missingCitekeys = citeproc.missingCitekeys(database, citekeys);
+    if (missingCitekeys.length === 0) {
+      return true;
+    }
+    this.sendError(
+      res,
+      404,
+      "CITATION_NOT_FOUND",
+      `Database ${database} does not hold these citation keys: ${missingCitekeys.join(", ")}`,
+      { missingCitekeys },
+    );
+    return false;
+  }
+
+  /** Answers a render failure that the provider names; another error goes to the dispatcher. */
+  private sendRenderFailure(res: http.ServerResponse, err: unknown): void {
+    if (err instanceof CiteprocRenderInvariantError) {
+      this.sendError(res, 500, "INTERNAL_ERROR", err.message);
+      return;
+    }
+    if (err instanceof CitationStyleError) {
+      this.sendError(res, 503, "CITATION_STYLE_NOT_LOADED", err.message);
+      return;
+    }
+    throw err;
+  }
+
   private handleListCitationDatabases(res: http.ServerResponse): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
-    this.sendJson(res, 200, { databases: this._citeproc.listDatabases() });
+    this.sendJson(res, 200, {
+      databases: this._citeproc.listDatabases(),
+      notLoaded: this._citeproc.databasesNotLoaded(),
+    });
   }
 
   private handleListCitationItems(res: http.ServerResponse, database: string): void {
@@ -2198,18 +2338,11 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
-    const db = database;
-    try {
-      const items = this._citeproc.getItems(db);
-      this.sendJson(res, 200, { items, count: items.length });
-    } catch (err) {
-      this.sendError(
-        res,
-        404,
-        "CITATION_DATABASE_NOT_LOADED",
-        err instanceof Error ? err.message : `Database not loaded: ${db}`,
-      );
+    if (!this.citationDatabaseAvailable(res, this._citeproc, database)) {
+      return;
     }
+    const items = this._citeproc.getItems(database);
+    this.sendJson(res, 200, { items, count: items.length });
   }
 
   private handleGetCitationItem(res: http.ServerResponse, citeKey: string, database: string): void {
@@ -2217,22 +2350,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
-    const db = database;
-    try {
-      const item = this._citeproc.getItem(db, citeKey);
-      if (item === undefined) {
-        this.sendError(res, 404, "CITATION_NOT_FOUND", `Citation key not found: ${citeKey}`);
-        return;
-      }
-      this.sendJson(res, 200, item as AgentApiResponseBody);
-    } catch (err) {
-      this.sendError(
-        res,
-        404,
-        "CITATION_DATABASE_NOT_LOADED",
-        err instanceof Error ? err.message : `Database not loaded: ${db}`,
-      );
+    if (
+      !this.citationDatabaseAvailable(res, this._citeproc, database) ||
+      !this.citekeysHeld(res, this._citeproc, database, [citeKey])
+    ) {
+      return;
     }
+    const item = this._citeproc.getItem(database, citeKey);
+    this.sendJson(res, 200, item as AgentApiResponseBody);
   }
 
   private handleRenderCitation(res: http.ServerResponse, body: RenderCitationRequest): void {
@@ -2245,48 +2370,35 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 400, "INVALID_PARAMS", "citations must name at least one item to render");
       return;
     }
-    if (db === CITEPROC_MAIN_DB && !this._citeproc.hasMainLibrary()) {
-      this.sendError(
+    const citeItems: CiteItem[] = body.citations.map((c) => ({
+      id: c.id,
+      locator: c.locator,
+      label: c.label,
+      prefix: c.prefix,
+      suffix: c.suffix,
+    }));
+    if (
+      !this.citationDatabaseAvailable(res, this._citeproc, db) ||
+      !this.citekeysHeld(
         res,
-        404,
-        "CITATION_DATABASE_NOT_LOADED",
-        "No main citation library is configured.",
-      );
+        this._citeproc,
+        db,
+        citeItems.map((item) => item.id),
+      )
+    ) {
       return;
     }
+    let rendered: string | undefined;
     try {
-      const citeItems: CiteItem[] = body.citations.map((c) => ({
-        id: c.id,
-        locator: c.locator,
-        label: c.label,
-        prefix: c.prefix,
-        suffix: c.suffix,
-      }));
-      const rendered = this._citeproc.getCitation(db, citeItems, body.composite);
-      // With items and a loaded database, the engine declines only when a
-      // citekey is missing from that database.
-      if (rendered === undefined) {
-        this.sendError(
-          res,
-          404,
-          "CITATION_NOT_FOUND",
-          `At least one citation key is not in database ${db}: ${citeItems.map((item) => item.id).join(", ")}`,
-        );
-        return;
-      }
-      this.sendJson(res, 200, { rendered });
+      rendered = this._citeproc.getCitation(db, citeItems, body.composite);
     } catch (err) {
-      if (err instanceof CiteprocRenderInvariantError) {
-        this.sendError(res, 500, "INTERNAL_ERROR", err.message);
-        return;
-      }
-      this.sendError(
-        res,
-        404,
-        "CITATION_DATABASE_NOT_LOADED",
-        err instanceof Error ? err.message : `Database not loaded: ${db}`,
-      );
+      this.sendRenderFailure(res, err);
+      return;
     }
+    if (rendered === undefined) {
+      throw new Error(`The citation provider rendered no citation of ${db} for loaded cite keys.`);
+    }
+    this.sendJson(res, 200, { rendered });
   }
 
   private handleRenderBibliography(
@@ -2298,37 +2410,41 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     const db = body.database;
+    if (body.citekeys.length === 0) {
+      this.sendError(res, 400, "INVALID_PARAMS", "citekeys must name at least one item to render");
+      return;
+    }
+    if (
+      !this.citationDatabaseAvailable(res, this._citeproc, db) ||
+      !this.citekeysHeld(res, this._citeproc, db, body.citekeys)
+    ) {
+      return;
+    }
+    let result: ReturnType<CiteprocProvider["makeBibliography"]>;
     try {
-      const result = this._citeproc.makeBibliography(db, body.citekeys);
-      if (result === undefined) {
-        this.sendJson(res, 200, { entries: [] });
-        return;
-      }
-      const [options, entries] = result;
-      this.sendJson(res, 200, { options: { ...options }, entries });
+      result = this._citeproc.makeBibliography(db, body.citekeys);
     } catch (err) {
-      if (err instanceof CiteprocRenderInvariantError) {
-        this.sendError(res, 500, "INTERNAL_ERROR", err.message);
-        return;
-      }
-      this.sendError(
-        res,
-        404,
-        "CITATION_DATABASE_NOT_LOADED",
-        err instanceof Error ? err.message : `Database not loaded: ${db}`,
+      this.sendRenderFailure(res, err);
+      return;
+    }
+    if (result === undefined) {
+      throw new Error(
+        `The citation provider rendered no bibliography of ${db} for loaded cite keys.`,
       );
     }
+    const [options, entries] = result;
+    this.sendJson(res, 200, { options: { ...options }, entries });
   }
 
   private authoringHomeDirectory(): string {
-    return this._runtimeEnvironment?.homeDirectory ?? app.getPath("home");
+    return this._runtimeEnvironment.homeDirectory;
   }
 
   private centralFiguresDirectory(): string {
     return resolveCentralFiguresDirectory(
       this._app.config.get().tikz.figuresDir,
       this.authoringHomeDirectory(),
-      this._runtimeEnvironment?.env ?? process.env,
+      this._runtimeEnvironment.env,
     );
   }
 
@@ -2368,8 +2484,13 @@ export default class AgentHTTPProvider extends ProviderContract {
         root: inventory.root,
         count: macros.length,
         macros,
+        notRead: inventory.notRead,
       });
     } catch (error) {
+      if (error instanceof MacroSourcesUnavailableError) {
+        this.sendError(res, 503, "MACROS_UNAVAILABLE", error.message);
+        return;
+      }
       this.sendError(
         res,
         500,
@@ -2381,8 +2502,8 @@ export default class AgentHTTPProvider extends ProviderContract {
 
   private async handleListSkills(res: http.ServerResponse): Promise<void> {
     try {
-      const { root, entries } = await listSkillTree(this.skillsDirectory());
-      this.sendJson(res, 200, { root, count: entries.length, entries });
+      const { root, entries, notListed } = await listSkillTree(this.skillsDirectory());
+      this.sendJson(res, 200, { root, count: entries.length, entries, notListed });
     } catch (error) {
       if (error instanceof SkillsDirectoryUnavailableError) {
         this.sendError(res, 503, "SKILLS_NOT_CONFIGURED", error.message);
@@ -2409,6 +2530,10 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 404, "SKILL_NOT_FOUND", error.message);
         return;
       }
+      if (error instanceof SkillFileUnreadableError) {
+        this.sendError(res, 409, "FILE_UNREADABLE", error.message);
+        return;
+      }
       if (error instanceof SkillsPathInputError) {
         this.sendError(res, 400, "INVALID_PARAMS", error.message);
         return;
@@ -2425,9 +2550,13 @@ export default class AgentHTTPProvider extends ProviderContract {
   private async handleListFigures(res: http.ServerResponse): Promise<void> {
     const root = this.centralFiguresDirectory();
     try {
-      const entries = await listCentralFigures(root);
-      this.sendJson(res, 200, { root, count: entries.length, entries });
+      const { entries, notListed } = await listCentralFigures(root);
+      this.sendJson(res, 200, { root, count: entries.length, entries, notListed });
     } catch (error) {
+      if (error instanceof CentralFiguresDirectoryNotFoundError) {
+        this.sendError(res, 404, "FIGURES_DIRECTORY_NOT_FOUND", error.message);
+        return;
+      }
       this.sendError(
         res,
         500,
@@ -2472,6 +2601,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       const result = await searchCentralFigures(root, query);
       this.sendJson(res, 200, { root, query, ...result });
     } catch (error) {
+      if (error instanceof CentralFiguresDirectoryNotFoundError) {
+        this.sendError(res, 404, "FIGURES_DIRECTORY_NOT_FOUND", error.message);
+        return;
+      }
       this.sendError(
         res,
         500,
@@ -2491,6 +2624,14 @@ export default class AgentHTTPProvider extends ProviderContract {
     } catch (error) {
       if (error instanceof CentralFigureNotFoundError) {
         this.sendError(res, 404, "FIGURE_NOT_FOUND", error.message);
+        return;
+      }
+      if (error instanceof CentralFigureUnreadableError) {
+        this.sendError(res, 409, "FILE_UNREADABLE", error.message);
+        return;
+      }
+      if (error instanceof CentralFiguresDirectoryNotFoundError) {
+        this.sendError(res, 404, "FIGURES_DIRECTORY_NOT_FOUND", error.message);
         return;
       }
       if (error instanceof CentralFigureInputError) {
@@ -2587,7 +2728,7 @@ export default class AgentHTTPProvider extends ProviderContract {
             focused: document.documentId === focusedDocumentId,
           }));
       } else {
-        const workspaceFiles = await this._queries.listWorkspaceFiles();
+        const workspaceFiles = (await this._queries.listWorkspaceFiles()).files;
         if (scope === "document") {
           if (query.documentId === undefined || query.documentId === "") {
             this.sendError(res, 400, "INVALID_PARAMS", "scope=document requires documentId");
@@ -2656,20 +2797,18 @@ export default class AgentHTTPProvider extends ProviderContract {
 
       const severityWeight = { info: 0, warning: 1, error: 2 } as const;
       const minimum = query.minimumSeverity;
-      const sources = await Promise.all(
-        targets.map(async (target) => {
-          const read = await this._queries.readDocumentContent(
-            target.documentId,
-            "working",
-            1,
-            Number.MAX_SAFE_INTEGER,
-          );
-          if (read === undefined || read === "OUTSIDE_WORKSPACE") {
-            throw new Error(`Could not read selected lint document ${target.path}`);
-          }
-          return { path: target.path, text: read.content };
-        }),
-      );
+      const textOf = async (target: Target): Promise<string> => {
+        const read = await this._queries.readDocumentContent(
+          target.documentId,
+          "working",
+          1,
+          Number.MAX_SAFE_INTEGER,
+        );
+        if (read === undefined || read === "OUTSIDE_WORKSPACE") {
+          throw new Error(`Could not read selected lint document ${target.path}`);
+        }
+        return read.content;
+      };
       const result = (
         target: Target,
         record: DocumentLintRecord,
@@ -2689,26 +2828,54 @@ export default class AgentHTTPProvider extends ProviderContract {
       };
       const documents: LintResponse["documents"] = [];
       const pending: LintResponse["pending"] = [];
+      const failed: LintResponse["failed"] = [];
       if (scope === "workspace" || scope === "all") {
         // A workspace answers from the lint cache; the background linter
-        // brings every outdated or pending document current.
+        // brings every outdated or pending document current. It does not
+        // lint again a document whose run gave no result, so the caller gets
+        // that document with the cause and does not wait for it.
+        // A document whose file gives no text is one of the documents that
+        // were not linted; the answer for the other documents stands.
+        const sources = await Promise.all(
+          targets.map(
+            async (target): Promise<DocumentLintSource> =>
+              await textOf(target).then(
+                (text) => ({ path: target.path, text }),
+                (error: unknown) => {
+                  if (!(error instanceof DocumentUnreadableError)) {
+                    throw error;
+                  }
+                  return { path: target.path, unreadable: error.message };
+                },
+              ),
+          ),
+        );
         const lookups = await workspaceLintRows(this._app.documentLint, sources);
         lookups.forEach((lookup, index) => {
           const target = targets[index];
-          if (lookup.record === undefined) {
-            pending.push({
-              documentId: target.documentId,
-              path: target.path,
-              name: target.name,
+          const identity = {
+            documentId: target.documentId,
+            path: target.path,
+            name: target.name,
+          };
+          if (lookup.failure !== undefined) {
+            failed.push({
+              ...identity,
+              kind: lookup.failure.kind,
+              cause: lookup.failure.message,
+              failedAt: lookup.failure.failedAt,
             });
-          } else {
+          }
+          if (lookup.record !== undefined) {
             documents.push(result(target, lookup.record, lookup.current));
+          } else if (lookup.failure === undefined) {
+            pending.push(identity);
           }
         });
       } else {
         const records = await Promise.all(
-          sources.map(
-            async (source) => await this._app.documentLint.lint(source.path, source.text),
+          targets.map(
+            async (target) => await this._app.documentLint.lint(target.path, await textOf(target)),
           ),
         );
         records.forEach((record, index) => {
@@ -2717,11 +2884,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
 
       const allDiagnostics = documents.flatMap((document) => document.diagnostics);
+      const queueStopped = this._app.documentLint.queueStopped();
       this.sendJson(res, 200, {
         scope,
         documents,
         documentCount: documents.length,
         pending,
+        failed,
+        ...(queueStopped === null ? {} : { queueStopped }),
         diagnosticCount: allDiagnostics.length,
         counts: AgentHTTPProvider.lintCounts(allDiagnostics),
       });

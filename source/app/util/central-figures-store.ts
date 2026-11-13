@@ -5,8 +5,10 @@
  */
 
 import { createHash } from "crypto";
-import { promises as fs } from "fs";
+import { type Dirent, promises as fs, type Stats } from "fs";
 import path from "path";
+import isErrnoException from "../../common/util/is-errno-exception";
+import { writeTextFile } from "../service-providers/fsal/util/write-text-file";
 
 export type CentralFigureEntryKind = "file" | "directory" | "symlink";
 
@@ -33,8 +35,22 @@ export interface CentralFigureSearchHit {
   excerpt: string;
 }
 
+/** A path of the figures directory that a list or a search could not read. */
+export interface CentralFigureNotRead {
+  path: string;
+  cause: string;
+}
+
+export interface CentralFigureListing {
+  entries: CentralFigureEntry[];
+  /** The folders whose entries, and the entries whose metadata, could not be read. */
+  notListed: CentralFigureNotRead[];
+}
+
 export interface CentralFigureSearchResult {
   hits: CentralFigureSearchHit[];
+  /** The figures that the search could not read, and the folders it could not list. */
+  notSearched: CentralFigureNotRead[];
   truncated: boolean;
 }
 
@@ -44,6 +60,20 @@ const SEARCH_HIT_LIMIT = 500;
 export class CentralFigureInputError extends Error {}
 export class CentralFigureNotFoundError extends Error {}
 export class CentralFigureAlreadyExistsError extends Error {}
+/** The figures directory of the settings does not exist. */
+export class CentralFiguresDirectoryNotFoundError extends Error {}
+/** A figure whose entry or content the filesystem refuses. */
+export class CentralFigureUnreadableError extends Error {}
+
+function unreadableFigure(error: NodeJS.ErrnoException, normalized: string): Error {
+  if (error.code === "ENOENT") {
+    return new CentralFigureNotFoundError(`Figure file not found: ${normalized}`);
+  }
+  return new CentralFigureUnreadableError(
+    `Figure file ${normalized} cannot be read: ${error.message}`,
+    { cause: error },
+  );
+}
 
 function expandHome(value: string, homeDirectory: string): string {
   if (value === "~") {
@@ -93,11 +123,22 @@ function normalizeRelativePath(value: string): string {
   return segments.join("/");
 }
 
+/** The real path of the figures directory. A write creates the directory. */
 async function rootRealPath(root: string, create: boolean): Promise<string> {
   if (create) {
     await fs.mkdir(root, { recursive: true });
+    return await fs.realpath(root);
   }
-  return await fs.realpath(root);
+  try {
+    return await fs.realpath(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new CentralFiguresDirectoryNotFoundError(
+        `The figures directory ${root} does not exist`,
+      );
+    }
+    throw error;
+  }
 }
 
 function assertContained(root: string, candidate: string): void {
@@ -112,24 +153,14 @@ async function resolveExistingFile(
   relativePath: string,
 ): Promise<{ root: string; path: string; relativePath: string }> {
   const normalized = normalizeRelativePath(relativePath);
-  let realRoot: string;
-  try {
-    realRoot = await rootRealPath(root, false);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new CentralFigureNotFoundError(`Figure file not found: ${normalized}`);
-    }
-    throw error;
-  }
+  const realRoot = await rootRealPath(root, false);
   const candidate = path.join(realRoot, ...normalized.split("/"));
   let stats;
   try {
     stats = await fs.lstat(candidate);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new CentralFigureNotFoundError(`Figure file not found: ${normalized}`);
-    }
-    throw error;
+    if (!isErrnoException(error)) throw error;
+    throw unreadableFigure(error, normalized);
   }
   if (stats.isSymbolicLink()) {
     throw new CentralFigureInputError(
@@ -184,17 +215,31 @@ async function prepareWritableFile(
   return { path: target, relativePath: normalized };
 }
 
-export async function listCentralFigures(root: string): Promise<CentralFigureEntry[]> {
-  let realRoot: string;
-  try {
-    realRoot = await rootRealPath(root, false);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return [];
-    }
-    throw error;
+/**
+ * The cause of a path that a list or a search could not read: a refusal of
+ * the filesystem, or a figure that went away during the search. Any other
+ * error goes on.
+ */
+function causeOf(error: NodeJS.ErrnoException): string {
+  if (
+    error instanceof CentralFigureNotFoundError ||
+    error instanceof CentralFigureUnreadableError ||
+    error.code !== undefined
+  ) {
+    return error.message;
   }
+  throw error;
+}
+
+/**
+ * Lists the figures directory breadth first. A folder whose entries cannot
+ * be read is an entry, and its path is in `notListed`; the root itself must
+ * be readable.
+ */
+export async function listCentralFigures(root: string): Promise<CentralFigureListing> {
+  const realRoot = await rootRealPath(root, false);
   const result: CentralFigureEntry[] = [];
+  const notListed: CentralFigureNotRead[] = [];
   const queue: Array<{ absolute: string; relative: string }> = [
     { absolute: realRoot, relative: "" },
   ];
@@ -203,12 +248,27 @@ export async function listCentralFigures(root: string): Promise<CentralFigureEnt
     if (current === undefined) {
       break;
     }
-    const entries = await fs.readdir(current.absolute, { withFileTypes: true });
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(current.absolute, { withFileTypes: true });
+    } catch (error) {
+      if (current.relative === "") {
+        throw error;
+      }
+      notListed.push({ path: current.relative, cause: causeOf(error as NodeJS.ErrnoException) });
+      continue;
+    }
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
       const absolute = path.join(current.absolute, entry.name);
       const relative = current.relative === "" ? entry.name : `${current.relative}/${entry.name}`;
-      const stats = await fs.lstat(absolute);
+      let stats: Stats;
+      try {
+        stats = await fs.lstat(absolute);
+      } catch (error) {
+        notListed.push({ path: relative, cause: causeOf(error as NodeJS.ErrnoException) });
+        continue;
+      }
       const kind: CentralFigureEntryKind = stats.isSymbolicLink()
         ? "symlink"
         : stats.isDirectory()
@@ -225,7 +285,7 @@ export async function listCentralFigures(root: string): Promise<CentralFigureEnt
       }
     }
   }
-  return result;
+  return { entries: result, notListed };
 }
 
 function decodeUtf8(buffer: Buffer): string | undefined {
@@ -241,7 +301,14 @@ export async function readCentralFigure(
   relativePath: string,
 ): Promise<CentralFigureReadResult> {
   const resolved = await resolveExistingFile(root, relativePath);
-  const [buffer, stats] = await Promise.all([fs.readFile(resolved.path), fs.stat(resolved.path)]);
+  let buffer: Buffer;
+  let stats: Stats;
+  try {
+    [buffer, stats] = await Promise.all([fs.readFile(resolved.path), fs.stat(resolved.path)]);
+  } catch (error) {
+    if (!isErrnoException(error)) throw error;
+    throw unreadableFigure(error, resolved.relativePath);
+  }
   const text = decodeUtf8(buffer);
   return {
     path: resolved.relativePath,
@@ -272,14 +339,7 @@ export async function writeCentralFigure(
   encoding: "utf8" | "base64",
 ): Promise<CentralFigureReadResult> {
   const target = await prepareWritableFile(root, relativePath);
-  const bytes = decodeWriteContent(content, encoding);
-  const temporary = `${target.path}.zettlr-write-${process.pid}-${Date.now()}`;
-  try {
-    await fs.writeFile(temporary, bytes, { flag: "wx" });
-    await fs.rename(temporary, target.path);
-  } finally {
-    await fs.rm(temporary, { force: true });
-  }
+  await writeTextFile(target.path, decodeWriteContent(content, encoding));
   return await readCentralFigure(root, target.relativePath);
 }
 
@@ -325,7 +385,8 @@ export async function searchCentralFigures(
   query: string,
 ): Promise<CentralFigureSearchResult> {
   const needle = query.toLocaleLowerCase("en-US");
-  const entries = await listCentralFigures(root);
+  const { entries, notListed } = await listCentralFigures(root);
+  const notSearched = [...notListed];
   const hits: CentralFigureSearchHit[] = [];
   let truncated = false;
   const push = (hit: CentralFigureSearchHit): boolean => {
@@ -349,7 +410,8 @@ export async function searchCentralFigures(
     let file: CentralFigureReadResult;
     try {
       file = await readCentralFigure(root, entry.path);
-    } catch {
+    } catch (error) {
+      notSearched.push({ path: entry.path, cause: causeOf(error as NodeJS.ErrnoException) });
       continue;
     }
     if (file.encoding !== "utf8") {
@@ -375,5 +437,5 @@ export async function searchCentralFigures(
       break;
     }
   }
-  return { hits, truncated };
+  return { hits, truncated, notSearched };
 }

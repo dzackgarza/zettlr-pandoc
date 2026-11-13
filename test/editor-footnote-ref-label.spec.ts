@@ -17,8 +17,8 @@
 
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 
 function parse(doc: string): { labels: string[]; nodeNames: string[] } {
   const state = EditorState.create({ doc, extensions: [markdownParser()] });

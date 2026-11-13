@@ -6,18 +6,8 @@
     v-bind:tabbar-label="'Preferences'"
     v-bind:disable-vibrancy="!hasVibrancy"
   >
-    <!--
-      To comply with ARIA, we have to wrap the form in a tab container because
-      we make use of the tabbar on the window chrome.
-    -->
-    <SplitView
-      v-bind:initial-size-percent="[ 20, 80 ]"
-      v-bind:minimum-size-percent="[ 20, 20 ]"
-      v-bind:reset-size-percent="[ 20, 80 ]"
-      v-bind:split="'horizontal'"
-      v-bind:initial-total-width="100"
-    >
-      <template #view1>
+    <ListDetailSplit>
+      <template #list>
         <div id="preferences-container-list">
           <TextControl
             v-model="query"
@@ -35,20 +25,21 @@
           ></SelectableList>
         </div>
       </template>
-      <template #view2>
+      <template #detail>
         <KeyboardShortcutsEditor v-if="showKeyboardShortcutsEditor" />
         <FormBuilder
           v-else-if="schema.fieldsets.length > 0"
           ref="form"
           v-bind:model="model"
           v-bind:schema="schema"
+          v-bind:refusals="refusals"
           v-on:update:model-value="handleInput"
         ></FormBuilder>
         <div v-else id="no-results-message">
           {{ noResultsMessage }}
         </div>
       </template>
-    </SplitView>
+    </ListDetailSplit>
   </WindowChrome>
 </template>
 
@@ -68,13 +59,15 @@
  */
 
 import { trans } from "@common/i18n-renderer";
+import { followCitationProblems } from "@common/util/citation-problems";
 import { reportError } from "@common/util/error-reporting";
 import { resolveLangCode } from "@common/util/map-lang-code";
 import SelectableList from "@common/vue/form/elements/SelectableList.vue";
 import TextControl from "@common/vue/form/elements/TextControl.vue";
 import FormBuilder from "@common/vue/form/FormBuilder.vue";
-import SplitView from "@common/vue/window/SplitView.vue";
+import ListDetailSplit from "@common/vue/window/ListDetailSplit.vue";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import type { CitationResourceProblem } from "@dts/common/citeproc";
 import { type PreferenceNavigationTarget, PreferencesGroups } from "@dts/common/preferences";
 import { useConfigStore } from "source/pinia";
 import { computed, nextTick, onBeforeMount, onMounted, ref, watch } from "vue";
@@ -145,8 +138,16 @@ const showKeyboardShortcutsEditor = computed(
   () => query.value === "" && groups.value[currentGroup.value].id === PreferencesGroups.Shortcuts,
 );
 
+// The files of the citation settings that the citation provider could not load
+const citationProblems = ref<CitationResourceProblem[]>([]);
+
+// For each setting whose last value from its field the main process refused,
+// the reason. The setting keeps its old value until the field gives one that
+// its rule accepts.
+const refusals = ref<Record<string, string>>({});
+
 const fieldsets = computed(() => {
-  return getPreferenceFieldsets(configStore.config, appLangOptions.value);
+  return getPreferenceFieldsets(configStore.config, appLangOptions.value, citationProblems.value);
 });
 
 const filteredFieldsets = computed(() => {
@@ -266,6 +267,9 @@ function preferenceTargetFromLocation(): PreferenceNavigationTarget | undefined 
  * Listen to events in order to adapt display.
  */
 onBeforeMount(() => {
+  followCitationProblems((problems) => {
+    citationProblems.value = problems;
+  });
   ipcRenderer.on("dictionary-provider", (event, message) => {
     const { command } = message;
     if (command === "invalidate-dict") {
@@ -351,7 +355,12 @@ function handleInput(prop: string, val: unknown): void {
     // do it the brute-force-way and stringify it. This will basically read
     // out every value from the proxy and store it in vanilla objects/arrays
     // again.
-    configStore.setConfigFromForm(prop, JSON.parse(JSON.stringify(val)));
+    const refusal = configStore.submitFormValue(prop, JSON.parse(JSON.stringify(val)));
+    if (refusal === null) {
+      delete refusals.value[prop];
+    } else {
+      refusals.value[prop] = refusal;
+    }
   }
 }
 
@@ -428,12 +437,6 @@ function selectGroup(which: number): void {
 </script>
 
 <style lang="less">
-div[role="tabpanel"] {
-  overflow: auto; // Enable scrolling, if necessary
-  padding: 10px;
-  width: 100%;
-}
-
 #preferences-container-list {
   display: flex;
   flex-direction: column;

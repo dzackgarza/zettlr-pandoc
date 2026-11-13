@@ -16,6 +16,7 @@
  */
 
 import path from "path";
+import type { WikilinkFormat } from "../modules/markdown-utils";
 import { hasMarkdownExt } from "./file-extention-checks";
 import { splitWikilinkTarget } from "./wikilink-target";
 
@@ -56,18 +57,6 @@ export function fragmentHeadingIndex(
   return headings.findIndex(
     (heading) => heading.content.trim().toLowerCase() === fragment.toLowerCase(),
   );
-}
-
-/** Every `[[…]]` target in `text`, before its `#` fragment and `|` label. */
-export function wikilinkTargetsIn(text: string): string[] {
-  const targets = new Set<string>();
-  for (const match of text.matchAll(/\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]/g)) {
-    const { target } = splitWikilinkTarget(match[1]);
-    if (target !== "") {
-      targets.add(target);
-    }
-  }
-  return [...targets];
 }
 
 function isRelativeTarget(target: string): boolean {
@@ -222,4 +211,14 @@ export class WikilinkIndex {
     }
     return segments.join("/");
   }
+}
+
+/**
+ * How a workspace reads its wikilinks: the link format of the settings
+ * (`zkn.linkFormat`), which decides the target of `[[a|b]]`, and the index
+ * that resolves a target.
+ */
+export interface WikilinkReading {
+  index: WikilinkIndex;
+  linkFormat: WikilinkFormat;
 }

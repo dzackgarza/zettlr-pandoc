@@ -11,6 +11,11 @@
  * END HEADER
  */
 
+// The stub of `electron` goes in before the first spec. A module that reads
+// `electron` keeps what it read in the module cache; under plain Node that is
+// the path of the Electron binary, so a spec that loaded a main-process module
+// first gave each later spec a module without `app`.
+import "./headless-electron-harness.cjs";
 import { readFileSync } from "fs";
 import { JSDOM } from "jsdom";
 import Module from "module";
@@ -29,6 +34,11 @@ Module._extensions[".md"] = function (mod, filename) {
 // Stylesheets are injected by style-loader in the renderer; a spec under
 // jsdom renders no CSS, so an imported stylesheet is an empty module.
 Module._extensions[".css"] = function () {};
+
+// DefinePlugin puts this constant into the app bundle (webpack.main.config.js,
+// webpack.renderer.config.js). A spec runs the source of a build with the
+// update check, the build of a release.
+globalThis.__UPDATES_DISABLED__ = "0";
 
 /**
  * Emulates a browser environment, which is required for some tests (especially if Vue is involved).

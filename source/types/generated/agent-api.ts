@@ -172,7 +172,7 @@ export interface paths {
     };
     /**
      * Document metadata and optional text content
-     * @description Returns document metadata by default. Set includeContent=true to read current or pre-review text with an ETag revision header.
+     * @description Returns the metadata of an open document or a closed workspace file by default; dirty says that the text is not the text of the file. Set includeContent=true to read current or pre-review text with an ETag revision header.
      */
     get: operations["getDocument"];
     put?: never;
@@ -500,7 +500,7 @@ export interface paths {
     };
     /**
      * Lint documents by editor/workspace scope
-     * @description focused, open and document lint the current text through the lint cache. workspace and all read only the cache and return at once; documents never linted are listed under pending while the background linter works through them.
+     * @description focused, open and document lint the current text through the lint cache. workspace and all read only the cache and return at once: pending lists the documents not linted yet, and failed lists the documents whose run gave no result, with the cause.
      */
     get: operations["lintDocuments"];
     put?: never;
@@ -523,6 +523,23 @@ export interface paths {
      * @description Searches the titles, creators and years of the top-level items in the Zotero library. Each result has its Better BibTeX citation key and whether the editor can cite it now. Search before an import: a work that is already in the library needs no import.
      */
     get: operations["searchZoteroItems"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/zotero/items/{itemKey}/extractions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read the Markdown extractions attached to a Zotero item */
+    get: operations["getZoteroExtractions"];
     put?: never;
     post?: never;
     delete?: never;
@@ -615,7 +632,7 @@ export interface components {
       byteLength: number;
       views: components["schemas"]["EditorViewSummary"][];
       /**
-       * @description The system that renders this document's cross-references, which fixes the ID syntax: quarto for documents in a Quarto project (#tbl-key), pandoc-crossref for everything else (#tbl:key). GET /help shows both.
+       * @description The system that renders this document's cross-references, which fixes the ID syntax of a figure, table, section, equation or listing: quarto for documents in a Quarto project (#tbl-key), pandoc-crossref for everything else (#tbl:key). A theorem-like label keeps the colon in both systems (#thm:key). GET /help shows both.
        * @enum {string}
        */
       crossReferences?: "quarto" | "pandoc-crossref";
@@ -644,7 +661,7 @@ export interface components {
     };
     /** @description One reviewable change: exactly one unified-diff hunk, justified by its own description. The reviewer keeps or undoes each claim on its own. An edit that repeats at several places in the document is several claims, each with its own description. */
     ProposalClaim: {
-      /** @description Justify this one change: what is wrong in these lines, what the edit changes, and why. Each claim in one submission needs a distinct description; duplicate or near-duplicate descriptions are rejected as DUPLICATE_CLAIM_DESCRIPTION. */
+      /** @description Justify this one change: what is wrong in these lines, what the edit changes, and why. One description on claims that change different text is accepted. A claim that has the description of an earlier claim of the submission and changes the text of that claim is rejected as DUPLICATE_CLAIM. */
       description: string;
       /** @description Unified diff implementing exactly this claim. Name the target in the ---/+++ headers as the literal `document` or as the document's absolute path (a git-style a/ or b/ prefix is allowed); any other filename, a create/delete/rename/binary/mode patch, or a diff that leaves the text unchanged is PATCH_INVALID. The change must be exactly one hunk when diffed with three lines of context (as `diff -u` and `git diff` do): changes more than six unchanged lines apart are separate hunks, and a patch whose change is two or more hunks is CLAIM_NOT_ATOMIC. */
       patch: string;
@@ -678,9 +695,12 @@ export interface components {
       code:
         | "APP_NOT_RUNNING"
         | "PROTOCOL_MISMATCH"
+        | "UNAUTHORIZED"
         | "NO_FOCUSED_DOCUMENT"
         | "DOCUMENT_NOT_FOUND"
         | "DOCUMENT_CLOSED"
+        | "DOCUMENT_UNREADABLE"
+        | "COLLABORATION_STATE_UNREADABLE"
         | "REVISION_MISMATCH"
         | "REVIEW_GENERATION_MISMATCH"
         | "REVIEW_NOT_FOUND"
@@ -706,14 +726,18 @@ export interface components {
         | "INTERNAL_ERROR"
         | "CITATION_DATABASE_NOT_LOADED"
         | "CITATION_NOT_FOUND"
+        | "CITATION_STYLE_NOT_LOADED"
         | "FIGURE_NOT_FOUND"
+        | "FIGURES_DIRECTORY_NOT_FOUND"
         | "FIGURE_ALREADY_EXISTS"
         | "SKILLS_NOT_CONFIGURED"
         | "SKILL_NOT_FOUND"
+        | "FILE_UNREADABLE"
+        | "MACROS_UNAVAILABLE"
         | "WORKSPACE_NOT_FOUND"
         | "WORKSPACE_OUTSIDE_SCOPE"
         | "WORKSPACE_ENTRY_EXISTS"
-        | "DUPLICATE_CLAIM_DESCRIPTION"
+        | "DUPLICATE_CLAIM"
         | "BASELINE_MISMATCH"
         | "ZOTERO_UNAVAILABLE"
         | "ZOTERO_SOURCE_NOT_IDENTIFIED"
@@ -725,11 +749,12 @@ export interface components {
       reviewId?: string;
       /** @description REVIEW_GENERATION_MISMATCH: the generation the review is actually at, so the caller can re-read from exactly there. */
       reviewGeneration?: number;
-      /** @description DUPLICATE_CLAIM_DESCRIPTION: zero-based indices of the first pair of claims whose normalized descriptions are too similar. */
+      /** @description DUPLICATE_CLAIM: zero-based indices of the first pair of claims that have one description and change the same text. */
       conflictingClaimIndices?: number[];
-      /** @description DUPLICATE_CLAIM_DESCRIPTION: normalized Levenshtein similarity of the conflicting pair, where an exact match is 1.0. */
-      descriptionSimilarity?: number;
       remediation?: components["schemas"]["ZoteroSourceRemediation"];
+      database?: components["schemas"]["CitationDatabaseNotLoaded"];
+      /** @description CITATION_NOT_FOUND: each cite key of the request that the database does not hold. */
+      missingCitekeys?: string[];
     };
     AgentErrorResponse: {
       error: components["schemas"]["AgentError"];
@@ -845,6 +870,8 @@ export interface components {
     WorkspaceDocumentsResponse: {
       workspaceId: string;
       documents: components["schemas"]["WorkspaceDocumentSummary"][];
+      /** @description Each folder of the workspace whose content the listing does not hold, with the cause: a folder that the filesystem refuses, or a workspace that the app lists as missing. */
+      notListed: components["schemas"]["FolderNotListed"][];
     };
     WorkspaceFileEntry: {
       documentId: string;
@@ -856,8 +883,16 @@ export interface components {
       /** @description How other documents link to this Markdown file: [[linkTarget]]. The shortest path suffix that names it alone. Absent for other files. */
       linkTarget?: string;
     };
+    FolderNotListed: {
+      /** @description Absolute path of the folder. */
+      path: string;
+      /** @description The error of the filesystem, or why the workspace is missing. */
+      cause: string;
+    };
     WorkspaceFilesResponse: {
       files: components["schemas"]["WorkspaceFileEntry"][];
+      /** @description Each folder of the workspace whose content the listing does not hold, with the cause: a folder that the filesystem refuses, or a workspace that the app lists as missing. */
+      notListed: components["schemas"]["FolderNotListed"][];
     };
     WorkspaceDirectoryEntry: {
       /** @description Absolute path of the folder. */
@@ -870,6 +905,8 @@ export interface components {
     WorkspaceDirectoriesResponse: {
       workspaceId: string;
       directories: components["schemas"]["WorkspaceDirectoryEntry"][];
+      /** @description Each folder of the workspace whose content the listing does not hold, with the cause: a folder that the filesystem refuses, or a workspace that the app lists as missing. */
+      notListed: components["schemas"]["FolderNotListed"][];
     };
     WorkspaceEntryCreateRequest: {
       /** @description Absolute destination path, or a path relative to the target workspace. The destination folder must exist. */
@@ -916,8 +953,21 @@ export interface components {
       open: boolean;
       matches: components["schemas"]["WorkspaceSearchMatch"][];
     };
+    WorkspaceSearchUnreadFile: {
+      path: string;
+      name: string;
+      /**
+       * @description A file that the search could not read, or a folder that it could not list; the search read no file of such a folder.
+       * @enum {string}
+       */
+      kind: "file" | "folder";
+      /** @description The error of the read. */
+      cause: string;
+    };
     WorkspaceSearchResponse: {
       files: components["schemas"]["WorkspaceSearchFile"][];
+      /** @description The files that the search could not read and the folders that it could not list. The search read each other file; a file in this list, or in a folder of this list, has no entry in files, and the answer says nothing about its text. */
+      notSearched: components["schemas"]["WorkspaceSearchUnreadFile"][];
       matchCount: number;
       /** @description True when the search stopped at maxMatches; narrow the query or the globs. */
       truncated: boolean;
@@ -1259,8 +1309,14 @@ export interface components {
       composite: boolean;
       citekeys?: string[];
     };
+    /** @description A citation library that the app reads and that did not load: an absent or unreadable file, or a file that is not a library. */
+    CitationDatabaseNotLoaded: {
+      path: string;
+      cause: string;
+    };
     CitationDatabasesResponse: {
       databases: components["schemas"]["CitationDatabaseSummary"][];
+      notLoaded: components["schemas"]["CitationDatabaseNotLoaded"][];
     };
     CitationItemsResponse: {
       items: components["schemas"]["CitationItem"][];
@@ -1298,11 +1354,19 @@ export interface components {
       declarations: components["schemas"]["MacroDeclaration"][];
       mathjax?: components["schemas"]["MacroMathJaxDefinition"];
     };
+    MacroSourceNotRead: {
+      /** @description Path relative to the TeX macro directory. */
+      path: string;
+      /** @description The error of the filesystem. */
+      cause: string;
+    };
     MacroInventoryResponse: {
       /** @description Absolute TeX macro directory. */
       root: string;
       count: number;
       macros: components["schemas"]["MacroEntry"][];
+      /** @description The folders and source files of the macro directory whose content the filesystem refuses. Their declarations are not in macros. */
+      notRead: components["schemas"]["MacroSourceNotRead"][];
     };
     SkillTreeEntry: {
       /** @description Path relative to the configured skills directory. */
@@ -1312,11 +1376,19 @@ export interface components {
       size: number;
       modifiedAt: string;
     };
+    SkillNotRead: {
+      /** @description Path relative to the configured skills directory. */
+      path: string;
+      /** @description The error of the filesystem. */
+      cause: string;
+    };
     SkillsListResponse: {
       /** @description Canonical absolute path of the configured skills directory. */
       root: string;
       count: number;
       entries: components["schemas"]["SkillTreeEntry"][];
+      /** @description The folders whose entries, and the entries whose metadata, could not be read. A folder of this list is an entry; its content is not. */
+      notListed: components["schemas"]["SkillNotRead"][];
     };
     SkillFileResponse: {
       /** @description Canonical absolute path of the configured skills directory. */
@@ -1336,11 +1408,19 @@ export interface components {
       size: number;
       modifiedAt: string;
     };
+    FigureNotRead: {
+      /** @description Path relative to the configured figures directory. */
+      path: string;
+      /** @description The error of the filesystem. */
+      cause: string;
+    };
     FigureListResponse: {
       /** @description Absolute figures directory. */
       root: string;
       count: number;
       entries: components["schemas"]["FigureEntry"][];
+      /** @description The folders whose entries, and the entries whose metadata, could not be read. A folder of this list is an entry; its content is not. */
+      notListed: components["schemas"]["FigureNotRead"][];
     };
     FigureFileResponse: {
       path: string;
@@ -1394,6 +1474,8 @@ export interface components {
       query: string;
       hits: components["schemas"]["FigureSearchHit"][];
       truncated: boolean;
+      /** @description The figures that the search could not read and the folders that it could not list; their content was not searched. */
+      notSearched: components["schemas"]["FigureNotRead"][];
     };
     LintSeverityCounts: {
       error: number;
@@ -1451,12 +1533,38 @@ export interface components {
       scope: "focused" | "open" | "document" | "workspace" | "all";
       documents: components["schemas"]["DocumentLintResult"][];
       documentCount: number;
-      /** @description Documents of a workspace or all scope with no lint result yet. The background linter is linting them; request the scope again to read their diagnostics. Always empty for the other scopes. */
+      /** @description Documents of a workspace or all scope with no lint result yet and no failed run. The background linter is linting them; request the scope again to read their diagnostics. While queueStopped is present the linter lints none of them. Always empty for the other scopes. */
       pending: {
         documentId: string;
         path: string;
         name: string;
       }[];
+      /** @description Documents of a workspace or all scope whose last lint run gave no result. The background linter does not lint such a document again until its text or a lint input changes, Flowmark is updated, or the author starts the lint again in the Problems view. A document with an older result is also in documents, with current false. A document whose file gave no text (kind unreadable) is here too, and is read again for each request. Always empty for the other scopes: there a failed run is one error diagnostic of the document. */
+      failed: {
+        documentId: string;
+        path: string;
+        name: string;
+        /**
+         * @description Why the document has no result. flowmark-absent, flowmark-error, flowmark-timeout and flowmark-invalid-output are failures of the Flowmark process; lint-error is a run that stopped outside that process; unreadable is a document whose file gave no text, so that no run started.
+         * @enum {string}
+         */
+        kind:
+          | "flowmark-absent"
+          | "flowmark-error"
+          | "flowmark-timeout"
+          | "flowmark-invalid-output"
+          | "lint-error"
+          | "unreadable";
+        /** @description The message of the failure. */
+        cause: string;
+        /**
+         * Format: date-time
+         * @description When the run ended, or when the read failed.
+         */
+        failedAt: string;
+      }[];
+      /** @description Present while the background linter lints no document: the cause. The pending documents then stay pending, and each result in documents is the last one from before the stop. The author starts the linter again in the Problems view. */
+      queueStopped?: string;
       diagnosticCount: number;
       counts: components["schemas"]["LintSeverityCounts"];
     };
@@ -1489,6 +1597,15 @@ export interface components {
     };
     ZoteroSearchResponse: {
       items: components["schemas"]["ZoteroSearchItem"][];
+    };
+    ZoteroExtractionsResponse: {
+      itemKey: string;
+      extractions: {
+        attachmentKey: string;
+        title: string;
+        /** @description The attached Markdown extraction text. */
+        content: string;
+      }[];
     };
     ZoteroAddedItem: {
       /** @description The Zotero item key. */
@@ -1612,6 +1729,15 @@ export interface operations {
       };
       /** @description Skill Markdown file not found. */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The filesystem refuses to read the skill file or a folder on its path (FILE_UNREADABLE); the message names the cause. */
+      409: {
         headers: {
           [name: string]: unknown;
         };
@@ -1852,7 +1978,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Persistence failed */
+      /** @description The filesystem refused the creation (PERSISTENCE_FAILED); the message names the path and the cause */
       500: {
         headers: {
           [name: string]: unknown;
@@ -1925,6 +2051,15 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      /** @description The file of the closed document cannot be read */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
     };
   };
   searchDocument: {
@@ -1982,6 +2117,15 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      /** @description The file of the closed document cannot be read */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
     };
   };
   submitProposal: {
@@ -2027,7 +2171,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Revision mismatch or document closed */
+      /** @description Revision mismatch, document closed, or a file of the document that cannot be read (DOCUMENT_UNREADABLE) */
       409: {
         headers: {
           [name: string]: unknown;
@@ -2551,8 +2695,17 @@ export interface operations {
             | components["schemas"]["CitationItem"];
         };
       };
-      /** @description Database or cite key not found */
+      /** @description The database does not hold the cite key. */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The database is not loaded. error.database names the file and the cause; without it, the settings name no main library. */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -2595,8 +2748,17 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Database not loaded, or a citation key not in it */
+      /** @description The database does not hold a cite key of the request. error.missingCitekeys names each one. */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The database is not loaded (CITATION_DATABASE_NOT_LOADED, error.database names the file and the cause), or the citation style of the settings did not load (CITATION_STYLE_NOT_LOADED). No citation is rendered in another style. */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -2628,6 +2790,15 @@ export interface operations {
       };
       /** @description Macro inspection failed */
       500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The TeX macro directory cannot be read, or the generated MathJax projection cannot be read or is not a macro projection (MACROS_UNAVAILABLE); the message names the cause. */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -2673,8 +2844,17 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Figure file not found */
+      /** @description The figure file does not exist (FIGURE_NOT_FOUND), or the configured figures directory does not exist (FIGURES_DIRECTORY_NOT_FOUND). */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The filesystem refuses to read the figure file or a folder on its path (FILE_UNREADABLE); the message names the cause. */
+      409: {
         headers: {
           [name: string]: unknown;
         };
@@ -2847,6 +3027,46 @@ export interface operations {
       };
     };
   };
+  getZoteroExtractions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        itemKey: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Every Markdown extraction child and its text. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ZoteroExtractionsResponse"];
+        };
+      };
+      /** @description Zotero or an attachment file could not be read. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
   importZoteroIdentifier: {
     parameters: {
       query?: never;
@@ -2896,7 +3116,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Zotero or the citation database is not available */
+      /** @description Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available */
       503: {
         headers: {
           [name: string]: unknown;
@@ -2965,7 +3185,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Zotero or the citation database is not available */
+      /** @description Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available */
       503: {
         headers: {
           [name: string]: unknown;

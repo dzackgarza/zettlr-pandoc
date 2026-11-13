@@ -28,9 +28,6 @@ import {
   getConfigTemplate,
 } from "source/app/service-providers/config/get-config-template";
 
-/** Webpack's DefinePlugin supplies __BUILD_DATE__ to the bundle. */
-const buildGlobals = globalThis as typeof globalThis & { __BUILD_DATE__?: number };
-
 /** A value of the template that each rule refuses. */
 const INVALID: Record<string, ConfigJsonValue> = {
   darkMode: "yes",
@@ -54,6 +51,7 @@ const INVALID: Record<string, ConfigJsonValue> = {
   "zkn.idGen": "a",
   attachmentExtensions: ".pdf",
   debug: "no",
+  "editor.fontSize": 5,
   "editor.indentUnit": 25,
   "editor.boldFormatting": "*",
   "editor.italicFormatting": "__",
@@ -62,6 +60,7 @@ const INVALID: Record<string, ConfigJsonValue> = {
   "display.imageHeight": 101,
   "watchdog.stabilityThreshold": 100001,
   "ui.recentFilesLimit": 0,
+  "zotero.localServer": 23119,
 };
 
 function templateValue(template: ConfigOptions, option: string): ConfigJsonValue {
@@ -80,12 +79,7 @@ describe("Configuration validation (#164)", function () {
   let template: ConfigOptions;
 
   before(function () {
-    buildGlobals.__BUILD_DATE__ = 0;
     template = getConfigTemplate("en-US");
-  });
-
-  after(function () {
-    delete buildGlobals.__BUILD_DATE__;
   });
 
   it("accepts the template value of every option that has a rule", function () {

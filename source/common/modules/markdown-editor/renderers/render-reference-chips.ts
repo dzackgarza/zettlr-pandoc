@@ -62,15 +62,19 @@ import {
   referenceFamilyDisplayName,
   referenceFamilyOf,
 } from "@dts/common/references";
+import { NODES, nodeToCiteItem } from "@dzack/pandoc-editor/parser/citation-parser";
+import {
+  ATOMIC_INLINE_JOINT_CLASS,
+  type RowJoinedWidget,
+  renderBlockWidgets,
+} from "@dzack/pandoc-editor/renderers/base-renderer";
+import clickAndSelect from "@dzack/pandoc-editor/renderers/click-and-select";
 import { type SyntaxNodeRef } from "@lezer/common";
-import { NODES, nodeToCiteItem } from "../parser/citation-parser";
 import { referencePresentationField } from "../plugins/workspace-references-field";
 import {
   followReferenceNavigationIntent,
   resolveReferenceNavigationIntent,
 } from "../util/reference-navigation";
-import { renderBlockWidgets } from "./base-renderer";
-import clickAndSelect from "./click-and-select";
 
 /**
  * One chip of a cluster widget: the authored key, its family, and the
@@ -82,7 +86,9 @@ interface ChipSpec {
   label: string;
 }
 
-class ReferenceChipClusterWidget extends WidgetType {
+class ReferenceChipClusterWidget extends WidgetType implements RowJoinedWidget {
+  readonly rowJoin = "text";
+
   constructor(
     readonly rawCluster: string,
     readonly chips: ChipSpec[],
@@ -127,7 +133,12 @@ class ReferenceChipClusterWidget extends WidgetType {
       chipElem.dataset.referenceKey = chip.key;
       chipElem.dataset.referenceFamily = chip.family;
       chipElem.textContent = chip.label;
-      elem.appendChild(chipElem);
+      // The pill stays on the row of the characters of the cluster that
+      // touch it: a bracket, a separator, a locator.
+      const joint = document.createElement("span");
+      joint.classList.add(ATOMIC_INLINE_JOINT_CLASS);
+      joint.appendChild(chipElem);
+      elem.appendChild(joint);
 
       cursor = idx + token.length;
     }

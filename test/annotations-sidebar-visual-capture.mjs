@@ -26,6 +26,9 @@ const SCENE_CHUNK_GOAL_NOTE = "Check this against the published erratum first.";
 // The goal chunk's working span ("to work with it"), which the proposal
 // annotation's linked packet produced (annotations-sidebar-scene-fixture.ts).
 const SCENE_GOAL_TEXT = "to work with it";
+// The file of collaboration state that the provider cannot read
+// (annotations-sidebar-visual-entry.ts).
+const SCENE_UNREADABLE_FILE = `/home/author/.config/Zettlr-Pandoc/review-sidecars/${"82c4c2e2483dfc75".repeat(4)}.json`;
 
 const WIDE = { width: 980, height: 760, panel: 340 };
 const NARROW = { width: 620, height: 760, panel: 240 };
@@ -92,18 +95,30 @@ const setReview = async (active) => {
 const acceptChunk = async (index) =>
   await page.evaluate((index) => window.annotationsSceneAcceptChunk(index), index);
 
-/** Horizontal overflow of every element a scene must keep inside its box. */
+/**
+ * Horizontal overflow of every element a scene must keep inside its box,
+ * with the descendants that reach past the right edge of that box.
+ */
 async function overflowing(selectors) {
   return page.evaluate(
     (list) =>
       list.flatMap((selector) =>
         [...document.querySelectorAll(selector)]
           .filter((element) => element.scrollWidth > element.clientWidth + 1)
-          .map((element) => ({
-            selector,
-            scroll: element.scrollWidth,
-            client: element.clientWidth,
-          })),
+          .map((element) => {
+            const edge = element.getBoundingClientRect().left + element.clientWidth;
+            return {
+              selector,
+              scroll: element.scrollWidth,
+              client: element.clientWidth,
+              past: [...element.querySelectorAll("*")]
+                .filter((child) => child.getBoundingClientRect().right > edge + 1)
+                .map(
+                  (child) =>
+                    `${child.tagName.toLowerCase()}.${[...child.classList].join(".")} +${Math.round(child.getBoundingClientRect().right - edge)}`,
+                ),
+            };
+          }),
       ),
     selectors,
   );
@@ -147,6 +162,22 @@ assert.deepStrictEqual(
   diag.messageTimes,
   ["31 min. ago", "29 min. ago"],
   "03: relative times against the page clock",
+);
+assert.deepStrictEqual(
+  diag.messageTexts,
+  [
+    "Do we have examples of tasks that remain resistant? Add sources.",
+    "Yes. Tasks requiring contextual judgment, ethical reasoning, and novel problem framing remain hard to automate.",
+  ],
+  "03: the thread shows the text of its messages",
+);
+assert.deepStrictEqual(
+  diag.annotationRowSummaries,
+  [
+    "Do we have examples of tasks that remain resistant? Add sources.",
+    "Automation is not the whole story — push back on this framing.",
+  ],
+  "03: each panel row shows the instruction of its annotation",
 );
 await scene.capture("03-selected-thread-light");
 
@@ -510,10 +541,108 @@ process.stderr.write(
   "annotations-sidebar-visual-capture: show-diff and reattach wiring verified\n",
 );
 
+// A file of collaboration state that the application cannot read: the panel
+// names its document and its cause above the documents that it can read, and
+// offers to move the file aside. The long cause stays inside the panel.
+const UNREADABLE_BOXES = ["#annotations-panel", ".annotation-unreadable-file"];
+await openSceneDocument(false);
+await page.evaluate(() => window.annotationsSceneSetUnreadableFile(true));
+diag = await diagnostics();
+assert.deepStrictEqual(
+  diag.unreadableFileNotices,
+  [
+    {
+      file: SCENE_UNREADABLE_FILE,
+      reason: "The annotations and the review of even-unimodular-lattices.md cannot be read.",
+      action: "Move the file aside",
+    },
+  ],
+  "unreadable: the panel names the document of the file and offers the action",
+);
+assert.equal(diag.annotationRowCount, 2, "unreadable: the readable document stays listed");
+assert.deepStrictEqual(await overflowing(UNREADABLE_BOXES), [], "unreadable: no overflow");
+await scene.capture("unreadable-review-file-light");
+await setLayout(NARROW);
+assert.deepStrictEqual(await overflowing(UNREADABLE_BOXES), [], "unreadable: no narrow overflow");
+await scene.capture("unreadable-review-file-narrow");
+await setLayout(WIDE);
+
+const setAsideRequest = await page.evaluate(() => window.annotationsSceneClickSetAside());
+assert.deepStrictEqual(
+  setAsideRequest,
+  { channel: "set-aside-collaboration-sidecar", message: { file: SCENE_UNREADABLE_FILE } },
+  "set-aside: the click asks the provider to move exactly that file",
+);
+diag = await diagnostics();
+assert.deepStrictEqual(diag.unreadableFileNotices, [], "set-aside: the notice goes away");
+assert.equal(diag.toasts.length, 1, "set-aside: one message says where the file is");
+assert.equal(diag.annotationRowCount, 2, "set-aside: the readable document stays listed");
+await scene.capture("unreadable-review-file-set-aside");
+
+await openSceneDocument(true);
+await page.evaluate(() => window.annotationsSceneSetUnreadableFile(true));
+assert.deepStrictEqual(await overflowing(UNREADABLE_BOXES), [], "unreadable: no dark overflow");
+await scene.capture("unreadable-review-file-dark");
+
+process.stderr.write("annotations-sidebar-visual-capture: unreadable review file verified\n");
+
+// A file of collaboration state whose document has no file: the panel names
+// the document and its path above the documents of the workspace, and offers
+// to move the file aside. The long path stays inside the panel.
+const OWNERLESS_BOXES = ["#annotations-panel", ".annotation-ownerless-file"];
+const OWNERLESS_FILE = `/home/author/.config/Zettlr-Pandoc/review-sidecars/${"5d0c7be19a44e3f2".repeat(4)}.json`;
+await page.evaluate(() => window.annotationsSceneSetUnreadableFile(false));
+await openSceneDocument(false);
+await page.evaluate(() => window.annotationsSceneSetOwnerlessFile(true));
+diag = await diagnostics();
+assert.deepStrictEqual(
+  diag.ownerlessFileNotices,
+  [
+    {
+      file: OWNERLESS_FILE,
+      reason:
+        "The annotations and the review of root-systems-and-their-weyl-groups.md belong to no document: no file is at that path.",
+      path: "/home/author/notes/lattice-theory/definite/root-systems-and-their-weyl-groups.md",
+      action: "Move the file aside",
+    },
+  ],
+  "ownerless: the panel names the document that has no file and offers the action",
+);
+assert.equal(diag.annotationRowCount, 2, "ownerless: the document of the workspace stays listed");
+assert.deepStrictEqual(await overflowing(OWNERLESS_BOXES), [], "ownerless: no overflow");
+await scene.capture("ownerless-review-file-light");
+await setLayout(NARROW);
+assert.deepStrictEqual(await overflowing(OWNERLESS_BOXES), [], "ownerless: no narrow overflow");
+await scene.capture("ownerless-review-file-narrow");
+await setLayout(WIDE);
+
+const ownerlessToasts = diag.toasts.length;
+const ownerlessRequest = await page.evaluate(() => window.annotationsSceneClickSetAsideOwnerless());
+assert.deepStrictEqual(
+  ownerlessRequest,
+  { channel: "set-aside-collaboration-sidecar", message: { file: OWNERLESS_FILE } },
+  "ownerless: the click asks the provider to move exactly that file",
+);
+diag = await diagnostics();
+assert.deepStrictEqual(diag.ownerlessFileNotices, [], "ownerless: the notice goes away");
+assert.equal(
+  diag.toasts.length,
+  ownerlessToasts + 1,
+  "ownerless: one message says where the file is",
+);
+
+await openSceneDocument(true);
+await page.evaluate(() => window.annotationsSceneSetOwnerlessFile(true));
+assert.deepStrictEqual(await overflowing(OWNERLESS_BOXES), [], "ownerless: no dark overflow");
+await scene.capture("ownerless-review-file-dark");
+
+process.stderr.write("annotations-sidebar-visual-capture: review file of no document verified\n");
+
 console.log(
   JSON.stringify({
     showProposalRevealedRanges: revealedRanges,
     reattachAnnotationIds,
+    setAsideRequest,
   }),
 );
 

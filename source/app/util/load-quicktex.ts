@@ -1,10 +1,7 @@
-import { execFile } from "node:child_process";
 import path from "node:path";
-import { promisify } from "node:util";
 import type { QuickTexCatalogue } from "@dts/common/quicktex";
+import { describeOutcome, runProcess } from "@dzack/external-process/run-process";
 import { z } from "zod";
-
-const execFileAsync = promisify(execFile);
 
 /** The JSON the Lua exporter below prints; every field is always emitted. */
 const quickTexExportSchema = z.object({
@@ -39,9 +36,9 @@ export async function loadQuickTex(
     "print(vim.json.encode(data))",
   ].join(" ");
 
-  const { stdout, stderr } = await execFileAsync(
-    "nvim",
-    [
+  const outcome = await runProcess({
+    command: "nvim",
+    args: [
       "--headless",
       "-u",
       "NONE",
@@ -57,8 +54,16 @@ export async function loadQuickTex(
       "-c",
       "qa!",
     ],
-    { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 },
-  );
+    env: process.env,
+    timeLimitMs: "none",
+    waitForGroup: false,
+  });
+  if (outcome.ended !== "exit" || outcome.code !== 0) {
+    throw new Error(
+      `Couldn't load QuickTeX definitions from ${configFile}: ${describeOutcome("nvim", outcome)}`,
+    );
+  }
+  const { stdout, stderr } = outcome;
 
   const lines = `${stdout}\n${stderr}`
     .split(/\r?\n/)

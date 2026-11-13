@@ -1,3 +1,4 @@
+import type { MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import assert from "assert";
 import { execFile } from "child_process";
 import { chmod, mkdtemp, readFile, writeFile } from "fs/promises";
@@ -10,12 +11,13 @@ import type {
   ExporterOptions,
 } from "source/app/service-providers/commands/exporter/types";
 import { loadMathJaxMacros } from "source/app/util/load-mathjax-macros";
-import type { MathJaxMacro } from "tikz-workbench/src/mathjax-config";
 import { promisify } from "util";
 import YAML from "yaml";
 
 const execFileAsync = promisify(execFile);
 
+// The ~/.pandoc directory of the export: its macro tree.
+const MACRO_TREE = path.resolve("test", "fixtures", "pandoc-macros");
 let macros: Record<string, MathJaxMacro>;
 before(async function () {
   macros = await loadMathJaxMacros("test/fixtures/mathjax-macros.json");
@@ -57,15 +59,11 @@ describe("Pipeline-integrated export scripts", function () {
         const profile = YAML.parse(
           await readFile(`static/defaults/${profileName}`, { encoding: "utf8" }),
         ) as Record<string, unknown>;
-        return await writeDefaults(
-          profile,
-          overrides,
-          config,
-          [],
-          directory,
-          path.join(directory, "unused.js"),
+        return await writeDefaults(profile, overrides, config, [], directory, {
+          mathJaxDirectory: path.join(directory, "unused-mathjax"),
           macros,
-        );
+          pandocDirectory: MACRO_TREE,
+        });
       },
       listDefaults: async () => [
         { name: "LaTeX.yaml", reader: "markdown", writer: "latex", isInvalid: false },
@@ -74,7 +72,7 @@ describe("Pipeline-integrated export scripts", function () {
 
     const options: ExporterOptions = {
       profile: { name: "Marked TeX", reader: "markdown", writer: "script", isInvalid: false },
-      sourceFiles: [{ name: "input.md", ext: ".md", path: inputFile }],
+      sourceFiles: [{ name: "input.md", ext: ".md", path: inputFile, textFile: inputFile }],
       targetDirectory: directory,
     };
     const script = {

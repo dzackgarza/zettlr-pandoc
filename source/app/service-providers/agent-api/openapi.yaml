@@ -16,7 +16,13 @@ info:
 servers:
   - url: http://127.0.0.1:27412
     description: Default loopback endpoint
+security:
+  - bearerToken: []
 components:
+  securitySchemes:
+    bearerToken:
+      type: http
+      scheme: bearer
   schemas:
     DocumentRevision:
       type: object
@@ -136,8 +142,10 @@ components:
             - pandoc-crossref
           description: >-
             The system that renders this document's cross-references, which fixes
-            the ID syntax: quarto for documents in a Quarto project (#tbl-key),
-            pandoc-crossref for everything else (#tbl:key). GET /help shows both.
+            the ID syntax of a figure, table, section, equation or listing: quarto
+            for documents in a Quarto project (#tbl-key), pandoc-crossref for
+            everything else (#tbl:key). A theorem-like label keeps the colon in
+            both systems (#thm:key). GET /help shows both.
         review:
           $ref: "#/components/schemas/ReviewSummary"
     EditorContext:
@@ -214,10 +222,10 @@ components:
           minLength: 1
           description: >-
             Justify this one change: what is wrong in these lines, what the
-            edit changes, and why. Each claim
-            in one submission needs a distinct description; duplicate or
-            near-duplicate descriptions are rejected as
-            DUPLICATE_CLAIM_DESCRIPTION.
+            edit changes, and why. One description on claims that change
+            different text is accepted. A claim that has the description of
+            an earlier claim of the submission and changes the text of that
+            claim is rejected as DUPLICATE_CLAIM.
         patch:
           type: string
           minLength: 1
@@ -324,9 +332,12 @@ components:
           enum:
             - APP_NOT_RUNNING
             - PROTOCOL_MISMATCH
+            - UNAUTHORIZED
             - NO_FOCUSED_DOCUMENT
             - DOCUMENT_NOT_FOUND
             - DOCUMENT_CLOSED
+            - DOCUMENT_UNREADABLE
+            - COLLABORATION_STATE_UNREADABLE
             - REVISION_MISMATCH
             - REVIEW_GENERATION_MISMATCH
             - REVIEW_NOT_FOUND
@@ -352,14 +363,18 @@ components:
             - INTERNAL_ERROR
             - CITATION_DATABASE_NOT_LOADED
             - CITATION_NOT_FOUND
+            - CITATION_STYLE_NOT_LOADED
             - FIGURE_NOT_FOUND
+            - FIGURES_DIRECTORY_NOT_FOUND
             - FIGURE_ALREADY_EXISTS
             - SKILLS_NOT_CONFIGURED
             - SKILL_NOT_FOUND
+            - FILE_UNREADABLE
+            - MACROS_UNAVAILABLE
             - WORKSPACE_NOT_FOUND
             - WORKSPACE_OUTSIDE_SCOPE
             - WORKSPACE_ENTRY_EXISTS
-            - DUPLICATE_CLAIM_DESCRIPTION
+            - DUPLICATE_CLAIM
             - BASELINE_MISMATCH
             - ZOTERO_UNAVAILABLE
             - ZOTERO_SOURCE_NOT_IDENTIFIED
@@ -387,17 +402,20 @@ components:
             type: integer
             minimum: 0
           description: >-
-            DUPLICATE_CLAIM_DESCRIPTION: zero-based indices of the first pair
-            of claims whose normalized descriptions are too similar.
-        descriptionSimilarity:
-          type: number
-          minimum: 0
-          maximum: 1
-          description: >-
-            DUPLICATE_CLAIM_DESCRIPTION: normalized Levenshtein similarity of
-            the conflicting pair, where an exact match is 1.0.
+            DUPLICATE_CLAIM: zero-based indices of the first pair of claims
+            that have one description and change the same text.
         remediation:
           $ref: "#/components/schemas/ZoteroSourceRemediation"
+        database:
+          $ref: "#/components/schemas/CitationDatabaseNotLoaded"
+        missingCitekeys:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: >-
+            CITATION_NOT_FOUND: each cite key of the request that the database
+            does not hold.
     AgentErrorResponse:
       type: object
       required:
@@ -649,6 +667,7 @@ components:
       required:
         - workspaceId
         - documents
+        - notListed
       properties:
         workspaceId:
           type: string
@@ -656,6 +675,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceDocumentSummary"
+        notListed:
+          type: array
+          description: >-
+            Each folder of the workspace whose content the listing does not
+            hold, with the cause: a folder that the filesystem refuses, or a
+            workspace that the app lists as missing.
+          items:
+            $ref: "#/components/schemas/FolderNotListed"
     WorkspaceFileEntry:
       type: object
       required:
@@ -681,15 +708,37 @@ components:
           description: >-
             How other documents link to this Markdown file: [[linkTarget]]. The
             shortest path suffix that names it alone. Absent for other files.
+    FolderNotListed:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - cause
+      properties:
+        path:
+          type: string
+          description: Absolute path of the folder.
+        cause:
+          type: string
+          description: The error of the filesystem, or why the workspace is missing.
     WorkspaceFilesResponse:
       type: object
       required:
         - files
+        - notListed
       properties:
         files:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceFileEntry"
+        notListed:
+          type: array
+          description: >-
+            Each folder of the workspace whose content the listing does not
+            hold, with the cause: a folder that the filesystem refuses, or a
+            workspace that the app lists as missing.
+          items:
+            $ref: "#/components/schemas/FolderNotListed"
     WorkspaceDirectoryEntry:
       type: object
       required:
@@ -715,6 +764,7 @@ components:
       required:
         - workspaceId
         - directories
+        - notListed
       properties:
         workspaceId:
           type: string
@@ -722,6 +772,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceDirectoryEntry"
+        notListed:
+          type: array
+          description: >-
+            Each folder of the workspace whose content the listing does not
+            hold, with the cause: a folder that the filesystem refuses, or a
+            workspace that the app lists as missing.
+          items:
+            $ref: "#/components/schemas/FolderNotListed"
     WorkspaceEntryCreateRequest:
       type: object
       additionalProperties: false
@@ -792,8 +850,7 @@ components:
           description: One-based line of the match start.
         preview:
           type: object
-          description:
-            "The line of the match: text before it (trimmed), the match, and
+          description: "The line of the match: text before it (trimmed), the match, and
             text after it."
           required:
             - before
@@ -823,8 +880,7 @@ components:
           type: string
         workspaceId:
           type: string
-          description:
-            The workspace that holds the file; absent for an open file outside
+          description: The workspace that holds the file; absent for an open file outside
             every workspace.
         open:
           type: boolean
@@ -833,10 +889,31 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceSearchMatch"
+    WorkspaceSearchUnreadFile:
+      type: object
+      required:
+        - path
+        - name
+        - kind
+        - cause
+      properties:
+        path:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [file, folder]
+          description: A file that the search could not read, or a folder that it could
+            not list; the search read no file of such a folder.
+        cause:
+          type: string
+          description: The error of the read.
     WorkspaceSearchResponse:
       type: object
       required:
         - files
+        - notSearched
         - matchCount
         - truncated
       properties:
@@ -844,12 +921,19 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceSearchFile"
+        notSearched:
+          type: array
+          description: The files that the search could not read and the folders that it
+            could not list. The search read each other file; a file in this list, or in
+            a folder of this list, has no entry in files, and the answer says nothing
+            about its text.
+          items:
+            $ref: "#/components/schemas/WorkspaceSearchUnreadFile"
         matchCount:
           type: integer
         truncated:
           type: boolean
-          description:
-            True when the search stopped at maxMatches; narrow the query or the
+          description: True when the search stopped at maxMatches; narrow the query or the
             globs.
     SearchDocumentResponse:
       type: object
@@ -1737,16 +1821,35 @@ components:
           type: array
           items:
             type: string
+    CitationDatabaseNotLoaded:
+      type: object
+      required:
+        - path
+        - cause
+      additionalProperties: false
+      description: >-
+        A citation library that the app reads and that did not load: an
+        absent or unreadable file, or a file that is not a library.
+      properties:
+        path:
+          type: string
+        cause:
+          type: string
     CitationDatabasesResponse:
       type: object
       required:
         - databases
+        - notLoaded
       additionalProperties: false
       properties:
         databases:
           type: array
           items:
             $ref: "#/components/schemas/CitationDatabaseSummary"
+        notLoaded:
+          type: array
+          items:
+            $ref: "#/components/schemas/CitationDatabaseNotLoaded"
     CitationItemsResponse:
       type: object
       required:
@@ -1836,6 +1939,19 @@ components:
             $ref: "#/components/schemas/MacroDeclaration"
         mathjax:
           $ref: "#/components/schemas/MacroMathJaxDefinition"
+    MacroSourceNotRead:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - cause
+      properties:
+        path:
+          type: string
+          description: Path relative to the TeX macro directory.
+        cause:
+          type: string
+          description: The error of the filesystem.
     MacroInventoryResponse:
       type: object
       additionalProperties: false
@@ -1843,6 +1959,7 @@ components:
         - root
         - count
         - macros
+        - notRead
       properties:
         root:
           type: string
@@ -1854,6 +1971,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MacroEntry"
+        notRead:
+          type: array
+          description: >-
+            The folders and source files of the macro directory whose content
+            the filesystem refuses. Their declarations are not in macros.
+          items:
+            $ref: "#/components/schemas/MacroSourceNotRead"
     SkillTreeEntry:
       type: object
       additionalProperties: false
@@ -1876,6 +2000,19 @@ components:
           minimum: 0
         modifiedAt:
           type: string
+    SkillNotRead:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - cause
+      properties:
+        path:
+          type: string
+          description: Path relative to the configured skills directory.
+        cause:
+          type: string
+          description: The error of the filesystem.
     SkillsListResponse:
       type: object
       additionalProperties: false
@@ -1883,6 +2020,7 @@ components:
         - root
         - count
         - entries
+        - notListed
       properties:
         root:
           type: string
@@ -1894,6 +2032,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SkillTreeEntry"
+        notListed:
+          type: array
+          description: >-
+            The folders whose entries, and the entries whose metadata, could not
+            be read. A folder of this list is an entry; its content is not.
+          items:
+            $ref: "#/components/schemas/SkillNotRead"
     SkillFileResponse:
       type: object
       additionalProperties: false
@@ -1944,6 +2089,19 @@ components:
           minimum: 0
         modifiedAt:
           type: string
+    FigureNotRead:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - cause
+      properties:
+        path:
+          type: string
+          description: Path relative to the configured figures directory.
+        cause:
+          type: string
+          description: The error of the filesystem.
     FigureListResponse:
       type: object
       additionalProperties: false
@@ -1951,6 +2109,7 @@ components:
         - root
         - count
         - entries
+        - notListed
       properties:
         root:
           type: string
@@ -1962,6 +2121,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FigureEntry"
+        notListed:
+          type: array
+          description: >-
+            The folders whose entries, and the entries whose metadata, could not
+            be read. A folder of this list is an entry; its content is not.
+          items:
+            $ref: "#/components/schemas/FigureNotRead"
     FigureFileResponse:
       type: object
       additionalProperties: false
@@ -2079,6 +2245,7 @@ components:
         - query
         - hits
         - truncated
+        - notSearched
       properties:
         root:
           type: string
@@ -2090,6 +2257,13 @@ components:
             $ref: "#/components/schemas/FigureSearchHit"
         truncated:
           type: boolean
+        notSearched:
+          type: array
+          description: >-
+            The figures that the search could not read and the folders that it
+            could not list; their content was not searched.
+          items:
+            $ref: "#/components/schemas/FigureNotRead"
     LintSeverityCounts:
       type: object
       additionalProperties: false
@@ -2237,6 +2411,7 @@ components:
         - documents
         - documentCount
         - pending
+        - failed
         - diagnosticCount
         - counts
       properties:
@@ -2258,9 +2433,11 @@ components:
         pending:
           type: array
           description: >-
-            Documents of a workspace or all scope with no lint result yet. The
-            background linter is linting them; request the scope again to read
-            their diagnostics. Always empty for the other scopes.
+            Documents of a workspace or all scope with no lint result yet and
+            no failed run. The background linter is linting them; request the
+            scope again to read their diagnostics. While queueStopped is
+            present the linter lints none of them. Always empty for the other
+            scopes.
           items:
             type: object
             additionalProperties: false
@@ -2275,6 +2452,64 @@ components:
                 type: string
               name:
                 type: string
+        failed:
+          type: array
+          description: >-
+            Documents of a workspace or all scope whose last lint run gave no
+            result. The background linter does not lint such a document again
+            until its text or a lint input changes, Flowmark is updated, or
+            the author starts the lint again in the Problems view. A document
+            with an older result is also in documents, with current false. A
+            document whose file gave no text (kind unreadable) is here too,
+            and is read again for each request. Always empty for the other
+            scopes: there a failed run is one error diagnostic of the
+            document.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - documentId
+              - path
+              - name
+              - kind
+              - cause
+              - failedAt
+            properties:
+              documentId:
+                type: string
+              path:
+                type: string
+              name:
+                type: string
+              kind:
+                type: string
+                description: >-
+                  Why the document has no result. flowmark-absent,
+                  flowmark-error, flowmark-timeout and flowmark-invalid-output
+                  are failures of the Flowmark process; lint-error is a run
+                  that stopped outside that process; unreadable is a document
+                  whose file gave no text, so that no run started.
+                enum:
+                  - flowmark-absent
+                  - flowmark-error
+                  - flowmark-timeout
+                  - flowmark-invalid-output
+                  - lint-error
+                  - unreadable
+              cause:
+                type: string
+                description: The message of the failure.
+              failedAt:
+                type: string
+                format: date-time
+                description: When the run ended, or when the read failed.
+        queueStopped:
+          type: string
+          description: >-
+            Present while the background linter lints no document: the cause.
+            The pending documents then stay pending, and each result in
+            documents is the last one from before the stop. The author starts
+            the linter again in the Problems view.
         diagnosticCount:
           type: integer
           minimum: 0
@@ -2355,6 +2590,32 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ZoteroSearchItem"
+    ZoteroExtractionsResponse:
+      type: object
+      required:
+        - itemKey
+        - extractions
+      additionalProperties: false
+      properties:
+        itemKey:
+          type: string
+        extractions:
+          type: array
+          items:
+            type: object
+            required:
+              - attachmentKey
+              - title
+              - content
+            additionalProperties: false
+            properties:
+              attachmentKey:
+                type: string
+              title:
+                type: string
+              content:
+                type: string
+                description: The attached Markdown extraction text.
     ZoteroAddedItem:
       type: object
       required:
@@ -2614,6 +2875,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
+          description: >-
+            The filesystem refuses to read the skill file or a folder on its
+            path (FILE_UNREADABLE); the message names the cause.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
         "503":
           description: No usable skills directory is configured.
           content:
@@ -2710,8 +2979,7 @@ paths:
           schema:
             type: string
             default: ""
-          description:
-            Comma-separated globs relative to the workspace root; a file must
+          description: Comma-separated globs relative to the workspace root; a file must
             match one. A glob without a slash matches at any depth, for example
             `*.md`.
         - name: exclude
@@ -2834,7 +3102,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "500":
-          description: Persistence failed
+          description: The filesystem refused the creation (PERSISTENCE_FAILED); the message names the path and the cause
           content:
             application/json:
               schema:
@@ -2867,8 +3135,10 @@ paths:
       x-openai-isConsequential: false
       summary: Document metadata and optional text content
       description: >-
-        Returns document metadata by default. Set includeContent=true to read
-        current or pre-review text with an ETag revision header.
+        Returns the metadata of an open document or a closed workspace file
+        by default; dirty says that the text is not the text of the file. Set
+        includeContent=true to read current or pre-review text with an ETag
+        revision header.
       parameters:
         - name: documentId
           in: path
@@ -2914,6 +3184,12 @@ paths:
                   - $ref: "#/components/schemas/ReadDocumentResponse"
         "404":
           description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
+          description: The file of the closed document cannot be read
           content:
             application/json:
               schema:
@@ -2969,6 +3245,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
+          description: The file of the closed document cannot be read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
         "408":
           description: Search timed out
           content:
@@ -3016,7 +3298,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "409":
-          description: Revision mismatch or document closed
+          description: Revision mismatch, document closed, or a file of the document that cannot be read (DOCUMENT_UNREADABLE)
           content:
             application/json:
               schema:
@@ -3502,7 +3784,15 @@ paths:
                   - $ref: "#/components/schemas/CitationDatabasesResponse"
                   - $ref: "#/components/schemas/CitationItem"
         "404":
-          description: Database or cite key not found
+          description: The database does not hold the cite key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "503":
+          description: >-
+            The database is not loaded. error.database names the file and the
+            cause; without it, the settings name no main library.
           content:
             application/json:
               schema:
@@ -3534,7 +3824,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "404":
-          description: Database not loaded, or a citation key not in it
+          description: >-
+            The database does not hold a cite key of the request.
+            error.missingCitekeys names each one.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "503":
+          description: >-
+            The database is not loaded (CITATION_DATABASE_NOT_LOADED,
+            error.database names the file and the cause), or the citation style
+            of the settings did not load (CITATION_STYLE_NOT_LOADED). No
+            citation is rendered in another style.
           content:
             application/json:
               schema:
@@ -3558,6 +3860,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MacroInventoryResponse"
+        "503":
+          description: >-
+            The TeX macro directory cannot be read, or the generated MathJax
+            projection cannot be read or is not a macro projection
+            (MACROS_UNAVAILABLE); the message names the cause.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
         "500":
           description: Macro inspection failed
           content:
@@ -3611,7 +3922,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "404":
-          description: Figure file not found
+          description: >-
+            The figure file does not exist (FIGURE_NOT_FOUND), or the configured
+            figures directory does not exist (FIGURES_DIRECTORY_NOT_FOUND).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
+          description: >-
+            The filesystem refuses to read the figure file or a folder on its
+            path (FILE_UNREADABLE); the message names the cause.
           content:
             application/json:
               schema:
@@ -3670,9 +3991,9 @@ paths:
       summary: Lint documents by editor/workspace scope
       description: >-
         focused, open and document lint the current text through the lint
-        cache. workspace and all read only the cache and return at once;
-        documents never linted are listed under pending while the background
-        linter works through them.
+        cache. workspace and all read only the cache and return at once:
+        pending lists the documents not linted yet, and failed lists the
+        documents whose run gave no result, with the cause.
       parameters:
         - name: scope
           in: query
@@ -3775,6 +4096,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+  /v1/zotero/items/{itemKey}/extractions:
+    get:
+      operationId: getZoteroExtractions
+      tags:
+        - zotero
+      summary: Read the Markdown extractions attached to a Zotero item
+      parameters:
+        - name: itemKey
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Z0-9]{8}$"
+      responses:
+        "200":
+          description: Every Markdown extraction child and its text.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoteroExtractionsResponse"
+        "502":
+          description: Zotero or an attachment file could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "503":
+          description: Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/zotero/imports/identifier:
     post:
       operationId: importZoteroIdentifier
@@ -3818,7 +4171,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "503":
-          description: Zotero or the citation database is not available
+          description: Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available
           content:
             application/json:
               schema:
@@ -3877,7 +4230,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "503":
-          description: Zotero or the citation database is not available
+          description: Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available
           content:
             application/json:
               schema:

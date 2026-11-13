@@ -40,17 +40,27 @@
       <button
         type="button"
         aria-label="Refresh problems"
-        @click="refresh"
+        @click="refreshForAuthor"
       >
         Refresh
       </button>
     </div>
-    <p
-      v-if="error"
-      class="problems-state"
+    <div
+      v-if="notLoaded !== ''"
+      class="problems-not-run"
+      role="alert"
+      data-problems-not-loaded
     >
-      {{ error }}
-    </p>
+      <strong>The problems could not be read</strong>
+      <p>{{ notLoaded }}</p>
+      <button
+        type="button"
+        data-problems-retry
+        @click="retry"
+      >
+        Try again
+      </button>
+    </div>
     <p
       v-else-if="answer === null"
       class="problems-state"
@@ -58,8 +68,32 @@
       Loading problems…
     </p>
     <template v-else>
+      <div
+        v-if="answer.queueStopped !== null"
+        class="problems-not-run"
+        role="alert"
+        data-problems-stopped
+      >
+        <strong>The documents are not linted</strong>
+        <p>{{ answer.queueStopped }}</p>
+        <button
+          type="button"
+          data-problems-retry
+          @click="retry"
+        >
+          Try again
+        </button>
+      </div>
       <p
-        v-if="visibleFindings.length === 0 && answer.pendingPaths.length === 0"
+        v-if="fixRefused !== ''"
+        class="problems-state"
+        role="status"
+        data-problems-fix-refused
+      >
+        {{ fixRefused }}
+      </p>
+      <p
+        v-if="nothingToReport"
         class="problems-state"
       >
         No problems
@@ -133,6 +167,38 @@
         </details>
       </div>
       <details
+        v-if="answer.failed.length"
+        open
+        class="problems-group"
+        data-problems-failed
+      >
+        <summary>{{ answer.failed.length }} not linted</summary>
+        <div class="problems-not-run">
+          <button
+            type="button"
+            data-problems-retry
+            @click="retry"
+          >
+            Try again
+          </button>
+        </div>
+        <div
+          v-for="document in answer.failed"
+          :key="document.path"
+          class="problems-finding"
+        >
+          <button
+            type="button"
+            class="problems-jump problems-unlinted"
+            :title="document.path"
+            @click="emit('navigate', { path: document.path, from: 0, to: 0 })"
+          >
+            {{ document.name }}
+            <small>{{ document.cause }}</small>
+          </button>
+        </div>
+      </details>
+      <details
         v-if="answer.pendingPaths.length"
         open
         class="problems-group"
@@ -153,7 +219,9 @@
 </template>
 
 <script setup lang="ts">
-import { pathBasename } from "@common/util/renderer-path-polyfill";
+import { reportError } from "@common/util/error-reporting";
+import { remoteErrorMessage } from "@common/util/ipc-rejection";
+import { innermostRoot, pathBasename } from "@common/util/renderer-path-polyfill";
 import type {
   ProblemDocument,
   ProblemFinding,
@@ -175,22 +243,17 @@ const scope = ref<ProblemScope>("workspace");
 const minimumSeverity = ref<ProblemSeverity>("info");
 const grouping = ref<"document" | "rule">("document");
 const answer = ref<WorkspaceProblems | null>(null);
-const error = ref("");
+/** Why the last request for the problems gave none; empty after an answer. */
+const notLoaded = ref("");
+/** Why the last fix of the author was not applied. */
+const fixRefused = ref("");
 
 const workspacePath = computed(() => {
   const activePath = documentTreeStore.lastLeafActiveFile?.path;
-  const roots = workspaceStore.rootDescriptors.filter(
-    (descriptor) => descriptor.type === "directory",
-  );
-  return (
-    roots
-      .filter(
-        (descriptor) =>
-          activePath !== undefined &&
-          (activePath === descriptor.path || activePath.startsWith(`${descriptor.path}/`)),
-      )
-      .sort((a, b) => b.path.length - a.path.length)[0]?.path ?? roots[0]?.path
-  );
+  const roots = workspaceStore.rootDescriptors
+    .filter((descriptor) => descriptor.type === "directory")
+    .map((descriptor) => descriptor.path);
+  return (activePath === undefined ? undefined : innermostRoot(activePath, roots)) ?? roots[0];
 });
 
 const weight: Record<ProblemSeverity, number> = { info: 0, warning: 1, error: 2 };
@@ -202,6 +265,15 @@ const visibleDocuments = computed(() =>
 );
 const visibleFindings = computed(() =>
   visibleDocuments.value.flatMap((document) => filtered(document.diagnostics)),
+);
+/** A workspace with a document that was not linted is not without problems. */
+const nothingToReport = computed(
+  () =>
+    answer.value !== null &&
+    visibleFindings.value.length === 0 &&
+    answer.value.pendingPaths.length === 0 &&
+    answer.value.failed.length === 0 &&
+    answer.value.queueStopped === null,
 );
 const ruleGroups = computed(() => {
   const groups = new Map<string, { document: ProblemDocument; finding: ProblemFinding }[]>();
@@ -218,28 +290,50 @@ const ruleGroups = computed(() => {
 });
 
 async function refresh(): Promise<void> {
-  try {
-    error.value = "";
-    const result: WorkspaceProblems = await ipcRenderer.invoke("application", {
+  await ipcRenderer
+    .invoke("application", {
       command: "list-workspace-lint",
       payload: { scope: scope.value, workspacePath: workspacePath.value },
-    });
-    answer.value = result;
-    emit(
-      "count",
-      result.documents.reduce((total, document) => total + document.diagnostics.length, 0),
+    })
+    .then(
+      (result) => {
+        notLoaded.value = "";
+        answer.value = result;
+        emit(
+          "count",
+          result.documents.reduce((total, document) => total + document.diagnostics.length, 0),
+        );
+      },
+      (failure: Error) => {
+        // The lint results of the main process have no reader until the
+        // author starts the lint again, so the view shows the cause in place.
+        notLoaded.value = remoteErrorMessage(failure);
+        reportError("Could not read the problems of the workspace", failure);
+      },
     );
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause);
-  }
+}
+
+async function refreshForAuthor(): Promise<void> {
+  fixRefused.value = "";
+  await refresh();
+}
+
+/** The author starts again each lint that gave no result. */
+async function retry(): Promise<void> {
+  // The window shows the failure of this command (`command-failed`).
+  await ipcRenderer
+    .invoke("application", { command: "retry-workspace-lint" })
+    .then(refresh, (failure: Error) => reportError("Could not start the lint again", failure));
 }
 
 async function applyFix(document: ProblemDocument, finding: ProblemFinding): Promise<void> {
   if (finding.fix === null || document.state !== "current") {
     return;
   }
-  try {
-    const result = await ipcRenderer.invoke("application", {
+  fixRefused.value = "";
+  // The window shows the failure of this command (`command-failed`).
+  await ipcRenderer
+    .invoke("application", {
       command: "apply-lint-fix",
       payload: {
         documentPath: document.path,
@@ -248,15 +342,16 @@ async function applyFix(document: ProblemDocument, finding: ProblemFinding): Pro
         to: finding.to,
         replacement: finding.fix.replacement,
       },
-    });
-    if (result.status === "conflict") {
-      error.value = "Document changed. Refresh problems before fixing it.";
-    } else {
-      await refresh();
-    }
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause);
-  }
+    })
+    .then(
+      async (result) => {
+        if (result.status === "conflict") {
+          fixRefused.value = `${document.name} changed after its lint, so the fix was not applied.`;
+        }
+        await refresh();
+      },
+      (failure: Error) => reportError("Could not apply the fix", failure),
+    );
 }
 
 watch([scope, workspacePath], () => {
@@ -278,6 +373,9 @@ onUnmounted(() => stopLintChanged?.());
 .problems-controls { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; }
 .problems-controls select, .problems-controls button { max-width: 100%; font: inherit; }
 .problems-state { padding: 8px; color: var(--chrome-text-muted); }
+.problems-not-run { padding: 8px; }
+.problems-not-run p { margin: 4px 0 8px; color: var(--chrome-text-muted); overflow-wrap: anywhere; }
+.problems-not-run button { font: inherit; }
 .problems-group { border-top: 1px solid var(--chrome-border); }
 .problems-group summary { padding: 7px 8px; cursor: pointer; overflow-wrap: anywhere; }
 .problems-group summary span { color: var(--chrome-text-muted); }

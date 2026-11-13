@@ -1,10 +1,10 @@
-import { execFile } from "node:child_process";
+import { extractASTNodes, markdownToAST } from "@common/modules/markdown-utils";
+import { requireSuccess, runProcess } from "@dzack/external-process/run-process";
 import {
   type Citation,
   type CiteItem,
   parseCitationSuffix,
-} from "@common/modules/markdown-editor/parser/citation-parser";
-import { extractASTNodes, markdownToAST } from "@common/modules/markdown-utils";
+} from "@dzack/pandoc-editor/parser/citation-parser";
 import { LRUCache } from "lru-cache";
 import { z } from "zod";
 
@@ -125,20 +125,17 @@ async function readWithPandoc(candidateSources: string[]): Promise<void> {
   const input = candidateSources
     .map((candidateSource, index) => `${fence} {#citation-${index}}\n${candidateSource}\n${fence}`)
     .join("\n\n");
-  const output = await new Promise<string>((resolve, reject) => {
-    const process = execFile(
-      "pandoc",
-      ["--from=markdown", "--to=json"],
-      { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
-      (error, stdout) => {
-        if (error !== null) reject(error);
-        else resolve(stdout);
-      },
-    );
-    if (process.stdin === null) throw new Error("Pandoc input stream is unavailable");
-    process.stdin.on("error", reject);
-    process.stdin.end(input);
-  });
+  const output = requireSuccess(
+    "pandoc",
+    await runProcess({
+      command: "pandoc",
+      args: ["--from=markdown", "--to=json"],
+      env: process.env,
+      input,
+      timeLimitMs: "none",
+      waitForGroup: false,
+    }),
+  );
   const document = documentSchema.parse(JSON.parse(output));
   if (document.blocks.length !== candidateSources.length) {
     throw new Error(
