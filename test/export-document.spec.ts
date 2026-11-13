@@ -381,6 +381,36 @@ describe("Export of one document", function () {
     assert.equal(text.includes("The ring A of adeles."), true, text);
   });
 
+  it("exports a wikilink to LaTeX as a link to the heading that the editor resolves", async function () {
+    await exportDocument(services, { file: document, profile: LATEX, exportTo: "cwd" });
+
+    assert.deepEqual(errorWindows, []);
+    const tex = await readFile(path.join(root, "Lattices.tex"), "utf8");
+    assert.equal(tex.includes("See \\hyperref[genus]{Lattices\\#Genus}."), true, tex);
+  });
+
+  it("exports a wikilink to a document outside the export to LaTeX as its label", async function () {
+    const genera = path.join(root, "Genera.md");
+    await writeFile(genera, "# Genera\n\nThe genus of a form: [[Lattices#Genus]].\n");
+    services.links = {
+      index: new WikilinkIndex(
+        [document, genera].map((file) => ({
+          path: file,
+          root,
+          id: "",
+          title: undefined,
+          aliases: [],
+        })),
+      ),
+    };
+
+    await exportDocument(services, { file: genera, profile: LATEX, exportTo: "cwd" });
+
+    assert.deepEqual(errorWindows, []);
+    const tex = await readFile(path.join(root, "Genera.tex"), "utf8");
+    assert.equal(tex.includes("The genus of a form: Lattices\\#Genus."), true, tex);
+  });
+
   it("exports the LaTeX delimiters of math as math to Word", async function () {
     const forms = path.join(root, "Forms.md");
     await writeFile(forms, BRACKET_MATH);
