@@ -81,6 +81,7 @@ import { readFile } from "fs/promises";
 import path from "path";
 import { bibliographyFiles, documentBibliography } from "source/app/util/document-bibliographies";
 import { openPath } from "source/app/util/open-path";
+import { canonicalPath } from "source/app/util/real-path";
 import { throwFailures } from "source/app/util/run-each-step";
 import { showRefusalInWindow } from "source/app/util/show-refusal-in-window";
 import { showStoreWriteFailure } from "source/app/util/show-store-write-failure";
@@ -1593,7 +1594,9 @@ export default class DocumentManager
               );
             if (gone) {
               leaf.tabMan.closeFile(file);
+              continue;
             }
+            await this._restoreUnderRealPath(leaf, file);
           }
           if (leaf.tabMan.openFiles.length === 0) {
             leaf.parent.removeNode(leaf);
@@ -1731,6 +1734,34 @@ export default class DocumentManager
     // which will result in a crash report appearing on macOS.
     await this._watcher.shutdown();
     await this._config.shutdown();
+  }
+
+  /**
+   * Names a restored tab by the real path of its file, as `openFile` names a
+   * new one; an earlier version stored the name it was opened under. A tab
+   * whose file the pane shows under its real path already is closed. A path
+   * that cannot be resolved keeps its tab, and the document reports the
+   * error of the file when it loads.
+   */
+  private async _restoreUnderRealPath(leaf: DTLeaf, file: string): Promise<void> {
+    const realPath = await canonicalPath(file).then(
+      (resolved) => resolved,
+      (err: Error) => {
+        this._app.log.error(
+          `[Document Provider] Could not resolve the real path of ${file}: ${err.message}`,
+          err,
+        );
+        return file;
+      },
+    );
+    if (realPath === file) {
+      return;
+    }
+    if (leaf.tabMan.openFiles.some((tab) => tab.path === realPath)) {
+      leaf.tabMan.closeFile(file);
+    } else {
+      leaf.tabMan.replaceFilePath(file, realPath);
+    }
   }
 
   private broadcastEvent(event: DP_EVENTS, context?: DocumentsUpdateContext): void {
@@ -2205,13 +2236,16 @@ current contents from the editor somewhere else, and restart the application.`,
   public async openFile(
     windowId: string | undefined,
     leafId: string | undefined,
-    filePath: string,
+    requestedPath: string,
     newTab?: boolean,
     navigation?: {
       targetRange?: SourceRange;
       sourceLocation?: DocumentLocation;
     },
   ): Promise<boolean> {
+    // A document is named by the real path of its file: a file that a
+    // symbolic link names opens the one document of that file (#57).
+    const filePath = await canonicalPath(requestedPath);
     if (!isFile(filePath)) {
       // The renderer process essentially just throws paths at the documents
       // provider when the user intents to open them. Users can also link

@@ -35,10 +35,10 @@ import {
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
-import { canonicalPath } from "source/app/service-providers/agent-api/document-queries";
 import type DocumentManager from "source/app/service-providers/documents";
 import { DocumentTree } from "source/app/service-providers/documents/document-tree";
 import { ReviewStateNotMovedError } from "source/app/service-providers/documents/review-state-not-moved-error";
+import { canonicalPath } from "source/app/util/real-path";
 import { sha256Text } from "source/common/util/sha256";
 import { stringify as stringifyYAML } from "yaml";
 import { bootDocumentManager, emitWatchdogEvent } from "./documents-provider-seam";
@@ -187,7 +187,7 @@ describe("Documents-provider identity of a moved document", function () {
     }
 
     assert.equal(await provider.closeFile(windowId, pane(), newPath), true, "the tab closes");
-    assert.deepEqual(provider.loadedDocuments, []);
+    assert.equal(provider.loadedDocuments.length, 0, "the close unloads the document");
     assert.deepEqual(
       await sidecarStates(provider),
       new Map([[newPath, { annotations: [annotation, second.annotationId], review: null }]]),
@@ -208,7 +208,7 @@ describe("Documents-provider identity of a moved document", function () {
     assert.equal(provider.getDocumentPath(id), newPath);
     assert.equal(provider.readWorkingText(id), REVISED);
     assert.equal(await requestQuit(), 1, "the quit is not refused");
-    assert.deepEqual(provider.loadedDocuments, []);
+    assert.equal(provider.loadedDocuments.length, 0, "the close unloads the document");
     assert.deepEqual(
       await sidecarStates(provider),
       new Map([[newPath, { annotations: [], review: reviewId }]]),
@@ -223,7 +223,7 @@ describe("Documents-provider identity of a moved document", function () {
     assert.equal(await provider.closeFile(windowId, pane(), first), true);
     const secondState = await openAndAnnotate(second);
     assert.equal(await provider.closeFile(windowId, pane(), second), true);
-    assert.deepEqual(provider.loadedDocuments, []);
+    assert.equal(provider.loadedDocuments.length, 0, "the close unloads the document");
 
     const firstMoved = path.join(root, "renamed.md");
     const secondMoved = path.join(root, "papers", "closed.md");
@@ -308,7 +308,7 @@ describe("Documents-provider identity of a moved document", function () {
       "the annotations of the replaced file went with the file",
     );
     assert.equal(await provider.closeFile(windowId, pane(), replaced), true);
-    assert.deepEqual(provider.loadedDocuments, []);
+    assert.equal(provider.loadedDocuments.length, 0, "the close unloads the document");
   });
 
   it("keeps the moved document when the watcher events of the rename arrive after the move", async function () {
@@ -403,7 +403,7 @@ describe("Documents-provider identity of a moved document", function () {
       assert.fail(`The annotation was refused: ${created.code}`);
     }
     assert.equal(await provider.closeFile(windowId, pane(), aliasTab), true);
-    assert.deepEqual(provider.loadedDocuments, []);
+    assert.equal(provider.loadedDocuments.length, 0, "the close unloads the document");
 
     await openInPane(real);
 

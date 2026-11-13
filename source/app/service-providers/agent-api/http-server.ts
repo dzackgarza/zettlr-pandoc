@@ -110,10 +110,10 @@ import {
   loadCanonicalMacroInventory,
   MacroSourcesUnavailableError,
 } from "../../util/load-mathjax-macros";
+import { canonicalPath } from "../../util/real-path";
 import { CollaborationSidecarUnreadableError } from "../documents/collaboration-sidecar-store";
 import { AGENT_API_PORT_FILE, formatAgentApiDiscovery } from "./discovery-file";
 import AgentDocumentQueries, {
-  canonicalPath,
   DocumentUnreadableError,
   SEARCH_DEADLINE_MS,
   SearchPatternError,

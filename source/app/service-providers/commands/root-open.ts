@@ -18,6 +18,7 @@ import { ignorePath } from "@common/util/ignore-path";
 import { type DirDescriptor } from "@dts/common/fsal";
 import { app } from "electron";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import { canonicalPath } from "source/app/util/real-path";
 import ZettlrCommand from "./zettlr-command";
 
 export default class RootOpen extends ZettlrCommand {
@@ -126,7 +127,9 @@ export default class RootOpen extends ZettlrCommand {
     const leafId = this._app.documents.leafIds(winKey)[0];
     const refusals: string[] = [];
 
-    for (const absPath of pathlist) {
+    for (const requestedPath of pathlist) {
+      // A root and its documents are named by their real paths (#57).
+      const absPath = await canonicalPath(requestedPath);
       const isFile = await this._app.fsal.isFile(absPath);
       const isDir = await this._app.fsal.isDir(absPath);
       if (!isFile && !isDir) throw new Error(`Cannot open missing path: ${absPath}`);

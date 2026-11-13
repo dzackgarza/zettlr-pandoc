@@ -68,12 +68,12 @@ import {
 const SIDECAR_EXTENSION = ".json";
 
 /**
- * The sidecar file for a document. Keyed by the hash of the canonical
- * (resolved) path, so the workspace layout never leaks into app data and no
- * character of the document path needs escaping.
+ * The sidecar file for a document. Keyed by the hash of the document path,
+ * so the workspace layout never leaks into app data and no character of the
+ * document path needs escaping. A document path is the real path of its
+ * file (`openFile`, `rootPathsOnDisk`), so the names of one file that
+ * symbolic links give reach one sidecar.
  */
-// ponytail: path.resolve is the canonical form — symlinked aliases of one
-// file get distinct sidecars. Move to realpath if that ever bites.
 export function collaborationSidecarFilePath(directory: string, documentPath: string): string {
   return path.join(directory, `${sha256Text(path.resolve(documentPath))}${SIDECAR_EXTENSION}`);
 }
