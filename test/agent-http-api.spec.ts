@@ -20,15 +20,10 @@
 // the named import below for the harness-owned userData path.
 import "./headless-electron-harness.cjs";
 
-import type {
-  AgentApiComponents,
-  ReapplyReviewRequest,
-  ReviewMutationPrecondition,
-} from "@dts/common/agent-api";
+import type { ReapplyReviewRequest, ReviewMutationPrecondition } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import Ajv2020 from "ajv/dist/2020";
 import { strict as assert } from "assert";
 import { spawn } from "child_process";
 import { randomUUID } from "crypto";
@@ -78,57 +73,17 @@ import { sha256Text } from "source/common/util/sha256";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { parse as parseYaml } from "yaml";
 import { AGENT_API_ENVIRONMENT, readAgentApiPort } from "../e2e/support/electron-app";
+import {
+  type AgentApiSchemas,
+  assertDeclaredRawResponse,
+  assertDeclaredResponse,
+  type JsonValue,
+  openApiDocument,
+  parseAs,
+} from "./agent-api-contract";
 import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { bootFsal } from "./fsal-seam";
 import { userData } from "./headless-electron-harness.cjs";
-
-// ============================================================================
-// Contract conformance
-// ============================================================================
-
-/**
- * The specification as this file reads it. An operation keeps an index
- * signature so the structural audits below can walk any field generically,
- * and `requestBody` is spelled out because tests read published request
- * bounds out of it: a value reached through a declared path needs no cast to
- * be used, and a cast is what would let this shape drift from the document
- * without anything noticing.
- */
-interface PublishedNumericBounds {
-  maxLength?: number;
-  minimum?: number;
-  maximum?: number;
-  default?: number;
-}
-
-interface PublishedOperation {
-  [field: string]: unknown;
-  operationId: string;
-  tags?: string[];
-  requestBody?: {
-    content: Record<string, { schema: { properties: Record<string, PublishedNumericBounds> } }>;
-  };
-}
-
-/**
- * Validates a response body against the schema the server itself publishes.
- * Field-by-field assertions cannot catch drift in a field nobody thought to
- * assert — `type` shipped as the internal enum ordinal (1) instead of the
- * declared "markdown" | "code" through a fully green suite. Every response
- * asserted here is checked against openapi.yaml as a whole.
- */
-const openApiDocument = parseYaml(
-  readFileSync(
-    path.join(__dirname, "../source/app/service-providers/agent-api/openapi.yaml"),
-    "utf8",
-  ),
-) as {
-  info: { version: string };
-  components: { schemas: Record<string, unknown> };
-  paths: Record<string, Record<string, PublishedOperation>>;
-};
-
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 /** The token that each provider of this spec is started with. */
 const API_TOKEN = randomUUID();
@@ -245,25 +200,6 @@ function auditAsGptAction(document: JsonValue): string[] {
   walkSchemas(document, []);
 
   return findings;
-}
-
-const ajv = new Ajv2020({ strict: false, allErrors: true });
-for (const [name, schema] of Object.entries(openApiDocument.components.schemas)) {
-  ajv.addSchema(schema as object, `#/components/schemas/${name}`);
-}
-
-type AgentApiSchemas = AgentApiComponents["schemas"];
-
-/** Parse a response body and prove that it conforms to the named OpenAPI schema. */
-function parseAs<N extends keyof AgentApiSchemas & string>(
-  body: string,
-  schemaName: N,
-): AgentApiSchemas[N] {
-  const value: JsonValue = JSON.parse(body);
-  if (ajv.validate<AgentApiSchemas[N]>(`#/components/schemas/${schemaName}`, value)) {
-    return value;
-  }
-  assert.fail(`Response does not conform to ${schemaName}: ${ajv.errorsText()}\n${body}`);
 }
 
 describe("Agent HTTP API (OpenAPI / REST)", function () {
@@ -487,7 +423,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     headers: http.IncomingHttpHeaders;
     body: string;
   }> {
-    return new Promise((resolve, reject) => {
+    const response = await new Promise<{
+      status: number | undefined;
+      headers: http.IncomingHttpHeaders;
+      body: string;
+    }>((resolve, reject) => {
       const req = http.request(
         {
           hostname: "127.0.0.1",
@@ -505,11 +445,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             data += chunk.toString("utf8");
           });
           res.on("end", () => {
-            resolve({
-              status: res.statusCode ?? 0,
-              headers: res.headers,
-              body: data,
-            });
+            resolve({ status: res.statusCode, headers: res.headers, body: data });
           });
         },
       );
@@ -519,6 +455,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }
       req.end();
     });
+    const { status, headers, body } = response;
+    assert.ok(status !== undefined, `${method} ${pathname} answered without a status`);
+    assertDeclaredResponse(method, pathname, status, headers["content-type"], body);
+    return { status, headers, body };
   }
 
   function runReviewDiffCli(
@@ -3562,6 +3502,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       socket.write(STALLED_REQUEST);
       const response = await readUntilClose(socket);
       assert.match(response, /^HTTP\/1\.1 408 /);
+      assertDeclaredRawResponse("POST", "/v1/documents/doc-lifecycle/proposals", response);
       const body = parseAs(response.slice(response.indexOf("\r\n\r\n") + 4), "AgentErrorResponse");
       assert.equal(body.error.code, "REQUEST_BODY_TIMEOUT");
     });
@@ -3573,6 +3514,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       });
       const response = await new Promise<{
         status: number;
+        contentType: string | undefined;
         body: string;
       }>((resolve, reject) => {
         const request = http.request(
@@ -3597,7 +3539,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
                 reject(new Error("Oversized-body HTTP response carried no status code."));
                 return;
               }
-              resolve({ status: incoming.statusCode, body: responseBody });
+              resolve({
+                status: incoming.statusCode,
+                contentType: incoming.headers["content-type"],
+                body: responseBody,
+              });
             });
           },
         );
@@ -3606,6 +3552,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       });
 
       assert.equal(response.status, 413, response.body);
+      assertDeclaredResponse(
+        "POST",
+        "/v1/documents/doc-lifecycle/proposals",
+        response.status,
+        response.contentType,
+        response.body,
+      );
       assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "REQUEST_TOO_LARGE");
 
       await lifecycleLog.shutdown();

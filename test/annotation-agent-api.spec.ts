@@ -22,9 +22,7 @@
 import "./headless-electron-harness.cjs";
 import { sha256Text } from "@common/util/sha256";
 import { WikilinkIndex } from "@common/util/wikilink-resolution";
-import type { AgentApiComponents } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
-import Ajv2020 from "ajv/dist/2020";
 import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
 import { createPatch } from "diff";
@@ -51,43 +49,11 @@ import { collaborationSidecarFilePath } from "source/app/service-providers/docum
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import LogProvider from "source/app/service-providers/log";
 import { SearchProvider } from "source/app/service-providers/search";
-import { parse as parseYaml } from "yaml";
+import { assertDeclaredResponse, parseAs } from "./agent-api-contract";
 import { userData } from "./headless-electron-harness.cjs";
 
 /** The token that the provider of this spec is started with. */
 const API_TOKEN = randomUUID();
-
-// ============================================================================
-// Schema conformance — validates every response against the OpenAPI document
-// the server itself publishes, the same way agent-http-api.spec.ts does.
-// ============================================================================
-
-const openApiDocument = parseYaml(
-  readFileSync(
-    path.join(__dirname, "../source/app/service-providers/agent-api/openapi.yaml"),
-    "utf8",
-  ),
-) as { components: { schemas: Record<string, unknown> } };
-
-const ajv = new Ajv2020({ strict: false, allErrors: true });
-for (const [name, schema] of Object.entries(openApiDocument.components.schemas)) {
-  ajv.addSchema(schema as object, `#/components/schemas/${name}`);
-}
-
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-type AgentApiSchemas = AgentApiComponents["schemas"];
-
-/** Parse a response body and prove that it conforms to the named OpenAPI schema. */
-function parseAs<N extends keyof AgentApiSchemas & string>(
-  body: string,
-  schemaName: N,
-): AgentApiSchemas[N] {
-  const value: JsonValue = JSON.parse(body);
-  if (ajv.validate<AgentApiSchemas[N]>(`#/components/schemas/${schemaName}`, value)) {
-    return value;
-  }
-  assert.fail(`Response does not conform to ${schemaName}: ${ajv.errorsText()}\n${body}`);
-}
 
 /** Line/column computed independently of the server's own offsetToLineColumn. */
 function referenceLineColumn(text: string, offset: number): { line: number; column: number } {
@@ -251,7 +217,11 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     pathname: string,
     options: { body?: string; headers?: Record<string, string> } = {},
   ): Promise<{ status: number; body: string }> {
-    return new Promise((resolve, reject) => {
+    const response = await new Promise<{
+      status: number | undefined;
+      contentType: string | undefined;
+      body: string;
+    }>((resolve, reject) => {
       const req = http.request(
         {
           hostname: "127.0.0.1",
@@ -267,7 +237,13 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         (res) => {
           let data = "";
           res.on("data", (chunk: Buffer) => (data += chunk.toString("utf8")));
-          res.on("end", () => resolve({ status: res.statusCode ?? 0, body: data }));
+          res.on("end", () =>
+            resolve({
+              status: res.statusCode,
+              contentType: res.headers["content-type"],
+              body: data,
+            }),
+          );
         },
       );
       req.on("error", reject);
@@ -276,6 +252,10 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       }
       req.end();
     });
+    const { status, contentType, body } = response;
+    assert.ok(status !== undefined, `${method} ${pathname} answered without a status`);
+    assertDeclaredResponse(method, pathname, status, contentType, body);
+    return { status, body };
   }
 
   async function postMessage(
