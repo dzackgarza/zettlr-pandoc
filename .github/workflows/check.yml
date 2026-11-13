@@ -41,13 +41,16 @@ jobs:
       # `just setup-ci` installs Flowmark from its main branch as a uv tool.
       - name: Setup uv
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      - name: Key the CI toolchain cache by the week
+        id: toolchain-week
+        run: echo "week=$(date --utc +%G-W%V)" >> "$GITHUB_OUTPUT"
       - name: Restore the CI toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/texlive
             ~/ci-downloads
-          key: ci-toolchain-${{ hashFiles('scripts/setup-ci-toolchain.sh', 'scripts/pandoc-reference.json') }}
+          key: ci-toolchain-${{ steps.toolchain-week.outputs.week }}-${{ hashFiles('scripts/setup-ci-toolchain.sh', 'scripts/pandoc-reference.json') }}
         id: toolchain-cache
       - name: Provision real export toolchain
         run: just setup-ci

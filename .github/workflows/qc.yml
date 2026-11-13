@@ -35,3 +35,4 @@ jobs:
       setup_cache_key_files: |
         scripts/setup-ci-toolchain.sh
         scripts/pandoc-reference.json
+      setup_cache_period: iso-week
