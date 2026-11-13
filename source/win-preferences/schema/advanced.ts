@@ -14,6 +14,7 @@
 
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
+import { UPDATE_CHECKS_BUILT_IN } from "@common/util/setting-choices";
 import type { EnvironmentInfo } from "@dts/common/environment";
 import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
 import { PreferencesGroups } from "./_preferences-groups";
@@ -236,6 +237,6 @@ export function getAdvancedFields(config: ConfigOptions): PreferencesFieldset[] 
         },
       ],
     },
-    ...(__UPDATES_DISABLED__ === "0" ? [betaReleaseItem] : []),
+    ...(UPDATE_CHECKS_BUILT_IN ? [betaReleaseItem] : []),
   ];
 }

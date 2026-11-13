@@ -97,6 +97,7 @@
     v-bind:model-value="model"
     v-bind:label="props.field.label"
     v-bind:name="props.field.model"
+    v-bind:disabled="props.field.disabled"
     v-on:update:model-value="emit('update:modelValue', $event)"
   ></SwitchInput>
   <RadioInput

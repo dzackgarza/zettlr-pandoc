@@ -47,6 +47,14 @@ function readConfig(page: Page): Promise<ConfigOptions> {
   );
 }
 
+/** A screenshot after the transitions of the controls (0.4 s) end. */
+async function settledScreenshot(page: Page): Promise<Buffer> {
+  await page.waitForFunction(() =>
+    document.getAnimations().every((animation) => animation.playState !== "running"),
+  );
+  return await page.screenshot();
+}
+
 function describeFirstStart(
   title: string,
   name: string,
@@ -109,8 +117,9 @@ describeFirstStart(
       const betas = page.locator('input[name="check-beta"]');
       assert.equal(await betas.isDisabled(), false, "the app checks for updates at a first start");
       await page.locator('label[for="form-input-check-updates"]').first().click();
-      screenshots.set("onboarding-updates-off.png", await page.screenshot());
       assert.equal((await readConfig(page)).system.checkForUpdates, false);
+      assert.equal(await page.locator('input[name="check-updates"]').isChecked(), false);
+      screenshots.set("onboarding-updates-off.png", await settledScreenshot(page));
       assert.equal(
         await betas.isDisabled(),
         true,
@@ -127,8 +136,12 @@ describeFirstStart(
         ["Never", "Immediately", "After a short delay"],
       );
       await autosave.filter({ hasText: "After a short delay" }).click();
-      screenshots.set("onboarding-autosave-delayed.png", await page.screenshot());
       assert.equal((await readConfig(page)).editor.autoSave, "delayed");
+      assert.equal(
+        await page.locator('input[name="autosave"]:checked').getAttribute("value"),
+        "delayed",
+      );
+      screenshots.set("onboarding-autosave-delayed.png", await settledScreenshot(page));
     });
   },
 );
@@ -141,7 +154,7 @@ describeFirstStart(
     it("shows that the build checks for no updates and offers no switch", async function () {
       const page = await onboardingPage(start().browser, this.timeout());
       await showOnboardingPage(page, UPDATES_PAGE, "Staying Up To Date");
-      screenshots.set("onboarding-updates-disabled.png", await page.screenshot());
+      screenshots.set("onboarding-updates-disabled.png", await settledScreenshot(page));
       assert.equal(await page.locator(".page .switch-group").count(), 0);
       assert.match(
         await page.locator(".page").innerText(),

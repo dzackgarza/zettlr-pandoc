@@ -1,37 +1,45 @@
 <template>
   <h1>{{ pageHeading }}</h1>
 
-  <p>
-    {{ updatesIntro }}
+  <p v-if="!UPDATE_CHECKS_BUILT_IN">
+    {{ updatesDisabledInfo() }}
   </p>
 
-  <p class="box">
-    <SwitchControl
-      v-model="checkForUpdates"
-      v-bind:label="updatesLabel"
-      label-position="before"
-      name="check-updates"
-      v-bind:stretch="true"
-    ></SwitchControl>
-  </p>
+  <template v-else>
+    <p>
+      {{ updatesIntro }}
+    </p>
 
-  <p>
-    {{ betasIntro }}
-  </p>
+    <p class="box">
+      <SwitchControl
+        v-model="checkForUpdates"
+        v-bind:label="updatesLabel"
+        label-position="before"
+        name="check-updates"
+        v-bind:stretch="true"
+      ></SwitchControl>
+    </p>
 
-  <p class="box">
-    <SwitchControl
-      v-model="checkForBetas"
-      v-bind:label="betasLabel"
-      label-position="before"
-      name="check-beta"
-      v-bind:stretch="true"
-    ></SwitchControl>
-  </p>
+    <p>
+      {{ betasIntro }}
+    </p>
+
+    <p class="box">
+      <SwitchControl
+        v-model="checkForBetas"
+        v-bind:label="betasLabel"
+        label-position="before"
+        name="check-beta"
+        v-bind:stretch="true"
+        v-bind:disabled="!checkForUpdates"
+      ></SwitchControl>
+    </p>
+  </template>
 </template>
 
 <script setup lang="ts">
 import { trans } from "source/common/i18n-renderer";
+import { UPDATE_CHECKS_BUILT_IN, updatesDisabledInfo } from "source/common/util/setting-choices";
 import SwitchControl from "source/common/vue/form/elements/SwitchControl.vue";
 import { ref, watch } from "vue";
 

@@ -1,11 +1,12 @@
 <template>
-  <div v-bind:class="{ 'switch-group': true, stretch }">
+  <div v-bind:class="{ 'switch-group': true, stretch, disabled }">
     <label v-if="labelPosition === 'before' && label" v-bind:for="fieldID">{{ label }}</label>
     <label class="switch">
       <input
         v-bind:id="fieldID"
         type="checkbox" v-bind:name="name" value="yes"
         v-bind:checked="modelValue"
+        v-bind:disabled="disabled"
         v-on:input="emit('update:modelValue', ($event.target as HTMLInputElement).checked)"
       >
       <div class="toggle"></div>
@@ -55,6 +56,10 @@ const props = defineProps<{
    * available width.
    */
   stretch?: boolean;
+  /**
+   * A disabled switch shows its state and takes no input.
+   */
+  disabled?: boolean;
 }>();
 
 const fieldID = computed<string>(() => "form-input-" + (props.name ?? ""));
@@ -73,6 +78,21 @@ body {
 
     &.stretch {
       justify-content: space-between;
+    }
+
+    // As a disabled checkbox (CheckboxControl.vue): a grey label.
+    &.disabled {
+      label {
+        color: grey;
+      }
+
+      label.switch {
+        opacity: 0.5;
+
+        .toggle {
+          cursor: not-allowed;
+        }
+      }
     }
 
     label {

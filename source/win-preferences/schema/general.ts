@@ -13,6 +13,11 @@
  */
 
 import { trans } from "@common/i18n-renderer";
+import {
+  autoSaveChoices,
+  UPDATE_CHECKS_BUILT_IN,
+  updatesDisabledInfo,
+} from "@common/util/setting-choices";
 import { PreferencesGroups } from "./_preferences-groups";
 import { type PreferencesFieldset } from "./types";
 
@@ -34,9 +39,7 @@ export function getGeneralFields(appLangOptions: Record<string, string>): Prefer
   const updatesDisabledSetting: PreferencesFieldset = {
     title: trans("Updates"),
     group: PreferencesGroups.General,
-    infoString: trans(
-      "Updates for this binary of Zettlr have been disabled at build time. This is a choice made by the packager and is common when Zettlr is being distributed via package managers. In these cases, Zettlr will be updated through your package manager.",
-    ),
+    infoString: updatesDisabledInfo(),
     fields: [],
   };
 
@@ -63,11 +66,7 @@ export function getGeneralFields(appLangOptions: Record<string, string>): Prefer
           type: "radio",
           model: "editor.autoSave",
           inline: true,
-          options: {
-            off: trans("Never"),
-            immediately: trans("Immediately"),
-            delayed: trans("After a short delay"),
-          },
+          options: autoSaveChoices(),
         },
         {
           // Issue #26: format the document on every explicit save.
@@ -133,6 +132,6 @@ export function getGeneralFields(appLangOptions: Record<string, string>): Prefer
         },
       ],
     },
-    ...(__UPDATES_DISABLED__ === "0" ? [updateSetting] : [updatesDisabledSetting]),
+    ...(UPDATE_CHECKS_BUILT_IN ? [updateSetting] : [updatesDisabledSetting]),
   ];
 }
