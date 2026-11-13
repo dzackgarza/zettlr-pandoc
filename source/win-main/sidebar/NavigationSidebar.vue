@@ -179,7 +179,7 @@ const explorerCounts = computed<Partial<Record<SidebarSectionId, number>>>(() =>
 /** Opens the drawer on the target's view, expands its section, and puts the focus where asked. */
 async function reveal(target: RevealTarget): Promise<void> {
   configStore.setConfigValue("ui.sidebarView", target.view);
-  configStore.setConfigValue("window.fileManagerVisible", true);
+  windowStateStore.setPaneVisible("window.fileManagerVisible", true);
   await nextTick();
   if (target.section !== undefined) {
     const container =

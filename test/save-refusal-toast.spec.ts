@@ -25,6 +25,7 @@ import "./document-collaboration-ipc-double";
 import { collab } from "@codemirror/collab";
 import { EditorState } from "@codemirror/state";
 import { strict as assert } from "assert";
+import { createPinia, setActivePinia } from "pinia";
 import { saveBuffer } from "source/common/modules/markdown-editor/util/save-buffer";
 import {
   dismissAllNotifications,
@@ -32,9 +33,11 @@ import {
   notificationEntries,
   runNotificationAction,
 } from "source/common/util/show-toast";
+import { useWindowStateStore } from "source/pinia/window-state-store";
 import type { SaveFileResult } from "source/types/common/documents";
 import { surfaceDocumentLoadFailure } from "source/win-main/util/surface-document-load-error";
 import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
+import editorConfig from "./fixtures/editor-config.json";
 
 const FILE = "/notes/lattices.md";
 
@@ -109,15 +112,35 @@ describe("A save or a reload that the window asked for and that did not happen",
   it("opens the Annotations view from a save that a changed file refused", async function () {
     const message = "The document changed on disk after this review opened.";
     providerAnswers(async () => ({ ok: false, refusal: { reason: "disk-changed", message } }));
-    window.config.set("window.sidebarVisible", false);
+    // The window stores read the configuration of the window, whose
+    // Annotations view is closed; the config provider saves each setting.
+    const settings: unknown[] = [];
+    documentCollaborationIpcDouble.setSendSyncResponder((channel, request) => {
+      if (channel !== "config-provider") {
+        return undefined;
+      }
+      if (request?.command === "get-config") {
+        return editorConfig;
+      }
+      settings.push(request?.payload);
+      return null;
+    });
+    setActivePinia(createPinia());
+    const windowState = useWindowStateStore();
+    windowState.distractionFreeMode = "/notes";
 
     assert.equal(await saveBuffer(() => state, FILE), false);
     runNotificationAction(errors()[0].id, 1);
 
-    assert.equal(
-      window.config.get("window.sidebarVisible"),
-      true,
+    assert.deepEqual(
+      settings,
+      [{ key: "window.sidebarVisible", val: true }],
       "the second action opens the view that has the controls of the review",
+    );
+    assert.equal(
+      windowState.distractionFreeMode,
+      undefined,
+      "the view opens in distraction-free mode too: the mode ends",
     );
     assert.deepEqual(
       requests.filter((request) => request.command === "load-from-disk"),

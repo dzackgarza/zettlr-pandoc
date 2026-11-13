@@ -69,6 +69,19 @@ async function waitForPanes(
     await page.waitForTimeout(100);
   }
   assert.deepEqual(await panesShown(page), expected, what);
+  // A screenshot shows the end state of the slide (`paneSlide`), not a frame
+  // of it: the slide starts after the handles change, and at its end each
+  // pane has the width of its state.
+  await page.waitForFunction((shown) => {
+    const width = (pane: string): number =>
+      document.querySelector(`.main-pane[data-pane="${pane}"]`)?.getBoundingClientRect().width ??
+      Number.NaN;
+    return (
+      document.querySelector(".main-panes.animating") === null &&
+      width("navigation-sidebar") > 0 === shown.navigation &&
+      width("annotation-panel") > 0 === shown.annotations
+    );
+  }, expected);
 }
 
 describe("assembled app: distraction-free mode across a restart", function () {

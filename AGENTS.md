@@ -1469,9 +1469,18 @@ of an isolated instance are in the first comment of #132.
   reason, and `FormBuilder` shows it under the field (`refusals`) until the
   field gives a value that the rule accepts. Code that writes a setting it
   built itself calls `setConfigValue` or `setConfigFromForm`, which throw.
+- **A mode of a window writes no setting.** Distraction-free mode is a
+  state of one window (`distractionFreeMode`, `pinia/window-state-store.ts`):
+  it hides the panes and leaves `window.fileManagerVisible` and
+  `window.sidebarVisible` as the author set them, so a quit in the mode
+  keeps the arrangement of the author. A pane is shown when its setting is
+  on and the window is not in the mode (`navigationSidebarShown`,
+  `annotationPanelShown`). Code that shows or hides a pane calls
+  `setPaneVisible`; a shown pane ends the mode.
 - **Proof:** `e2e/settings-write-refused.spec.ts`,
   `e2e/preferences-refused-value.spec.ts`,
-  `e2e/user-dictionary-write-refused.spec.ts`.
+  `e2e/user-dictionary-write-refused.spec.ts`,
+  `e2e/distraction-free-restart.spec.ts`, `test/save-refusal-toast.spec.ts`.
 
 ### 23. The order of a folder
 

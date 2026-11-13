@@ -22,6 +22,7 @@ import { loadFromDiskAction } from "@common/util/load-document-from-disk";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import showToast, { type ToastAction } from "@common/util/show-toast";
 import type { SaveRefusal, UnsavedDocument } from "@dts/common/documents";
+import { useWindowStateStore } from "source/pinia/window-state-store";
 
 /**
  * The action that writes the text that the application holds of the
@@ -68,13 +69,14 @@ export function saveCopyAction(filePath: string): ToastAction {
 /**
  * The action that opens the Annotations view. The view has the controls of
  * a review that a change of the file froze: reapply it, return it to its
- * agent, or discard it.
+ * agent, or discard it. A shown pane ends distraction-free mode, so the
+ * view opens in that mode too.
  */
 export function showReviewAction(): ToastAction {
   return {
     label: trans("Show the review"),
     onAction: () => {
-      window.config.set("window.sidebarVisible", true);
+      useWindowStateStore().setPaneVisible("window.sidebarVisible", true);
     },
   };
 }

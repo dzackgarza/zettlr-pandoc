@@ -115,7 +115,7 @@
           <AnnotationsTab
             :workspace-paths="workspaceCollaborationPaths"
             @navigate="navigateToWorkspaceCollaboration($event)"
-            @close="configStore.setConfigValue('window.sidebarVisible', false)"
+            @close="windowStateStore.setPaneVisible('window.sidebarVisible', false)"
           />
         </SplitterPanel>
       </SplitterGroup>
@@ -126,7 +126,7 @@
         :pressed="sidebarVisible ? PANEL_VIEW_ID : ''"
         :badges="panelActivityBadges"
         :label="trans('Panel views')"
-        @press="configStore.setConfigValue('window.sidebarVisible', $event === PANEL_VIEW_ID)"
+        @press="windowStateStore.setPaneVisible('window.sidebarVisible', $event === PANEL_VIEW_ID)"
       />
     </div>
     <template #statusbar>
@@ -263,6 +263,7 @@ import {
   useWindowStateStore,
   useWorkspaceStore,
 } from "source/pinia";
+import type { PaneSetting } from "source/pinia/window-state-store";
 import { type AnyDescriptor } from "source/types/common/fsal";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import chimeFile from "./assets/chime.mp3";
@@ -337,7 +338,7 @@ const searchParams = new URLSearchParams(window.location.search);
 // necessary for the documents and split views to show up.
 const windowId = searchParams.get("window_id")!;
 
-const fileManagerVisible = computed<boolean>(() => configStore.config.window.fileManagerVisible);
+const fileManagerVisible = computed<boolean>(() => windowStateStore.navigationSidebarShown);
 const isUpdateAvailable = ref(false);
 const hasVibrancy = computed(
   () => configStore.config.window.vibrancy && process.platform === "darwin",
@@ -388,7 +389,7 @@ function onPaneDragging(pane: DraggablePane, dragging: boolean): void {
   // how a pane is hidden by dragging. The width it comes back at is the one
   // it had before that, so this does not persist the zero.
   if (width < PANE_MINIMUM[pane]) {
-    configStore.setConfigValue(PANE_VISIBLE_KEY[pane], false);
+    windowStateStore.setPaneVisible(PANE_VISIBLE_KEY[pane], false);
     return;
   }
   mountWidths[pane] = width;
@@ -676,22 +677,14 @@ const editorCommands = ref<EditorCommands>({
   data: undefined,
 });
 
-const sidebarsBeforeDistractionfree = ref<{ fileManager: boolean; sidebar: boolean }>({
-  fileManager: true,
-  sidebar: false,
-});
-
-const sidebarVisible = computed<boolean>(() => configStore.config.window.sidebarVisible);
+const sidebarVisible = computed<boolean>(() => windowStateStore.annotationPanelShown);
 
 // Showing and hiding a pane. The panes stay mounted and collapse to nothing
 // through the splitter's own collapse, so the width slides instead of
 // jumping and a pane comes back holding what it held. The slide runs only
 // around a toggle: a window resize relays the panes too, and a pane that
 // eased after the window edge would lag behind the pointer.
-const PANE_VISIBLE_KEY: Record<
-  DraggablePane,
-  "window.fileManagerVisible" | "window.sidebarVisible"
-> = {
+const PANE_VISIBLE_KEY: Record<DraggablePane, PaneSetting> = {
   navigationSidebar: "window.fileManagerVisible",
   annotationPanel: "window.sidebarVisible",
 };
@@ -970,7 +963,6 @@ interface NavigationSidebarHandle {
 const navigationSidebar = ref<NavigationSidebarHandle | null>(null);
 const paneConfiguration = computed(() => documentTreeStore.paneStructure);
 const lastLeafId = computed(() => documentTreeStore.lastLeafId);
-const distractionFree = computed<boolean>(() => windowStateStore.distractionFreeMode !== undefined);
 
 // Per-pane session history position (issue #1 Phase 5): feeds the toolbar
 // Back/Forward controls' enabled state. Refreshed from the documents
@@ -1027,36 +1019,6 @@ ipcRenderer.on("jump-to-line", (event, target: { filePath: string; line: number 
   jtl(target.filePath, target.line, false);
 });
 refreshNavigationState();
-
-// Showing a pane ends distraction-free mode; the panes themselves mount
-// and unmount with their config values.
-watch([sidebarVisible, fileManagerVisible], ([panel, sidebar]) => {
-  if ((panel || sidebar) && windowStateStore.distractionFreeMode !== undefined) {
-    windowStateStore.distractionFreeMode = undefined;
-  }
-});
-
-watch(distractionFree, (newValue) => {
-  if (newValue) {
-    // Enter distraction free mode
-    sidebarsBeforeDistractionfree.value = {
-      fileManager: fileManagerVisible.value,
-      sidebar: sidebarVisible.value,
-    };
-    configStore.setConfigValue("window.sidebarVisible", false);
-    configStore.setConfigValue("window.fileManagerVisible", false);
-  } else {
-    // Leave distraction free mode
-    configStore.setConfigValue(
-      "window.sidebarVisible",
-      sidebarsBeforeDistractionfree.value.sidebar,
-    );
-    configStore.setConfigValue(
-      "window.fileManagerVisible",
-      sidebarsBeforeDistractionfree.value.fileManager,
-    );
-  }
-});
 
 onMounted(() => {
   showCitationProblems();
@@ -1220,7 +1182,7 @@ onMounted(() => {
         .catch((error) => reportError(error));
     },
     "toggle-annotation-panel": () => {
-      configStore.setConfigValue("window.sidebarVisible", !sidebarVisible.value);
+      windowStateStore.setPaneVisible("window.sidebarVisible", !sidebarVisible.value);
     },
     "insert-id": () => {
       editorCommands.value.data = generateId(configStore.config.zkn.idGen);
@@ -1255,7 +1217,7 @@ onMounted(() => {
         .catch((err) => reportError(err));
     },
     "toggle-navigation-sidebar": () => {
-      configStore.setConfigValue("window.fileManagerVisible", !fileManagerVisible.value);
+      windowStateStore.setPaneVisible("window.fileManagerVisible", !fileManagerVisible.value);
     },
     // The file manager focuses its own filter on the next tick; the drawer
     // and the Files section only have to be visible by then.
@@ -1446,10 +1408,10 @@ function jtl(filePath: string, lineNumber: number, newTab: boolean): void {
 function pressSidebarView(id: string): void {
   if (isSidebarViewId(id)) {
     configStore.setConfigValue("ui.sidebarView", id);
-    configStore.setConfigValue("window.fileManagerVisible", true);
+    windowStateStore.setPaneVisible("window.fileManagerVisible", true);
     return;
   }
-  configStore.setConfigValue("window.fileManagerVisible", false);
+  windowStateStore.setPaneVisible("window.fileManagerVisible", false);
 }
 
 function moveSection(data: { from: number; to: number }): void {
