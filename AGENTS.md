@@ -993,6 +993,12 @@ of an isolated instance are in the first comment of #132.
   environment has a display. A native message box, a key that `xdotool`
   presses and the focus of a window are therefore not shared between the
   files of two lanes. A spec starts no X server of its own.
+- **The run owns its X socket folder.** The recipe (`_e2e-run`) mounts an
+  empty tmpfs at `/tmp/.X11-unix` for the run. Xvfb removes the socket path
+  of its display before it binds, and with `-displayfd` it takes display 0
+  over the lock of a running server; in the folder of the host its exit
+  removed the socket of the X server of the desktop, and no new X11 client
+  connected to `:0`. Proof: `test/e2e-run-displays.spec.ts`.
 - **The run owns its session bus.** The recipe starts the Mocha process
   under `dbus-run-session` with `scripts/e2e-session-bus.conf`, a bus without
   services. A desktop notification of the app of a run goes to that bus and

@@ -151,17 +151,28 @@ _current-package: sync-dependencies
 # app of the run binds its ports there: a process of the host, such as the
 # desktop app of the author on the default Agent API port, takes no port
 # from the run, and the run reaches no service of the host and no network
-# (#215). The hosted runner permits the namespace after `just setup-ci`.
-# The namespace has the user of the run; the command starts without the
-# capabilities that set up `lo`.
+# (#215).
+#
+# The X socket folder is a mount of its own: /tmp/.X11-unix of the run is an
+# empty tmpfs. Xvfb removes the socket path of its display before it binds,
+# and with -displayfd it takes display 0 over the lock of a running server;
+# in the folder of the host that removes the socket of the X server of the
+# desktop.
+#
+# The outer namespace has root, which sets up `lo` and the mount. The command
+# runs in an inner user namespace with the user and the group of the run and
+# no capabilities. The hosted runner permits the namespaces after
+# `just setup-ci`.
 [private]
 [positional-arguments]
 _e2e-run +command:
     #!/usr/bin/env bash
     set -euo pipefail
     run=(dbus-run-session --config-file="{{justfile_directory()}}/scripts/e2e-session-bus.conf" --)
-    exec unshare --user --map-current-user --net --keep-caps -- \
-      bash -c 'ip link set lo up && exec setpriv --inh-caps=-all --ambient-caps=-all -- "$@"' e2e-run "${run[@]}" "$@"
+    setup='ip link set lo up && mount -t tmpfs -o mode=1777 e2e-x11 /tmp/.X11-unix'
+    setup="$setup"' && exec unshare --map-user="$0" --map-group="$1" -- "${@:2}"'
+    exec unshare --user --map-root-user --net --mount -- \
+      bash -c "$setup" "$(id -u)" "$(id -g)" "${run[@]}" "$@"
 
 # Install or upgrade the flowmark and flowmark-lint commands from Flowmark's main branch.
 install-flowmark:
