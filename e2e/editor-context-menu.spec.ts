@@ -211,6 +211,61 @@ describe("The context menu of the editor (#202)", function () {
     );
   });
 
+  it("shows a menu and its submenu whole at the right edge of the window", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const text = await editorText(activePage);
+    const word = text.indexOf("lattices") + 2;
+    const point = await select(activePage, word, word, word);
+    const width = await activePage.evaluate(() => window.innerWidth);
+    // The menu in the middle of the window, after the end of the line, has
+    // room for its whole width.
+    await activePage.mouse.click(width / 2, point.y, { button: "right" });
+    await shownLabels(activePage);
+    const menuWidth = await activePage
+      .locator(".application-menu")
+      .first()
+      .evaluate((element) => element.getBoundingClientRect().width);
+    await activePage.keyboard.press("Escape");
+    // The author right-clicks in the editor where the room on the right is
+    // 20 px less than that width: more than the room the labels need when
+    // they break into lines. A menu that opens there goes to the left of the
+    // point; its Table submenu then has the same room on the right of it.
+    await activePage.mouse.click(width - (menuWidth - 20), point.y, { button: "right" });
+    const menu = await readApplicationMenu(activePage);
+    const tableLabel = findMenuNode(menu, "menu.insert_table")?.label;
+    assert.ok(tableLabel !== undefined, "the application menu has the table item");
+    await shownLabels(activePage);
+    await activePage
+      .locator(".application-menu")
+      .first()
+      .locator(".menu-item")
+      .filter({ has: activePage.locator(".label", { hasText: new RegExp(`^${tableLabel}$`) }) })
+      .hover();
+    await activePage.locator(".application-menu").nth(1).waitFor({ state: "visible" });
+    const cut = await activePage.evaluate(() => {
+      const problems: string[] = [];
+      for (const menuElement of document.querySelectorAll(".application-menu")) {
+        const box = menuElement.getBoundingClientRect();
+        if (box.left < 0 || box.right > window.innerWidth) {
+          problems.push(`a menu spans ${box.left}–${box.right} of ${window.innerWidth}`);
+        }
+        for (const label of menuElement.querySelectorAll(".menu-item .label")) {
+          const range = document.createRange();
+          range.selectNodeContents(label);
+          const lines = new Set([...range.getClientRects()].map((rect) => rect.top)).size;
+          const item = (label.closest(".menu-item") as HTMLElement).getBoundingClientRect();
+          const shown = range.getBoundingClientRect();
+          if (lines > 1 || shown.right > item.right) {
+            problems.push(`"${label.textContent}" is cut`);
+          }
+        }
+      }
+      return problems;
+    });
+    await activePage.keyboard.press("Escape");
+    assert.deepEqual(cut, []);
+  });
+
   it("inserts the table of Insert → Table", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     // Insert → Table replaces the selected word "Two" with a table.
