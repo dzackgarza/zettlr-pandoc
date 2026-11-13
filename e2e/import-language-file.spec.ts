@@ -89,8 +89,8 @@ describe("The language file import", function () {
     });
   }
 
-  /** Chooses one file of the sources folder in "Import translation…". */
-  async function chooseLanguageFile(name: string): Promise<void> {
+  /** Opens "Import translation…" and gives the window of its file dialog. */
+  async function openImportDialog(): Promise<string> {
     const editorPage = requireInitialized(page, "The editor page must be initialized");
     await editorPage.evaluate(() => {
       window.ipc.send("menu-provider", {
@@ -98,7 +98,12 @@ describe("The language file import", function () {
         payload: "menu.import_lang_file",
       });
     });
-    const dialog = await nativeDialog(FILE_DIALOG_TITLE, 30_000);
+    return await nativeDialog(FILE_DIALOG_TITLE, 30_000);
+  }
+
+  /** Chooses one file of the sources folder in "Import translation…" by its path. */
+  async function chooseLanguageFile(name: string): Promise<void> {
+    const dialog = await openImportDialog();
     await pressKey(dialog, "ctrl+l");
     await typeText(dialog, name);
     screenshots.set(`dialog-${name}.png`, await captureWindow(dialog));
@@ -133,9 +138,6 @@ describe("The language file import", function () {
     await copyFile(TRANSLATION, path.join(sources, "fr-CA.po"));
     // The app reads translations from PO files only.
     await writeFile(path.join(sources, "de-DE.json"), '{ "language": "de-DE" }\n');
-    // A POSIX locale name is no language tag.
-    await copyFile(TRANSLATION, path.join(sources, "de_DE.po"));
-    await copyFile(TRANSLATION, path.join(sources, "fr-BE.po"));
     languageFolder = path.join(fixture.configDirectory, "lang");
     await mkdir(languageFolder);
 
@@ -178,7 +180,15 @@ describe("The language file import", function () {
     const editorPage = requireInitialized(page, "The editor page must be initialized");
     assert.ok(!(await availableLanguages()).includes("fr-CA"), "the app has no fr-CA before");
 
-    await chooseLanguageFile("fr-CA.po");
+    // The author chooses the file in the list of the dialog. The folder has
+    // one PO file and one JSON file, and the list shows the files of the
+    // filter of the dialog.
+    const dialog = await openImportDialog();
+    await delay(1_000);
+    await pressKey(dialog, "End");
+    screenshots.set("dialog-list.png", await captureWindow(dialog));
+    await pressKey(dialog, "alt+o");
+    await closed(FILE_DIALOG_TITLE);
 
     const deadline = Date.now() + 15_000;
     while (!(await readdir(languageFolder)).includes("fr-CA.po")) {
@@ -198,6 +208,8 @@ describe("The language file import", function () {
   });
 
   it("names a file whose name is no language tag", async function () {
+    // A POSIX locale name is no language tag.
+    await copyFile(TRANSLATION, path.join(sources, "de_DE.po"));
     const toasts = await refusedImport("de_DE.po");
 
     assert.equal(toasts.length, 1, "one refused file shows one message");
@@ -206,6 +218,7 @@ describe("The language file import", function () {
   });
 
   it("names a file that the language folder refuses", async function () {
+    await copyFile(TRANSLATION, path.join(sources, "fr-BE.po"));
     await chmod(languageFolder, 0o500);
 
     const toasts = await refusedImport("fr-BE.po");
