@@ -276,6 +276,12 @@ export async function writeDefaults(
     linkFormat === "link|title" ? "wikilinks_title_after_pipe" : "wikilinks_title_before_pipe";
   enableExtension(parsedReader, linkExt);
 
+  // The editor, md2html and the PDF recipe read \( \) and \[ \] as math
+  // (AGENTS.md §2); a Markdown reader of an export reads them the same way.
+  if (readsMarkdown) {
+    enableExtension(parsedReader, "tex_math_single_backslash");
+  }
+
   // Same for the `mark` extension which makes Pandoc correctly parse `==mark==`
   if (readsMarkdown && enforceMarkSupport) {
     enableExtension(parsedReader, "mark");

@@ -187,6 +187,9 @@ they must be threaded through **four** layers:
   and `\(` code marks as math).
 - **HTML (`md2html`):** `source/common/modules/markdown-utils/markdown-to-html.ts`.
 - **Live editor widget:** `packages/pandoc-editor/src/renderers/render-math.ts`.
+- **Pandoc exports:** `writeDefaults` (`commands/exporter/index.ts`) gives a
+  Markdown reader `tex_math_single_backslash`, as the PDF recipe does. Proof:
+  `test/export-document.spec.ts` (LaTeX and Word).
 
 ### 3. PDF export → the `~/.pandoc` `compile-pandoc` recipe
 

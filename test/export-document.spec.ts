@@ -358,9 +358,10 @@ describe("Export of one document", function () {
     await exportDocument(services, { file: forms, profile: LATEX, exportTo: "cwd" });
 
     assert.deepEqual(errorWindows, []);
-    const body = (await readFile(path.join(root, "Forms.tex"), "utf8")).split("\n");
-    assert.equal(body.includes("The form \\(q(x) = x^2\\) has"), true, "inline math");
-    assert.equal(body.includes("\\[\\Delta = 4\\]"), true, "display math");
+    const tex = await readFile(path.join(root, "Forms.tex"), "utf8");
+    assert.equal(tex.includes("\nThe form \\(q(x) = x^2\\) has\n"), true, "inline math");
+    // Pandoc writes display math with the line breaks of its source.
+    assert.equal(tex.includes("\n\\[\n\\Delta = 4\n\\]\n"), true, "display math");
   });
 
   it("exports the LaTeX delimiters of math as math to Word", async function () {
