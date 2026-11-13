@@ -104,10 +104,22 @@ describe("New file and new folder from the file list (#202)", function () {
     return field;
   }
 
-  async function createFromList(itemId: string, name: string): Promise<void> {
+  /**
+   * Create `name` in `lattices` and wait for the end of the command: the
+   * command selects a new folder (`dir-new`) and opens a new file in an active
+   * tab (`file-new`) after it writes to the disk. A test that starts before
+   * that end gets the selection of the command after its own.
+   */
+  async function createFromList(itemId: "menu.new_dir" | "menu.new_file", name: string) {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
     const field = await openNameField(itemId);
     await field.fill(name);
     await field.press("Enter");
+    const end =
+      itemId === "menu.new_dir"
+        ? `#file-tree .tree-item.selected[data-path=${JSON.stringify(path.join(lattices, name))}]`
+        : `[role="tab"].active[data-path=${JSON.stringify(path.join(lattices, `${name}.md`))}]`;
+    await activePage.locator(end).waitFor({ state: "attached" });
   }
 
   it("New directory asks for the name of the folder", async function () {
@@ -137,6 +149,10 @@ describe("New file and new folder from the file list (#202)", function () {
     assert.equal(await field.count(), 1, "the field is open");
     await field.pressSequentially("us");
     await field.press("Enter");
+    const genus = path.join(lattices, "Genus");
+    await activePage
+      .locator(`#file-tree .tree-item.selected[data-path=${JSON.stringify(genus)}]`)
+      .waitFor({ state: "attached" });
     assert.deepEqual(await namesOnceHolding(lattices, "Genus"), [
       "Genera",
       "Genus",
