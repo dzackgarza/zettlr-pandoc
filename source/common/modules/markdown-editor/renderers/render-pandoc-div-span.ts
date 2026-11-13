@@ -40,6 +40,7 @@ import {
   incrementalNodeDecorations,
   type SourceRange,
 } from "@dzack/pandoc-editor/util/incremental-node-decorations";
+import { MATH_DELIMITERS } from "@dzack/pandoc-editor/util/math-delimiters";
 import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
@@ -123,7 +124,15 @@ function isEscapedAt(text: string, index: number): boolean {
   return backslashes % 2 === 1;
 }
 
-/** Split the small inline-math subset useful in authored div titles. */
+/**
+ * The math delimiters of a div title. The amsthm filter puts the title into
+ * the optional argument of the theorem environment, where TeX reads inline
+ * math; a display delimiter there stays text.
+ */
+const TITLE_MATH_DELIMITERS = MATH_DELIMITERS.filter((pair) => !pair.display);
+const DISPLAY_OPENERS = MATH_DELIMITERS.filter((pair) => pair.display).map((pair) => pair.open);
+
+/** Split a div title into its text and its inline math. */
 function inlineTitleParts(title: string): InlineTitlePart[] {
   const parts: InlineTitlePart[] = [];
   let textStart = 0;
@@ -136,18 +145,23 @@ function inlineTitleParts(title: string): InlineTitlePart[] {
   };
 
   while (cursor < title.length) {
-    let open = "";
-    let close = "";
-    if (title.startsWith("\\(", cursor) && !isEscapedAt(title, cursor)) {
-      open = "\\(";
-      close = "\\)";
-    } else if (title[cursor] === "$" && !isEscapedAt(title, cursor) && title[cursor + 1] !== "$") {
-      open = "$";
-      close = "$";
-    } else {
+    if (isEscapedAt(title, cursor)) {
       cursor++;
       continue;
     }
+    const displayOpen = DISPLAY_OPENERS.find((open) => title.startsWith(open, cursor));
+    if (displayOpen !== undefined) {
+      cursor += displayOpen.length;
+      continue;
+    }
+    const pair = TITLE_MATH_DELIMITERS.find((candidate) =>
+      title.startsWith(candidate.open, cursor),
+    );
+    if (pair === undefined) {
+      cursor++;
+      continue;
+    }
+    const { open, close } = pair;
 
     let closing = cursor + open.length;
     while (closing < title.length) {
