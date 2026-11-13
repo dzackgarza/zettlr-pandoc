@@ -417,6 +417,9 @@ function getModelValue(model: string): any {
   fieldset {
     background-color: rgb(236, 236, 236);
     border: 1px solid rgb(230, 230, 230);
+    // A fieldset is min-content wide by default: one wide control would make
+    // it, and each fieldset beside it, wider than the pane.
+    min-width: 0;
     margin: 10px;
     padding: 24px;
     padding-top: 18px;

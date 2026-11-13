@@ -163,6 +163,11 @@ describe("the Preferences window at its default size", function () {
         "the window has its default size",
       );
       screenshots.set(`group-${name}.png`, await preferences.screenshot({ fullPage: true }));
+      // A page screenshot shows only the top of the pane that scrolls.
+      const tables = preferences.locator("div.table-view");
+      for (let index = 0; index < (await tables.count()); index++) {
+        screenshots.set(`group-${name}-table-${index}.png`, await tables.nth(index).screenshot());
+      }
       const elements = await cutElements(preferences);
       if (elements.length > 0) {
         cut.set(name, elements);
