@@ -434,18 +434,16 @@ function handleContextMenu(event: MouseEvent, doc: OpenDocument): void {
       },
     },
     {
+      id: "menu.tabs_close_all",
       label: trans("Close all tabs"),
       type: "normal",
-      enabled: !doc.pinned,
       action() {
-        for (const openFile of openFiles.value) {
-          ipcRenderer
-            .invoke("documents-provider", {
-              command: "close-file",
-              payload: { path: openFile.path, leafId: props.leafId, windowId: props.windowId },
-            } satisfies DocumentManagerIPCAPI)
-            .catch((e) => reportError(e));
-        }
+        ipcRenderer
+          .invoke("documents-provider", {
+            command: "close-all-tabs",
+            payload: { leafId: props.leafId, windowId: props.windowId },
+          } satisfies DocumentManagerIPCAPI)
+          .catch((e) => reportError(e));
       },
     },
     {

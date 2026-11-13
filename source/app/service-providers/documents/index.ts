@@ -446,7 +446,8 @@ export type DocumentManagerIPCContract = {
     response: boolean;
   };
   "close-all-tabs": {
-    request: { payload: { windowId: string } };
+    /** Without `leafId` each pane of the window; with it that pane only. */
+    request: { payload: { windowId: string; leafId?: string } };
     response: boolean;
   };
   "save-all": {
@@ -1165,7 +1166,7 @@ export default class DocumentManager
           return await this.reopenClosedTab(payload.windowId);
         }
         case "close-all-tabs": {
-          return await this.closeAllTabs(payload.windowId);
+          return await this.closeAllTabs(payload.windowId, payload.leafId);
         }
         case "save-all": {
           return await this.saveAll(payload.windowId);
@@ -2481,18 +2482,21 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Close every tab in one window using the ordinary per-document close path.
+   * Close every tab in one window, or in one pane of it when `leafId` is
+   * given, using the ordinary per-document close path. The Window menu and
+   * the context menu of a tab are this one action (#202).
    *
    * Modified documents therefore keep the existing Save / Don't save / Cancel
    * semantics. Pinned tabs are included because "all tabs" is explicit, but a
    * refused/cancelled close restores the pin before aborting the bulk action.
    */
-  public async closeAllTabs(windowId: string): Promise<boolean> {
+  public async closeAllTabs(windowId: string, leafId?: string): Promise<boolean> {
     const tree = this._windows[windowId];
     if (tree === undefined) {
       return false;
     }
-    const tabs = tree.getAllLeafs().flatMap((leaf) =>
+    const leafs = tree.getAllLeafs().filter((leaf) => leafId === undefined || leaf.id === leafId);
+    const tabs = leafs.flatMap((leaf) =>
       leaf.tabMan.openFiles.map((file) => ({
         leafId: leaf.id,
         path: file.path,
