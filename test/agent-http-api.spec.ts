@@ -1251,11 +1251,19 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   });
 
   it("answers a path whose percent-encoding is not UTF-8 as a refused request (#57)", async function () {
-    // `%E0%A4%A` is a truncated three-byte sequence: decodeURIComponent
-    // refuses it. The fault is in the request, so the caller gets 400.
-    const response = await httpRequest("GET", "/v1/documents/%E0%A4%A");
-    assert.equal(response.status, 400, response.body);
-    assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
+    // decodeURIComponent refuses each of these paths: a `%` without two hex
+    // digits, a truncated three-byte sequence, and a lead byte that a byte
+    // outside 0x80-0xBF follows. The fault is in the request, so the caller
+    // gets 400.
+    for (const target of [
+      "/v1/documents/%E0%A4%A",
+      "/v1/documents/%E0%A4",
+      "/v1/documents/%C3%28",
+    ]) {
+      const response = await httpRequest("GET", target);
+      assert.equal(response.status, 400, `${target}: ${response.body}`);
+      assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
+    }
   });
 
   it("GET /v1/ping returns protocol version", async function () {

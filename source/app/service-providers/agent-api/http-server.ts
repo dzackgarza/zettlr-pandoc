@@ -87,7 +87,6 @@ import OpenAPIBackend, {
   type Operation,
 } from "openapi-backend";
 import path from "path";
-import { unescapeBuffer } from "querystring";
 import { workspaceLintRows } from "source/app/util/workspace-lint-results";
 import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import { fileURLToPath } from "url";
@@ -237,6 +236,19 @@ class RequestBodyTimeoutError extends Error {
 class MalformedRequestTargetError extends Error {}
 
 /**
+ * The bytes of a path of a parsed URL: the percent-decode of the WHATWG URL
+ * Standard (https://url.spec.whatwg.org/#percent-decode). The parser
+ * percent-encodes each code point above U+007E, so the path is ASCII and
+ * each code unit after the replacement is one byte.
+ */
+function percentDecode(pathname: string): Buffer {
+  const units = pathname.replace(/%([0-9A-Fa-f]{2})/g, (_escape, hex: string) =>
+    String.fromCharCode(Number.parseInt(hex, 16)),
+  );
+  return Buffer.from(units, "latin1");
+}
+
+/**
  * The URL of a request target, with a path that decodes. The router decodes
  * each path parameter with decodeURIComponent, which throws for a `%` that
  * two hex digits do not follow and for bytes that are not UTF-8 (ECMA-262,
@@ -247,7 +259,7 @@ function requestTargetUrl(requestUrl: string): URL {
     throw new MalformedRequestTargetError(`The request target ${requestUrl} is no URL`);
   }
   const url = new URL(requestUrl, "http://127.0.0.1");
-  if (/%(?![0-9A-Fa-f]{2})/.test(url.pathname) || !isUtf8(unescapeBuffer(url.pathname))) {
+  if (/%(?![0-9A-Fa-f]{2})/.test(url.pathname) || !isUtf8(percentDecode(url.pathname))) {
     throw new MalformedRequestTargetError(
       `The path ${url.pathname} has a percent-encoding that is not UTF-8`,
     );
