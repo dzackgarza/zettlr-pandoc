@@ -102,11 +102,11 @@
  * END HEADER
  */
 
+import { getConfiguredShortcut } from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { explodeShortcut } from "@common/util/shortcuts";
 import ShortcutDisplay from "@common/vue/ShortcutDisplay.vue";
-import { getCustomShortcut } from "@providers/menu/shortcuts";
 import { useConfigStore, useWindowStateStore } from "source/pinia";
 import { useWorkspaceStore } from "source/pinia/workspace-store";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -160,10 +160,10 @@ function rememberFileManagerFocus(): void {
 }
 
 const filterPlaceholder = trans("Search files");
-// The search box's shortcut hint reads the same binding the menu's Search files
-// item carries: the user's custom shortcut, or the default when none is set.
+// The search box's shortcut hint is the key of the menu's Search files item:
+// the key of the registered command.
 const filterShortcut = computed(() => {
-  const shortcut = getCustomShortcut("filter-files", configStore.config.shortcuts.ui);
+  const shortcut = getConfiguredShortcut("filter-files", configStore.config.shortcuts);
   return shortcut === undefined ? undefined : explodeShortcut(shortcut);
 });
 const fileManagerMode = computed(() => configStore.config.fileManagerMode);

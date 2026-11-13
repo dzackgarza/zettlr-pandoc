@@ -14,7 +14,6 @@
 
 import {
   type CommandGroup,
-  type CommandId,
   commandRegistry,
   getCommandConflicts,
   getConfiguredShortcut,
@@ -25,23 +24,13 @@ import type { ConfigOptions } from "source/app/service-providers/config/get-conf
 import { PreferencesGroups } from "./_preferences-groups";
 import { type PreferencesFieldset } from "./types";
 
-/** Returns commands in the same scope that currently use this command's key. */
-export function getConflicts(
-  id: CommandId,
-  editorMap: Array<{ name: CommandId; shortcut: string }>,
-  menuMap: ConfigOptions["shortcuts"]["ui"],
-): CommandId[] {
-  const editor = Object.fromEntries(editorMap.map(({ name, shortcut }) => [name, shortcut]));
-  return getCommandConflicts(id, { editor, ui: menuMap });
-}
-
 function groupTitle(group: CommandGroup): string {
   return trans("%s Shortcuts", group);
 }
 
 export function getShortcutFields(config: Pick<ConfigOptions, "shortcuts">): PreferencesFieldset[] {
   const shortcuts: ShortcutConfig = config.shortcuts;
-  const commands = commandRegistry.all();
+  const commands = commandRegistry.bindable();
   const groups = [...new Set(commands.map((command) => command.group))];
   return groups.map((group) => ({
     title: groupTitle(group),

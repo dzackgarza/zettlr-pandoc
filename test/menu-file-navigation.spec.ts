@@ -17,6 +17,7 @@
 
 // Installs process-wide test doubles; it must load before the modules that read them.
 import "./headless-electron-harness.cjs";
+import { createShortcutConfig } from "@common/commands/command-registry";
 import { strict as assert } from "assert";
 import {
   BrowserWindow,
@@ -27,7 +28,6 @@ import {
 import { mkdtemp, rm, unlink, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
-import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
 import LogProvider from "source/app/service-providers/log";
 import getDarwinMenu from "source/app/service-providers/menu/menu.darwin";
 import getWin32Menu from "source/app/service-providers/menu/menu.win32";
@@ -39,6 +39,7 @@ import type {
   MenuRecentDocuments,
   MenuWindows,
 } from "source/app/service-providers/menu/menu-dependencies";
+import { withRegisteredAccelerators } from "source/app/service-providers/menu/registered-accelerators";
 import RecentDocumentsProvider from "source/app/service-providers/recent-docs";
 import { bootDocumentManager } from "./documents-provider-seam";
 import { sentMessagesFor } from "./headless-electron-harness.cjs";
@@ -49,7 +50,6 @@ type Send = unknown[];
 class TestMenuConfig implements MenuConfig {
   get(): {
     editor: { fontSize: number; snippetsFile: string; quickTexFile: string };
-    shortcuts: { ui: ConfigOptions["shortcuts"]["ui"] };
   };
 
   get(key: "system.zoomBehavior" | "darkMode" | "fileMeta" | "debug"): unknown;
@@ -61,8 +61,6 @@ class TestMenuConfig implements MenuConfig {
           snippetsFile: "/tmp/snippets.code-snippets",
           quickTexFile: "/tmp/quicktex_dict.vim",
         },
-        // No custom UI shortcuts: the menu falls back to its own defaults.
-        shortcuts: { ui: { "next-tab": "", "previous-tab": "", "filter-files": "" } },
       };
     }
     return key === "system.zoomBehavior" ? "editor" : false;
@@ -131,15 +129,19 @@ function clickMenuItem(
     openFile: async () => false,
   };
 
-  const template = getMenu(
-    logger,
-    config,
-    recentDocs,
-    commands,
-    windows,
-    documents,
-    () => false,
-    () => {},
+  // The menu provider gives each item the key of its registered command.
+  const template = withRegisteredAccelerators(
+    getMenu(
+      logger,
+      config,
+      recentDocs,
+      commands,
+      windows,
+      documents,
+      () => false,
+      () => {},
+    ),
+    createShortcutConfig(),
   );
   const item = findItem(template, id);
   assert.ok(item !== undefined, `the menu must expose ${id}`);
@@ -172,7 +174,7 @@ describe("File ▸ Previous/Next file menu navigation", function () {
         sent: [["shortcut", "navigate-back"]],
         commandCalls: [],
         loggedErrors: [],
-        accelerator: platform === "darwin" ? "Cmd+[" : "Ctrl+[",
+        accelerator: "CmdOrCtrl+Alt+-",
       });
     });
 
@@ -181,23 +183,23 @@ describe("File ▸ Previous/Next file menu navigation", function () {
         sent: [["shortcut", "navigate-forward"]],
         commandCalls: [],
         loggedErrors: [],
-        accelerator: platform === "darwin" ? "Cmd+]" : "Ctrl+]",
+        accelerator: "CmdOrCtrl+Shift+-",
       });
     });
   }
 });
 
 describe("Window ▸ Reopen Closed Tab", () => {
-  const platforms: Array<[string, MenuBuilder, string]> = [
-    ["win32/linux", getWin32Menu, "Ctrl+Shift+T"],
-    ["darwin", getDarwinMenu, "Cmd+Shift+T"],
+  const platforms: Array<[string, MenuBuilder]> = [
+    ["win32/linux", getWin32Menu],
+    ["darwin", getDarwinMenu],
   ];
 
-  for (const [platform, getMenu, accelerator] of platforms) {
+  for (const [platform, getMenu] of platforms) {
     it(`${platform}: dispatches the reopen command from the standard accelerator`, () => {
       const result = clickMenuItem(getMenu, "menu.tab_reopen_closed");
       assert.deepEqual(result.sent, [["shortcut", "reopen-closed-tab"]]);
-      assert.equal(result.accelerator, accelerator);
+      assert.equal(result.accelerator, "CmdOrCtrl+Shift+T");
     });
   }
 });

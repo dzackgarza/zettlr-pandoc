@@ -15,7 +15,7 @@
             "id": "menu.new_file",
             "label": "Markdown",
             "enabled": true,
-            "accelerator": "Ctrl+N"
+            "accelerator": "CmdOrCtrl+N"
           },
           {
             "type": "normal",
@@ -51,14 +51,14 @@
         "id": "menu.open",
         "label": "Open file…",
         "enabled": true,
-        "accelerator": "Ctrl+O"
+        "accelerator": "CmdOrCtrl+O"
       },
       {
         "type": "normal",
         "id": "menu.open_workspace",
         "label": "Open workspace…",
         "enabled": true,
-        "accelerator": "Ctrl+Shift+O"
+        "accelerator": "CmdOrCtrl+Shift+O"
       },
       {
         "type": "submenu",
@@ -103,7 +103,7 @@
         "id": "menu.save",
         "label": "Save",
         "enabled": true,
-        "accelerator": "Ctrl+S"
+        "accelerator": "CmdOrCtrl+S"
       },
       {
         "type": "separator"
@@ -113,14 +113,14 @@
         "id": "menu.previous_file",
         "label": "Previous file",
         "enabled": true,
-        "accelerator": "Ctrl+["
+        "accelerator": "CmdOrCtrl+Alt+-"
       },
       {
         "type": "normal",
         "id": "menu.next_file",
         "label": "Next file",
         "enabled": true,
-        "accelerator": "Ctrl+]"
+        "accelerator": "CmdOrCtrl+Shift+-"
       },
       {
         "type": "separator"
@@ -136,7 +136,7 @@
         "id": "menu.export",
         "label": "Export…",
         "enabled": true,
-        "accelerator": "Ctrl+E"
+        "accelerator": "CmdOrCtrl+E"
       },
       {
         "type": "normal",
@@ -146,23 +146,23 @@
       },
       {
         "type": "submenu",
-        "id": "menu.preferences",
+        "id": "preferences-menu",
         "label": "Preferences…",
         "enabled": true,
         "submenu": [
           {
             "type": "normal",
-            "id": "preferences-item",
+            "id": "menu.preferences",
             "label": "Preferences…",
             "enabled": true,
-            "accelerator": "Ctrl+,"
+            "accelerator": "CmdOrCtrl+,"
           },
           {
             "type": "normal",
             "id": "menu.assets_manager",
             "label": "Assets Manager",
             "enabled": true,
-            "accelerator": "Ctrl+Alt+,"
+            "accelerator": "CmdOrCtrl+Alt+,"
           },
           {
             "type": "normal",
@@ -195,7 +195,7 @@
         "id": "menu.rename_file",
         "label": "Rename file",
         "enabled": true,
-        "accelerator": "Ctrl+R"
+        "accelerator": "CmdOrCtrl+R"
       },
       {
         "type": "separator"
@@ -214,7 +214,7 @@
         "id": "menu-quit",
         "label": "Quit",
         "enabled": true,
-        "accelerator": "Ctrl+Q"
+        "accelerator": "CmdOrCtrl+Q"
       }
     ]
   },
@@ -229,14 +229,14 @@
         "id": "menu.undo",
         "label": "Undo",
         "enabled": true,
-        "accelerator": "Ctrl+Z"
+        "accelerator": "CmdOrCtrl+Z"
       },
       {
         "type": "normal",
         "id": "menu.redo",
         "label": "Redo",
         "enabled": true,
-        "accelerator": "Ctrl+Shift+Z"
+        "accelerator": "CmdOrCtrl+Shift+Z"
       },
       {
         "type": "separator"
@@ -246,42 +246,42 @@
         "id": "menu.cut",
         "label": "Cut",
         "enabled": true,
-        "accelerator": "Ctrl+X"
+        "accelerator": "CmdOrCtrl+X"
       },
       {
         "type": "normal",
         "id": "menu.copy",
         "label": "Copy",
         "enabled": true,
-        "accelerator": "Ctrl+C"
+        "accelerator": "CmdOrCtrl+C"
       },
       {
         "type": "normal",
         "id": "menu.copy_html",
         "label": "Copy as HTML",
         "enabled": true,
-        "accelerator": "Ctrl+Alt+C"
+        "accelerator": "CmdOrCtrl+Alt+C"
       },
       {
         "type": "normal",
         "id": "menu.paste",
         "label": "Paste",
         "enabled": true,
-        "accelerator": "Ctrl+V"
+        "accelerator": "CmdOrCtrl+V"
       },
       {
         "type": "normal",
         "id": "menu.paste_plain",
         "label": "Paste without style",
         "enabled": true,
-        "accelerator": "Ctrl+Shift+V"
+        "accelerator": "CmdOrCtrl+Shift+V"
       },
       {
         "type": "normal",
         "id": "menu.select_all",
         "label": "Select all",
         "enabled": true,
-        "accelerator": "Ctrl+A"
+        "accelerator": "CmdOrCtrl+A"
       },
       {
         "type": "separator"
@@ -291,21 +291,27 @@
         "id": "menu.find_file",
         "label": "Find in current file",
         "enabled": true,
-        "accelerator": "Ctrl+F"
+        "accelerator": "CmdOrCtrl+F"
       },
       {
         "type": "normal",
         "id": "menu.find_dir",
         "label": "Search all files",
         "enabled": true,
-        "accelerator": "Ctrl+Shift+F"
+        "accelerator": "CmdOrCtrl+Shift+F"
       },
       {
         "type": "normal",
         "id": "menu.filter_files",
         "label": "Search files",
         "enabled": true,
-        "accelerator": "CmdOrCtrl+Shift+T"
+        "accelerator": "CmdOrCtrl+Alt+P"
+      },
+      {
+        "type": "normal",
+        "id": "menu.edit_ignore_rules",
+        "label": "Edit file filters…",
+        "enabled": true
       },
       {
         "type": "separator"
@@ -330,14 +336,14 @@
         "id": "menu.generate_id",
         "label": "Generate new ID",
         "enabled": true,
-        "accelerator": "Ctrl+L"
+        "accelerator": "CmdOrCtrl+L"
       },
       {
         "type": "normal",
         "id": "menu.copy_id",
         "label": "Copy ID",
         "enabled": true,
-        "accelerator": "Ctrl+Shift+L"
+        "accelerator": "CmdOrCtrl+Shift+L"
       }
     ]
   },
@@ -555,6 +561,27 @@
         "id": "menu.format_blockquote",
         "label": "Block quote",
         "enabled": true
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "normal",
+        "id": "menu.fix_all_document",
+        "label": "Fix all auto-fixable issues in the document",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.fix_all_open",
+        "label": "Fix all auto-fixable issues in open documents",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.fix_all_workspace",
+        "label": "Fix all auto-fixable issues in the workspace",
+        "enabled": true
       }
     ]
   },
@@ -569,14 +596,14 @@
         "id": "menu.command_launcher",
         "label": "Command launcher…",
         "enabled": true,
-        "accelerator": "Ctrl+P"
+        "accelerator": "CmdOrCtrl+P"
       },
       {
         "type": "normal",
         "id": "menu.file_launcher",
         "label": "Go to file…",
         "enabled": true,
-        "accelerator": "Ctrl+Shift+P"
+        "accelerator": "CmdOrCtrl+Shift+P"
       },
       {
         "type": "normal",
@@ -592,15 +619,15 @@
         "id": "menu.toggle_theme",
         "label": "Dark mode",
         "enabled": true,
-        "accelerator": "Ctrl+Alt+L",
-        "checked": true
+        "accelerator": "CmdOrCtrl+Alt+D",
+        "checked": false
       },
       {
         "type": "checkbox",
         "id": "menu.toggle_file_meta",
         "label": "Additional information",
         "enabled": true,
-        "accelerator": "Ctrl+Alt+S",
+        "accelerator": "CmdOrCtrl+Alt+S",
         "checked": true
       },
       {
@@ -608,14 +635,14 @@
         "id": "menu.toggle_distraction_free",
         "label": "Distraction-free mode",
         "enabled": true,
-        "accelerator": "Ctrl+J"
+        "accelerator": "CmdOrCtrl+J"
       },
       {
         "type": "normal",
         "id": "menu.toggle_typewriter_mode",
         "label": "Typewriter mode",
         "enabled": true,
-        "accelerator": "Ctrl+Alt+T"
+        "accelerator": "CmdOrCtrl+Alt+T"
       },
       {
         "type": "separator"
@@ -625,14 +652,21 @@
         "id": "menu.toggle_navigation_sidebar",
         "label": "Toggle Sidebar",
         "enabled": true,
-        "accelerator": "Ctrl+!"
+        "accelerator": "CmdOrCtrl+!"
+      },
+      {
+        "type": "normal",
+        "id": "menu.problems_reveal",
+        "label": "Problems: Reveal",
+        "enabled": true,
+        "accelerator": "CmdOrCtrl+Shift+M"
       },
       {
         "type": "normal",
         "id": "menu.toggle_annotation_panel",
         "label": "Toggle Annotation Panel",
         "enabled": true,
-        "accelerator": "Ctrl+Shift+0"
+        "accelerator": "CmdOrCtrl+Shift+0"
       },
       {
         "type": "separator"
@@ -642,21 +676,21 @@
         "id": "menu.reset_zoom",
         "label": "Reset zoom",
         "enabled": true,
-        "accelerator": "Ctrl+0"
+        "accelerator": "CmdOrCtrl+0"
       },
       {
         "type": "normal",
         "id": "menu.zoom_in",
         "label": "Zoom in",
         "enabled": true,
-        "accelerator": "Ctrl+Plus"
+        "accelerator": "CmdOrCtrl+Plus"
       },
       {
         "type": "normal",
         "id": "menu.zoom_out",
         "label": "Zoom out",
         "enabled": true,
-        "accelerator": "Ctrl+-"
+        "accelerator": "CmdOrCtrl+-"
       },
       {
         "type": "separator"
@@ -680,15 +714,14 @@
         "type": "normal",
         "id": "menu.win_minimize",
         "label": "Minimize",
-        "enabled": true,
-        "accelerator": "Ctrl+M"
+        "enabled": true
       },
       {
         "type": "normal",
         "id": "menu.win_close",
         "label": "Close",
         "enabled": true,
-        "accelerator": "Ctrl+Shift+W"
+        "accelerator": "CmdOrCtrl+Shift+W"
       },
       {
         "type": "separator"
@@ -698,14 +731,14 @@
         "id": "menu.tab_close",
         "label": "Close Tab",
         "enabled": true,
-        "accelerator": "Ctrl+W"
+        "accelerator": "CmdOrCtrl+W"
       },
       {
         "type": "normal",
         "id": "menu.tab_reopen_closed",
         "label": "Reopen Closed Tab",
         "enabled": true,
-        "accelerator": "Ctrl+Shift+T"
+        "accelerator": "CmdOrCtrl+Shift+T"
       },
       {
         "type": "normal",
@@ -730,14 +763,14 @@
         "id": "menu.tab_previous",
         "label": "Previous Tab",
         "enabled": true,
-        "accelerator": "Ctrl+Shift+TAB"
+        "accelerator": "Ctrl+Shift+Tab"
       },
       {
         "type": "normal",
         "id": "menu.tab_next",
         "label": "Next Tab",
         "enabled": true,
-        "accelerator": "Ctrl+TAB"
+        "accelerator": "Ctrl+Tab"
       },
       {
         "type": "normal",

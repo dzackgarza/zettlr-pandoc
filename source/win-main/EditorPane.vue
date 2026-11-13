@@ -56,7 +56,6 @@
             :editor-commands="editorCommands"
             @global-search="emit('globalSearch', $event)"
             @reference-search="emit('referenceSearch', $event)"
-            @file-search="emit('fileSearch')"
             @create-reference-label="emit('createReferenceLabel', $event)"
             @open-pandoc-quick-help="emit('openPandocQuickHelp')"
           />
@@ -178,7 +177,6 @@ type DragTargetAreas = "editor" | "top" | "left" | "right" | "bottom";
 const emit = defineEmits<{
   (e: "globalSearch", query: string): void;
   (e: "referenceSearch", request: ReferenceSearchRequest): void;
-  (e: "fileSearch"): void;
   (e: "createReferenceLabel", prompt: CreateReferenceLabelDialogPrompt): void;
   (e: "openPandocQuickHelp"): void;
 }>();

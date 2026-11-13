@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { commandAccelerator } from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
 import showPopupMenu, {
   type AnyMenuItem,
@@ -55,7 +56,7 @@ export function displayFileContext(
     {
       label: trans("Rename file"),
       id: "menu.rename_file",
-      accelerator: "CmdOrCtrl+R",
+      accelerator: commandAccelerator("rename-file", configStore.config.shortcuts),
       type: "normal",
     },
     {
@@ -66,7 +67,7 @@ export function displayFileContext(
     {
       label: trans("Delete file"),
       id: "menu.delete_file",
-      accelerator: "CmdOrCtrl+Backspace",
+      accelerator: commandAccelerator("delete-file", configStore.config.shortcuts),
       type: "normal",
     },
     {

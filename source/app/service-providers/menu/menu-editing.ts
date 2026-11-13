@@ -25,11 +25,6 @@ import type {
   ShortcutName,
 } from "@dts/common/shortcut-names";
 import type { BaseWindow, BrowserWindow, MenuItemConstructorOptions } from "electron";
-import {
-  defaultKeybindings,
-  type EditorShortcutName,
-} from "source/common/modules/markdown-editor/keymaps/shortcuts";
-import { cmShortcutToElectron, getDefaultKeybinding } from "source/common/util/shortcuts";
 import type { MenuCommands, MenuConfig } from "./menu-dependencies";
 
 /** Electron types the focused window as possibly undefined; at runtime the provider also passes null. */
@@ -61,34 +56,29 @@ export function sendShortcut(
   }
 }
 
-/** The Electron accelerator of an editor shortcut's default binding, if it has one. */
-function editorAccelerator(name: EditorShortcutName): string | undefined {
-  return cmShortcutToElectron(getDefaultKeybinding(name, defaultKeybindings));
-}
-
-/** One Insert or Format item: its click sends the editor command it names. */
+/**
+ * One Insert or Format item: its click sends the editor command it names. Its
+ * key is the key of the registered command of the item (`menuItems`).
+ */
 function editorCommandItem(
   id: string,
   label: string,
   command: EditorCommandName,
-  shortcut?: EditorShortcutName,
 ): MenuItemConstructorOptions {
   return {
     id,
     label,
-    accelerator: shortcut === undefined ? undefined : editorAccelerator(shortcut),
     click: (_item, focusedWindow) => {
       sendShortcut(focusedWindow, command);
     },
   };
 }
 
-/** The "Command launcher…" item of the View menu: the window-level Ctrl+P. */
-export function commandLauncherItem(accelerator: string): MenuItemConstructorOptions {
+/** The "Command launcher…" item of the View menu. */
+export function commandLauncherItem(): MenuItemConstructorOptions {
   return {
     id: "menu.command_launcher",
     label: trans("Command launcher…"),
-    accelerator,
     click: (_item, focusedWindow) => {
       sendShortcut(focusedWindow, "open-command-launcher");
     },
@@ -96,11 +86,10 @@ export function commandLauncherItem(accelerator: string): MenuItemConstructorOpt
 }
 
 /** The "Go to file…" item of the View menu: opens the launcher's workspace-file view. */
-export function fileLauncherItem(accelerator: string): MenuItemConstructorOptions {
+export function fileLauncherItem(): MenuItemConstructorOptions {
   return {
     id: "menu.file_launcher",
     label: trans("Go to file…"),
-    accelerator,
     click: (_item, focusedWindow) => {
       sendShortcut(focusedWindow, "open-file-launcher");
     },
@@ -204,20 +193,15 @@ export function insertMenu(): MenuItemConstructorOptions {
     id: "insert-menu",
     label: trans("Insert"),
     submenu: [
-      editorCommandItem("menu.insert_link", trans("Link"), "markdownLink", "md-insert-link"),
-      editorCommandItem("menu.insert_image", trans("Image"), "markdownImage", "md-insert-image"),
+      editorCommandItem("menu.insert_link", trans("Link"), "markdownLink"),
+      editorCommandItem("menu.insert_image", trans("Image"), "markdownImage"),
       {
         id: "menu.insert_table",
         label: trans("Table"),
         submenu: tableSizes,
       },
-      editorCommandItem(
-        "menu.insert_footnote",
-        trans("Footnote"),
-        "insertFootnote",
-        "md-insert-footnote",
-      ),
-      editorCommandItem("menu.insert_comment", trans("Comment"), "markdownComment", "md-comment"),
+      editorCommandItem("menu.insert_footnote", trans("Footnote"), "insertFootnote"),
+      editorCommandItem("menu.insert_comment", trans("Comment"), "markdownComment"),
       { type: "separator" },
       {
         id: "menu.insert_pandoc_div",
@@ -234,12 +218,7 @@ export function insertMenu(): MenuItemConstructorOptions {
         },
       },
       { type: "separator" },
-      editorCommandItem(
-        "menu.insert_task_list",
-        trans("Task list"),
-        "markdownMakeTaskList",
-        "md-task-list",
-      ),
+      editorCommandItem("menu.insert_task_list", trans("Task list"), "markdownMakeTaskList"),
     ],
   };
 }
@@ -260,8 +239,8 @@ export function formatMenu(): MenuItemConstructorOptions {
     submenu: [
       ...headings,
       { type: "separator" },
-      editorCommandItem("menu.format_bold", trans("Bold"), "markdownBold", "md-bold"),
-      editorCommandItem("menu.format_italic", trans("Italic"), "markdownItalic", "md-italic"),
+      editorCommandItem("menu.format_bold", trans("Bold"), "markdownBold"),
+      editorCommandItem("menu.format_italic", trans("Italic"), "markdownItalic"),
       editorCommandItem("menu.format_code", trans("Code"), "markdownCode"),
       editorCommandItem(
         "menu.format_strikethrough",

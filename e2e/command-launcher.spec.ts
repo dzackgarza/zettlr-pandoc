@@ -15,17 +15,15 @@
  *                  the defining document, Escape returns focus to where it
  *                  was.
  *
- *                  One hop is driven through the app's own path instead of
- *                  a key: Electron's application-menu accelerators do not
- *                  fire from keys synthesised over CDP (verified: the
- *                  renderer receives every keydown, CodeMirror's own Ctrl+P
- *                  binding fires, the menu's Ctrl+J / Ctrl+Alt+L never do).
- *                  So with focus outside the editor the launcher is opened
- *                  by clicking the View menu item the accelerator belongs
- *                  to, through the same click-menu-item IPC the custom
- *                  menubar uses; the serialised menu proves the item carries
- *                  the accelerator. With editor focus the real Ctrl+P key
- *                  opens it.
+ *                  Ctrl+P and Ctrl+Shift+P are keys of the application menu
+ *                  (#202): the editor has no binding of its own for them.
+ *                  Electron's application-menu accelerators do not fire
+ *                  from keys synthesised over CDP, so a test that presses
+ *                  one presses the key of the X server (xdotool) in the
+ *                  main window. The other tests open the launcher by
+ *                  clicking the View menu item, through the same
+ *                  click-menu-item IPC the custom menubar uses; the
+ *                  serialised menu proves the item carries the key.
  *
  * END HEADER
  */
@@ -51,6 +49,7 @@ import {
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
+import { pressKey, windowOfPage } from "./support/native-dialog";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-command-launcher-e2e-latest");
 
@@ -270,10 +269,14 @@ describe("the Ctrl+P command launcher", function () {
     assert.ok(viewMenu?.submenu !== undefined, "the View menu must be serialised");
     const item = findMenuNode(viewMenu.submenu, LAUNCHER_MENU_ITEM);
     assert.ok(item !== undefined, "the View menu must carry the command launcher item");
-    assert.equal(item.accelerator, "Ctrl+P", "the launcher item must own Ctrl+P");
+    assert.equal(item.accelerator, "CmdOrCtrl+P", "the launcher item must own Ctrl+P");
     const fileItem = findMenuNode(viewMenu.submenu, "menu.file_launcher");
     assert.ok(fileItem !== undefined, "the View menu must carry the quick-file item");
-    assert.equal(fileItem.accelerator, "Ctrl+Shift+P", "the quick-file item must own Ctrl+Shift+P");
+    assert.equal(
+      fileItem.accelerator,
+      "CmdOrCtrl+Shift+P",
+      "the quick-file item must own Ctrl+Shift+P",
+    );
 
     await focusOutsideEditor(activePage);
     await openLauncherFromMenu(activePage);
@@ -530,12 +533,12 @@ describe("the Ctrl+P command launcher", function () {
     assert.ok(cursor > 0, "the fixture document must have a first line");
     await placeCursor(activePage, cursor);
 
-    await activePage.keyboard.press("Control+p");
+    await pressKey(await windowOfPage(activePage), "ctrl+p");
     await activePage.locator(LAUNCHER_INPUT).waitFor({ state: "visible", timeout: 10_000 });
     assert.equal(
       await activePage.locator(LAUNCHER).count(),
       1,
-      "the editor binding opens exactly one launcher",
+      "the menu key opens exactly one launcher",
     );
 
     await typeAndWaitForHighlight(activePage, "insert", "Insert");
@@ -659,7 +662,7 @@ describe("the Ctrl+P command launcher", function () {
     const indexText = await readFile(indexPath, "utf8");
 
     await activeEditor(activePage).focus();
-    await activePage.keyboard.press("Control+Shift+P");
+    await pressKey(await windowOfPage(activePage), "ctrl+shift+p");
     await activePage.locator(LAUNCHER_INPUT).waitFor({ state: "visible", timeout: 10_000 });
     assert.equal(
       (await activePage.locator(`${LAUNCHER} [data-row-kind="file"]`).count()) > 0,

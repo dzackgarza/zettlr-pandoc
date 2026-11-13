@@ -14,6 +14,7 @@
  * END HEADER
  */
 
+import { platformAccelerator } from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
 import showPopupMenu, {
   type AnyMenuItem,
@@ -69,20 +70,20 @@ function displayContextMenu(posX: number, posY: number, target: HTMLInputElement
     {
       id: "cut",
       label: trans("Cut"),
-      accelerator: "CmdOrCtrl+X",
+      accelerator: platformAccelerator("cut"),
       type: "normal",
       enabled: !target.readOnly, // Only enable if target is not readonly
     },
     {
       id: "copy",
       label: trans("Copy"),
-      accelerator: "CmdOrCtrl+C",
+      accelerator: platformAccelerator("copy"),
       type: "normal",
     },
     {
       id: "paste",
       label: trans("Paste"),
-      accelerator: "CmdOrCtrl+V",
+      accelerator: platformAccelerator("paste"),
       type: "normal",
       enabled: !target.readOnly, // Only enable if target is not readonly
     },
@@ -92,7 +93,7 @@ function displayContextMenu(posX: number, posY: number, target: HTMLInputElement
     {
       id: "selectAll",
       label: trans("Select all"),
-      accelerator: "CmdOrCtrl+A",
+      accelerator: platformAccelerator("select-all"),
       type: "normal",
     },
   ];

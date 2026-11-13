@@ -33,6 +33,7 @@ import type RecentDocumentsProvider from "../recent-docs";
 import macOSMenu from "./menu.darwin";
 // Import the menu constructors
 import win32Menu from "./menu.win32";
+import { withRegisteredAccelerators } from "./registered-accelerators";
 
 const BLUEPRINTS = {
   // Currently we ship two different sets of menu items -- one for macOS, and
@@ -396,8 +397,9 @@ export default class MenuProvider extends ProviderContract {
       getState,
       setState,
     );
-    // Last but not least build the template
-    return Menu.buildFromTemplate(blueprint);
+    return Menu.buildFromTemplate(
+      withRegisteredAccelerators(blueprint, this._config.get().shortcuts),
+    );
   }
 
   /**

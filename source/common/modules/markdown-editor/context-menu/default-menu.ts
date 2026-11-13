@@ -15,6 +15,7 @@
 
 import { type Diagnostic, forceLinting, forEachDiagnostic, setDiagnostics } from "@codemirror/lint";
 import { type EditorView } from "@codemirror/view";
+import { platformAccelerator } from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
 import showPopupMenu, {
   type AnyMenuItem,
@@ -37,6 +38,7 @@ import {
   isLanguageToolMisspelling,
 } from "../diagnostics/language-tool-state";
 import { copyAsHTML, copyAsPlain, cut, paste, pasteAsPlain } from "../util/copy-paste-cut";
+import { editorMenuAccelerator } from "./menu-accelerator";
 import { getTransformSubmenu } from "./transform-items";
 
 const ipcRenderer = window.ipc;
@@ -256,7 +258,7 @@ export async function defaultMenu(
   const tpl: AnyMenuItem[] = [
     {
       label: trans("Bold"),
-      accelerator: "CmdOrCtrl+B",
+      accelerator: editorMenuAccelerator(view, "md-bold"),
       type: "normal",
       action() {
         applyBold(view);
@@ -264,7 +266,7 @@ export async function defaultMenu(
     },
     {
       label: trans("Italic"),
-      accelerator: "CmdOrCtrl+I",
+      accelerator: editorMenuAccelerator(view, "md-italic"),
       type: "normal",
       action() {
         applyItalic(view);
@@ -275,7 +277,7 @@ export async function defaultMenu(
     },
     {
       label: trans("Insert link"),
-      accelerator: "CmdOrCtrl+K",
+      accelerator: editorMenuAccelerator(view, "md-insert-link"),
       type: "normal",
       action() {
         insertLink(view);
@@ -297,7 +299,7 @@ export async function defaultMenu(
     },
     {
       label: trans("Insert task list"),
-      accelerator: "CmdOrCtrl+T",
+      accelerator: editorMenuAccelerator(view, "md-task-list"),
       type: "normal",
       action() {
         applyTaskList(view);
@@ -322,7 +324,7 @@ export async function defaultMenu(
     },
     {
       label: trans("Cut"),
-      accelerator: "CmdOrCtrl+X",
+      accelerator: platformAccelerator("cut"),
       type: "normal",
       action() {
         cut(view);
@@ -330,7 +332,7 @@ export async function defaultMenu(
     },
     {
       label: trans("Copy"),
-      accelerator: "CmdOrCtrl+C",
+      accelerator: platformAccelerator("copy"),
       type: "normal",
       action() {
         copyAsPlain(view);
@@ -338,7 +340,7 @@ export async function defaultMenu(
     },
     {
       label: trans("Copy as HTML"),
-      accelerator: "CmdOrCtrl+Alt+C",
+      accelerator: editorMenuAccelerator(view, "edit-copy-as-html"),
       type: "normal",
       action() {
         copyAsHTML(view);
@@ -346,7 +348,7 @@ export async function defaultMenu(
     },
     {
       label: trans("Paste"),
-      accelerator: "CmdOrCtrl+V",
+      accelerator: platformAccelerator("paste"),
       type: "normal",
       action() {
         paste(view);
@@ -354,7 +356,7 @@ export async function defaultMenu(
     },
     {
       label: trans("Paste without style"),
-      accelerator: "CmdOrCtrl+Shift+V",
+      accelerator: editorMenuAccelerator(view, "edit-paste-as-plain"),
       type: "normal",
       action() {
         pasteAsPlain(view);
@@ -365,7 +367,7 @@ export async function defaultMenu(
     },
     {
       label: trans("Select all"),
-      accelerator: "CmdOrCtrl+A",
+      accelerator: platformAccelerator("select-all"),
       type: "normal",
       action() {
         view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });

@@ -37,7 +37,7 @@ import {
   type SerializedMenuNode,
   shutdown,
 } from "./support/electron-app";
-import { pressKey, searchWindows } from "./support/native-dialog";
+import { pressKey, windowOfPage } from "./support/native-dialog";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-window-shortcut-keys-e2e-latest");
 const DOCUMENT = "# Genus\n\nTwo forms of one genus.\n";
@@ -52,17 +52,6 @@ interface PageContentElement extends Element {
       };
     };
   };
-}
-
-/** The X window of the main window: the window whose title is the page title. */
-async function mainWindow(page: Page): Promise<string> {
-  const title = await page.title();
-  const windows = await searchWindows([
-    "--name",
-    `^${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-  ]);
-  assert.equal(windows.length, 1, `one X window has the title "${title}"`);
-  return windows[0];
 }
 
 /** The text of the document in the first pane. */
@@ -166,7 +155,7 @@ describe("shortcuts that the author binds", function () {
 
   it("runs a rebound command from its new key only", async function () {
     const editorPage = requireInitialized(page, "The editor page must be initialized");
-    const xWindow = await mainWindow(editorPage);
+    const xWindow = await windowOfPage(editorPage);
     await editorPage.evaluate(() => {
       window.ipc.sendSync("config-provider", {
         command: "set-config-single",

@@ -23,7 +23,6 @@
         :is-last="index === node.nodes.length - 1 || node.nodes.length === 1"
         @global-search="emit('globalSearch', $event)"
         @reference-search="emit('referenceSearch', $event)"
-        @file-search="emit('fileSearch')"
         @create-reference-label="emit('createReferenceLabel', $event)"
         @open-pandoc-quick-help="emit('openPandocQuickHelp')"
       />
@@ -41,7 +40,6 @@
         :available-height="(node.direction === 'vertical') ? sizes[index] : 100"
         @global-search="emit('globalSearch', $event)"
         @reference-search="emit('referenceSearch', $event)"
-        @file-search="emit('fileSearch')"
         @create-reference-label="emit('createReferenceLabel', $event)"
         @open-pandoc-quick-help="emit('openPandocQuickHelp')"
       />
@@ -78,7 +76,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "globalSearch", query: string): void;
   (e: "referenceSearch", request: ReferenceSearchRequest): void;
-  (e: "fileSearch"): void;
   (e: "createReferenceLabel", prompt: CreateReferenceLabelDialogPrompt): void;
   (e: "openPandocQuickHelp"): void;
 }>();

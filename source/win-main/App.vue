@@ -76,7 +76,6 @@
               :window-id="windowId"
               @global-search="startGlobalSearch($event)"
               @reference-search="openReferenceSearch($event)"
-              @file-search="openFileLauncher()"
               @create-reference-label="openCreateReferenceLabel($event)"
               @open-pandoc-quick-help="showPandocQuickHelp = true"
             />
@@ -88,7 +87,6 @@
               :is-last="true"
               @global-search="startGlobalSearch($event)"
               @reference-search="openReferenceSearch($event)"
-              @file-search="openFileLauncher()"
               @create-reference-label="openCreateReferenceLabel($event)"
               @open-pandoc-quick-help="showPandocQuickHelp = true"
             />

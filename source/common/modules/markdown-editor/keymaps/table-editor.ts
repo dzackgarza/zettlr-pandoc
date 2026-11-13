@@ -133,26 +133,14 @@ export function tableEditorKeymap(
       // them here (but providing the main view which will handle them accordingly)
       // NOTE: They are beind `sharedKeymap` since the sharedKeymap for navigation
       // *within* the table cell needs to take precedence.
-      {
-        key: "Alt-ArrowUp",
-        run: (_v) => swapPrevRow(mainView),
-        shift: (_v) => addRowBefore(mainView),
-      },
-      {
-        key: "Alt-ArrowDown",
-        run: (_v) => swapNextRow(mainView),
-        shift: (_v) => addRowAfter(mainView),
-      },
-      {
-        key: "Alt-ArrowRight",
-        run: (_v) => swapNextCol(mainView),
-        shift: (_v) => addColAfter(mainView),
-      },
-      {
-        key: "Alt-ArrowLeft",
-        run: (_v) => swapPrevCol(mainView),
-        shift: (_v) => addColBefore(mainView),
-      },
+      { key: sc("table-swap-prev-row"), run: (_v) => swapPrevRow(mainView) },
+      { key: sc("table-swap-next-row"), run: (_v) => swapNextRow(mainView) },
+      { key: sc("table-swap-prev-col"), run: (_v) => swapPrevCol(mainView) },
+      { key: sc("table-swap-next-col"), run: (_v) => swapNextCol(mainView) },
+      { key: sc("table-add-row-before"), run: (_v) => addRowBefore(mainView) },
+      { key: sc("table-add-row-after"), run: (_v) => addRowAfter(mainView) },
+      { key: sc("table-add-col-before"), run: (_v) => addColBefore(mainView) },
+      { key: sc("table-add-col-after"), run: (_v) => addColAfter(mainView) },
     ]),
     // Also include the sharedKeymap. The subview transaction filter will
     // automatically ensure that nothing spanning multiple lines will be executed.

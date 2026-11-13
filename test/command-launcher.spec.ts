@@ -106,7 +106,7 @@ describe("command launcher: rows", function () {
     const open = rows.find((row) => row.kind === "menu-leaf" && row.id === "menu.open");
     assert.ok(open !== undefined && open.kind === "menu-leaf");
     assert.equal(open.label, "Open file…");
-    assert.equal(open.accelerator, "Ctrl+O");
+    assert.equal(open.accelerator, "CmdOrCtrl+O");
     assert.equal(open.enabled, true);
     assert.deepEqual(open.breadcrumb, ["File"]);
     assert.ok(
@@ -145,7 +145,7 @@ describe("command launcher: rows", function () {
     assert.deepEqual(newTex.breadcrumb, ["File", "New file…"]);
     const fileLauncher = rows.find((row) => row.id === "menu.file_launcher");
     assert.ok(fileLauncher !== undefined);
-    assert.equal(fileLauncher.accelerator, "Ctrl+Shift+P");
+    assert.equal(fileLauncher.accelerator, "CmdOrCtrl+Shift+P");
     assert.deepEqual(fileLauncher.breadcrumb, ["View"]);
     for (const id of [
       "menu.open_terminal_here",

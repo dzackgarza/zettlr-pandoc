@@ -224,7 +224,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "globalSearch", query: string): void;
   (e: "referenceSearch", request: ReferenceSearchRequest): void;
-  (e: "fileSearch"): void;
   (e: "createReferenceLabel", prompt: CreateReferenceLabelDialogPrompt): void;
   (e: "openPandocQuickHelp"): void;
 }>();
@@ -1385,16 +1384,11 @@ async function getEditorFor(doc: string): Promise<MarkdownEditor> {
     emit("globalSearch", tag);
   });
 
-  // The workspace reference search overlay was requested (issue #1 Phase
-  // 3b) — plain Mod-P (null) or a count badge's keyed reverse lookup
-  // ({ key }, Phase 8); relay the request payload up the component tree to
+  // A count badge asked for the citing locations of its key ({ key },
+  // issue #1 Phase 8); relay the request payload up the component tree to
   // App.vue.
   editor.on("reference-search", (request: ReferenceSearchRequest) => {
     emit("referenceSearch", request);
-  });
-
-  editor.on("file-search", () => {
-    emit("fileSearch");
   });
 
   // A gutter chip was clicked: open that annotation's inline thread, or

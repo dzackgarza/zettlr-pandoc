@@ -117,7 +117,6 @@ import {
   openCreateReferenceLabelEffect,
 } from "./plugins/create-reference-label";
 import { editorMetadataFacet } from "./plugins/editor-metadata";
-import { openFileSearchEffect } from "./plugins/file-search-effect";
 import { formatDocumentEffect } from "./plugins/format-document-effect";
 import { highlightRangesEffect } from "./plugins/highlight-ranges";
 import { openPandocQuickHelpEffect } from "./plugins/pandoc-quick-help-effect";
@@ -499,17 +498,11 @@ export default class MarkdownEditor extends EventEmitter {
               this.emit("docUpdate");
             }
 
-            // Workspace reference search request — plain Mod-P (null) or a
-            // count badge's keyed reverse lookup ({ key }): surface the
-            // request payload to the shell (MainEditor.vue relays it up to
-            // App.vue's overlay; dropping the payload here would break the
-            // Phase 8 badge-keyed reverse lookup).
+            // A count badge asked for the citing locations of its key
+            // ({ key }): surface the request payload to the shell
+            // (MainEditor.vue relays it up to App.vue's overlay).
             if (effect.is(openReferenceSearchEffect)) {
               this.emit("reference-search", effect.value);
-            }
-
-            if (effect.is(openFileSearchEffect)) {
-              this.emit("file-search");
             }
 
             // A gutter chip was clicked: the pane opens or closes that

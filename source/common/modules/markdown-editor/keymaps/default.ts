@@ -143,9 +143,7 @@ import { toDoubleQuotes } from "../commands/transforms/to-double-quotes";
 import { toSentenceCase } from "../commands/transforms/to-sentence-case";
 import { toTitleCase } from "../commands/transforms/to-title-case";
 import { zapGremlins } from "../commands/transforms/zap-gremlins";
-import { openFileSearch } from "../plugins/file-search-effect";
 import { requestFormatDocument } from "../plugins/format-document-effect";
-import { openReferenceSearch } from "../plugins/reference-search-effect";
 import { expandQuickTexOnSpace } from "../quicktex";
 import {
   addColAfter,
@@ -257,10 +255,10 @@ export function mainEditorKeybindings(
     // Arrow Up
     { key: "ArrowUp", run: moveCompletionSelection(false) },
     { key: "ArrowUp", run: cursorLineUp, preventDefault: true },
-    { key: "Alt-ArrowUp", run: swapPrevRow },
+    { key: sc("table-swap-prev-row"), run: swapPrevRow },
     { key: "Alt-ArrowUp", run: customMoveLineUp },
     { key: "Alt-ArrowUp", run: moveLineUp },
-    { key: "Alt-Shift-ArrowUp", run: addRowBefore },
+    { key: sc("table-add-row-before"), run: addRowBefore },
     { key: "Alt-Shift-ArrowUp", run: copyLineUp },
     { key: "Shift-ArrowUp", run: selectLineUp, preventDefault: true },
     // Mac-only
@@ -271,14 +269,14 @@ export function mainEditorKeybindings(
 
     // Arrow Right
     { key: "ArrowRight", run: cursorCharRight, preventDefault: true },
-    { key: "Alt-ArrowRight", run: swapNextCol },
+    { key: sc("table-swap-next-col"), run: swapNextCol },
     // Per-pane session-history Forward takes the Alt-Arrow (Ctrl-Arrow on
     // macOS) default, so cursorSyntaxRight moves down to Mod-Alt-Arrow. The
     // command returns false in views without editor metadata (window/leaf
     // IDs), so non-main editors fall through to the next binding.
     { key: sc("nav-history-forward"), run: navigateHistoryForward, preventDefault: true },
     { key: "Mod-Alt-ArrowRight", run: cursorSyntaxRight },
-    { key: "Alt-Shift-ArrowRight", run: addColAfter },
+    { key: sc("table-add-col-after"), run: addColAfter },
     { key: "Alt-Shift-ArrowRight", mac: "Ctrl-Shift-ArrowRight", run: selectSyntaxRight },
     { key: "Shift-ArrowRight", run: selectCharRight, preventDefault: true },
     { key: "Mod-ArrowRight", mac: "Alt-ArrowRight", run: cursorGroupRight, preventDefault: true },
@@ -295,11 +293,11 @@ export function mainEditorKeybindings(
     // Arrow Down
     { key: "ArrowDown", run: moveCompletionSelection(true) },
     { key: "ArrowDown", run: cursorLineDown, preventDefault: true },
-    { key: "Alt-ArrowDown", run: swapNextRow },
+    { key: sc("table-swap-next-row"), run: swapNextRow },
     { key: "Alt-ArrowDown", run: customMoveLineDown },
     { key: "Alt-ArrowDown", run: moveLineDown },
     { key: "Shift-ArrowDown", run: selectLineDown, preventDefault: true },
-    { key: "Alt-Shift-ArrowDown", run: addRowAfter },
+    { key: sc("table-add-row-after"), run: addRowAfter },
     { key: "Alt-Shift-ArrowDown", run: copyLineDown },
     // Mac-only
     { mac: "Cmd-ArrowDown", run: cursorDocEnd },
@@ -309,12 +307,12 @@ export function mainEditorKeybindings(
 
     // Arrow Left
     { key: "ArrowLeft", run: cursorCharLeft, preventDefault: true },
-    { key: "Alt-ArrowLeft", run: swapPrevCol },
+    { key: sc("table-swap-prev-col"), run: swapPrevCol },
     // See the Forward binding above: cursorSyntaxLeft moves to Mod-Alt-Arrow.
     { key: sc("nav-history-back"), run: navigateHistoryBack, preventDefault: true },
     { key: "Mod-Alt-ArrowLeft", run: cursorSyntaxLeft },
     { key: "Shift-ArrowLeft", run: selectCharLeft, preventDefault: true },
-    { key: "Alt-Shift-ArrowLeft", run: addColBefore },
+    { key: sc("table-add-col-before"), run: addColBefore },
     { key: "Alt-Shift-ArrowLeft", mac: "Ctrl-Shift-ArrowLeft", run: selectSyntaxLeft },
     { key: "Mod-ArrowLeft", mac: "Alt-ArrowLeft", run: cursorGroupLeft, preventDefault: true },
     {
@@ -353,14 +351,14 @@ export function mainEditorKeybindings(
     { key: "Space", run: expandQuickTexOnSpace },
     { key: "Space", run: handleAutocorrectSpace },
     {
-      key: "Mod-Shift-v",
+      key: sc("edit-paste-as-plain"),
       run: (view) => {
         pasteAsPlain(view);
         return true;
       },
     },
     {
-      key: "Mod-Alt-c",
+      key: sc("edit-copy-as-html"),
       run: (view) => {
         copyAsHTML(view);
         return true;
@@ -422,9 +420,7 @@ export function mainEditorKeybindings(
     { key: sc("selection-redo"), run: redoSelection, preventDefault: true },
 
     // searchKeymap
-    { key: "Mod-f", run: openSearchPanel, scope: "editor search-panel" },
-    { key: sc("search-files"), run: openFileSearch, preventDefault: true },
-    { key: sc("search-references"), run: openReferenceSearch, preventDefault: true },
+    { key: sc("search-find"), run: openSearchPanel, scope: "editor search-panel" },
     {
       key: sc("search-find-next"),
       run: findNext,

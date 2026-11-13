@@ -19,7 +19,6 @@ import { DocumentType } from "@dts/common/documents";
 import { app, BrowserWindow, dialog, type MenuItemConstructorOptions, shell } from "electron";
 import path from "path";
 import { openPath } from "source/app/util/open-path";
-import { cmShortcutToElectron } from "source/common/util/shortcuts";
 import { zoomIn, zoomOut } from "./font-zoom";
 import type {
   MenuCommands,
@@ -41,7 +40,6 @@ import {
   statisticsItem,
 } from "./menu-editing";
 import openPandocQuickHelp from "./open-pandoc-quick-help";
-import { getCustomShortcut, type MenuShortcutName } from "./shortcuts";
 
 export default function getMenu(
   logger: MenuLogger,
@@ -117,12 +115,6 @@ export default function getMenu(
     ],
   };
 
-  // Utility function to grab custom shortcuts
-  const shortcutMap = config.get().shortcuts.ui;
-  const sc = (name: MenuShortcutName) => {
-    return cmShortcutToElectron(getCustomShortcut(name, shortcutMap));
-  };
-
   const menu: MenuItemConstructorOptions[] = [
     // FILE MENU
     {
@@ -135,7 +127,6 @@ export default function getMenu(
             {
               id: "menu.new_file",
               label: "Markdown",
-              accelerator: "Ctrl+N",
               click: function (_menuitem, _focusedWindow) {
                 commands
                   .run("file-new", { type: DocumentType.Markdown })
@@ -184,7 +175,6 @@ export default function getMenu(
         {
           id: "menu.open",
           label: trans("Open file…"),
-          accelerator: "Ctrl+O",
           click: function (_menuitem, _focusedWindow) {
             commands.run("root-open-files", []).catch((e: Error) => logger.error(e.message, e));
           },
@@ -192,7 +182,6 @@ export default function getMenu(
         {
           id: "menu.open_workspace",
           label: trans("Open workspace…"),
-          accelerator: "Ctrl+Shift+O",
           click: function (_menuitem, _focusedWindow) {
             commands
               .run("root-open-workspaces", [])
@@ -210,7 +199,6 @@ export default function getMenu(
         {
           id: "menu.save",
           label: trans("Save"),
-          accelerator: "Ctrl+S",
           click: function (_menuItem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "save-file");
           },
@@ -221,7 +209,6 @@ export default function getMenu(
         {
           id: "menu.previous_file",
           label: trans("Previous file"),
-          accelerator: "Ctrl+[",
           click: function (_menuitem, focusedWindow) {
             // Session history is per-pane, and the renderer owns which pane is
             // focused, so the navigation request goes out on the same
@@ -235,7 +222,6 @@ export default function getMenu(
         {
           id: "menu.next_file",
           label: trans("Next file"),
-          accelerator: "Ctrl+]",
           click: function (_menuitem, focusedWindow) {
             if (focusedWindow instanceof BrowserWindow) {
               focusedWindow.webContents.send("shortcut", "navigate-forward");
@@ -257,7 +243,6 @@ export default function getMenu(
         {
           id: "menu.export",
           label: trans("Export…"),
-          accelerator: "Ctrl+E",
           click: function (_menuItem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "export");
           },
@@ -265,21 +250,17 @@ export default function getMenu(
         {
           id: "menu.print",
           label: trans("Print…"),
-          // NOTE: No accelerator — Ctrl+P belongs to the editor's workspace
-          // reference search (issue #1 Phase 3b); printing stays available
-          // through this menu item.
           click: function (_menuItem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "print");
           },
         },
         {
-          id: "menu.preferences",
+          id: "preferences-menu",
           label: trans("Preferences…"),
           submenu: [
             {
-              id: "preferences-item",
+              id: "menu.preferences",
               label: trans("Preferences…"),
-              accelerator: "Ctrl+,",
               click: function (_menuitem, _focusedWindow) {
                 windows.showPreferences();
               },
@@ -287,7 +268,6 @@ export default function getMenu(
             {
               id: "menu.assets_manager",
               label: trans("Assets Manager"),
-              accelerator: "Ctrl+Alt+,",
               click: function (_menuitem, _focusedWindow) {
                 windows.showDefaultsWindow();
               },
@@ -328,7 +308,6 @@ export default function getMenu(
         {
           id: "menu.rename_file",
           label: trans("Rename file"),
-          accelerator: "Ctrl+R",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -355,7 +334,6 @@ export default function getMenu(
         {
           label: trans("Quit"),
           id: "menu-quit",
-          accelerator: "Ctrl+Q",
           role: "quit",
         },
       ],
@@ -367,13 +345,11 @@ export default function getMenu(
       submenu: [
         {
           id: "menu.undo",
-          accelerator: "Ctrl+Z",
           label: trans("Undo"),
           role: "undo",
         },
         {
           id: "menu.redo",
-          accelerator: "Ctrl+Shift+Z",
           label: trans("Redo"),
           role: "redo",
         },
@@ -382,20 +358,17 @@ export default function getMenu(
         },
         {
           id: "menu.cut",
-          accelerator: "Ctrl+X",
           label: trans("Cut"),
           role: "cut",
         },
         {
           id: "menu.copy",
-          accelerator: "Ctrl+C",
           label: trans("Copy"),
           role: "copy",
         },
         {
           id: "menu.copy_html",
           label: trans("Copy as HTML"),
-          accelerator: "Ctrl+Alt+C",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -405,14 +378,12 @@ export default function getMenu(
         },
         {
           id: "menu.paste",
-          accelerator: "Ctrl+V",
           label: trans("Paste"),
           role: "paste",
         },
         {
           id: "menu.paste_plain",
           label: trans("Paste without style"),
-          accelerator: "Ctrl+Shift+V",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -422,7 +393,6 @@ export default function getMenu(
         },
         {
           id: "menu.select_all",
-          accelerator: "Ctrl+A",
           label: trans("Select all"),
           role: "selectAll",
         },
@@ -432,7 +402,6 @@ export default function getMenu(
         {
           id: "menu.find_file",
           label: trans("Find in current file"),
-          accelerator: "Ctrl+F",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "search");
           },
@@ -440,7 +409,6 @@ export default function getMenu(
         {
           id: "menu.find_dir",
           label: trans("Search all files"),
-          accelerator: "Ctrl+Shift+F",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -451,7 +419,6 @@ export default function getMenu(
         {
           id: "menu.filter_files",
           label: trans("Search files"),
-          accelerator: sc("filter-files"),
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -470,7 +437,6 @@ export default function getMenu(
         {
           id: "menu.generate_id",
           label: trans("Generate new ID"),
-          accelerator: "Ctrl+L",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "insert-id");
           },
@@ -478,7 +444,6 @@ export default function getMenu(
         {
           id: "menu.copy_id",
           label: trans("Copy ID"),
-          accelerator: "Ctrl+Shift+L",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -496,8 +461,8 @@ export default function getMenu(
       id: "view-menu",
       label: trans("View"),
       submenu: [
-        commandLauncherItem("Ctrl+P"),
-        fileLauncherItem("Ctrl+Shift+P"),
+        commandLauncherItem(),
+        fileLauncherItem(),
         statisticsItem(commands),
         {
           type: "separator",
@@ -505,7 +470,6 @@ export default function getMenu(
         {
           id: "menu.toggle_theme",
           label: trans("Dark mode"),
-          accelerator: "Ctrl+Alt+L",
           type: "checkbox",
           checked: config.get("darkMode") === true,
           click: function (_menuitem, _focusedWindow) {
@@ -515,7 +479,6 @@ export default function getMenu(
         {
           id: "menu.toggle_file_meta",
           label: trans("Additional information"),
-          accelerator: "Ctrl+Alt+S",
           type: "checkbox",
           checked: config.get("fileMeta") === true,
           click: function (_menuitem, _focusedWindow) {
@@ -525,7 +488,6 @@ export default function getMenu(
         {
           id: "menu.toggle_distraction_free",
           label: trans("Distraction-free mode"),
-          accelerator: "Ctrl+J",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -536,7 +498,6 @@ export default function getMenu(
         {
           id: "menu.toggle_typewriter_mode",
           label: trans("Typewriter mode"),
-          accelerator: "Ctrl+Alt+T",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -550,7 +511,6 @@ export default function getMenu(
         {
           id: "menu.toggle_navigation_sidebar",
           label: trans("Toggle Sidebar"),
-          accelerator: "Ctrl+!",
           click: function (_menuitem, focusedWindow) {
             sendShortcut(focusedWindow, "toggle-navigation-sidebar");
           },
@@ -558,7 +518,6 @@ export default function getMenu(
         {
           id: "menu.problems_reveal",
           label: trans("Problems: Reveal"),
-          accelerator: "Ctrl+Shift+M",
           click: function (_menuitem, focusedWindow) {
             sendShortcut(focusedWindow, "problems-reveal");
           },
@@ -566,7 +525,6 @@ export default function getMenu(
         {
           id: "menu.toggle_annotation_panel",
           label: trans("Toggle Annotation Panel"),
-          accelerator: "Ctrl+Shift+0",
           click: function (_menuitem, focusedWindow) {
             sendShortcut(focusedWindow, "toggle-annotation-panel");
           },
@@ -577,7 +535,6 @@ export default function getMenu(
         {
           id: "menu.reset_zoom",
           label: trans("Reset zoom"),
-          accelerator: "Ctrl+0",
           // NOTE: Since the base font-size can change, resetting the editor
           // font size zoom level is not semantically meaningful
           enabled: useGuiZoom,
@@ -586,14 +543,12 @@ export default function getMenu(
         {
           id: "menu.zoom_in",
           label: trans("Zoom in"),
-          accelerator: "Ctrl+Plus",
           role: useGuiZoom ? "zoomIn" : undefined,
           click: useGuiZoom ? undefined : zoomIn(config),
         },
         {
           id: "menu.zoom_out",
           label: trans("Zoom out"),
-          accelerator: "Ctrl+-",
           role: useGuiZoom ? "zoomOut" : undefined,
           click: useGuiZoom ? undefined : zoomOut(config),
         },
@@ -603,7 +558,6 @@ export default function getMenu(
         {
           id: "menu.toggle_fullscreen",
           label: trans("Toggle fullscreen"),
-          accelerator: "F11",
           role: "togglefullscreen",
         },
       ],
@@ -616,7 +570,6 @@ export default function getMenu(
         {
           id: "menu.reload",
           label: trans("Reload"),
-          accelerator: "F5",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.reload();
           },
@@ -624,7 +577,6 @@ export default function getMenu(
         {
           id: "menu.toggle_devtools",
           label: trans("Toggle developer tools"),
-          accelerator: "Ctrl+Alt+I",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.toggleDevTools();
           },
@@ -632,7 +584,6 @@ export default function getMenu(
         {
           id: "menu.open_logs",
           label: trans("View logs"),
-          accelerator: "Ctrl+Alt+Shift+L",
           click: function (_menuitem, _focusedWindow) {
             windows.showLogWindow();
           },
@@ -648,13 +599,15 @@ export default function getMenu(
         {
           id: "menu.win_minimize",
           label: trans("Minimize"),
-          accelerator: "Ctrl+M",
-          role: "minimize",
+          // No role: Electron gives the role the key Ctrl+M, which is the tab
+          // focus mode of the editor on this platform.
+          click: function (_menuItem, focusedWindow) {
+            focusedWindow?.minimize();
+          },
         },
         {
           id: "menu.win_close",
           label: trans("Close"),
-          accelerator: "Ctrl+Shift+W",
           role: "close",
         },
         {
@@ -663,7 +616,6 @@ export default function getMenu(
         {
           id: "menu.tab_close",
           label: trans("Close Tab"),
-          accelerator: "Ctrl+W",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -674,7 +626,6 @@ export default function getMenu(
         {
           id: "menu.tab_reopen_closed",
           label: trans("Reopen Closed Tab"),
-          accelerator: "Ctrl+Shift+T",
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -712,7 +663,6 @@ export default function getMenu(
         {
           id: "menu.tab_previous",
           label: trans("Previous Tab"),
-          accelerator: sc("previous-tab"),
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -723,7 +673,6 @@ export default function getMenu(
         {
           id: "menu.tab_next",
           label: trans("Next Tab"),
-          accelerator: sc("next-tab"),
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "next-tab");
           },
@@ -731,7 +680,6 @@ export default function getMenu(
         {
           id: "menu.new_window",
           label: trans("New window"),
-          accelerator: "CmdOrCtrl+Shift+N",
           click: function (_menuItem, _focusedWindow) {
             documents.newWindow();
           },
@@ -774,7 +722,6 @@ export default function getMenu(
         {
           id: "menu.docs",
           label: trans("Open user manual ↗︎"),
-          accelerator: "F1",
           click: function (_menuitem, _focusedWindow) {
             const target = "https://docs.zettlr.com/";
             shell.openExternal(target).catch(showFailure(trans("Could not open %s", target)));

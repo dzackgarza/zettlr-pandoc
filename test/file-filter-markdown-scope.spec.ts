@@ -1,5 +1,4 @@
 import { strict as assert } from "assert";
-import { defaultKeybindings } from "source/app/service-providers/menu/shortcuts";
 import type { CodeFileDescriptor, MDFileDescriptor } from "source/types/common/fsal";
 import matchQuery from "source/win-main/file-manager/util/match-query";
 
@@ -59,14 +58,7 @@ const yaml: CodeFileDescriptor = {
   linefeed: "\n",
 };
 
-describe("Ctrl+Shift+P file picker", function () {
-  it("keeps Ctrl+Shift+P/Cmd+Shift+P as the file-picker shortcut", function () {
-    assert.deepEqual(defaultKeybindings["filter-files"], {
-      key: "Ctrl-Shift-p",
-      mac: "Cmd-Shift-p",
-    });
-  });
-
+describe("the file name search of the file manager", function () {
   it("matches the query against files of every type", function () {
     const matching = matchQuery("theorem", false, false);
 

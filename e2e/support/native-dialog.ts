@@ -20,6 +20,7 @@
 import { strict as assert } from "node:assert";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
+import type { Page } from "playwright";
 import { delay } from "./electron-app";
 
 const run = promisify(execFile);
@@ -72,6 +73,17 @@ export async function captureWindow(window: string): Promise<Buffer> {
 /** Sends one key to a window. Return activates the default button of a message box. */
 export async function pressKey(window: string, key: string): Promise<void> {
   await run("xdotool", ["windowfocus", "--sync", window, "key", key], { timeout: 30_000 });
+}
+
+/** The X window of a page of the app: the one window whose title is the page title. */
+export async function windowOfPage(page: Page): Promise<string> {
+  const title = await page.title();
+  const windows = await searchWindows([
+    "--name",
+    `^${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+  ]);
+  assert.equal(windows.length, 1, `one X window has the title "${title}"`);
+  return windows[0];
 }
 
 /** Types text into a window, as the keyboard of the author does. */

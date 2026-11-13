@@ -3,7 +3,6 @@ import type DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
 import type RecentDocumentsProvider from "@providers/recent-docs";
 import type WindowProvider from "@providers/windows";
-import type { ConfigOptions } from "../config/get-config-template";
 
 export type MenuLogger = Pick<LogProvider, "error">;
 export type MenuRecentDocuments = Pick<RecentDocumentsProvider, "get" | "clear">;
@@ -37,7 +36,6 @@ export interface MenuConfig {
         snippetsFile: string;
         quickTexFile: string;
       };
-      shortcuts: { ui: ConfigOptions["shortcuts"]["ui"] };
     };
     (key: "system.zoomBehavior" | "darkMode" | "fileMeta" | "debug"): unknown;
   };

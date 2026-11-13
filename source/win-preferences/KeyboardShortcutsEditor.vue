@@ -168,7 +168,7 @@ const noResultsLabel = trans("No matching commands");
 const defaultLabel = trans("Default");
 const userLabel = trans("User");
 
-const commands = commandRegistry.all();
+const commands = commandRegistry.bindable();
 
 const filteredCommands = computed(() => {
   const search = query.value.trim().toLowerCase();
