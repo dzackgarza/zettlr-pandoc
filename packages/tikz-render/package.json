@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "viewerjs": "1.14.0",
-    "vue": "^3.5.43"
+    "vue": "^3.5.43",
+    "async-mutex": "^0.5.0"
   }
 }

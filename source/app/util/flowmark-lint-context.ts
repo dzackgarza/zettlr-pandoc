@@ -214,7 +214,7 @@ export async function buildFlowmarkLintContext(
   const tikzCompileDiagnostics = await collectTikzCompilerFindings(
     text,
     documentPath,
-    async (request) => await renderTikz(request, source.tikzRenderConfig),
+    async (request) => await renderTikz(request, source.tikzRenderConfig, "background"),
   );
 
   return {

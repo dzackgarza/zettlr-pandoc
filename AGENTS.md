@@ -432,6 +432,14 @@ Zettlr starts it on one diagram.
   the render is left, and it removes the temporary directory of the render
   (`TMPDIR` of the filter). The app sets the limit in
   `source/app/util/resolve-tikz-render-config.ts`.
+- **One render at a time in the process.** Each `renderTikz` call waits for
+  its turn (`renderTurns`, a semaphore of one): the preview of the editor
+  (the `tikz-render` command, priority `preview`) and the compiles of the
+  lint (`buildFlowmarkLintContext`, priority `background`). No two renders
+  write one file of the cache at the same time, a figure that a second caller
+  asks for while it compiles is a cache hit for that caller, and a preview
+  goes before the lint renders that wait. A new caller gives its priority and
+  holds no lock of its own. Proof: `test/tikz-compile-bound.spec.ts`.
 - **Markdown detection stays in Zettlr:** `markdown-editor/tikz-block.ts` and
   `common/util/tikz-source-blocks.ts` turn Markdown into a `TikzSourceBlock`.
 - **Controls:** `render-tikz.ts` places a rebuild button and an "Edit in Visual

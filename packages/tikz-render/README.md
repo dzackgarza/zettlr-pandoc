@@ -24,8 +24,9 @@ import TikzPreviewPane from "@dzack/tikz-render/ui/TikzPreviewPane.vue";
 | `ui/TikzPreviewPane.vue`                                | The preview pane: figure, compiler status, rebuild, fullscreen. The `actions` slot takes controls of the application.                                              |
 | `ui/TikzCompilerPreview.vue`, `ui/TikzFigureViewer.vue` | The parts of the pane.                                                                                                                                             |
 
-`renderTikz` takes a `TikzRenderConfig`. Its `timeoutMs` is the time that one
-render may take. A render that takes longer is stopped with each process that
+`renderTikz` takes a `TikzRenderConfig` and a priority. The renders of a
+process run one at a time; a `preview` render goes before the `background`
+renders that wait. Its `timeoutMs` is the time that one render may take. A render that takes longer is stopped with each process that
 it started, and the result is `render-timeout`. A render that ends leaves no
 process and no file in the temporary directory.
 

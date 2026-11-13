@@ -23,16 +23,12 @@ import {
   type TikzRenderRequest,
   type TikzRenderResult,
 } from "@dzack/tikz-render/tikz-render";
-import { Mutex } from "async-mutex";
 import { app } from "electron";
 import { type AppServiceContainer } from "../../app-service-container";
 import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
 import ZettlrCommand from "./zettlr-command";
 
 export default class TikzRender extends ZettlrCommand {
-  /** pdflatex is intentionally process-global bounded work, not per-pane work. */
-  private readonly renderMutex = new Mutex();
-
   constructor(app: AppServiceContainer) {
     super(app, "tikz-render");
   }
@@ -40,21 +36,19 @@ export default class TikzRender extends ZettlrCommand {
   async run(evt: string, arg: TikzRenderRequest): Promise<TikzRenderResult> {
     const config = this._app.config.get().tikz;
 
-    // A pane-level live preview already collapses rapid edits to the newest
-    // source. The mutex is the second boundary: several panes/inline widgets
-    // still cannot fan out into concurrent pdflatex processes and peg the CPU.
-    return await this.renderMutex.runExclusive(
-      async () =>
-        await renderTikz(
-          arg,
-          resolveTikzRenderConfig(
-            config.dataDir,
-            config.figuresDir,
-            app.getPath("home"),
-            app.getPath("userData"),
-            process.env,
-          ),
-        ),
+    // A pane collapses rapid edits to the newest source. renderTikz runs one
+    // render at a time for the whole process, the lint too, and gives this
+    // render the turn before the renders of the lint.
+    return await renderTikz(
+      arg,
+      resolveTikzRenderConfig(
+        config.dataDir,
+        config.figuresDir,
+        app.getPath("home"),
+        app.getPath("userData"),
+        process.env,
+      ),
+      "preview",
     );
   }
 }

@@ -27,6 +27,7 @@
  * END HEADER
  */
 
+import { Semaphore } from "async-mutex";
 import { type ChildProcess, spawn } from "child_process";
 import { createHash } from "crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
@@ -363,6 +364,14 @@ export interface TikzRenderConfig {
   env: NodeJS.ProcessEnv;
 }
 
+/**
+ * Who waits for a render. A preview is a figure that the author looks at; a
+ * background render is work that the author did not start (the lint).
+ */
+export type TikzRenderPriority = "preview" | "background";
+
+const RENDER_PRIORITY: Record<TikzRenderPriority, number> = { preview: 1, background: 0 };
+
 export interface TikzCompileError {
   /** 1-based line within the figure body. */
   line: number;
@@ -678,10 +687,30 @@ async function runFilter(
   });
 }
 
+// One render at a time in the process: each caller of `renderTikz` (the
+// preview of the editor, the lint) waits here. Two renders therefore never
+// write one file of the cache at the same time, and a figure that a second
+// render asks for while the first compiles it is a cache hit for the second.
+// A preview goes before the background renders that wait.
+const renderTurns = new Semaphore(1);
+
 /**
- * Renders one TikZ figure to inline SVG through the shared Pandoc filter.
+ * Renders one TikZ figure to inline SVG through the shared Pandoc filter,
+ * after the renders that went before it in the process (`renderTurns`).
  */
 export async function renderTikz(
+  request: TikzRenderRequest,
+  config: TikzRenderConfig,
+  priority: TikzRenderPriority,
+): Promise<TikzRenderResult> {
+  return await renderTurns.runExclusive(
+    async () => await renderOneFigure(request, config),
+    1,
+    RENDER_PRIORITY[priority],
+  );
+}
+
+async function renderOneFigure(
   request: TikzRenderRequest,
   config: TikzRenderConfig,
 ): Promise<TikzRenderResult> {

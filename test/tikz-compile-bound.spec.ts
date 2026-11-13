@@ -43,6 +43,15 @@ function hostToolPath(tool: string): string {
   return found.stdout.trim();
 }
 
+/** The PATH of the run, which holds pandoc and the TeX tools. */
+function pathOfTheRun(): string {
+  const value = process.env.PATH;
+  if (value === undefined) {
+    throw new Error("The run has no PATH");
+  }
+  return value;
+}
+
 /** A figure that no earlier run compiled; its TeX file names it by `name`. */
 function figure(name: string): { name: string; source: string } {
   const mark = `figmark${name}${randomBytes(6).toString("hex")}`;
@@ -105,7 +114,7 @@ describe("TikZ compiles of the lint and the editor (issue #204)", function () {
     await writeFile(wrapper, recordingPdflatex(hostToolPath("pdflatex"), log));
     await chmod(wrapper, 0o755);
 
-    const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` };
+    const env = { ...process.env, PATH: `${bin}:${pathOfTheRun()}` };
     const tikzRenderConfig = {
       tikzAssetDir: TIKZ_ASSET_DIR,
       templatePath: TIKZ_TEMPLATE,

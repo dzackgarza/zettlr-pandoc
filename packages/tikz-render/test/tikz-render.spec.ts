@@ -356,6 +356,7 @@ describe("TikZ render service (issue #14)", function () {
           cacheDir,
           env: { ...process.env, PATH: emptyBin },
         },
+        "preview",
       );
       assert.strictEqual(result.ok, false);
       assert.ok(
@@ -389,6 +390,7 @@ describe("TikZ render service (issue #14)", function () {
           cacheDir,
           env: { ...process.env, PATH: binDir },
         },
+        "preview",
       );
       assert.ok(
         !result.ok,
@@ -423,6 +425,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
 
     if (!toolchainPresent) {
@@ -473,6 +476,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
 
     if (!toolchainPresent) {
@@ -504,6 +508,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
     if (!toolchainPresent) {
       assert.ok(!first.ok && first.kind === "missing-tools");
@@ -519,6 +524,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
     const elapsed = Date.now() - started;
     assert.ok(second.ok, "the repeat render succeeds");
@@ -546,6 +552,7 @@ describe("TikZ render service (issue #14)", function () {
             await renderTikz(
               { source: TIKZCD_OK, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
               config,
+              "preview",
             ),
           );
         }
@@ -597,11 +604,11 @@ describe("TikZ render service (issue #14)", function () {
         env: { ...process.env, PATH: binDir },
       };
 
-      const before = await renderTikz(request, config);
+      const before = await renderTikz(request, config, "preview");
       assert.deepEqual(before, { ok: false, kind: "missing-tools", missing: ["pdf2svg"] });
 
       await symlink(hostToolPath("pdf2svg"), path.join(binDir, "pdf2svg"));
-      const after = await renderTikz(request, config);
+      const after = await renderTikz(request, config, "preview");
       assert.ok(
         after.ok,
         `the render uses the installed tool: ${JSON.stringify(after).slice(0, 400)}`,
@@ -637,13 +644,17 @@ describe("TikZ render service (issue #14)", function () {
       const beforeFiles = new Set(
         readdirSync(cacheDir).filter((name) => /^dzgtikz-.*\.svg$/.test(name)),
       );
-      const first = await renderTikz(request, {
-        tikzAssetDir: TIKZ_ASSET_DIR,
-        timeoutMs: TIME_LIMIT_MS,
-        templatePath: template,
-        cacheDir,
-        env: process.env,
-      });
+      const first = await renderTikz(
+        request,
+        {
+          tikzAssetDir: TIKZ_ASSET_DIR,
+          timeoutMs: TIME_LIMIT_MS,
+          templatePath: template,
+          cacheDir,
+          env: process.env,
+        },
+        "preview",
+      );
       if (!toolchainPresent) {
         assert.ok(!first.ok && first.kind === "missing-tools");
         return;
@@ -662,13 +673,17 @@ describe("TikZ render service (issue #14)", function () {
         "the package edit changes the app-side render context",
       );
 
-      const second = await renderTikz(request, {
-        tikzAssetDir: TIKZ_ASSET_DIR,
-        timeoutMs: TIME_LIMIT_MS,
-        templatePath: template,
-        cacheDir,
-        env: process.env,
-      });
+      const second = await renderTikz(
+        request,
+        {
+          tikzAssetDir: TIKZ_ASSET_DIR,
+          timeoutMs: TIME_LIMIT_MS,
+          templatePath: template,
+          cacheDir,
+          env: process.env,
+        },
+        "preview",
+      );
       assert.ok(
         second.ok,
         `same source must recompile under the changed macro graph: ${JSON.stringify(second).slice(0, 400)}`,
@@ -712,6 +727,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
     if (!toolchainPresent) {
       assert.ok(!first.ok && first.kind === "missing-tools");
@@ -740,6 +756,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
     assert.ok(cached.ok, "ordinary repeat render succeeds from cache");
     assert.strictEqual(
@@ -758,6 +775,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
     assert.ok(forced.ok, "forced rerender succeeds");
     assert.ok(
@@ -779,6 +797,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
     if (!toolchainPresent) {
       assert.ok(!first.ok && first.kind === "missing-tools");
@@ -816,6 +835,7 @@ describe("TikZ render service (issue #14)", function () {
           cacheDir,
           env: { ...process.env, PATH: `${failingBin}:${pathOfTheRun()}` },
         },
+        "preview",
       );
       assert.ok(!failed.ok, "a forced refresh whose converter fails cannot report success");
       assert.deepStrictEqual(
@@ -839,6 +859,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
     if (!toolchainPresent) {
       assert.ok(!result.ok && result.kind === "missing-tools");
@@ -899,7 +920,7 @@ describe("TikZ render service (issue #14)", function () {
       env: process.env,
     };
     const results = await Promise.all(
-      Array.from({ length: 4 }, () => renderTikz(request, options)),
+      Array.from({ length: 4 }, () => renderTikz(request, options, "preview")),
     );
     for (const result of results) {
       assert.equal(result.ok, false);
@@ -939,6 +960,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
     const fromSecond = await renderTikz(
       { source, kind: "raw", language: "tikzcd", docPath: path.join(secondDir, "notes.md") },
@@ -949,6 +971,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
     await rm(firstDir, { recursive: true, force: true });
     await rm(secondDir, { recursive: true, force: true });
@@ -1003,6 +1026,7 @@ describe("TikZ render service (issue #14)", function () {
           cacheDir,
           env: process.env,
         },
+        "preview",
       );
       if (!toolchainPresent) {
         assert.ok(!res.ok && res.kind === "missing-tools");
@@ -1034,6 +1058,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
     if (!toolchainPresent) {
       assert.ok(!result.ok && result.kind === "missing-tools");
@@ -1082,6 +1107,7 @@ describe("TikZ render service (issue #14)", function () {
           cacheDir,
           env: { ...process.env, FIGURES_SOURCE_DIR: centralFiguresDir },
         },
+        "preview",
       );
       if (!toolchainPresent) {
         assert.ok(!res.ok && res.kind === "missing-tools");
@@ -1113,6 +1139,7 @@ describe("TikZ render service (issue #14)", function () {
           cacheDir,
           env: process.env,
         },
+        "preview",
       );
       const second = await renderTikz(
         { source, kind: "raw", language: "tikzcd", docPath: path.join(secondDir, "notes.md") },
@@ -1123,6 +1150,7 @@ describe("TikZ render service (issue #14)", function () {
           cacheDir,
           env: process.env,
         },
+        "preview",
       );
       if (!toolchainPresent) {
         assert.ok(!first.ok && first.kind === "missing-tools");
@@ -1156,6 +1184,7 @@ describe("TikZ render service (issue #14)", function () {
           cacheDir,
           env: process.env,
         },
+        "preview",
       );
       assert.ok(
         !result.ok && result.kind === "missing-tools",
@@ -1182,6 +1211,7 @@ describe("TikZ render service (issue #14)", function () {
         cacheDir,
         env: process.env,
       },
+      "preview",
     );
 
     let signalled = 0;
@@ -1333,7 +1363,7 @@ describe("TikZ render process lifetime (issue #208)", function () {
       docPath: NO_DOC_PATH,
     } as const;
     if (!toolchainPresent) {
-      const result = await renderTikz(request, config);
+      const result = await renderTikz(request, config, "preview");
       assert.ok(
         !result.ok && result.kind === "missing-tools",
         "without the toolchain the typed missing-tools result is required",
@@ -1341,7 +1371,7 @@ describe("TikZ render process lifetime (issue #208)", function () {
       return;
     }
 
-    const pending = renderTikz(request, config);
+    const pending = renderTikz(request, config, "preview");
     // Past the fixed limit of 30 s that the renderer had before the limit
     // was a setting, the time for the processes to end, and a margin.
     const deadline = Date.now() + 40000;
@@ -1386,7 +1416,7 @@ describe("TikZ render process lifetime (issue #208)", function () {
       docPath: NO_DOC_PATH,
     } as const;
     if (!toolchainPresent) {
-      const result = await renderTikz(request, config);
+      const result = await renderTikz(request, config, "preview");
       assert.ok(
         !result.ok && result.kind === "missing-tools",
         "without the toolchain the typed missing-tools result is required",
@@ -1394,7 +1424,7 @@ describe("TikZ render process lifetime (issue #208)", function () {
       return;
     }
 
-    const pending = renderTikz(request, config);
+    const pending = renderTikz(request, config, "preview");
     const deadline = Date.now() + 60000;
     let running = processesWithMarker(marker);
     while (!running.some((found) => found.command === "pdflatex") && Date.now() < deadline) {
@@ -1435,6 +1465,7 @@ describe("TikZ render process lifetime (issue #208)", function () {
           timeoutMs: 5000,
           env: process.env,
         },
+        "preview",
       );
       assert.ok(
         !result.ok && result.kind === "missing-tools",
@@ -1455,7 +1486,7 @@ describe("TikZ render process lifetime (issue #208)", function () {
         [
           `import { renderTikz } from ${JSON.stringify(path.resolve(__dirname, "../src/tikz-render.ts"))};`,
           "const [request, config] = process.argv.slice(-2).map((value) => JSON.parse(value));",
-          "void renderTikz(request, { ...config, env: process.env });",
+          'void renderTikz(request, { ...config, env: process.env }, "preview");',
           'process.stdin.once("end", () => {',
           "  process.exit(0);",
           "});",
