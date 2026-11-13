@@ -13,7 +13,9 @@
  *                  writes the file again, or, for a document with a review,
  *                  it is refused. An annotation of such a document is kept,
  *                  and a proposal is refused with the cause. A document
- *                  whose text is on disk closes (#210).
+ *                  whose text is on disk closes; when its review state
+ *                  cannot be written, the window gets the refused close
+ *                  with "Close anyway" (#210).
  *
  * END HEADER
  */
@@ -23,7 +25,16 @@ import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import { BrowserWindow } from "electron";
-import { mkdirSync, readFileSync, renameSync, unlinkSync, utimesSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
@@ -35,9 +46,16 @@ import {
   FILE_REMOVED_KEPT_CHANNEL,
   type FileRemovedKeptBroadcast,
   REMOTE_CHANGE_KEPT_CHANNEL,
+  SAVE_REFUSED_CHANNEL,
+  type SaveRefusedBroadcast,
 } from "source/types/common/documents";
 import { bootDocumentManager, emitWatchdogEvent } from "./documents-provider-seam";
-import { sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+import { ipcMainHandlers, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+
+type IpcHandler = (
+  event: unknown,
+  message: { command: string; payload?: unknown },
+) => Promise<unknown> | unknown;
 
 const SOURCE = "A lattice is a free abelian group with a bilinear form.\n";
 const TARGET = SOURCE.replace("bilinear", "symmetric bilinear");
@@ -93,6 +111,9 @@ describe("Documents-provider removed file", function () {
   });
 
   afterEach(async function () {
+    if (existsSync(SIDECARS)) {
+      chmodSync(SIDECARS, 0o700);
+    }
     window.close();
     await provider.shutdown();
     await rm(root, { recursive: true, force: true });
@@ -263,5 +284,39 @@ describe("Documents-provider removed file", function () {
       "the renamed document is loaded at its new path",
     );
     assert.equal(provider.getActiveFile(leafId), filePath, "its tab stays open");
+  });
+
+  it("refuses the close of a removed file whose review state cannot be written, with the action (#210)", async function () {
+    const documentId = provider.ensureDocumentId(filePath);
+    const created = await provider.createAnnotation(documentId, "owner", 2, 9, "Which lattice?", 0);
+    if ("ok" in created) {
+      assert.fail(`the annotation is refused: ${created.message}`);
+    }
+    chmodSync(SIDECARS, 0o500);
+
+    await removeOnDisk();
+
+    assert.deepEqual(
+      sentMessagesFor(window)
+        .filter(([channel]) => channel === SAVE_REFUSED_CHANNEL)
+        .map(([, payload]) => (payload as SaveRefusedBroadcast).refused),
+      [{ documentId, action: "close" }],
+      "the window gets the refused close with its action",
+    );
+    assert.equal(closedFiles.length, 0, "no tab of the document closes");
+    assert.equal(provider.readMarkdownBufferContent(filePath), SOURCE, "the document stays loaded");
+
+    const handler = ipcMainHandlers.get("documents-provider") as IpcHandler | undefined;
+    assert.ok(handler !== undefined, "the documents-provider handler is registered");
+    assert.equal(
+      await handler(undefined, { command: "close-without-review", payload: { documentId } }),
+      true,
+    );
+    assert.deepEqual(
+      closedFiles.map((context) => context.filePath),
+      [filePath],
+      "Close anyway closes the tab of the removed file",
+    );
+    assert.equal(provider.readMarkdownBufferContent(filePath), undefined);
   });
 });
