@@ -380,6 +380,17 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   follows. Version 2.0.0 made `clientRequestId` of a proposal required.
   `bun run check:agent-api-types` proves that the generated types are those
   of the document; the hosted `check.yml` runs it.
+- **Each status on the wire is one that the document declares.** A handler
+  answers through `Reply<Op>` (`http-server.ts`): `sendJson` and `sendError`
+  take only a status that `openapi.yaml` declares for the operation, and
+  `STATUS_BY_CODE` gives the status of each error code. A refusal whose
+  status the operation does not declare goes through `sendRefusal`, which
+  logs the gap and answers 500. A route answers only the errors that it
+  classifies; each other error reaches the dispatcher, which answers a
+  document that cannot be read with 409 `DOCUMENT_UNREADABLE` and logs the
+  rest with its stack. Proof: `test/agent-http-api.spec.ts` (each answer is
+  checked against the declared response; each `$ref` of the served
+  documents resolves).
 - **Each request carries the token.** A caller sends
   `Authorization: Bearer <token>`, where the token is the value of
   `ZETTLR_AGENT_API_TOKEN` in the environment of the app. `dispatch`
