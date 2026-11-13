@@ -112,7 +112,10 @@ function toggleDetails(): void {
       font-weight: bold;
     }
 
-    .msg { flex-grow: 10; }
+    .msg {
+      flex-grow: 10;
+      min-width: 0;
+    }
 
     .expand-details {
       flex-grow: 0;
@@ -125,7 +128,8 @@ function toggleDetails(): void {
 
     .details {
       font-family: 'Menlo', 'Courier New', Courier, monospace;
-      white-space: pre;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
       margin-top: 15px;
     }
 
