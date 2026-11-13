@@ -9,10 +9,10 @@ const COUNTED_DECLARERS =
   "newcommand|renewcommand|providecommand|DeclareRobustCommand|newrobustcmd|renewrobustcmd|providerobustcmd";
 
 /** The xparse commands, whose argument specification is not read here. */
-const DOCUMENT_COMMAND_DECLARERS =
+const XPARSE_DECLARERS =
   "NewDocumentCommand|RenewDocumentCommand|ProvideDocumentCommand|DeclareDocumentCommand|NewExpandableDocumentCommand|RenewExpandableDocumentCommand";
 
-const DOCUMENT_COMMAND_DECLARER_RE = new RegExp(`^(?:${DOCUMENT_COMMAND_DECLARERS})$`, "u");
+const XPARSE_DECLARER_RE = new RegExp(`^(?:${XPARSE_DECLARERS})$`, "u");
 
 /**
  * Group 1 is the declaring command and group 2 the name for the LaTeX
@@ -20,7 +20,7 @@ const DOCUMENT_COMMAND_DECLARER_RE = new RegExp(`^(?:${DOCUMENT_COMMAND_DECLARER
  * of a `\let`.
  */
 const TEX_COMMAND_DECLARATION_RE = new RegExp(
-  String.raw`\\(${COUNTED_DECLARERS}|DeclareMathOperator|DeclarePairedDelimiter(?:X|XPP)?|${DOCUMENT_COMMAND_DECLARERS})\*?\s*(?:\{\s*)?\\([A-Za-z@]+)|\\(?:def|gdef|edef|xdef)\s*\\([A-Za-z@]+)|\\let\s*\\([A-Za-z@]+)`,
+  String.raw`\\(${COUNTED_DECLARERS}|DeclareMathOperator|DeclarePairedDelimiter(?:X|XPP)?|${XPARSE_DECLARERS})\*?\s*(?:\{\s*)?\\([A-Za-z@]+)|\\(?:def|gdef|edef|xdef)\s*\\([A-Za-z@]+)|\\let\s*\\([A-Za-z@]+)`,
   "gu",
 );
 
@@ -95,7 +95,7 @@ function argumentCountOf(declarer: string, visible: string, at: number): number 
   if (declarer === "DeclarePairedDelimiter") {
     return 1;
   }
-  if (DOCUMENT_COMMAND_DECLARER_RE.test(declarer)) {
+  if (XPARSE_DECLARER_RE.test(declarer)) {
     return undefined;
   }
   const counted = /\s*\}?\s*\[\s*(\d)\s*\]/uy;
