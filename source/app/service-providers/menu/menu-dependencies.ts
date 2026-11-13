@@ -9,6 +9,7 @@ export type MenuRecentDocuments = Pick<RecentDocumentsProvider, "get" | "clear">
 export type MenuCommands = Pick<CommandProvider, "run">;
 export type MenuWindows = Pick<
   WindowProvider,
+  | "getFirstMainWindow"
   | "showAboutWindow"
   | "showDefaultsWindow"
   | "showErrorMessage"

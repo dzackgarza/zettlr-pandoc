@@ -211,23 +211,21 @@ export default function getMenu(
         {
           id: "menu.previous_file",
           label: trans("Previous file"),
-          click: function (_menuitem, focusedWindow) {
+          click: function () {
             // Session history is per-pane, and the renderer owns which pane is
             // focused, so the navigation request goes out on the same
             // 'shortcut' channel the swipe and browser back/forward gestures
-            // use (create-main-window.ts).
-            if (focusedWindow instanceof BrowserWindow) {
-              focusedWindow.webContents.send("shortcut", "navigate-back");
-            }
+            // use (create-main-window.ts). It goes to the main window that the
+            // author used last: with the focus in Preferences or another
+            // window without panes, that main window goes back (#57).
+            windows.getFirstMainWindow()?.webContents.send("shortcut", "navigate-back");
           },
         },
         {
           id: "menu.next_file",
           label: trans("Next file"),
-          click: function (_menuitem, focusedWindow) {
-            if (focusedWindow instanceof BrowserWindow) {
-              focusedWindow.webContents.send("shortcut", "navigate-forward");
-            }
+          click: function () {
+            windows.getFirstMainWindow()?.webContents.send("shortcut", "navigate-forward");
           },
         },
         {
