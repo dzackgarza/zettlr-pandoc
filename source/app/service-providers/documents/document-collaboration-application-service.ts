@@ -43,7 +43,7 @@
  * END HEADER
  */
 
-import type { ChangeSet, Text } from "@codemirror/state";
+import { type ChangeSet, Text } from "@codemirror/state";
 import { sha256Text } from "@common/util/sha256";
 import type {
   AgentErrorCode,
@@ -608,6 +608,54 @@ export class CollaborationApplicationService {
       this.deps.emit(draft.event, draft.payload);
     }
     this.deps.authority.broadcastCollaborationState(documentId);
+  }
+
+  /**
+   * Change the working text in the sidecar of a document that is not loaded
+   * by the changes that `restore` gives for that text, and map the anchors
+   * of its review and its annotations through the same changes, as an edit
+   * of a loaded document maps them. The fence and a pending save stay: the
+   * file did not change. Answers whether the sidecar changed.
+   */
+  public async restoreStoredWorkingText(
+    documentId: string,
+    documentPath: string,
+    restore: (workingText: string) => ChangeSet,
+  ): Promise<boolean> {
+    return await this.withDocumentLock(documentId, async () => {
+      if (this.deps.authority.readWorkingText(documentId) !== undefined) {
+        throw new Error(`Document ${documentPath} is loaded: its sidecar is not the stored state`);
+      }
+      const sidecar = await this.sidecars.read(documentPath);
+      if (sidecar === undefined) {
+        return false;
+      }
+      const changes = restore(sidecar.workingText);
+      if (changes.empty) {
+        return false;
+      }
+      const workingText = normalizeText(
+        changes.apply(Text.of(sidecar.workingText.split("\n"))).toString(),
+      );
+      const review = sidecar.review === null ? undefined : reviewFromSidecar(documentId, sidecar);
+      const reviewPlan =
+        review === undefined ? undefined : prepareWorkingTextEdit({ review, workingText, changes });
+      const annotationPlan = prepareAnnotationMappingThroughOwnerEdit(sidecar.annotations, changes);
+      await this.sidecars.write(
+        collaborationSidecar({
+          documentPath,
+          workingText,
+          diskFenceSha256: sidecar.diskFenceSha256,
+          review: reviewPlan?.nextReview ?? review,
+          annotations: annotationPlan?.nextAnnotations ?? sidecar.annotations,
+          pendingSave: sidecar.pendingSave,
+        }),
+      );
+      for (const draft of [...(reviewPlan?.events ?? []), ...(annotationPlan?.events ?? [])]) {
+        this.deps.emit(draft.event, draft.payload);
+      }
+      return true;
+    });
   }
 
   /**

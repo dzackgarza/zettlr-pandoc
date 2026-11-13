@@ -77,11 +77,29 @@ export interface WorkspaceEditAuthority {
   applyWorkspaceTextEdits: (edits: WorkspaceTextEdit[]) => Promise<string[]>;
 }
 
-/** One document's pre- and post-transaction text. */
+/**
+ * The slice of the document authority that the startup recovery drives: the
+ * collaboration state that a document keeps while it is not loaded.
+ */
+export interface JournalRecoveryAuthority {
+  /**
+   * Changes the working text in the sidecar of a document that is not
+   * loaded by the changes that `restore` gives for that text, and maps the
+   * anchors of its review and its annotations through them. Answers whether
+   * the sidecar changed; a document without a sidecar answers false.
+   */
+  restoreStoredWorkingText: (
+    documentPath: string,
+    restore: (workingText: string) => ChangeSet,
+  ) => Promise<boolean>;
+}
+
+/** One document's pre- and post-transaction text, and the edits between them. */
 interface JournaledDocument {
   documentPath: string;
   original: string;
   target: string;
+  edits: WorkspaceTextEdit[];
 }
 
 /**
@@ -149,12 +167,10 @@ function changesBetween(before: string, after: string): ChangeSet {
  * transaction changed, so the typed text, the review and the annotations of
  * the document keep their places through a rollback.
  */
-function restoringEdits(
-  entry: JournaledDocument,
-  current: string,
-  edits: WorkspaceTextEdit[],
-): WorkspaceTextEdit[] {
-  const inverse = changeSetOf(entry.original, edits).invert(Text.of(entry.original.split("\n")));
+function restoringEdits(entry: JournaledDocument, current: string): WorkspaceTextEdit[] {
+  const inverse = changeSetOf(entry.original, entry.edits).invert(
+    Text.of(entry.original.split("\n")),
+  );
   const restoring: WorkspaceTextEdit[] = [];
   inverse
     .map(changesBetween(entry.target, current))
@@ -217,8 +233,9 @@ export async function runWorkspaceEditTransaction(
   const journaled: JournaledDocument[] = [];
   const resultingHashes: Record<string, string> = {};
   for (const { documentPath, source } of sources) {
-    const target = computeTarget(source, editsFor(documentPath));
-    journaled.push({ documentPath, original: source, target });
+    const edits = editsFor(documentPath);
+    const target = computeTarget(source, edits);
+    journaled.push({ documentPath, original: source, target, edits });
     resultingHashes[documentPath] = hashDocumentSource(target);
   }
 
@@ -271,7 +288,7 @@ export async function runWorkspaceEditTransaction(
       installed.push(documentPath);
     }
   } catch (err) {
-    await rollback(authority, journalFile, journal, installed, verified, input.edits);
+    await rollback(authority, journalFile, journal, installed, verified);
     throw err;
   }
 
@@ -296,7 +313,6 @@ export async function runWorkspaceEditTransaction(
  * @param   {WorkspaceEditJournal}    journal      The journal
  * @param   {string[]}                installed    Files already installed
  * @param   {Set<string>}             verified     Open buffers that held the target
- * @param   {WorkspaceTextEdit[]}     edits        The edits of the transaction
  */
 async function rollback(
   authority: WorkspaceEditAuthority,
@@ -304,7 +320,6 @@ async function rollback(
   journal: WorkspaceEditJournal,
   installed: string[],
   verified: Set<string>,
-  edits: WorkspaceTextEdit[],
 ): Promise<void> {
   await writeFileAtomic(journalFile, JSON.stringify({ ...journal, phase: "rollback" }), "utf-8");
 
@@ -324,13 +339,7 @@ async function rollback(
       });
       continue;
     }
-    restoreBuffers.push(
-      ...restoringEdits(
-        entry,
-        current,
-        edits.filter((edit) => edit.documentPath === entry.documentPath),
-      ),
-    );
+    restoreBuffers.push(...restoringEdits(entry, current));
   }
   if (restoreBuffers.length > 0) {
     await authority.applyWorkspaceTextEdits(restoreBuffers);
@@ -373,16 +382,24 @@ export async function saveUpdatedBuffers(
 }
 
 /**
- * Finishes an interrupted transaction at startup: every file the journal
- * names is restored to its pre-transaction content, and the journal is
- * removed. Open buffers need no restoration — a crash discards them, and the
- * transaction never wrote their files.
+ * Finishes an interrupted transaction at startup, before a document loads:
+ * every closed file the journal names is restored to its pre-transaction
+ * content, and the journal is removed. A stop discards the open buffers, and
+ * the transaction never wrote their files; but the collaboration service
+ * wrote the edit of each buffer with a review or annotations to its sidecar,
+ * and the next load restores that working text. The recovery therefore
+ * takes the edit out of each such sidecar, as a rollback takes it out of a
+ * live buffer, and maps the anchors back with it.
  *
- * @param   {string}              journalDirectory  Application data directory
+ * @param   {string}                    journalDirectory  Application data directory
+ * @param   {JournalRecoveryAuthority}  authority         The document authority
  *
- * @return  {Promise<string[]>}                     The restored file paths
+ * @return  {Promise<string[]>}  The restored files and sidecars, by document path
  */
-export async function recoverWorkspaceEditJournal(journalDirectory: string): Promise<string[]> {
+export async function recoverWorkspaceEditJournal(
+  journalDirectory: string,
+  authority: JournalRecoveryAuthority,
+): Promise<string[]> {
   const journalFile = path.join(journalDirectory, JOURNAL_FILE);
   let journal: WorkspaceEditJournal;
   try {
@@ -406,6 +423,20 @@ export async function recoverWorkspaceEditJournal(journalDirectory: string): Pro
     });
     if (current !== entry.original) {
       await writeTextFile(entry.documentPath, entry.original);
+      restored.push(entry.documentPath);
+    }
+  }
+
+  // A working text other than the original holds the edit of the
+  // transaction: the buffer held the original when the transaction checked
+  // it, and a buffer that changed before its edit refuses the edit.
+  for (const entry of journal.openBuffers) {
+    const changed = await authority.restoreStoredWorkingText(entry.documentPath, (workingText) =>
+      workingText === entry.original
+        ? ChangeSet.empty(workingText.length)
+        : changeSetOf(workingText, restoringEdits(entry, workingText)),
+    );
+    if (changed) {
       restored.push(entry.documentPath);
     }
   }

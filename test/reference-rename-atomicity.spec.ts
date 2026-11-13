@@ -253,6 +253,8 @@ async function setUpScratchWorkspace(
         }
         return fault === "unacknowledged" ? [] : paths;
       },
+      // The buffers of this authority have no review and no annotations.
+      restoreStoredWorkingText: async () => false,
     },
     500,
     journalDirectory,
@@ -967,6 +969,7 @@ describe("Workspace edit transaction rollback and recovery", function () {
         {
           readMarkdownBufferContent: () => undefined,
           applyWorkspaceTextEdits: async () => [],
+          restoreStoredWorkingText: async () => false,
         },
         500,
         userData,

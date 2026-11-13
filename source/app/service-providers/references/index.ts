@@ -91,6 +91,7 @@ import ProviderContract, { type IPCMessage } from "../provider-contract";
 import { extractPandocCitations, knownPandocCitations } from "./pandoc-citations";
 import { ReferenceIndex, type WorkspaceReferenceState } from "./reference-index";
 import {
+  type JournalRecoveryAuthority,
   recoverWorkspaceEditJournal,
   runWorkspaceEditTransaction,
   type WorkspaceEditAuthority,
@@ -132,9 +133,11 @@ export type ReferenceProviderIPCAPI = IPCMessage<ReferenceProviderIPCContract>;
  * The slice of the document authority (the documents provider) this provider
  * reads live buffers through (issue #53). The authority owns every open
  * buffer's text; this seam returns the CURRENT text of an open markdown
- * document, or undefined when the path is not an open markdown buffer.
+ * document, or undefined when the path is not an open markdown buffer. The
+ * startup recovery of the journal restores the sidecars of the documents
+ * through it.
  */
-export type ReferenceDocumentAuthority = WorkspaceEditAuthority;
+export type ReferenceDocumentAuthority = WorkspaceEditAuthority & JournalRecoveryAuthority;
 
 /**
  * The slice of FSAL this provider actually consumes: the 'fsal-events'
@@ -349,10 +352,10 @@ export default class ReferenceProvider extends ProviderContract {
         );
       }
     }
-    const restored = await recoverWorkspaceEditJournal(this._journalDirectory);
+    const restored = await recoverWorkspaceEditJournal(this._journalDirectory, this._authority);
     if (restored.length > 0) {
       this._logger.warning(
-        `[Reference Provider] Restored ${restored.length} file(s) from an interrupted workspace edit`,
+        `[Reference Provider] Restored ${restored.length} document(s) from an interrupted workspace edit`,
         restored,
       );
     }

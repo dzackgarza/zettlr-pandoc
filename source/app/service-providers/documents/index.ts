@@ -4911,6 +4911,28 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * Changes the working text in the sidecar of a document that is not
+   * loaded, with the anchors of its review and its annotations. The startup
+   * recovery of an interrupted workspace edit calls it, before a document
+   * loads.
+   *
+   * @param   {string}    documentPath  The document
+   * @param   {Function}  restore       The changes for the stored working text
+   *
+   * @return  {Promise<boolean>}        Whether the sidecar changed
+   */
+  public async restoreStoredWorkingText(
+    documentPath: string,
+    restore: (workingText: string) => ChangeSet,
+  ): Promise<boolean> {
+    return await this._reviewApplication.restoreStoredWorkingText(
+      this.ensureDocumentId(documentPath),
+      documentPath,
+      restore,
+    );
+  }
+
+  /**
    * Apply a workspace edit to every open Markdown document named by the
    * transaction set. The document manager is the central collab authority:
    * it prepares every ChangeSet before mutating any document, records one

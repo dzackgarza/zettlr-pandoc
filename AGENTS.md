@@ -1123,6 +1123,16 @@ of an isolated instance are in the first comment of #132.
   edit transaction applies the inverse of its edits (`inverseEdits`), so an
   annotation and a review return to their places; it does not replace the
   buffer with the old text.
+- **A stopped workspace edit is undone in the sidecars too.** A workspace
+  edit writes a journal before it changes a file or a buffer
+  (`workspace-edit-transaction.ts`). When the app stops before the journal
+  is removed, the next start (`ReferenceProvider.boot`) restores each closed
+  file of the journal and gives the document authority the inverse of the
+  edits of each open document (`restoreStoredWorkingText`). The authority
+  applies it to the working text of the sidecar and maps the review and the
+  annotations through it, so the document loads with the text, the
+  proposals and the anchors that it had before the edit. Proof:
+  `test/documents-edit-collaboration.spec.ts`.
 - **A restored session goes out after the buffer has its text.**
   `reattachCollaboration` broadcasts nothing. `_reattachCollaborationSidecar`
   applies the working text of the sidecar and then broadcasts the state. The

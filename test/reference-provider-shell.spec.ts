@@ -152,6 +152,8 @@ describe("References provider behavior", function () {
         applyWorkspaceTextEdits: async (edits: WorkspaceTextEdit[]) => {
           return applyAuthorityEdits(authorityBuffers, edits);
         },
+        // The buffers of this authority have no review and no annotations.
+        restoreStoredWorkingText: async () => false,
       },
       500,
       userData,
