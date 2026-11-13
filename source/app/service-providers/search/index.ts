@@ -429,6 +429,11 @@ export class SearchProvider implements ProviderContract {
       if (matches.length === 0) {
         continue;
       }
+      // The limit ended at the last match of an earlier file: this file holds
+      // a match that the answer does not list.
+      if (matchCount === maxMatches) {
+        return { status: "ok", results, matchCount, truncated: true, notSearched };
+      }
       const kept = matches.slice(0, maxMatches - matchCount);
       results.push({
         documentPath: absPath,
