@@ -21,6 +21,7 @@ import { copyFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Locator, Page } from "playwright";
+import { hoverText } from "./support/editor-hover";
 import {
   assertCleanExit,
   attach,
@@ -72,41 +73,6 @@ async function loadedImage(preview: Locator): Promise<{ src: string; width: numb
     const img = element as HTMLImageElement;
     return { src: img.src, width: img.naturalWidth };
   });
-}
-
-async function hoverText(page: Page, text: string): Promise<void> {
-  const target = page.locator(".cm-content .cm-line", { hasText: text }).first();
-  await target.waitFor({ state: "visible", timeout: 20_000 });
-  // CodeMirror splits a token over the text nodes of its syntax spans, so
-  // the second character of the text is found by its offset in the line.
-  const box = await target.evaluate((line, needle) => {
-    const nodes: Text[] = [];
-    const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-      nodes.push(node as Text);
-    }
-    let remaining =
-      nodes
-        .map((node) => node.data)
-        .join("")
-        .indexOf(needle) + 1;
-    if (remaining === 0) {
-      return null;
-    }
-    for (const node of nodes) {
-      if (remaining < node.data.length) {
-        const range = document.createRange();
-        range.setStart(node, remaining);
-        range.setEnd(node, remaining + 1);
-        const rect = range.getBoundingClientRect();
-        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-      }
-      remaining -= node.data.length;
-    }
-    return null;
-  }, text);
-  assert.ok(box !== null, `The editor shows the text ${text}`);
-  await page.mouse.move(box.x, box.y);
 }
 
 describe("assembled app: images in hover previews", function () {
