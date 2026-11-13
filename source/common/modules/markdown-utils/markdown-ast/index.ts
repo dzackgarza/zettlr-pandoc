@@ -162,6 +162,11 @@ export interface LinkOrImage extends MDNode {
    */
   alt: TextNode;
   /**
+   * The inlines of the text in square brackets, as Pandoc reads them: a
+   * citation, emphasis or code in the text of a link is an element of it.
+   */
+  children: ASTNode[];
+  /**
    * Optional title text (i.e. what can be added after the URL in quotes)
    */
   title?: TextNode;
@@ -588,6 +593,28 @@ export type ASTNode =
 export type ASTNodeType = ASTNode["type"];
 
 /**
+ * The nodes directly inside an AST node: the children, the items of a list,
+ * the rows of a table and the cells of a row. Every walk of the AST descends
+ * through this function, so a node type with content is read by each reader.
+ *
+ * @param   {ASTNode}    node  The node
+ *
+ * @return  {ASTNode[]}        The nodes inside it, in source order
+ */
+export function childNodes(node: ASTNode): ASTNode[] {
+  if ("children" in node) {
+    return node.children;
+  } else if ("items" in node) {
+    return node.items;
+  } else if ("rows" in node) {
+    return node.rows;
+  } else if ("cells" in node) {
+    return node.cells;
+  }
+  return [];
+}
+
+/**
  * The AST attributes of a Pandoc div or span. As in Pandoc's HTML writer, `id`
  * appears only when the source names an identifier, and `class` only when the
  * attribute list or the div's bare class names at least one class.
@@ -684,6 +711,38 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
         return parseChildren(genericLink, node, markdown);
       }
 
+      const alt =
+        marks.length >= 2
+          ? genericTextNode(
+              marks[0].to,
+              marks[1].from,
+              markdown.substring(marks[0].to, marks[1].from),
+            )
+          : genericTextNode(url.from, url.to, markdown.substring(url.from, url.to));
+
+      // Pandoc reads the text in square brackets as inlines (`Markdown.hs`:
+      // `source`, `regLink`): the parsed children between the two first link
+      // marks are the content of the link.
+      const parsed = parseChildren<GenericNode>(
+        {
+          type: "Generic",
+          name: node.name,
+          attributes: {},
+          from: node.from,
+          to: node.to,
+          whitespaceBefore: "",
+          children: [],
+        },
+        node,
+        markdown,
+      );
+      const children =
+        marks.length >= 2
+          ? parsed.children.filter(
+              (child) => child.from >= marks[0].to && child.to <= marks[1].from,
+            )
+          : [alt];
+
       const astNode: LinkOrImage = {
         type: node.name,
         name: node.name,
@@ -696,14 +755,8 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
             ? undefined
             : genericTextNode(title.from, title.to, markdown.substring(title.from, title.to)),
         url: markdown.substring(url.from, url.to),
-        alt:
-          marks.length >= 2
-            ? genericTextNode(
-                marks[0].to,
-                marks[1].from,
-                markdown.substring(marks[0].to, marks[1].from),
-              )
-            : genericTextNode(url.from, url.to, markdown.substring(url.from, url.to)),
+        alt,
+        children,
       };
 
       return astNode;
@@ -723,6 +776,7 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         url,
         alt: genericTextNode(node.from, node.to, url),
+        children: [genericTextNode(node.from, node.to, url)],
       };
       return astNode;
     }

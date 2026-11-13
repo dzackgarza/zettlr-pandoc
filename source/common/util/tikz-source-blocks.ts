@@ -5,7 +5,7 @@
  */
 
 import { markdownToAST } from "@common/modules/markdown-utils";
-import type { ASTNode } from "@common/modules/markdown-utils/markdown-ast";
+import { type ASTNode, childNodes } from "@common/modules/markdown-utils/markdown-ast";
 import {
   contiguousSourceLineRanges,
   rawTikzEnvironment,
@@ -38,25 +38,9 @@ export function usesOwnedTikzTemplate(block: TikzSourceBlock): boolean {
   return !(declaresDocumentClass && hasDocumentBody);
 }
 
-function childrenOf(node: ASTNode): ASTNode[] {
-  if ("children" in node) {
-    return node.children;
-  }
-  if ("items" in node) {
-    return node.items;
-  }
-  if ("rows" in node) {
-    return node.rows;
-  }
-  if ("cells" in node) {
-    return node.cells;
-  }
-  return [];
-}
-
 function walkAST(node: ASTNode, visit: (node: ASTNode) => void): void {
   visit(node);
-  for (const child of childrenOf(node)) {
+  for (const child of childNodes(node)) {
     walkAST(child, visit);
   }
 }

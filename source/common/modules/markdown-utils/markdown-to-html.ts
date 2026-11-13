@@ -281,7 +281,7 @@ export function nodeToHTML(
     addAttribute(node, "href", node.url);
     addAttribute(node, "title", title);
     const attr = renderNodeAttributes(node);
-    return `${node.whitespaceBefore}<a${attr}>${title}</a>`;
+    return `${node.whitespaceBefore}<a${attr}>${nodeToHTML(node.children, options, indent)}</a>`;
   } else if (node.type === "OrderedList") {
     if (node.startsAt > 1) {
       addAttribute(node, "start", String(node.startsAt));

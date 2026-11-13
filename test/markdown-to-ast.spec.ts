@@ -343,7 +343,7 @@ This iss a *file* with two tpyos in here. asdaa *ss* adas word word.`,
               which: "italic",
               from: 25,
               to: 31,
-              whitespaceBefore: " ",
+              whitespaceBefore: "",
               children: [
                 {
                   type: "Generic",
@@ -390,7 +390,7 @@ This iss a *file* with two tpyos in here. asdaa *ss* adas word word.`,
               which: "italic",
               from: 62,
               to: 66,
-              whitespaceBefore: " ",
+              whitespaceBefore: "",
               children: [
                 {
                   type: "Generic",

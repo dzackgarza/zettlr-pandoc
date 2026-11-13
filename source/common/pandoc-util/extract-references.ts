@@ -19,11 +19,12 @@ import {
   THEOREM_FAMILIES,
 } from "../../types/common/references";
 import { markdownToAST } from "../modules/markdown-utils";
-import type {
-  ASTNode,
-  FencedCode,
-  Heading,
-  PandocDiv,
+import {
+  type ASTNode,
+  childNodes,
+  type FencedCode,
+  type Heading,
+  type PandocDiv,
 } from "../modules/markdown-utils/markdown-ast";
 import { isReferenceableDivClass } from "../util/pandoc-quick-reference";
 import { sha256Text } from "../util/sha256";
@@ -100,28 +101,6 @@ export function locateAttribute(
 }
 
 /**
- * Returns the ordered child nodes of any AST node (lists, tables, and table
- * rows keep their children under dedicated properties).
- *
- * @param   {ASTNode}  node  The node
- *
- * @return  {ASTNode[]}      The children in document order
- */
-function childrenOf(node: ASTNode): ASTNode[] {
-  if ("children" in node) {
-    return node.children;
-  } else if ("items" in node) {
-    return node.items;
-  } else if ("rows" in node) {
-    return node.rows;
-  } else if ("cells" in node) {
-    return node.cells;
-  }
-
-  return [];
-}
-
-/**
  * Returns the alt text of the first image descendant, used as the title of
  * figure definitions.
  *
@@ -134,7 +113,7 @@ function firstImageAlt(node: ASTNode): string | undefined {
     return node.alt.value;
   }
 
-  for (const child of childrenOf(node)) {
+  for (const child of childNodes(node)) {
     const alt = firstImageAlt(child);
     if (alt !== undefined) {
       return alt;
@@ -268,7 +247,7 @@ export function extractReferencesFromAST(
    * listings author it above the code block.
    */
   const wrappingDivCaption = (node: PandocDiv, family: ReferenceFamily): string | undefined => {
-    const children = childrenOf(node);
+    const children = childNodes(node);
     for (let i = children.length - 1; i >= 0; i--) {
       const child = children[i];
       if (child.type === "FencedCode" || firstImageAlt(child) !== undefined) {
@@ -284,7 +263,7 @@ export function extractReferencesFromAST(
   };
 
   const firstChildHeadingText = (node: PandocDiv): string | undefined => {
-    for (const child of childrenOf(node)) {
+    for (const child of childNodes(node)) {
       if (child.type === "Heading") {
         const title = headingText(child as Heading);
         return title === "" ? undefined : title;
@@ -465,7 +444,7 @@ export function extractReferencesFromAST(
     }
 
     let previousChild: ASTNode | undefined;
-    for (const child of childrenOf(node)) {
+    for (const child of childNodes(node)) {
       visit(child, previousChild);
       previousChild = child;
     }

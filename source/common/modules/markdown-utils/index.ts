@@ -19,6 +19,7 @@ import { LRUCache } from "lru-cache";
 import {
   type ASTNode,
   type ASTNodeType,
+  childNodes,
   type Document,
   parseNode,
   type TextNode,
@@ -119,49 +120,11 @@ export function extractASTNodes(
     return [];
   }
 
-  let returnNodes: ASTNode[] = [];
-
-  switch (ast.type) {
-    case nodeType: {
-      returnNodes.push(ast);
-      break;
-    }
-
-    case "Generic":
-    case "Heading":
-    case "Emphasis":
-    case "FootnoteRef":
-    case "Highlight":
-    case "ListItem":
-    case "PandocSpan":
-    case "PandocDiv": {
-      for (const child of ast.children) {
-        returnNodes = returnNodes.concat(extractASTNodes(child, nodeType, filter));
-      }
-      break;
-    }
-
-    case "OrderedList":
-    case "BulletList": {
-      for (const item of ast.items) {
-        returnNodes = returnNodes.concat(extractASTNodes(item, nodeType, filter));
-      }
-      break;
-    }
-
-    case "Table": {
-      for (const row of ast.rows) {
-        for (const cell of row.cells) {
-          returnNodes = returnNodes.concat(
-            cell.children.flatMap((c) => extractASTNodes(c, nodeType, filter)),
-          );
-        }
-      }
-      break;
-    }
+  if (ast.type === nodeType) {
+    return [ast];
   }
 
-  return returnNodes;
+  return childNodes(ast).flatMap((child) => extractASTNodes(child, nodeType, filter));
 }
 
 /**
@@ -184,62 +147,17 @@ export function extractTextnodes(ast: ASTNode, filter?: (node: ASTNode) => boole
     return [];
   }
 
-  let textNodes: TextNode[] = [];
-
-  switch (ast.type) {
-    case "Text": {
-      textNodes.push(ast);
-      break;
-    }
-
-    case "Generic":
-    case "Heading":
-    case "Emphasis":
-    case "FootnoteRef":
-    case "Highlight":
-    case "ListItem":
-    case "PandocSpan":
-    case "PandocDiv": {
-      for (const child of ast.children) {
-        textNodes = textNodes.concat(extractTextnodes(child, filter));
-      }
-      break;
-    }
-
-    case "Image":
-    case "Link": {
-      textNodes.push(ast.alt);
-      if (ast.title !== undefined) {
-        textNodes.push(ast.title);
-      }
-      break;
-    }
-
-    case "ZettelkastenLink": {
-      if (ast.title !== undefined) {
-        textNodes.push(ast.title);
-      }
-      break;
-    }
-
-    case "OrderedList":
-    case "BulletList": {
-      for (const item of ast.items) {
-        textNodes = textNodes.concat(extractTextnodes(item, filter));
-      }
-      break;
-    }
-
-    case "Table": {
-      for (const row of ast.rows) {
-        for (const cell of row.cells) {
-          const nodes = cell.children.flatMap((c) => extractTextnodes(c, filter));
-          textNodes = textNodes.concat(nodes);
-        }
-      }
-      break;
-    }
+  if (ast.type === "Text") {
+    return [ast];
   }
 
-  return textNodes;
+  const titles =
+    (ast.type === "Link" || ast.type === "Image" || ast.type === "ZettelkastenLink") &&
+    ast.title !== undefined
+      ? [ast.title]
+      : [];
+
+  return childNodes(ast)
+    .flatMap((child) => extractTextnodes(child, filter))
+    .concat(titles);
 }
