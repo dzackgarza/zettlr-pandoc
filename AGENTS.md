@@ -1682,6 +1682,25 @@ of an isolated instance are in the first comment of #132.
   `e2e/tab-close-others.spec.ts`, `e2e/file-list-create.spec.ts`,
   `e2e/rename-one-field.spec.ts`, `e2e/reveal-in-file-browser.spec.ts`.
 
+### 27. Application updates
+
+- **The releases of the fork are the updates.** `releaseLocations`
+  (`service-providers/updates`) takes the GitHub repository of the
+  `homepage` of `package.json`; the service container gives the
+  `UpdateProvider` those locations. A spec gives it a release server on
+  loopback.
+- **A step that fails sets the error of the state.** A check that does not
+  run (no network: `EOFFLINE`; a build without updates: `EDISABLED`) keeps
+  the result of the last check and says why. A download, a verify and the
+  start of the update each report their own cause; the notification shows
+  that message. The update window offers the start again after a failure.
+- **A download that the provider gives up is removed.** A failed verify, a
+  failed stream and a quit before the end of the download remove the file
+  from the downloads folder (`_abandonDownload`, `shutdown`). A file that
+  cannot be removed is named in the message. A download is complete when
+  its file has each byte (the `end` of the write stream).
+- **Proof:** `test/updater-failures.spec.ts`.
+
 ## Debugging entry points
 
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal
