@@ -525,7 +525,8 @@ Zettlr starts it on one diagram.
   Every consumer resolves through it: force-open (with `#heading` → `jump-to-line`),
   hover preview, backlinks, graph, autocomplete (`get-link-targets`), and
   file rename, move and directory rename (`LinkProvider.filesChangedByMove` and
-  `retargetAfterMove` rewrite only the links whose document the move changed).
+  `retargetProposal` change only the links whose document the move changed;
+  the author sees the edit before it is made, §28).
   `[[#heading]]` (empty target) resolves to the linking document; backlinks and
   the graph leave that self link out.
 - **One reading of a link.** A wikilink is a `ZettelkastenLink` of the Markdown
@@ -666,6 +667,14 @@ of an isolated instance are in the first comment of #132.
   50 ms in one array, to the main-process listeners and to the windows. A
   consumer does its work once for each batch and broadcasts only a changed
   value.
+- **A file that the watcher reported as changed is read again.** chokidar
+  reports one `change` of a path in 50 ms and drops the others
+  (`FSWatcher._emit`), so a second write of a file in that time has no event
+  of its own. The FSAL reads the modification time of each changed file
+  100 ms after the change (`recheckAfterChangeWindow`) and handles a file
+  that has another modification time as a new change. A failed workspace
+  edit writes a file and writes its old text back at once. Proof:
+  `test/fsal-watcher-events.spec.ts`.
 - **One parse of one document version in the main process.** `markdownToAST`
   (`markdown-utils/index.ts`) keeps the ASTs of the texts it parsed last. The
   AST is shared: a reader must not change it. The cache key holds the link
@@ -1277,7 +1286,7 @@ of an isolated instance are in the first comment of #132.
 
 - **One writer.** `writeTextFile` (`fsal/util/write-text-file.ts`) writes each
   text file that the author owns: a document (`FSAL.writeTextFile`: a save,
-  `save-copy`, a tag rename, a duplicate; the closed files of a workspace edit,
+  `save-copy`, a duplicate; the closed files of a workspace edit (§28),
   its rollback and its startup recovery in `workspace-edit-transaction.ts`), a
   Quarto manifest, `.zettlrignore`, `.ztr-directory`, the custom CSS, a
   defaults file, a Lua filter, the snippets, the user dictionary, the prose completion file and a figure
@@ -1742,6 +1751,44 @@ of an isolated instance are in the first comment of #132.
   cannot be removed is named in the message. A download is complete when
   its file has each byte (the `end` of the write stream).
 - **Proof:** `test/updater-failures.spec.ts`.
+
+### 28. Edits of several documents
+
+- **The author sees each edit first.** A command that changes the text of
+  documents that the author did not open for the change (a move or a rename
+  of a file or a folder with links to it, a tag rename) makes a proposal and
+  changes nothing. `proposalOf` (`app/util/workspace-edit-proposal.ts`) gives
+  the edits that make each document its new text and the hash of the text it
+  read. `CommandProvider.propose` sends the proposal to the window that
+  started the command, which shows `WorkspaceEditPreviewDialog.vue`
+  (`common/vue`, through `WorkspaceEditProposals.vue`): each document, in the
+  order of a file tree, and each changed run of lines before and after. A new
+  command of that kind proposes too; it does not write a file.
+- **Apply is one transaction.** `apply-workspace-edit`
+  (`commands/workspace-edit.ts`) runs `applyWorkspaceEdit`: the journaled
+  transaction (`references/workspace-edit-transaction.ts`) refuses the whole
+  edit when a document changed after its hash was taken, rolls back each
+  document when a file cannot be written, and then saves each open document
+  that it changed. Cancel, Escape and a click outside the dialog drop the
+  proposal. A proposal goes away with its window.
+- **A move changes each link to the moved file.** `retargetProposal`
+  (`LinkProvider`, `common/util/replace-links.ts`) rewrites a wikilink and a
+  Markdown link to a file (`[text](./file.md)`, a link reference
+  definition) whose target is the moved file.
+- **The reference rename uses the same dialog.** `MainEditor.vue` shows the
+  rename of a reference key with the old and the new key. Its apply goes
+  through `ReferenceProvider`, leaves the open documents unsaved and offers
+  Undo; a rejected or failed rename gives back the key that the author typed.
+- **A value that a window sends over IPC is no deep reactive proxy.** The
+  structured clone of IPC refuses a Vue proxy ("An object could not be
+  cloned"). A window keeps an IPC payload in a `shallowRef` or sends
+  `toRaw` of it.
+- Fix All and Replace All keep their own confirmations (§19, Debugging
+  entry points).
+- **Proof:** `e2e/link-update-preview.spec.ts`, `e2e/rename-tag.spec.ts`,
+  `e2e/reference-rename-preview.spec.ts`, `e2e/wikilinks.spec.ts`,
+  `e2e/move-with-unwritable-review-state.spec.ts`,
+  `test/workspace-edit-proposal.spec.ts`, `test/replace-links.spec.ts`.
 
 ## Debugging entry points
 

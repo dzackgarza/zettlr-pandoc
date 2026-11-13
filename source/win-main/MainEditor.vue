@@ -52,7 +52,7 @@
       :title="trans('Rename reference')"
       :description="trans('Each use of the reference gets the new key. Nothing changes until you apply.')"
       :documents="renamePreviewPrompt.documents"
-      @apply="applyWorkspaceRename"
+      @apply="void runRecoverably(applyWorkspaceRename, trans('Workspace rename'))"
       @cancel="cancelWorkspaceRename()"
     >
       <template #identity>
@@ -1804,7 +1804,9 @@ interface RenamePreviewPrompt {
   documents: WorkspaceEditDocumentPreview[];
 }
 
-const renamePreviewPrompt = ref<RenamePreviewPrompt | undefined>(undefined);
+// A shallow ref: the edit goes to the main process as it is, and a deep
+// reactive proxy of it cannot be cloned for IPC.
+const renamePreviewPrompt = shallowRef<RenamePreviewPrompt | undefined>(undefined);
 
 /**
  * Runs the confirmed workspace rename protocol up to the PREVIEW (#6):
