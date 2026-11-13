@@ -162,6 +162,10 @@ describe("the Preferences window at its default size", function () {
         [700, 800],
         "the window has its default size",
       );
+      // A control of the group fades in: the screenshot waits for its end.
+      await preferences.waitForFunction(() =>
+        document.getAnimations().every((animation) => animation.playState !== "running"),
+      );
       screenshots.set(`group-${name}.png`, await preferences.screenshot({ fullPage: true }));
       // A page screenshot shows only the top of the pane that scrolls.
       const tables = preferences.locator("div.table-view");
