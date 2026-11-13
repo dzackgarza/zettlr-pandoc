@@ -216,8 +216,11 @@ export interface MDFileDescriptor extends FSMetaInfo {
   firstHeading: string | null;
   /** First prose sentence, used only when no authored heading exists. */
   firstSentence?: string | null;
-  /** The parser that produced this descriptor; a cached descriptor from another parser is parsed again. */
-  parserVersion?: number;
+  /**
+   * The identity of the parser that produced this descriptor: its version and
+   * the settings it read. A cached descriptor of another parser is parsed again.
+   */
+  parsedWith?: string;
   yamlTitle: string | undefined;
   /** The YAML `aliases`: further names a wikilink may use for this document. */
   aliases: string[];

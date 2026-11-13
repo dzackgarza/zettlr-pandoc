@@ -3,7 +3,7 @@
 import path from "node:path";
 import { Text } from "@codemirror/state";
 import type { SourceLintDiagnostic } from "@common/util/source-lint-diagnostic";
-import type { WikilinkIndex } from "@common/util/wikilink-resolution";
+import type { WikilinkReading } from "@common/util/wikilink-resolution";
 import type { FlowmarkLintFailureKind } from "@dts/common/flowmark-lint";
 import type { TikzRenderConfig } from "@dzack/tikz-render/tikz-render";
 import { lintMarkdownText } from "./flowmark-lint";
@@ -13,7 +13,7 @@ export interface DocumentLintSharedContext {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
   macroSources: readonly string[];
-  wikilinks?: WikilinkIndex;
+  wikilinks?: WikilinkReading;
   tikzRenderConfig: TikzRenderConfig;
   /** `editor.lint.flowmark.timeoutMs` from the app config. */
   flowmarkLintTimeoutMs: number;
@@ -22,7 +22,7 @@ export interface DocumentLintSharedContext {
 export interface CreateDocumentLintContextOptions {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
-  wikilinks?: WikilinkIndex;
+  wikilinks?: WikilinkReading;
   tikzRenderConfig: TikzRenderConfig;
   flowmarkLintTimeoutMs: number;
 }

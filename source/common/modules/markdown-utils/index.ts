@@ -13,10 +13,8 @@
  * END HEADER
  */
 
-import markdownParser, {
-  type MarkdownParserConfig,
-} from "@dzack/pandoc-editor/parser/markdown-parser";
-import { type Tree } from "@lezer/common";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { type Parser, type Tree } from "@lezer/common";
 import { LRUCache } from "lru-cache";
 import {
   type ASTNode,
@@ -28,7 +26,27 @@ import {
 
 export { md2html } from "./markdown-to-html";
 
-// The ASTs of the sources that were parsed last with the default parser. One
+/**
+ * How a wikilink names its document: `[[link|title]]` or `[[title|link]]`
+ * (the setting `zkn.linkFormat`). The parser reads the target of a wikilink
+ * by it; no other node depends on it.
+ */
+export type WikilinkFormat = "link|title" | "title|link";
+
+// The parser of each link format.
+const parsers = new Map<WikilinkFormat, Parser>();
+
+function parserFor(linkFormat: WikilinkFormat): Parser {
+  const known = parsers.get(linkFormat);
+  if (known !== undefined) {
+    return known;
+  }
+  const { parser } = markdownParser({ zknLinkParserConfig: { format: linkFormat } }).language;
+  parsers.set(linkFormat, parser);
+  return parser;
+}
+
+// The ASTs of the sources that were parsed last, for each link format. One
 // version of a document has several readers (references, citations, TikZ
 // blocks, the lint context, the file parser, the save path); they share one
 // parse. Eight entries hold the buffer text and the saved text of the
@@ -49,31 +67,30 @@ const parsedSources = new LRUCache<string, Document | ASTNode>({ max: 8 });
  *                               since otherwise the offsets in the parse tree
  *                               will be wrong!
  *
+ * @param   {WikilinkFormat} linkFormat  How a wikilink names its document.
+ *                               A reader of wikilinks passes the setting
+ *                               `zkn.linkFormat`; a tree carries its own.
+ *
  * @return  {ASTNode}            The root node of the AST. Callers share it
  *                               and must not change it.
  */
 export function markdownToAST(
   markdown: string,
   tree: Tree | null = null,
-  parserConfig?: MarkdownParserConfig,
+  linkFormat: WikilinkFormat = "link|title",
 ): Document | ASTNode {
   if (tree !== null) {
     return parseNode(tree.topNode, markdown);
   }
 
-  if (parserConfig !== undefined) {
-    const { parser } = markdownParser(parserConfig).language;
-    return parseNode(parser.parse(markdown).topNode, markdown);
-  }
-
-  const known = parsedSources.get(markdown);
+  const key = `${linkFormat}\n${markdown}`;
+  const known = parsedSources.get(key);
   if (known !== undefined) {
     return known;
   }
 
-  const { parser } = markdownParser().language;
-  const ast = parseNode(parser.parse(markdown).topNode, markdown);
-  parsedSources.set(markdown, ast);
+  const ast = parseNode(parserFor(linkFormat).parse(markdown).topNode, markdown);
+  parsedSources.set(key, ast);
   return ast;
 }
 

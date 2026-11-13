@@ -104,7 +104,7 @@ describe("Quote-bearing export inputs (review B2/B11)", function () {
       } as ExporterOptions,
       {
         latexTemplate: "notes.latex",
-        wikilinks: new WikilinkIndex([]),
+        wikilinks: { index: new WikilinkIndex([]), linkFormat: "link|title" },
         fsal: FOLDERS,
         mainLibrary: "",
       },
@@ -141,7 +141,12 @@ describe("Quote-bearing export inputs (review B2/B11)", function () {
         ],
         targetDirectory: dir,
       } as ExporterOptions,
-      { latexTemplate: "", wikilinks: new WikilinkIndex([]), fsal: FOLDERS, mainLibrary: "" },
+      {
+        latexTemplate: "",
+        wikilinks: { index: new WikilinkIndex([]), linkFormat: "link|title" },
+        fsal: FOLDERS,
+        mainLibrary: "",
+      },
     );
 
     const { cwd, argv } = await just.onlyRun();
@@ -176,7 +181,12 @@ describe("Quote-bearing export inputs (review B2/B11)", function () {
         cwd: projectDir,
         defaultsOverride: { title: "Sentinel Notes" },
       } as ExporterOptions,
-      { latexTemplate: "", wikilinks: new WikilinkIndex([]), fsal: FOLDERS, mainLibrary: "" },
+      {
+        latexTemplate: "",
+        wikilinks: { index: new WikilinkIndex([]), linkFormat: "link|title" },
+        fsal: FOLDERS,
+        mainLibrary: "",
+      },
     );
 
     const { argv } = await just.onlyRun();

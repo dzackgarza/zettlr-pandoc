@@ -64,7 +64,7 @@ function quartoManifest(
  * directory: the one in the FSAL descriptor of the file.
  */
 async function documentTitles(directory: string): Promise<Map<string, string>> {
-  const parser = getMarkdownFileParser("(\\d{14})");
+  const parser = getMarkdownFileParser("(\\d{14})", "link|title");
   const titles = new Map<string, string>();
   for (const name of await readdir(directory, { recursive: true })) {
     if (name.endsWith(".md") && !name.startsWith(".book")) {

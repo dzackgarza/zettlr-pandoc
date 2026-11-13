@@ -48,7 +48,7 @@ import { hasMarkdownExt } from "@common/util/file-extention-checks";
 import isErrnoException from "@common/util/is-errno-exception";
 import { isAtOrInsideRoot } from "@common/util/renderer-path-polyfill";
 import { sha256Text } from "@common/util/sha256";
-import type { WikilinkIndex } from "@common/util/wikilink-resolution";
+import type { WikilinkIndex, WikilinkReading } from "@common/util/wikilink-resolution";
 import type { FixAllEdit, FixAllPlan } from "@dts/common/fix-all";
 import type { FlowmarkLintFailureKind } from "@dts/common/flowmark-lint";
 import type { DirDescriptor } from "@dts/common/fsal";
@@ -148,6 +148,7 @@ export interface DocumentLintDependencies {
     get: () => {
       export: { cslLibrary: string };
       tikz: Pick<ConfigOptions["tikz"], "dataDir" | "figuresDir">;
+      zkn: Pick<ConfigOptions["zkn"], "linkFormat">;
       editor: {
         lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] };
       };
@@ -563,7 +564,7 @@ export default class DocumentLintProvider extends ProviderContract {
     const context = await createDocumentLintContext({
       homeDirectory: this.deps.homeDirectory,
       env: this.deps.env,
-      wikilinks: this.deps.links?.index,
+      wikilinks: this.wikilinkReading(),
       tikzRenderConfig: this.tikzRenderConfig(),
       flowmarkLintTimeoutMs: config.editor.lint.flowmark.timeoutMs,
     });
@@ -596,6 +597,15 @@ export default class DocumentLintProvider extends ProviderContract {
       this.schedulePersist();
     }
     return record;
+  }
+
+  // The reading of the wikilinks of the workspace: its index and the link
+  // format of the settings.
+  private wikilinkReading(): WikilinkReading | undefined {
+    if (this.deps.links === undefined) {
+      return undefined;
+    }
+    return { index: this.deps.links.index, linkFormat: this.deps.config.get().zkn.linkFormat };
   }
 
   private tikzRenderConfig(): ReturnType<typeof resolveTikzRenderConfig> {
@@ -654,6 +664,7 @@ export default class DocumentLintProvider extends ProviderContract {
     document: DocumentInputs,
     pass: LintPass,
   ): Promise<string> {
+    const wikilinks = this.wikilinkReading();
     const macroRoot = path.join(this.deps.homeDirectory, ".pandoc", "styles", "macros");
     const mathJaxMacros = path.join(
       this.deps.homeDirectory,
@@ -671,9 +682,7 @@ export default class DocumentLintProvider extends ProviderContract {
       // The revision covers the document's own definitions and references.
       references: document.references === undefined ? null : document.references.resolutions,
       wikilinks:
-        this.deps.links === undefined
-          ? null
-          : digest(wikilinkResolutions(text, documentPath, this.deps.links.index)),
+        wikilinks === undefined ? null : digest(wikilinkResolutions(text, documentPath, wikilinks)),
       bibliographies:
         document.bibliographies === undefined
           ? null

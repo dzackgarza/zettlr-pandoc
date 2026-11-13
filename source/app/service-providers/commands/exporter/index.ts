@@ -200,6 +200,7 @@ export async function makeExport(
   // the file that PANDOC_WIKILINKS names, and it runs before each other
   // filter, which can add headings.
   const inputs = await exportInputs(options.sourceFiles);
+  const reading = { index: wikilinks, linkFormat: config.get().zkn.linkFormat };
   const filters = [
     path.join(math.pandocDirectory, "filters", "wikilinks.lua"),
     ...config.get().export.filters,
@@ -210,7 +211,7 @@ export async function makeExport(
     runPandoc: async (defaults: string) => {
       const output = await withWikilinkMap(
         inputs,
-        wikilinks,
+        reading,
         async (mapFile) =>
           await runPandoc(defaults, options.cwd, { ...process.env, PANDOC_WIKILINKS: mapFile }),
       );
@@ -247,7 +248,7 @@ export async function makeExport(
     const ownTemplate = options.defaultsOverride?.template;
     return await runRecipeExport(options, {
       latexTemplate: ownTemplate !== undefined ? ownTemplate : config.get().export.latexTemplate,
-      wikilinks,
+      wikilinks: reading,
       fsal,
       mainLibrary: config.get().export.cslLibrary,
     });

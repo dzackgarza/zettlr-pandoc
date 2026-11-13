@@ -281,12 +281,15 @@ describe("main-process document lint", function () {
       homeDirectory: home,
       env: process.env,
       flowmarkLintTimeoutMs: 60_000,
-      wikilinks: new WikilinkIndex([
-        document("chapters/doc.md"),
-        document("programs/cusp-chain.md"),
-        document("a/moduli.md"),
-        document("b/moduli.md"),
-      ]),
+      wikilinks: {
+        index: new WikilinkIndex([
+          document("chapters/doc.md"),
+          document("programs/cusp-chain.md"),
+          document("a/moduli.md"),
+          document("b/moduli.md"),
+        ]),
+        linkFormat: "link|title",
+      },
       tikzRenderConfig: {
         tikzAssetDir: path.join(
           repositoryRoot,

@@ -34,6 +34,7 @@ describe("document lint cache", function () {
       config: {
         get: () => ({
           export: { cslLibrary: "" },
+          zkn: { linkFormat: "link|title" },
           tikz: {
             dataDir: path.join(__dirname, "../packages/tikz-render/test/fixtures/tikz-data"),
             figuresDir: "",

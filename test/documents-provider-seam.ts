@@ -123,7 +123,8 @@ export async function bootDocumentManager(
   );
   dialogConfig.set("dialogPaths.askFileDialog", root);
   // The descriptor of a Markdown file, read from the disk at each request.
-  const parseDocument = getMarkdownFileParser(dialogConfig.get().zkn.idRE);
+  const { idRE, linkFormat } = dialogConfig.get().zkn;
+  const parseDocument = getMarkdownFileParser(idRE, linkFormat);
   const descriptorFor = async (filePath: string) =>
     await parseMarkdownFile(filePath, null, parseDocument);
   const appSeam = {

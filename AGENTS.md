@@ -482,6 +482,16 @@ Zettlr starts it on one diagram.
   `retargetAfterMove` rewrite only the links whose document the move changed).
   `[[#heading]]` (empty target) resolves to the linking document; backlinks and
   the graph leave that self link out.
+- **One reading of a link.** A wikilink is a `ZettelkastenLink` of the Markdown
+  AST, read with the setting `zkn.linkFormat`: in `[[a|b]]` the target is `a`
+  for `link|title` and `b` for `title|link`, and `[[x]]` in code is no link.
+  Each reader parses with that format (`markdownToAST(text, null, linkFormat)`)
+  or uses the tree of the editor, which has it: the FSAL file parser, the
+  editor chips, the lint context (`WikilinkReading`: the index and the
+  format), the export map and the rewrite after a move. No reader finds
+  wikilinks with a regular expression. A change of the setting needs a
+  restart: the FSAL reads the links of each file at the start. Proof:
+  `test/wikilink-reading.spec.ts`, `e2e/wikilinks-title-first.spec.ts`.
 - **Editor chips:** the renderer bundle has no `path`, so the editor cannot run
   `WikilinkIndex`. `MainEditor.vue` sends the document's targets to the IPC
   command `resolve-wikilinks` and stores the answer in
@@ -494,8 +504,9 @@ Zettlr starts it on one diagram.
   The lint cache key includes those resolutions, so a rename elsewhere refreshes
   the diagnostics of the documents it affects.
 - **YAML `aliases`** is parsed by `fsal/util/file-parser.ts`. A change to what the
-  parser extracts must bump `PARSER_VERSION` in `fsal-file.ts`; cached descriptors
-  of another version are parsed again.
+  parser extracts must bump `PARSER_VERSION` in that file. A descriptor keeps
+  the identity of its parser (`parsedWith`: the version, `zkn.idRE` and
+  `zkn.linkFormat`); a cached descriptor of another parser is parsed again.
 - **Exports:** each export that runs Pandoc writes `wikilinkExportMap`
   (`common/util/wikilink-export.ts`) through `withWikilinkMap`
   (`exporter/wikilink-map-file.ts`): the heading count of each input and, per
@@ -508,8 +519,9 @@ Zettlr starts it on one diagram.
   export is its label. Proof: `test/export-document.spec.ts`.
 - **Renderer imports:** `wikilink-resolution.ts` imports Node `path`, which
   the renderer bundle maps to an empty module. Editor and window code import
-  `splitWikilinkTarget` from `common/util/wikilink-target.ts`, which imports
-  nothing, and ask the main process for resolutions.
+  `splitWikilinkTarget` and `wikilinkTargetsIn` from
+  `common/util/wikilink-target.ts`, which imports only `markdown-utils`, and
+  ask the main process for resolutions.
 
 ### 9. Responsiveness contracts
 
@@ -610,8 +622,9 @@ of an isolated instance are in the first comment of #132.
   value.
 - **One parse of one document version in the main process.** `markdownToAST`
   (`markdown-utils/index.ts`) keeps the ASTs of the texts it parsed last. The
-  AST is shared: a reader must not change it. Editor code passes the tree that
-  the editor has (`markdownToAST(text, tree)`), as the spellcheck context does.
+  AST is shared: a reader must not change it. The cache key holds the link
+  format. Editor code passes the tree that the editor has
+  (`markdownToAST(text, tree)`), as the spellcheck context does.
 - **Pandoc reads one citation candidate once.**
   `references/pandoc-citations.ts` keeps the reading of each candidate source;
   an edit that changes no citation starts no Pandoc process.

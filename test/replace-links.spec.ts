@@ -8,7 +8,7 @@ function retargeted(
   markdown: string,
   ...args: [string, Parameters<typeof retargetLinks>[2], WikilinkIndex, WikilinkIndex]
 ): string {
-  const replacements = retargetLinks(markdown, ...args);
+  const replacements = retargetLinks(markdown, ...args, "link|title");
   const changes = ChangeSet.of(
     replacements.map(({ from, to, text }) => ({ from, to, insert: text })),
     markdown.length,

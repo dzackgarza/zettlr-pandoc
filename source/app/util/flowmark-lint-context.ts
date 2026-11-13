@@ -1,3 +1,4 @@
+import { markdownToAST } from "@common/modules/markdown-utils";
 import { extractReferences, hashDocumentSource } from "@common/pandoc-util/extract-references";
 import { SEMANTIC_DIV_CLASSES } from "@common/pandoc-util/pandoc-div-model";
 import {
@@ -6,7 +7,8 @@ import {
   THEOREM_CLASS_TO_PREFIX,
   THEOREM_FAMILY_METADATA,
 } from "@common/util/pandoc-quick-reference";
-import { type WikilinkIndex, wikilinkTargetsIn } from "@common/util/wikilink-resolution";
+import type { WikilinkReading } from "@common/util/wikilink-resolution";
+import { wikilinkTargetsIn } from "@common/util/wikilink-target";
 import {
   type DocumentReferenceSnapshot,
   REFERENCE_FAMILIES,
@@ -21,7 +23,7 @@ export interface FlowmarkLintContextSource {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
   macroSources: readonly string[];
-  wikilinks?: WikilinkIndex;
+  wikilinks?: WikilinkReading;
   tikzRenderConfig: TikzRenderConfig;
 }
 
@@ -143,7 +145,8 @@ export function flowmarkReferenceContext(
 
 /**
  * How each wikilink target in `text` resolves in the workspace, keyed by the
- * target before its `#` fragment and `|` label. Flowmark reports the missing,
+ * target before its `#` fragment. The parser reads the target by the link
+ * format, and text in code holds no link. Flowmark reports the missing,
  * ambiguous and document-relative ones from this.
  */
 export type FlowmarkWikilinkResolution =
@@ -154,25 +157,27 @@ export type FlowmarkWikilinkResolution =
 export function wikilinkResolutions(
   text: string,
   documentPath: string,
-  index: WikilinkIndex,
+  { index, linkFormat }: WikilinkReading,
 ): Record<string, FlowmarkWikilinkResolution> {
   return Object.fromEntries(
-    wikilinkTargetsIn(text).map((target): [string, FlowmarkWikilinkResolution] => {
-      const resolution = index.resolve(target, documentPath);
-      if (resolution.status !== "ambiguous") {
-        return [target, resolution];
-      }
-      return [
-        target,
-        {
-          status: "ambiguous",
-          candidates: resolution.candidates.map((path) => ({
-            path,
-            canonical: index.canonical(path),
-          })),
-        },
-      ];
-    }),
+    wikilinkTargetsIn(markdownToAST(text, null, linkFormat)).map(
+      (target): [string, FlowmarkWikilinkResolution] => {
+        const resolution = index.resolve(target, documentPath);
+        if (resolution.status !== "ambiguous") {
+          return [target, resolution];
+        }
+        return [
+          target,
+          {
+            status: "ambiguous",
+            candidates: resolution.candidates.map((path) => ({
+              path,
+              canonical: index.canonical(path),
+            })),
+          },
+        ];
+      },
+    ),
   );
 }
 

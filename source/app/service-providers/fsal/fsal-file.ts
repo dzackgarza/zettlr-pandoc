@@ -19,10 +19,9 @@ import { promises as fs } from "fs";
 import path from "path";
 import { getAppServiceContainer, isAppServiceContainerReady } from "../../app-service-container";
 import type FSALCache from "./fsal-cache";
+import type { MarkdownFileParser } from "./util/file-parser";
 import { getFilesystemMetadata } from "./util/get-fs-metadata";
 import { readFileText } from "./util/read-file-text";
-
-export const PARSER_VERSION = 3;
 
 /**
  * Applies a cached file, saving time where the file is not being parsed.
@@ -53,7 +52,7 @@ async function cacheFile(origFile: MDFileDescriptor, cacheAdapter: FSALCache): P
 export async function parse(
   filePath: string,
   cache: FSALCache | null,
-  parser: (file: MDFileDescriptor, content: string) => void,
+  parser: MarkdownFileParser,
 ): Promise<MDFileDescriptor> {
   // First of all, prepare the file descriptor
   let file: MDFileDescriptor = {
@@ -75,7 +74,7 @@ export async function parse(
     linefeed: "\n",
     firstHeading: null,
     firstSentence: null,
-    parserVersion: PARSER_VERSION,
+    parsedWith: undefined,
     yamlTitle: undefined,
     aliases: [],
     frontmatter: null, // May contain frontmatter variables
@@ -120,7 +119,7 @@ export async function parse(
       cachedFile !== undefined &&
       cachedFile.modtime === file.modtime &&
       cachedFile.type === "file" &&
-      cachedFile.parserVersion === PARSER_VERSION
+      cachedFile.parsedWith === parser.identity
     ) {
       file = applyCache(cachedFile, file);
       hasCache = true;
@@ -136,7 +135,7 @@ export async function parse(
       await cache?.del(file.path);
       return file;
     }
-    parser(file, content);
+    parser.parse(file, content);
     if (cache !== null) {
       await cacheFile(file, cache);
     }

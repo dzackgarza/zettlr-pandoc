@@ -82,6 +82,7 @@ describe("Background lint queue while an editor receives input", function () {
       config: {
         get: () => ({
           export: { cslLibrary: "" },
+          zkn: { linkFormat: "link|title" },
           tikz: {
             dataDir: path.join(__dirname, "../packages/tikz-render/test/fixtures/tikz-data"),
             figuresDir: "",

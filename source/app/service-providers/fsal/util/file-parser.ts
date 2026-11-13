@@ -13,7 +13,11 @@
  * END HEADER
  */
 
-import { extractASTNodes, markdownToAST } from "@common/modules/markdown-utils";
+import {
+  extractASTNodes,
+  markdownToAST,
+  type WikilinkFormat,
+} from "@common/modules/markdown-utils";
 import type {
   CitationNode,
   ZettelkastenLink,
@@ -30,23 +34,41 @@ import extractFileId from "./extract-file-id";
 import { extractLinefeed } from "./extract-linefeed";
 
 /**
+ * The version of what the parser extracts. A change to what it extracts must
+ * move it, so that cached descriptors of another version are parsed again.
+ */
+const PARSER_VERSION = 4;
+
+/**
+ * A parser of Markdown files with the settings that decide what it extracts.
+ * A descriptor whose `parsedWith` is not the `identity` of the parser is
+ * parsed again.
+ */
+export interface MarkdownFileParser {
+  identity: string;
+  parse: (file: MDFileDescriptor, content: string) => void;
+}
+
+/**
  * Parses some Markdown `content` into the properties of the `file` descriptor.
  *
- * @param  {string}  idREPattern  The ID RegExp pattern as indicated by the user
- *
- * @returns {Function}            A parser that can then be used to parse files
+ * @param  {string}          idREPattern  The ID RegExp pattern of the settings
+ * @param  {WikilinkFormat}  linkFormat   How a wikilink names its document
  */
 export default function getMarkdownFileParser(
   idREPattern: string,
-): (file: MDFileDescriptor, content: string) => void {
-  return function parseMarkdownFile(file: MDFileDescriptor, content: string): void {
+  linkFormat: WikilinkFormat,
+): MarkdownFileParser {
+  const identity = JSON.stringify([PARSER_VERSION, idREPattern, linkFormat]);
+  const parse = function parseMarkdownFile(file: MDFileDescriptor, content: string): void {
+    file.parsedWith = identity;
     // First of all, determine all the things that have nothing to do with any
     // Markdown contents.
     file.bom = extractBOM(content);
     file.linefeed = extractLinefeed(content);
     file.id = extractFileId(file.name, content, idREPattern);
 
-    const ast = markdownToAST(content);
+    const ast = markdownToAST(content, null, linkFormat);
 
     const tags = extractASTNodes(ast, "ZettelkastenTag") as ZettelkastenTag[];
     file.tags = [...new Set(tags.map((tag) => tag.value.toLowerCase()))];
@@ -136,4 +158,5 @@ export default function getMarkdownFileParser(
       file.tags = [...new Set([...file.tags, ...sanitizedKeywords])];
     }
   };
+  return { identity, parse };
 }

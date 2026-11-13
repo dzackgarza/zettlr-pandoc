@@ -90,7 +90,12 @@ describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
         sourceFiles: [{ path: inputFile, name: "input.md", ext: ".md", textFile: inputFile }],
         targetDirectory: dir,
       } as ExporterOptions,
-      { latexTemplate: "", wikilinks: new WikilinkIndex([]), fsal: FOLDERS, mainLibrary: "" },
+      {
+        latexTemplate: "",
+        wikilinks: { index: new WikilinkIndex([]), linkFormat: "link|title" },
+        fsal: FOLDERS,
+        mainLibrary: "",
+      },
     );
 
     const { cwd, argv } = await just.onlyRun();
@@ -124,7 +129,7 @@ describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
       } as ExporterOptions,
       {
         latexTemplate: "lattice-notes.latex",
-        wikilinks: new WikilinkIndex([]),
+        wikilinks: { index: new WikilinkIndex([]), linkFormat: "link|title" },
         fsal: FOLDERS,
         mainLibrary: "",
       },
@@ -172,7 +177,7 @@ describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
       } as ExporterOptions,
       {
         latexTemplate: "notes.latex",
-        wikilinks: new WikilinkIndex([]),
+        wikilinks: { index: new WikilinkIndex([]), linkFormat: "link|title" },
         fsal: FOLDERS,
         mainLibrary: "",
       },

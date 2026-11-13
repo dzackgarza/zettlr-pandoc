@@ -15,7 +15,7 @@
  */
 
 import { type ExportInput, wikilinkExportMap } from "@common/util/wikilink-export";
-import type { WikilinkIndex } from "@common/util/wikilink-resolution";
+import type { WikilinkReading } from "@common/util/wikilink-resolution";
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
@@ -40,7 +40,7 @@ export async function exportInputs(sourceFiles: MinimalFile[]): Promise<ExportIn
  */
 export async function withWikilinkMap<T>(
   inputs: ExportInput[],
-  wikilinks: WikilinkIndex,
+  wikilinks: WikilinkReading,
   run: (mapFile: string) => Promise<T>,
 ): Promise<T> {
   const mapDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "zettlr-wikilinks-"));

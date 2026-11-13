@@ -1069,7 +1069,7 @@ function wholePandocCanon(source: string): Canon[] {
 }
 
 function wholeEditorCanon(source: string): Canon[] {
-  const ast = markdownToAST(source, null, { zknLinkParserConfig: { format: "link|title" } });
+  const ast = markdownToAST(source, null, "link|title");
   assert.equal(ast.type, "Document");
   return editorBlocksCanon((ast as Document).children, source);
 }
@@ -1099,7 +1099,7 @@ describe("Pandoc language differential torture corpus", function () {
     it(`matches Pandoc AST projection for generated cases ${batchStart}-${batchEnd}`, function () {
       const source = batchSource(batch);
       const pandoc = pandocJson(source);
-      const editor = markdownToAST(source, null, { zknLinkParserConfig: { format: "link|title" } });
+      const editor = markdownToAST(source, null, "link|title");
       assert.equal(editor.type, "Document");
       const pandocCases = splitPandocBatch(pandoc.blocks, batch.length);
       const editorCases = splitEditorBatch(editor, batch.length);

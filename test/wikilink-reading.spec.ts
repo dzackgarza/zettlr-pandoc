@@ -87,16 +87,18 @@ describe("The wikilinks of a document", function () {
         homeDirectory: root,
         env: {},
         macroSources: [],
-        linkFormat,
-        wikilinks: new WikilinkIndex(
-          ["lattices.md", "genus.md"].map((name) => ({
-            path: path.join(root, name),
-            root,
-            id: "",
-            title: undefined,
-            aliases: [],
-          })),
-        ),
+        wikilinks: {
+          index: new WikilinkIndex(
+            ["lattices.md", "genus.md"].map((name) => ({
+              path: path.join(root, name),
+              root,
+              id: "",
+              title: undefined,
+              aliases: [],
+            })),
+          ),
+          linkFormat,
+        },
         tikzRenderConfig: {
           tikzAssetDir: root,
           templatePath: path.join(root, "no-template.tex"),

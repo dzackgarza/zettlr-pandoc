@@ -57,7 +57,7 @@ import * as FSALCodeFile from "./fsal-code-file";
 import * as FSALDir from "./fsal-directory";
 import * as FSALFile from "./fsal-file";
 import FSALWatchdog from "./fsal-watchdog";
-import getMarkdownFileParser from "./util/file-parser";
+import getMarkdownFileParser, { type MarkdownFileParser } from "./util/file-parser";
 import { pathExists } from "./util/fs";
 import { type FilesystemMetadata, getFilesystemMetadata } from "./util/get-fs-metadata";
 import {
@@ -1082,8 +1082,9 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Function}  A parser that can be passed to FSAL functions involving files
    */
-  public getMarkdownFileParser(): (file: MDFileDescriptor, content: string) => void {
-    return getMarkdownFileParser(this._config.get().zkn.idRE);
+  public getMarkdownFileParser(): MarkdownFileParser {
+    const { idRE, linkFormat } = this._config.get().zkn;
+    return getMarkdownFileParser(idRE, linkFormat);
   }
 
   /**
@@ -1478,7 +1479,7 @@ export default class FSAL extends ProviderContract {
       const cacheHit = await this._cache.get(absPath);
       if (
         cacheHit !== undefined &&
-        (cacheHit.type !== "file" || cacheHit.parserVersion === FSALFile.PARSER_VERSION)
+        (cacheHit.type !== "file" || cacheHit.parsedWith === this.getMarkdownFileParser().identity)
       ) {
         return cacheHit;
       }

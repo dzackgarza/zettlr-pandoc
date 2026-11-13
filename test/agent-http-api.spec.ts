@@ -614,6 +614,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           dataDir: path.join(__dirname, "../packages/tikz-render/test/fixtures/tikz-data"),
           figuresDir: figuresRoot,
         },
+        zkn: { linkFormat: "link|title" as const },
         editor: { lint: { flowmark: { timeoutMs: flowmarkTimeoutMs } } },
       }),
     };

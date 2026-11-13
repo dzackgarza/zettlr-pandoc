@@ -16,7 +16,7 @@
 
 import { extractASTNodes, markdownToAST } from "../modules/markdown-utils";
 import type { Heading, ZettelkastenLink } from "../modules/markdown-utils/markdown-ast";
-import { fragmentHeadingIndex, type WikilinkIndex } from "./wikilink-resolution";
+import { fragmentHeadingIndex, type WikilinkReading } from "./wikilink-resolution";
 import { splitWikilinkTarget } from "./wikilink-target";
 
 /** One file of the export, in the order pandoc reads it. */
@@ -35,7 +35,8 @@ export interface WikilinkDestination {
 
 /**
  * The JSON file that filters/wikilinks.lua reads. `links` maps the raw target
- * of a wikilink, the text before its `|`, to its destination. A wikilink
+ * of a wikilink, the part that names a document in the link format of the
+ * settings, to its destination. A wikilink
  * whose target names no document of the export is not in it.
  */
 export interface WikilinkExportMap {
@@ -50,17 +51,16 @@ export interface WikilinkExportMap {
  * raw target leads to two destinations, or a link leads to a document with no
  * heading.
  */
-export function wikilinkExportMap(inputs: ExportInput[], index: WikilinkIndex): WikilinkExportMap {
-  const headings = inputs.map(
-    (input) => extractASTNodes(markdownToAST(input.markdown), "Heading") as Heading[],
-  );
+export function wikilinkExportMap(
+  inputs: ExportInput[],
+  { index, linkFormat }: WikilinkReading,
+): WikilinkExportMap {
+  const asts = inputs.map((input) => markdownToAST(input.markdown, null, linkFormat));
+  const headings = asts.map((ast) => extractASTNodes(ast, "Heading") as Heading[]);
   const links: Record<string, WikilinkDestination> = {};
 
-  for (const input of inputs) {
-    for (const link of extractASTNodes(
-      markdownToAST(input.markdown),
-      "ZettelkastenLink",
-    ) as ZettelkastenLink[]) {
+  for (const [position, input] of inputs.entries()) {
+    for (const link of extractASTNodes(asts[position], "ZettelkastenLink") as ZettelkastenLink[]) {
       const { target, fragment } = splitWikilinkTarget(link.target);
       const resolution = index.resolve(target, input.path);
       if (resolution.status !== "resolved") {

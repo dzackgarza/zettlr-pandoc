@@ -92,6 +92,7 @@
  * END HEADER
  */
 
+import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { isCommandId, runRegisteredEditorCommand } from "@common/commands/command-registry";
@@ -123,6 +124,7 @@ import {
 import { type EditorWindowConfiguration } from "@common/modules/markdown-editor/util/configuration";
 import { documentAuthorityIPCAPI } from "@common/modules/markdown-editor/util/ipc-api";
 import { saveBuffer } from "@common/modules/markdown-editor/util/save-buffer";
+import { markdownToAST } from "@common/modules/markdown-utils";
 import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
@@ -148,7 +150,7 @@ import {
   type TexMacroSource,
 } from "@common/util/tex-context";
 import { resolveTexMacroSourcePaths } from "@common/util/tex-macro-source-resolution";
-import { wikilinkTargetsIn } from "@common/util/wikilink-resolution";
+import { wikilinkTargetsIn } from "@common/util/wikilink-target";
 import type { AnnotationSet } from "@dts/common/annotation-domain";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
@@ -2085,7 +2087,14 @@ async function updateWikilinkResolutions(force: boolean): Promise<void> {
   if (editor === null) {
     return;
   }
-  const targets = wikilinkTargetsIn(editor.value);
+  // The links of the syntax tree of the editor, which reads them with the
+  // link format of the settings. The request waits for the whole tree.
+  const state = editor.instance.state;
+  const tree = ensureSyntaxTree(state, state.doc.length, Number.POSITIVE_INFINITY);
+  if (tree === null) {
+    throw new Error(`The editor of ${props.file.path} has no Markdown syntax tree`);
+  }
+  const targets = wikilinkTargetsIn(markdownToAST(state.doc.toString(), tree));
   const key = targets.join("\n");
   if (!force && key === requestedWikilinkTargets) {
     return;

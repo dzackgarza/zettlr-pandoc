@@ -22,7 +22,6 @@
  */
 
 import { mathJaxToHTML } from "@common/util/mathtex-to-html";
-import { type MarkdownParserConfig } from "@dzack/pandoc-editor/parser/markdown-parser";
 import { mathDisplayForOpen, mathFromCodeNode } from "@dzack/pandoc-editor/util/math-delimiters";
 import _ from "underscore";
 import { extractASTNodes, markdownToAST } from ".";
@@ -435,11 +434,7 @@ function footnotesToHTML(fn: FootnoteRef[], options: MD2HTMLOptions): string {
  * @return  {string}                      The resulting HTML
  */
 export async function md2html(markdown: string, options: MD2HTMLOptions): Promise<string> {
-  const config: MarkdownParserConfig = {
-    zknLinkParserConfig: { format: options.zknLinkFormat },
-  };
-
-  const ast = markdownToAST(markdown, undefined, config);
+  const ast = markdownToAST(markdown, null, options.zknLinkFormat);
 
   if (ast.type !== "Document") {
     throw new Error("Could not turn Markdown to HTML: No Document top node returned from parser.");

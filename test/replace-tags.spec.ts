@@ -217,7 +217,7 @@ function tagsOf(markdown: string): string[] {
       occurrences: [],
     },
   };
-  getMarkdownFileParser("(\\d{14})")(descriptor, markdown);
+  getMarkdownFileParser("(\\d{14})", "link|title").parse(descriptor, markdown);
   return [...descriptor.tags].sort();
 }
 

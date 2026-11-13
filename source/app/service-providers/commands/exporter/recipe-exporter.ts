@@ -19,7 +19,7 @@
  * END HEADER
  */
 
-import type { WikilinkIndex } from "@common/util/wikilink-resolution";
+import type { WikilinkReading } from "@common/util/wikilink-resolution";
 import type FSAL from "@providers/fsal";
 import { promises as fs } from "fs";
 import os from "os";
@@ -57,8 +57,8 @@ export interface RecipeContext {
    * export.latexTemplate. An empty string lets the recipe use its own default.
    */
   latexTemplate: string;
-  /** The workspace index that resolves the wikilinks. */
-  wikilinks: WikilinkIndex;
+  /** How the workspace reads and resolves the wikilinks. */
+  wikilinks: WikilinkReading;
   /** The folders of the documents, for their Projects. */
   fsal: Pick<FSAL, "getAnyDirectoryDescriptor">;
   /** The main library: the setting export.cslLibrary. */

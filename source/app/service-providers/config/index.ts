@@ -102,6 +102,8 @@ const guardOptions = {
     ["window.vibrancy", false],
     ["watchdog.activatePolling", false],
     ["zkn.idRE", false],
+    // The FSAL reads the links of each file with it at the start
+    ["zkn.linkFormat", false],
   ]),
   // The following options additionally require a clearing of the cache
   clearCache: new Map<string, boolean>([["zkn.idRE", false]]),

@@ -234,7 +234,14 @@ export default class LinkProvider extends ProviderContract {
       const filePath = movedPath(sourcePath, move);
       const buffer = documents.readMarkdownBufferContent(filePath);
       const content = buffer !== undefined ? buffer : await this._fsal.readTextFile(filePath);
-      const replacements = retargetLinks(content, sourcePath, move, before.index, this._index);
+      const replacements = retargetLinks(
+        content,
+        sourcePath,
+        move,
+        before.index,
+        this._index,
+        this._config.get().zkn.linkFormat,
+      );
       if (replacements.length === 0) {
         continue;
       }

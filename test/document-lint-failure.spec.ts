@@ -97,6 +97,7 @@ describe("a document that Flowmark cannot lint", function () {
       config: {
         get: () => ({
           export: { cslLibrary: "" },
+          zkn: { linkFormat: "link|title" },
           tikz: {
             dataDir: path.join(__dirname, "../packages/tikz-render/test/fixtures/tikz-data"),
             figuresDir: "",
@@ -244,6 +245,7 @@ describe("a workspace document whose file cannot be read", function () {
       config: {
         get: () => ({
           export: { cslLibrary: "" },
+          zkn: { linkFormat: "link|title" },
           tikz: {
             dataDir: path.join(__dirname, "../packages/tikz-render/test/fixtures/tikz-data"),
             figuresDir: "",
