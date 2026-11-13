@@ -1,3 +1,4 @@
+import { texCommandDeclarationEntries } from "@dzack/tikz-render/tex-command-declarations";
 import YAML from "yaml";
 import type { TexstudioCommandIndex } from "./texstudio-command-index";
 
@@ -261,15 +262,9 @@ function scanTexSource(source: string): {
     }
   }
 
-  const commandPatterns = [
-    /\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand|NewDocumentCommand|RenewDocumentCommand|ProvideDocumentCommand)\*?\s*\{\s*(\\[A-Za-z@]+)\s*\}/gu,
-    /\\(?:DeclareMathOperator|DeclareMathOperator\*)\s*\{\s*(\\[A-Za-z@]+)\s*\}/gu,
-    /\\(?:def|gdef|edef|xdef)\s*(\\[A-Za-z@]+)\b/gu,
-  ];
-  for (const pattern of commandPatterns) {
-    for (const match of uncommented.matchAll(pattern)) {
-      userCommands.add(match[1]);
-    }
+  // The one reader of TeX declarations, which the macro inventory uses too
+  for (const declaration of texCommandDeclarationEntries(uncommented)) {
+    userCommands.add(declaration.name);
   }
 
   return {
