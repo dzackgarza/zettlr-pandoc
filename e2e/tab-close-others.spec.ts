@@ -37,9 +37,15 @@ const SAVE_PROMPT = "Unsaved changes";
 
 /** The paths of the tabs of every pane of the window. */
 async function openTabs(page: Page): Promise<string[]> {
-  return await page
-    .locator('[role="tab"][data-path]')
-    .evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute("data-path") ?? ""));
+  return await page.locator('[role="tab"][data-path]').evaluateAll((tabs) =>
+    tabs.map((tab) => {
+      const tabPath = tab.getAttribute("data-path");
+      if (tabPath === null) {
+        throw new Error("A tab of the selector [data-path] has no data-path.");
+      }
+      return tabPath;
+    }),
+  );
 }
 
 function tab(page: Page, documentPath: string) {

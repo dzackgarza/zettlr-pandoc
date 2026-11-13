@@ -46,18 +46,20 @@ describe("assembled app: first-start onboarding and the file type filters", func
   });
 
   after(async function () {
-    await shutdown(start?.browser, start?.appProcess);
-    const output = start?.getOutput() ?? "";
+    // A start that failed in the before hook left no app and no output.
+    if (start === undefined) {
+      return;
+    }
+    await shutdown(start.browser, start.appProcess);
+    const output = start.getOutput();
     await preserveArtifacts(
       path.join(tmpdir(), "zettlr-onboarding-e2e-latest"),
-      start?.fixtureRoot,
+      start.fixtureRoot,
       output,
       rendererEvents,
       screenshots,
     );
-    if (start !== undefined) {
-      await rm(start.fixtureRoot, { recursive: true, force: true });
-    }
+    await rm(start.fixtureRoot, { recursive: true, force: true });
     assertCleanExit(output);
   });
 

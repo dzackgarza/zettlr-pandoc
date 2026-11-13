@@ -69,7 +69,7 @@ async function cutElements(preferences: Page): Promise<string[]> {
       }
       if (box.width > 0 && box.right > visibleRight + 0.5) {
         cut.push(
-          `${element.tagName.toLowerCase()} "${(element.textContent ?? "").trim().slice(0, 30)}" ends at ${Math.round(box.right)} px, the visible edge at ${Math.round(visibleRight)} px`,
+          `${element.tagName.toLowerCase()} ${JSON.stringify(element.textContent?.trim().slice(0, 30))} ends at ${Math.round(box.right)} px, the visible edge at ${Math.round(visibleRight)} px`,
         );
       }
     }
@@ -151,10 +151,10 @@ describe("the Preferences window at its default size", function () {
       // The list of groups selects the group that the window shows.
       const selected = preferences.locator(".selectable-list-container .selected .display-text");
       await preferences.waitForFunction((previous) => {
-        const text =
-          document.querySelector(".selectable-list-container .selected .display-text")
-            ?.textContent ?? "";
-        return text !== "" && text !== previous;
+        const text = document.querySelector(
+          ".selectable-list-container .selected .display-text",
+        )?.textContent;
+        return text !== undefined && text !== null && text !== "" && text !== previous;
       }, shownGroup);
       shownGroup = await selected.innerText();
       assert.deepEqual(

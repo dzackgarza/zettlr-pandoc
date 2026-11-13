@@ -76,26 +76,26 @@ function describeFirstStart(
     });
 
     after(async function () {
-      if (start !== undefined) {
-        // The main window opens when the onboarding closes; the app quits
-        // through it.
-        const page = await onboardingPage(start.browser, this.timeout());
-        await clickToClose(page, page.locator('nav button:has-text("Skip")'));
-        await waitForApplicationBoot(start.appProcess, start.getOutput, this.timeout());
-        await findEditorPage(start.browser, this.timeout());
+      // A start that failed in the before hook left no app and no output.
+      if (start === undefined) {
+        return;
       }
-      await shutdown(start?.browser, start?.appProcess);
-      const output = start?.getOutput() ?? "";
+      // The main window opens when the onboarding closes; the app quits
+      // through it.
+      const page = await onboardingPage(start.browser, this.timeout());
+      await clickToClose(page, page.locator('nav button:has-text("Skip")'));
+      await waitForApplicationBoot(start.appProcess, start.getOutput, this.timeout());
+      await findEditorPage(start.browser, this.timeout());
+      await shutdown(start.browser, start.appProcess);
+      const output = start.getOutput();
       await preserveArtifacts(
         path.join(tmpdir(), `zettlr-${name}-e2e-latest`),
-        start?.fixtureRoot,
+        start.fixtureRoot,
         output,
         rendererEvents,
         screenshots,
       );
-      if (start !== undefined) {
-        await rm(start.fixtureRoot, { recursive: true, force: true });
-      }
+      await rm(start.fixtureRoot, { recursive: true, force: true });
       assertCleanExit(output);
     });
 

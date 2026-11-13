@@ -820,9 +820,11 @@ const commandsById = new Map<string, RegisteredCommand>(
 /** The command of each menu item that names one. One item runs one command. */
 const commandsByMenuItem = new Map<string, RegisteredCommand>();
 for (const command of registrations) {
-  const menuItems: readonly string[] | undefined =
-    "menuItems" in command ? command.menuItems : undefined;
-  for (const menuItem of menuItems ?? []) {
+  if (!("menuItems" in command) || command.menuItems === undefined) {
+    continue;
+  }
+  const menuItems: readonly string[] = command.menuItems;
+  for (const menuItem of menuItems) {
     const other = commandsByMenuItem.get(menuItem);
     if (other !== undefined) {
       throw new Error(

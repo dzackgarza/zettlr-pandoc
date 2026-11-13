@@ -53,6 +53,11 @@ function rolesWithOwnKey(platform: NodeJS.Platform): ReadonlySet<string> {
   return new Set(roles.map((role) => role.toLowerCase()));
 }
 
+/** The id, the label and the role of a menu item, for a message about it. */
+function describeItem(item: MenuItemConstructorOptions): string {
+  return JSON.stringify({ id: item.id, label: item.label, role: item.role });
+}
+
 /**
  * The template with the key of each item that runs a registered command.
  * An item that states a key, and an item whose role has a key of its own
@@ -67,7 +72,7 @@ export function withRegisteredAccelerators(
   const visit = (item: MenuItemConstructorOptions): MenuItemConstructorOptions => {
     if (item.accelerator !== undefined) {
       throw new Error(
-        `The menu item "${item.id ?? item.label ?? "?"}" states the key "${String(item.accelerator)}". ` +
+        `The menu item ${describeItem(item)} states the key "${String(item.accelerator)}". ` +
           "The key of a menu item is the key of its command in the command registry " +
           "(source/common/commands/command-registry.ts, `menuItems`).",
       );
@@ -80,7 +85,7 @@ export function withRegisteredAccelerators(
       ownKeyRoles.has(item.role.toLowerCase())
     ) {
       throw new Error(
-        `The menu item "${item.id ?? item.label ?? "?"}" has the role "${item.role}", to which Electron ` +
+        `The menu item ${describeItem(item)} has the role "${item.role}", to which Electron ` +
           "gives a key of its own, and its command gives no key on this platform. Register the command " +
           "with the item in `menuItems` and a key for this platform.",
       );

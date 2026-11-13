@@ -87,11 +87,19 @@ async function selectWord(page: Page, word: string): Promise<void> {
 /** Each item of the menu tree that has a key, with its label path. */
 function itemsWithKeys(nodes: SerializedMenuNode[], trail: string[] = []): Array<[string, string]> {
   return nodes.flatMap((node): Array<[string, string]> => {
-    const label = [...trail, node.label ?? node.id ?? "?"];
+    const name = node.label ?? node.id;
+    const hasKey = typeof node.accelerator === "string" && node.accelerator !== "";
+    if (name === undefined) {
+      if (hasKey || node.submenu !== undefined) {
+        throw new Error(
+          `A menu node with a key or a submenu has no label and no id: ${JSON.stringify(node)}`,
+        );
+      }
+      return [];
+    }
+    const label = [...trail, name];
     const own: Array<[string, string]> =
-      typeof node.accelerator === "string" && node.accelerator !== ""
-        ? [[node.accelerator, label.join(" → ")]]
-        : [];
+      hasKey && typeof node.accelerator === "string" ? [[node.accelerator, label.join(" → ")]] : [];
     return [...own, ...(node.submenu === undefined ? [] : itemsWithKeys(node.submenu, label))];
   });
 }
@@ -102,7 +110,10 @@ function itemsWithKeys(nodes: SerializedMenuNode[], trail: string[] = []): Array
  */
 function normalisedKey(accelerator: string): string {
   const parts = accelerator.split("+").map((part) => part.trim().toLowerCase());
-  const key = parts.pop() ?? "";
+  const key = parts.pop();
+  if (key === undefined) {
+    throw new Error(`The accelerator "${accelerator}" has no key.`);
+  }
   const modifiers = new Set(
     parts.map((part) =>
       ["cmdorctrl", "commandorcontrol", "control"].includes(part) ? "ctrl" : part,
@@ -205,7 +216,12 @@ describe("shortcuts that the author binds", function () {
     const byKey = new Map<string, string[]>();
     for (const [accelerator, label] of itemsWithKeys(await readApplicationMenu(editorPage))) {
       const key = normalisedKey(accelerator);
-      byKey.set(key, [...(byKey.get(key) ?? []), label]);
+      const labels = byKey.get(key);
+      if (labels === undefined) {
+        byKey.set(key, [label]);
+      } else {
+        labels.push(label);
+      }
     }
     const shared = Object.fromEntries([...byKey].filter(([, labels]) => labels.length > 1));
     assert.deepEqual(shared, {}, "no two menu items have one key");

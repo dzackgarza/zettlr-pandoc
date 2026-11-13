@@ -116,7 +116,13 @@ export function useItemComposable(
   });
 
   const fieldText = computed<string>({
-    get: () => field.value?.text ?? "",
+    // An input of a name field exists only while its field is open.
+    get: () => {
+      if (field.value === undefined) {
+        throw new Error(`The name field of "${obj.value.path}" is read while it is closed.`);
+      }
+      return field.value.text;
+    },
     set: (text) => {
       if (field.value !== undefined) {
         field.value.text = text;
