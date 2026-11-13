@@ -6,6 +6,7 @@
 import { strict as assert } from "node:assert";
 import type { ChildProcess } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Browser, Locator, Page } from "playwright";
 import { stringify } from "yaml";
@@ -21,7 +22,7 @@ import {
 
 // One directory per theme: preserveArtifacts clears its target, so a shared
 // directory would leave only whichever theme tore down last.
-const ARTIFACTS_ROOT = "/tmp/zettlr-dirty-buffer-indicator-e2e-latest";
+const ARTIFACTS_ROOT = path.join(tmpdir(), "zettlr-dirty-buffer-indicator-e2e-latest");
 const SIBLINGS = ["second-note.md", "third-note.md", "fourth-note.md"];
 // A second file with the name of a sibling, in a folder of its own: two tabs
 // with one title.
@@ -135,6 +136,11 @@ for (const theme of ["light", "dark"] as const) {
         await rm(fixture.fixtureRoot, { recursive: true, force: true });
       }
       assertCleanExit(fixture.getOutput());
+      assert.deepEqual(
+        fixture.rendererEvents,
+        [],
+        "the renderer reported no error, page error or dialog",
+      );
     });
 
     it("marks only the dirty tab, and yields the slot back on hover", async function () {
@@ -192,10 +198,12 @@ for (const theme of ["light", "dark"] as const) {
       // The cross appearing and the dot going are two separate style commits,
       // so waiting on the cross says nothing about the dot yet: wait on the
       // dot's own state or this races the swap and fails under load.
-      assert.equal(
-        await dirtyIndicator.evaluate((el) => getComputedStyle(el).visibility),
-        "hidden",
-        "the dirty dot must visually yield its slot to the close cross",
+      const dotElement = await dirtyIndicator.elementHandle();
+      assert.ok(dotElement, "the dirty dot must remain mounted during hover");
+      await page.waitForFunction(
+        (element) => getComputedStyle(element).visibility === "hidden",
+        dotElement,
+        { timeout: 10_000 },
       );
       assert.match(
         await dirtyTab.ariaSnapshot(),
