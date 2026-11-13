@@ -1842,6 +1842,24 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(refusal.message.includes(filePath), refusal.message);
   });
 
+  it("answers a lint of a closed document whose file cannot be read as unreadable (#57)", async function () {
+    const filePath = path.join(scratch, "lint-closed-unreadable.md");
+    writeFileSync(filePath, "alpha\n", "utf8");
+    const docId = provider.ensureDocumentId(filePath);
+    chmodSync(filePath, 0o000);
+
+    const response = await httpRequest(
+      "GET",
+      `/v1/lint?scope=document&documentId=${encodeURIComponent(docId)}`,
+    );
+    chmodSync(filePath, 0o600);
+
+    assert.equal(response.status, 409, response.body);
+    const refusal = parseAs(response.body, "AgentErrorResponse").error;
+    assert.equal(refusal.code, "DOCUMENT_UNREADABLE");
+    assert.ok(refusal.message.includes(filePath), refusal.message);
+  });
+
   describe("citation libraries that did not load (#210)", function () {
     const LIBRARY = `@article{AW71,
   title = {Degenerate {{Fibers}} and {{Stable Reduction}} of {{Curves}}},
