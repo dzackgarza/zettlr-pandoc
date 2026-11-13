@@ -21,6 +21,7 @@ import {
   preserveArtifacts,
   shutdown,
 } from "./support/electron-app";
+import { leafIds, openInLeaf } from "./support/panes";
 
 const INDEX = "Let $sin x = 0$.\n";
 const OTHER = "Then $cos y + sin z = 1$.\n";
@@ -227,10 +228,19 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
     await page.keyboard.press("Escape");
   });
 
-  it("keeps the fixes of a document whose file refuses the save and offers a copy", async function () {
+  it("keeps the fixes of a document whose file refuses the save, offers a copy and saves the other documents", async function () {
     assert.ok(page !== undefined, "The editor window must be open");
     const editorPage = page;
     await writeFile(indexPath, INDEX, "utf8");
+    // A second open document whose file takes the save.
+    const zetaPath = path.join(workspace, "zeta.md");
+    await writeFile(zetaPath, OTHER, "utf8");
+    const [leaf] = await leafIds(editorPage);
+    assert.ok(leaf !== undefined, "the window has a pane");
+    await openInLeaf(editorPage, leaf, zetaPath);
+    await editorPage
+      .locator(`.document-tablist-wrapper [data-path=${JSON.stringify(indexPath)}]`)
+      .click();
     const deadline = Date.now() + 20_000;
     while ((await editorText(editorPage)) !== INDEX) {
       assert.ok(Date.now() < deadline, "the editor loads the text of the file");
@@ -243,10 +253,10 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
       }
     });
 
-    await clickMenuItem(editorPage, "menu.fix_all_document");
+    await clickMenuItem(editorPage, "menu.fix_all_open");
     assert.equal(
       await plannedSummary(editorPage),
-      "Apply 1 fix to 1 of 1 document? Every fix keeps the meaning of the text.",
+      "Apply 3 fixes to 2 of 2 documents? Every fix keeps the meaning of the text.",
     );
     await editorPage.locator(`${DIALOG} [data-fix-all-confirm]`).click();
 
@@ -261,6 +271,7 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
     const applied = await editorPage.locator(INFO_TOAST).allInnerTexts();
     const shown = await editorText(editorPage);
     const onDisk = await readFile(indexPath, "utf8");
+    const zetaOnDisk = await readFile(zetaPath, "utf8");
 
     // The file takes the save again, and the document with the fix saves,
     // so the app quits without a prompt. This is the IPC call that the
@@ -276,10 +287,15 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
     assert.ok(message.includes("index.md"), `the message names the file: ${message}`);
     assert.deepEqual(actions, ["Save a copy…"], "the message offers a copy of the text");
     assert.ok(
-      applied.some((text) => text.startsWith("Applied 1 fix to 1 document")),
+      applied.some((text) => text.startsWith("Applied 3 fixes to 2 documents")),
       `the window says that the fix is applied: ${applied.join(" | ")}`,
     );
     assert.equal(shown, "Let $\\sin x = 0$.\n", "the editor has the fix");
     assert.equal(onDisk, INDEX, "the refused save leaves the text of the file");
+    assert.equal(
+      zetaOnDisk,
+      "Then $\\cos y + \\sin z = 1$.\n",
+      "the refused save of one document does not stop the save of the other",
+    );
   });
 });
