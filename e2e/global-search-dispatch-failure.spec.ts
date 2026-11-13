@@ -28,6 +28,13 @@ import {
   shutdown,
 } from "./support/electron-app";
 
+declare global {
+  interface Window {
+    /** "<generation> <type>" of each search broadcast, in the order of arrival. */
+    searchBroadcasts: string[];
+  }
+}
+
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-global-search-dispatch-failure-e2e-latest");
 
 /** The pane, and the parts of it this spec reads. */
@@ -51,8 +58,11 @@ const PROJECT_SETTINGS = {
   color: null,
 };
 
-const SEARCH_CORPUS_FILES = 128;
-const SEARCHABLE_PADDING = "ordinary words ".repeat(120);
+// The first query of the spec reads each of these files: enough files that
+// the search still runs when the edited query starts. LaTeX files are searched
+// and not linted, so the background lint does not take the time of the specs.
+const SEARCH_CORPUS_FILES = 1024;
+const CORPUS_TEXT = `ordinary ${"filler words ".repeat(120)}`;
 
 interface RunningFixture {
   appProcess: ChildProcess | undefined;
@@ -74,10 +84,12 @@ interface RunningFixture {
  * that path is merged into the file it produced rather than by widening the
  * shared harness.
  */
-async function boot(fixture: RunningFixture, timeoutMs: number): Promise<void> {
+async function boot(fixture: RunningFixture): Promise<void> {
   const created = await createFixture("zettlr-global-search-dispatch-failure-e2e-", {
     documentName: "searched-document.md",
     documentContents: "# Searchable\n\nThe word haystack appears here.\n",
+    // The app lists the LaTeX files of the corpus.
+    config: { fileManager: { filters: { include: [".md", ".tex"] } } },
   });
   fixture.fixtureRoot = created.root;
   const workspace = path.dirname(created.documentPath);
@@ -88,8 +100,8 @@ async function boot(fixture: RunningFixture, timeoutMs: number): Promise<void> {
 
   for (let index = 0; index < SEARCH_CORPUS_FILES; index += 1) {
     await writeFile(
-      path.join(workspace, `search-corpus-${String(index).padStart(3, "0")}.md`),
-      `# Corpus ${index}\n\n${SEARCHABLE_PADDING}\n`,
+      path.join(workspace, `search-corpus-${String(index).padStart(4, "0")}.tex`),
+      `% Corpus ${index}\n\n${CORPUS_TEXT}\n`,
       "utf8",
     );
   }
@@ -249,7 +261,7 @@ describe("global-search and project-properties failure recovery", function () {
   const { screenshots } = running;
 
   before(async function () {
-    await boot(running, this.timeout());
+    await boot(running);
   });
 
   after(async function () {
@@ -260,16 +272,26 @@ describe("global-search and project-properties failure recovery", function () {
     assert.ok(running.browser, "The application must be running");
     const page = await findEditorPage(running.browser, this.timeout());
     await openSearchPane(page, 30_000);
+    await page.evaluate(() => {
+      window.searchBroadcasts = [];
+      window.ipc.on(
+        "search-provider",
+        (_event: unknown, message: { type: string; generation: number }) => {
+          window.searchBroadcasts.push(`${message.generation} ${message.type}`);
+        },
+      );
+    });
 
-    // The first query matches each corpus file, so it runs long enough to be
-    // replaced, and a result of it shows that it ran.
+    // The first query matches each corpus file. The edited query starts at
+    // the first result of the first, while the first still reads the corpus.
     const queryInput = page.locator(QUERY_INPUT);
     await queryInput.fill("ordinary");
     await queryInput.press("Enter");
-    await page
-      .locator(`${PANE} .file-match`)
-      .first()
-      .waitFor({ state: "visible", timeout: 60_000 });
+    await page.waitForFunction(
+      () => window.searchBroadcasts.some((entry) => entry.endsWith(" search-result")),
+      undefined,
+      { polling: "raf", timeout: 60_000 },
+    );
     await queryInput.fill("replacementtoken");
     await queryInput.press("Enter");
     // The pane labels a result with the name of its file.
@@ -280,13 +302,39 @@ describe("global-search and project-properties failure recovery", function () {
       })
       .waitFor({ state: "visible", timeout: 60_000 });
     await page.locator(RUNNING_INDICATOR).waitFor({ state: "hidden", timeout: 60_000 });
+    screenshots.set("search-edited-query.png", await page.screenshot());
+    const broadcasts = await page.evaluate(() => window.searchBroadcasts);
+    console.log(`Search broadcasts: ${broadcasts.join(", ")}`);
     // A corpus result here is a result of the first query that the edited
-    // query did not cancel.
+    // query did not cancel. The list keeps rows that it does not show.
     assert.deepEqual(
-      await page.locator(REPLACEMENT_RESULT).allInnerTexts(),
+      await page.locator(REPLACEMENT_RESULT).filter({ visible: true }).allInnerTexts(),
       ["replacement-hit.md"],
       "the pane shows only the result of the edited query",
     );
+
+    const generations = [...new Set(broadcasts.map((entry) => entry.split(" ")[0]))];
+    assert.equal(generations.length, 2, "one search for each query");
+    const [first, edited] = generations.map((generation) =>
+      broadcasts
+        .filter((entry) => entry.split(" ")[0] === generation)
+        .map((entry) => entry.split(" ")[1]),
+    );
+    // The edited query replaced a search that still ran: the first search
+    // sent results and never its end.
+    assert.ok(first.includes("search-result"), "the first search sent results");
+    assert.ok(
+      !first.includes("search-end"),
+      "the first search was still running when the edited query started",
+    );
+    // The edited search ends one time, after each of its other messages: an
+    // end before them hides the running presentation while it still reads.
+    assert.equal(
+      edited.filter((type) => type === "search-end").length,
+      1,
+      "the edited search ends one time",
+    );
+    assert.equal(edited.at(-1), "search-end", "the end of the edited search is its last message");
   });
 
   it("retries a project edit after descriptor validation recovers", async function () {
