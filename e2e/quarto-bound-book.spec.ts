@@ -53,6 +53,9 @@ const MANIFEST_FIELD = `${POPOVER} #field-input-quarto-manifest`;
 const BINDING = path.join(".book", "_quarto.yml");
 const MANIFEST_EDITOR = '.cm-content[data-language="yaml"]';
 const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
+// The chapter has no title and no heading: the Book module names it by its
+// first sentence, as its tab does (#203)
+const DISCRIMINANT_FORMS = "The discriminant form of an even lattice is a finite quadratic form.";
 
 async function waitUntil(
   probe: () => Promise<boolean>,
@@ -404,7 +407,7 @@ describe("a workspace bound to the manifest in its assembly directory", function
       await activePage
         .locator(`${SECTION("book")} .quarto-book-outline .chrome-row-label`)
         .allTextContents(),
-      ["Writing", "Bilinear and quadratic forms", "The Coble lattice table", "Discriminant forms"],
+      ["Writing", "Bilinear and quadratic forms", "The Coble lattice table", DISCRIMINANT_FORMS],
       "the manifest order, titled from the real files the assembly links to",
     );
     assert.deepEqual(
@@ -448,7 +451,7 @@ describe("a workspace bound to the manifest in its assembly directory", function
         "Bilinear and quadratic forms",
         "Category theory",
         "The Coble lattice table",
-        "Discriminant forms",
+        DISCRIMINANT_FORMS,
       ],
       "adding after the active nested chapter keeps the chapter in that part",
     );
@@ -541,7 +544,7 @@ describe("a workspace bound to the manifest in its assembly directory", function
 
     await activePage
       .locator(CHAPTER)
-      .filter({ hasText: "Discriminant forms" })
+      .filter({ hasText: DISCRIMINANT_FORMS })
       .dragTo(activePage.locator(CHAPTER).filter({ hasText: "Category theory" }));
 
     const toast = activePage.locator(ERROR_TOAST);
@@ -569,10 +572,10 @@ describe("a workspace bound to the manifest in its assembly directory", function
     );
     await activePage
       .locator(CHAPTER)
-      .filter({ hasText: "Discriminant forms" })
+      .filter({ hasText: DISCRIMINANT_FORMS })
       .dragTo(activePage.locator(CHAPTER).filter({ hasText: "Category theory" }));
     await waitUntil(
-      async () => (await order())[0] === "Discriminant forms",
+      async () => (await order())[0] === DISCRIMINANT_FORMS,
       "the edit after the save",
     );
     assert.match(await readFile(manifestPath, "utf8"), /^# A note of the author/);

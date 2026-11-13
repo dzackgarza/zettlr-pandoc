@@ -130,6 +130,21 @@ describe("Explorer ordering", function () {
     );
   });
 
+  // `title: ""` gives the file no title: the file manager lists its file
+  // name, and a sort by title sorts that name (#203)
+  it("sorts a file with an empty YAML title by the name that the file manager lists", function () {
+    const root = directory("/book", "title-up");
+    const children = [
+      markdown("/book/z.md", { frontmatter: { title: "" } }),
+      markdown("/book/a.md", { title: "Alpha" }),
+    ];
+
+    assert.deepEqual(
+      sortExplorerChildren(root, children, DEFAULTS, []).map((item) => item.name),
+      ["a.md", "z.md"],
+    );
+  });
+
   it("sorts modification and creation timestamps independently", function () {
     const a = markdown("/notes/a.md", { modtime: 20, creationtime: 1 });
     const b = markdown("/notes/b.md", { modtime: 10, creationtime: 2 });

@@ -225,7 +225,13 @@ describe("a workspace bound to a manifest that lives elsewhere in it", function 
         path: part,
         title: "Lattice theory",
         position: 4,
-        chapters: [{ path: chapter, title: "Discriminant forms", position: 5 }],
+        chapters: [
+          {
+            path: chapter,
+            title: "The discriminant form of an even lattice is a finite quadratic form.",
+            position: 5,
+          },
+        ],
       },
       "the part has the title of its file and a row that opens the file",
     );
