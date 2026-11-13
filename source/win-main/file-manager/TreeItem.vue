@@ -90,11 +90,11 @@
             type="text"
             class="filename-input"
             v-bind:placeholder="filenameInputPlaceholder"
-            v-bind:value="item.name"
+            v-model="fieldText"
             v-on:keyup.enter="finishNameEditing(($event.target as HTMLInputElement).value)"
             v-on:keyup.esc="nameEditing = false"
             v-on:keydown.stop=""
-            v-on:blur="nameEditing = false"
+            v-on:blur="onNameFieldBlur($event, () => (nameEditing = false))"
             v-on:click.stop=""
           >
         </template>
@@ -138,11 +138,12 @@
         ref="newObjectInput"
         class="filename-input"
         type="text"
+        v-model="fieldText"
         v-bind:placeholder="filenameInputPlaceholder"
         v-on:keyup.enter="finishOperation(($event.target as HTMLInputElement).value)"
         v-on:keyup.esc="operationType = undefined"
         v-on:keydown.stop=""
-        v-on:blur="operationType = undefined"
+        v-on:blur="onNameFieldBlur($event, () => (operationType = undefined))"
         v-on:click.stop=""
       >
     </div>
@@ -223,6 +224,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from "v
 import getDocumentTitle from "../util/get-document-title";
 import { followChildren } from "./util/follow-children";
 import { useItemComposable } from "./util/item-composable";
+import { onNameFieldBlur } from "./util/name-field-blur";
 import { newDirectoryRequest } from "./util/new-directory-request";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
 import PopoverFileProps from "./util/PopoverFileProps.vue";
@@ -270,6 +272,7 @@ const {
   nameEditing,
   showPopover,
   operationType,
+  fieldText,
   onDragHandler,
   handleContextMenu,
   requestSelection,
@@ -279,7 +282,14 @@ const {
   selectedFile,
   selectedDir,
   updateObject,
-} = useItemComposable(props.item, displayText, props.windowId, nameEditingInput, newObjectInput);
+} = useItemComposable(
+  props.item,
+  displayText,
+  props.windowId,
+  nameEditingInput,
+  newObjectInput,
+  "tree",
+);
 
 const filenameInputPlaceholder = trans("Enter a name");
 

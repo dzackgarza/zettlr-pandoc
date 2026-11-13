@@ -49,10 +49,10 @@
           v-if="nameEditing"
           ref="nameEditingInput"
           type="text"
-          v-bind:value="item.name"
+          v-model="fieldText"
           v-on:keyup.enter="finishNameEditing(($event.target as HTMLInputElement).value)"
           v-on:keyup.esc="nameEditing = false"
-          v-on:blur="nameEditing = false"
+          v-on:blur="onNameFieldBlur($event, () => (nameEditing = false))"
           v-on:click.stop=""
         >
         <!-- A row of the list has a fixed height, so the name field of a
@@ -62,11 +62,12 @@
           ref="newObjectInput"
           class="filename-input"
           type="text"
+          v-model="fieldText"
           v-bind:placeholder="filenameInputPlaceholder"
           v-on:keyup.enter="finishOperation(($event.target as HTMLInputElement).value)"
           v-on:keyup.esc="operationType = undefined"
           v-on:keydown.stop=""
-          v-on:blur="operationType = undefined"
+          v-on:blur="onNameFieldBlur($event, () => (operationType = undefined))"
           v-on:click.stop=""
         >
         <span v-else>
@@ -206,6 +207,7 @@ import { computed, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 import getDocumentTitle from "../util/get-document-title";
 import { followChildren } from "./util/follow-children";
 import { useItemComposable } from "./util/item-composable";
+import { onNameFieldBlur } from "./util/name-field-blur";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
 import PopoverFileProps from "./util/PopoverFileProps.vue";
 import {
@@ -295,6 +297,7 @@ const {
   nameEditing,
   showPopover,
   operationType,
+  fieldText,
   onDragHandler,
   handleContextMenu,
   requestSelection,
@@ -303,7 +306,14 @@ const {
   isDirectory,
   selectedFile,
   updateObject,
-} = useItemComposable(props.item, displayText, props.windowId, nameEditingInput, newObjectInput);
+} = useItemComposable(
+  props.item,
+  displayText,
+  props.windowId,
+  nameEditingInput,
+  newObjectInput,
+  "list",
+);
 
 // We have to explicitly transform ALL properties to computed ones for
 // the reactivity in conjunction with the recycle-scroller.

@@ -27,9 +27,10 @@ import {
   useWorkspaceStore,
 } from "source/pinia";
 import type { AnyDescriptor } from "source/types/common/fsal";
-import { computed, nextTick, type Ref, ref, watch } from "vue";
+import { computed, nextTick, onUnmounted, type Ref, ref, watch } from "vue";
 import { displayDirContext } from "./dir-item-context";
 import { displayFileContext } from "./file-item-context";
+import { type FileManagerSurface, type NameFieldKind, nameFieldsOf } from "./name-fields";
 
 const ipcRenderer = window.ipc;
 
@@ -61,11 +62,10 @@ export function useItemComposable(
   windowId: string,
   nameEditingInput: Ref<HTMLInputElement | null>,
   newObjectInput: Ref<HTMLInputElement | null>,
+  surface: FileManagerSurface,
 ) {
   const obj = ref(object);
-  const nameEditing = ref<boolean>(false);
   const showPopover = ref<boolean>(false);
-  const operationType = ref<"createFile" | "createDir" | undefined>(undefined);
 
   const configStore = useConfigStore();
   const documentTreeStore = useDocumentTreeStore();
@@ -75,21 +75,83 @@ export function useItemComposable(
   const selectedFile = computed(() => documentTreeStore.lastLeafActiveFile);
   const selectedDir = computed(() => configStore.config.openDirectory);
 
-  watch(nameEditing, (newVal) => {
-    if (!newVal) {
-      return; // No need to select
-    }
+  // The name field of the row: a rename of the object, or the name of a new
+  // file or folder in this folder (#202).
+  const fields = nameFieldsOf(surface);
+  const field = computed(() => fields.get(obj.value.path));
 
+  function openField(kind: NameFieldKind): void {
+    const text =
+      kind === "rename"
+        ? obj.value.name
+        : kind === "createFile"
+          ? generateFilename(configStore.config.newFileNamePattern, configStore.config.zkn.idGen)
+          : trans("Untitled");
+    fields.set(obj.value.path, { kind, text, selectOnFocus: true });
+  }
+
+  function closeField(kind: NameFieldKind): void {
+    if (field.value?.kind === kind) {
+      fields.delete(obj.value.path);
+    }
+  }
+
+  const nameEditing = computed<boolean>({
+    get: () => field.value?.kind === "rename",
+    set: (open) => (open ? openField("rename") : closeField("rename")),
+  });
+
+  const operationType = computed<"createFile" | "createDir" | undefined>({
+    get: () => {
+      const kind = field.value?.kind;
+      return kind === "createFile" || kind === "createDir" ? kind : undefined;
+    },
+    set: (kind) => {
+      if (kind !== undefined) {
+        openField(kind);
+      } else if (operationType.value !== undefined) {
+        closeField(operationType.value);
+      }
+    },
+  });
+
+  const fieldText = computed<string>({
+    get: () => field.value?.text ?? "",
+    set: (text) => {
+      if (field.value !== undefined) {
+        field.value.text = text;
+      }
+    },
+  });
+
+  // The field takes the focus when it opens and when this instance starts to
+  // show the row of an open field. The first focus selects the name up to
+  // its extension; a later one puts the caret after the text.
+  watch(field, (current) => {
+    if (current === undefined) {
+      return;
+    }
     nextTick()
       .then(() => {
-        if (nameEditingInput.value === null) {
+        const input = current.kind === "rename" ? nameEditingInput.value : newObjectInput.value;
+        if (input === null || field.value !== current) {
           return;
         }
-        nameEditingInput.value.focus();
-        const lastDot = nameEditingInput.value.value.lastIndexOf(".");
-        nameEditingInput.value.setSelectionRange(0, lastDot);
+        input.focus();
+        if (current.selectOnFocus) {
+          current.selectOnFocus = false;
+          input.setSelectionRange(0, input.value.lastIndexOf("."));
+        } else {
+          input.setSelectionRange(input.value.length, input.value.length);
+        }
       })
       .catch((err) => reportError(err));
+  });
+
+  onUnmounted(() => {
+    if (field.value !== undefined) {
+      fields.delete(obj.value.path);
+    }
   });
 
   /**
@@ -302,49 +364,28 @@ export function useItemComposable(
    */
   function finishNameEditing(newName: string): void {
     if (newName === obj.value.name) {
-      return; // Not changed
+      nameEditing.value = false;
+      return;
     }
 
     const command = obj.value.type === "directory" ? "dir-rename" : "file-rename";
+    const path = obj.value.path;
 
     ipcRenderer
       .invoke("application", {
         command,
-        payload: {
-          path: obj.value.path,
-          name: newName,
-        },
+        payload: { path, name: newName },
       })
       .catch((e) => reportError(e))
       .finally(() => {
-        nameEditing.value = false;
+        if (fields.get(path)?.kind === "rename") {
+          fields.delete(path);
+        }
       });
   }
 
-  // The name field of a new file or folder in this folder: the tree and
-  // the file list show it under the folder, and Enter makes the object
-  // with that name (#202).
-  watch(operationType, (newVal) => {
-    if (newVal === undefined) {
-      return;
-    }
-    nextTick()
-      .then(() => {
-        const input = newObjectInput.value;
-        if (input === null) {
-          return;
-        }
-        input.value =
-          newVal === "createFile"
-            ? generateFilename(configStore.config.newFileNamePattern, configStore.config.zkn.idGen)
-            : trans("Untitled");
-        input.focus();
-        // Select from the beginning until the last dot
-        input.setSelectionRange(0, input.value.lastIndexOf("."));
-      })
-      .catch((err) => reportError(err));
-  });
-
+  // Enter in the name field of a new file or folder makes the object with
+  // that name in this folder (#202).
   function finishOperation(newName: string): void {
     const operation = operationType.value;
     operationType.value = undefined;
@@ -367,6 +408,7 @@ export function useItemComposable(
     nameEditing,
     showPopover,
     operationType,
+    fieldText,
     onDragHandler,
     handleContextMenu,
     requestSelection,

@@ -11,6 +11,8 @@
  *                  folder are one action in the tree and in the file list
  *                  (#202): a name field opens under the folder, and Enter
  *                  makes the file or the folder with the name of the field.
+ *                  A field stays with its row while the rows of the list
+ *                  change, and the rename field of a row renames its file.
  *
  * END HEADER
  */
@@ -143,6 +145,28 @@ describe("New file and new folder from the file list (#202)", function () {
       "Genera",
       "Genus",
       "discriminant-form.md",
+    ]);
+  });
+
+  it("Rename in the list renames the file of the row", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const form = path.join(lattices, "discriminant-form.md");
+    await activePage
+      .locator(`#file-tree [data-path=${JSON.stringify(lattices)}]`)
+      .first()
+      .click();
+    const row = activePage.locator(`#file-list .list-item[data-path=${JSON.stringify(form)}]`);
+    await row.click({ button: "right" });
+    await activePage.locator('.application-menu .menu-item[data-id="menu.rename_file"]').click();
+    const field = row.locator("input");
+    await field.waitFor({ state: "visible" });
+    assert.equal(await field.inputValue(), "discriminant-form.md", "the field holds the name");
+    await field.fill("quadratic-form.md");
+    await field.press("Enter");
+    assert.deepEqual(await namesOnceHolding(lattices, "quadratic-form.md"), [
+      "Genera",
+      "Genus",
+      "quadratic-form.md",
     ]);
   });
 });
