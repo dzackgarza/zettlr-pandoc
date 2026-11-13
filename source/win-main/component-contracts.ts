@@ -120,6 +120,8 @@ export interface PomodoroConfig {
 export interface CreateReferenceLabelDialogPrompt {
   family: CreateReferenceLabelRequest["family"];
   proposedSlug: string;
+  /** The document of the target: its cross-reference system decides the separator. */
+  documentPath: string;
   applyCreate: (intent: CreateReferenceLabelIntent) => ConfirmReferenceLabelOutcome;
 }
 

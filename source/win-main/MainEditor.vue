@@ -1437,6 +1437,7 @@ async function getEditorFor(doc: string): Promise<MarkdownEditor> {
     emit("createReferenceLabel", {
       family: request.family,
       proposedSlug: request.proposedSlug,
+      documentPath: editor.documentPath,
       applyCreate: (intent: CreateReferenceLabelIntent): ConfirmReferenceLabelOutcome => {
         const view = currentEditor?.instance;
         if (view === undefined) {

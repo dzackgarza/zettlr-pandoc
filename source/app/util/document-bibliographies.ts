@@ -18,6 +18,7 @@ import {
 } from "@common/util/get-bibliography-for-descriptor";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import type { CrossReferenceSystem } from "@dts/common/references";
 import type FSAL from "@providers/fsal";
 import path from "path";
 
@@ -101,13 +102,9 @@ export async function documentLintAuthority(
 }
 
 /**
- * Which cross-reference system renders a document. A document in a Quarto
- * project is rendered by Quarto, whose cross-reference IDs use a hyphen
- * (`#tbl-key`); every other document is exported through the ~/.pandoc
- * recipes with pandoc-crossref, whose IDs use a colon (`#tbl:key`).
+ * The cross-reference system of a document: Quarto for a document in a
+ * Quarto project, pandoc-crossref for every other document.
  */
-export type CrossReferenceSystem = "quarto" | "pandoc-crossref";
-
 export async function documentCrossReferenceSystem(
   fsal: Pick<FSAL, "getAnyDirectoryDescriptor">,
   documentPath: string,

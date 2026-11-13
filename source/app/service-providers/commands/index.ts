@@ -41,12 +41,15 @@ import type {
   ListProblemsRequest,
   WorkspaceProblems,
 } from "@dts/common/problems";
-import type { WorkspaceReferenceEdit } from "@dts/common/references";
+import type { CrossReferenceSystem, WorkspaceReferenceEdit } from "@dts/common/references";
 import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tikz-render";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { clipboard, ipcMain, nativeImage, type WebContents } from "electron";
 import { type AppServiceContainer } from "source/app/app-service-container";
-import { documentBibliography } from "source/app/util/document-bibliographies";
+import {
+  documentBibliography,
+  documentCrossReferenceSystem,
+} from "source/app/util/document-bibliographies";
 import { filePathOfUri } from "source/app/util/file-uri-path";
 import { discoverJustfileCommands } from "source/app/util/justfile-commands";
 import { justRecipeCommand, launchKitty } from "source/app/util/kitty-launch";
@@ -279,6 +282,12 @@ export type ApplicationIPCContract = {
   "get-document-bibliography": {
     request: { payload: string };
     response: CitationDatabase;
+  };
+  // Answered inline by run(): the cross-reference system that renders the
+  // document at the path (`documentCrossReferenceSystem`).
+  "get-cross-reference-system": {
+    request: { payload: string };
+    response: CrossReferenceSystem;
   };
   "open-attachment": {
     request: { payload: { citekey: string; filePath: string } };
@@ -549,6 +558,8 @@ export default class CommandProvider extends ProviderContract {
       // renders the citations once renders them from the loaded libraries.
       await this._app.citeproc.loadDatabases(database);
       return database;
+    } else if (command === "get-cross-reference-system" && typeof payload === "string") {
+      return await documentCrossReferenceSystem(this._app.fsal, payload);
     } else if (command === "edit-ignore-rules") {
       const mainWindow = this._app.windows.getFirstMainWindow();
       if (mainWindow === undefined) {

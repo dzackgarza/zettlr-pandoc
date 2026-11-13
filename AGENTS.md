@@ -305,6 +305,13 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   shows it when the Project of the active file is a Quarto book), the Explorer
   membership marks, inherited bibliographies
   (`get-bibliography-for-descriptor.ts`), and project export.
+- **A new label has the id that Quarto numbers.** In a document of a Quarto
+  project, "Create reference label…" makes a figure, table, section, equation
+  or listing id with `-` (`sec-x`); a theorem-like id keeps `:` (`thm:x`), which
+  the amsthm filters of the book number. `referenceLabelSeparator`
+  (`types/common/references.ts`) decides; the command
+  `get-cross-reference-system` gives the system of the document. Proof:
+  `e2e/quarto-reference-label.spec.ts`.
 - **A Book edit changes the manifest on disk.** The command `quarto-book-edit`
   reads the manifest, edits it and writes it (§16). While an editor holds
   unsaved text of the manifest, the command refuses the edit: the edit would

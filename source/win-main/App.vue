@@ -180,6 +180,7 @@
     v-if="createLabelPrompt !== undefined"
     :family="createLabelPrompt.family"
     :proposed-slug="createLabelPrompt.proposedSlug"
+    :separator="createLabelSeparator"
     :existing-keys="createLabelExistingKeys"
     @close="createLabelPrompt = undefined"
     @create="handleCreateReferenceLabel($event)"
@@ -237,7 +238,7 @@ import {
   SAVE_REFUSED_CHANNEL,
   type SaveRefusedBroadcast,
 } from "@dts/common/documents";
-import type { SourceRange } from "@dts/common/references";
+import { referenceLabelSeparator, type SourceRange } from "@dts/common/references";
 import {
   type EditorCommandName,
   insertTablePayloadSchema,
@@ -510,6 +511,9 @@ async function openWorkspaceFile(path: string): Promise<void> {
 // insertion closure; the workspace key set feeds the live uniqueness verdict.
 const createLabelPrompt = ref<CreateReferenceLabelDialogPrompt | undefined>(undefined);
 const createLabelExistingKeys = ref<string[]>([]);
+// The separator of the new key, from the cross-reference system that
+// renders the document of the request.
+const createLabelSeparator = ref<":" | "-">(":");
 
 /**
  * Fetches the current workspace definition keys from the reference provider
@@ -519,18 +523,25 @@ const createLabelExistingKeys = ref<string[]>([]);
  * @param   {CreateReferenceLabelDialogPrompt}  prompt  The relayed request
  */
 function openCreateReferenceLabel(prompt: CreateReferenceLabelDialogPrompt): void {
-  invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
-    async (channel, message) => await ipcRenderer.invoke(channel, message),
-    { command: "get-snapshot" },
-    trans("Loading workspace references"),
-  )
-    .then((outcome) => {
+  Promise.all([
+    invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+      async (channel, message) => await ipcRenderer.invoke(channel, message),
+      { command: "get-snapshot" },
+      trans("Loading workspace references"),
+    ),
+    ipcRenderer.invoke("application", {
+      command: "get-cross-reference-system",
+      payload: prompt.documentPath,
+    }),
+  ])
+    .then(([outcome, system]) => {
       if (outcome.status === "failed") {
         return; // The boundary surfaced the closable toast; nothing to open.
       }
       createLabelExistingKeys.value = outcome.value.snapshots
         .flatMap((snapshot) => snapshot.definitions)
         .map((definition) => definition.key);
+      createLabelSeparator.value = referenceLabelSeparator(prompt.family, system);
       createLabelPrompt.value = prompt;
     })
     .catch((err) => reportError("Could not open the create-reference-label dialog", err));

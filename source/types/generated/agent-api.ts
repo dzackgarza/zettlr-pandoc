@@ -632,7 +632,7 @@ export interface components {
       byteLength: number;
       views: components["schemas"]["EditorViewSummary"][];
       /**
-       * @description The system that renders this document's cross-references, which fixes the ID syntax: quarto for documents in a Quarto project (#tbl-key), pandoc-crossref for everything else (#tbl:key). GET /help shows both.
+       * @description The system that renders this document's cross-references, which fixes the ID syntax of a figure, table, section, equation or listing: quarto for documents in a Quarto project (#tbl-key), pandoc-crossref for everything else (#tbl:key). A theorem-like label keeps the colon in both systems (#thm:key). GET /help shows both.
        * @enum {string}
        */
       crossReferences?: "quarto" | "pandoc-crossref";
