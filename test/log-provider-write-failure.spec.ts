@@ -30,7 +30,7 @@ import { app } from "electron";
 import { mkdir, readFile, rm } from "fs/promises";
 import path from "path";
 import LogProvider from "source/app/service-providers/log";
-import { ipcMainHandlers } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 /**
  * The real provider, writing to the real log directory, but under a filename of
@@ -116,19 +116,14 @@ describe("LogProvider (failing file writes)", function () {
   });
 
   it("persists a renderer-reported error through the typed log-provider IPC boundary", async function () {
-    const handler = ipcMainHandlers.get("log-provider");
-    assert.ok(handler !== undefined, "constructing LogProvider must register its IPC handler");
-
-    const recorded = await handler(
-      {},
-      {
-        command: "record-error",
-        payload: {
-          message: "Opening QuickTeX definitions failed",
-          details: "kitty: executable not found",
-        },
+    // invokeMain fails when constructing LogProvider registered no IPC handler.
+    const recorded = await invokeMain("log-provider", {
+      command: "record-error",
+      payload: {
+        message: "Opening QuickTeX definitions failed",
+        details: "kitty: executable not found",
       },
-    );
+    });
     assert.equal(recorded, true);
 
     await provider.shutdown();

@@ -30,17 +30,13 @@ import ReferenceProvider from "source/app/service-providers/references";
 import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import type { MDFileDescriptor, OtherFileDescriptor } from "source/types/common/fsal";
-import { ipcMainHandlers, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+import { sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const FIXTURE_ROOT = path.join("test", "fixtures", "reference-workspace");
 const THEOREMS_PATH = path.join(FIXTURE_ROOT, "ProjectA", "Theorems.md");
 const OTHER_PAPER_PATH = path.join(FIXTURE_ROOT, "ProjectB", "Other_Paper.md");
 const STANDALONE_PATH = path.join(FIXTURE_ROOT, "Standalone_Notes.md");
-
-type IpcInvoke = (
-  event: unknown,
-  message: { command: string; payload?: unknown },
-) => Promise<unknown> | unknown;
 
 function makeDescriptor(documentPath: string): MDFileDescriptor {
   const content = readFileSync(documentPath, "utf-8");
@@ -177,15 +173,8 @@ describe("References provider behavior", function () {
     return sentMessagesFor(window);
   }
 
-  function referenceHandler(): IpcInvoke {
-    const handler = ipcMainHandlers.get("reference-provider") as IpcInvoke | undefined;
-    assert.ok(handler !== undefined, "reference-provider IPC handler is unavailable");
-    return handler;
-  }
-
   async function getSnapshotOverIpc(): Promise<WorkspaceReferenceState> {
-    const state = await referenceHandler()(undefined, { command: "get-snapshot" });
-    return state as WorkspaceReferenceState;
+    return await invokeMain("reference-provider", { command: "get-snapshot" });
   }
 
   it("applies FSAL change-event snapshots so get-snapshot serves the workspace definitions", async function () {

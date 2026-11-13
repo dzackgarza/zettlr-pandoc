@@ -50,12 +50,8 @@ import {
   type SaveRefusedBroadcast,
 } from "source/types/common/documents";
 import { bootDocumentManager, emitWatchdogEvent } from "./documents-provider-seam";
-import { ipcMainHandlers, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
-
-type IpcHandler = (
-  event: unknown,
-  message: { command: string; payload?: unknown },
-) => Promise<unknown> | unknown;
+import { sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const SOURCE = "A lattice is a free abelian group with a bilinear form.\n";
 const TARGET = SOURCE.replace("bilinear", "symmetric bilinear");
@@ -306,10 +302,11 @@ describe("Documents-provider removed file", function () {
     assert.equal(closedFiles.length, 0, "no tab of the document closes");
     assert.equal(provider.readMarkdownBufferContent(filePath), SOURCE, "the document stays loaded");
 
-    const handler = ipcMainHandlers.get("documents-provider") as IpcHandler | undefined;
-    assert.ok(handler !== undefined, "the documents-provider handler is registered");
     assert.equal(
-      await handler(undefined, { command: "close-without-review", payload: { documentId } }),
+      await invokeMain("documents-provider", {
+        command: "close-without-review",
+        payload: { documentId },
+      }),
       true,
     );
     assert.deepEqual(

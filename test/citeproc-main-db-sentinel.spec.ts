@@ -41,7 +41,8 @@ import type { CiteprocConfig } from "source/app/service-providers/citeproc";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
 import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
-import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
+import { userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 /** The style asset the application ships and loads when none is configured. */
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
@@ -68,11 +69,6 @@ const GLOBAL_LIBRARY = `@article{Nik80,
 }
 `;
 
-type IpcHandler = (
-  event: unknown,
-  message: { command: string; payload?: unknown },
-) => Promise<unknown> | unknown;
-
 /** The config surface CiteprocProvider consumes, at its shipped defaults. */
 function makeConfigSeam(cslLibrary: string): CiteprocConfig {
   return {
@@ -81,20 +77,11 @@ function makeConfigSeam(cslLibrary: string): CiteprocConfig {
   };
 }
 
-function handler(): IpcHandler {
-  const registered = ipcMainHandlers.get("citeproc-provider") as IpcHandler | undefined;
-  assert.ok(
-    registered !== undefined,
-    "constructing CiteprocProvider must register the citeproc-provider handler",
-  );
-  return registered;
-}
-
 async function citekeysFor(database: CitationDatabase): Promise<string[]> {
-  const items = (await handler()(undefined, {
+  const items = await invokeMain("citeproc-provider", {
     command: "get-items",
     payload: { database },
-  })) as CSLItem[];
+  });
   return items.map((item) => item.id).sort();
 }
 

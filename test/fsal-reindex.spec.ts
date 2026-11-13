@@ -26,9 +26,7 @@ import type FSAL from "source/app/service-providers/fsal";
 import type { LRT_JSON } from "source/app/service-providers/long-running-tasks/task";
 import { TaskStatus } from "source/app/service-providers/long-running-tasks/task";
 import { bootFsal } from "./fsal-seam";
-import { ipcMainHandlers } from "./headless-electron-harness.cjs";
-
-type TaskHandler = (event: null, message: { command: "get-tasks" }) => LRT_JSON[];
+import { invokeMain } from "./main-ipc";
 
 // Enough files that the index is still reading when the spec removes them.
 const FILE_COUNT = 200;
@@ -54,15 +52,14 @@ describe("FSAL: the index of the workspaces", function () {
     await rm(root, { recursive: true, force: true });
   });
 
-  function tasks(): LRT_JSON[] {
-    const handler = ipcMainHandlers.get("lrt-provider") as TaskHandler;
-    return handler(null, { command: "get-tasks" });
+  async function tasks(): Promise<LRT_JSON[]> {
+    return await invokeMain("lrt-provider", { command: "get-tasks" });
   }
 
   it("reads the other files when files go away during the index, and ends its task", async function () {
     const indexed = fsal.reindexFiles();
     // The task says how many paths it reads once the list is complete.
-    while (!tasks().some((task) => task.info?.startsWith("Indexing ") === true)) {
+    while (!(await tasks()).some((task) => task.info?.startsWith("Indexing ") === true)) {
       await new Promise((resolve) => setImmediate(resolve));
     }
     const kept = notes[0];
@@ -74,7 +71,7 @@ describe("FSAL: the index of the workspaces", function () {
       (error: Error) => error,
     );
     assert.deepEqual(
-      tasks().filter((task) => task.status === TaskStatus.ongoing),
+      (await tasks()).filter((task) => task.status === TaskStatus.ongoing),
       [],
       "no index task runs after the index",
     );

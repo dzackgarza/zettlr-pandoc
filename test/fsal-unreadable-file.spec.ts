@@ -22,14 +22,8 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type FSAL from "source/app/service-providers/fsal";
-import type { AnyDescriptor } from "source/types/common/fsal";
 import { bootFsal } from "./fsal-seam";
-import { ipcMainHandlers } from "./headless-electron-harness.cjs";
-
-type DescriptorHandler = (
-  event: null,
-  message: { command: "get-descriptor"; payload: string[] },
-) => Promise<AnyDescriptor[]>;
+import { invokeMain } from "./main-ipc";
 
 describe("FSAL: a file whose text cannot be read", function () {
   let root: string;
@@ -89,11 +83,11 @@ describe("FSAL: a file whose text cannot be read", function () {
   });
 
   it("answers the descriptors of every path that a window asks for", async function () {
-    const handler = ipcMainHandlers.get("fsal") as DescriptorHandler;
-    const descriptors = await handler(null, {
+    const descriptors = await invokeMain("fsal", {
       command: "get-descriptor",
       payload: [readable, unreadable, unreadableCode],
     });
+    assert.ok(Array.isArray(descriptors), "a list of paths is answered with a list of descriptors");
     assert.deepEqual(
       descriptors.map((descriptor) => descriptor.path),
       [readable, unreadable, unreadableCode],

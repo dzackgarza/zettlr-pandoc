@@ -30,17 +30,8 @@ import {
   type RemoteChangeKeptBroadcast,
 } from "source/types/common/documents";
 import { bootDocumentManager, emitWatchdogEvent } from "./documents-provider-seam";
-import {
-  ipcMainHandlers,
-  messageBoxes,
-  sentMessagesFor,
-  userData,
-} from "./headless-electron-harness.cjs";
-
-type IpcHandler = (
-  event: unknown,
-  message: { command: string; payload?: unknown },
-) => Promise<unknown> | unknown;
+import { messageBoxes, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const EDITOR_SOURCE = "The editor version.\n";
 const DISK_SOURCE = "The disk version.\n";
@@ -112,9 +103,10 @@ describe("Documents-provider kept remote change", function () {
     emitWatchdogEvent("change", filePath);
     await settle();
 
-    const handler = ipcMainHandlers.get("documents-provider") as IpcHandler | undefined;
-    assert.ok(handler !== undefined, "the documents-provider handler is registered");
-    await handler(undefined, { command: "load-from-disk", payload: { path: filePath } });
+    await invokeMain("documents-provider", {
+      command: "load-from-disk",
+      payload: { path: filePath },
+    });
     await provider.getDocument(filePath);
 
     assert.equal(provider.readMarkdownBufferContent(filePath), DISK_SOURCE);

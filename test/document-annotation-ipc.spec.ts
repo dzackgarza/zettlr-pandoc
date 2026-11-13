@@ -35,37 +35,29 @@
 
 // Installs process-wide test doubles; it must load before the modules that read them.
 import "./headless-electron-harness.cjs";
-import type { AnnotationMessage, TextAnnotation } from "@dts/common/annotation-domain";
-import type {
-  DocumentCollaborationSession,
-  WorkspaceCollaborationListing,
-} from "@dts/common/document-collaboration";
+import type { TextAnnotation } from "@dts/common/annotation-domain";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import DocumentManager from "source/app/service-providers/documents";
+import DocumentManager, {
+  type CreateAnnotationIpcInput,
+} from "source/app/service-providers/documents";
 import type { AnnotationFailure } from "source/app/service-providers/documents/document-collaboration-application-service";
 import LogProvider from "source/app/service-providers/log";
-import { ipcMainHandlers } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
-type IpcHandler = (event: unknown, input: unknown) => Promise<unknown>;
-
-/** The REAL registered listener for one 'documents:*' channel. */
-function handler(channel: string): IpcHandler {
-  const registered = ipcMainHandlers.get(channel) as IpcHandler | undefined;
-  assert.ok(registered !== undefined, `constructing DocumentManager must register ${channel}`);
-  return registered;
+function isFailure<T extends object>(result: T | AnnotationFailure): result is AnnotationFailure {
+  return "ok" in result && result.ok === false;
 }
 
-async function invoke<T>(channel: string, input: unknown): Promise<T> {
-  return (await handler(channel)(undefined, input)) as T;
-}
-
-function isFailure(result: unknown): result is AnnotationFailure {
-  return typeof result === "object" && result !== null && (result as { ok?: unknown }).ok === false;
+/** Creates a fixture annotation through the channel; a refusal stops the spec. */
+async function createAnnotation(input: CreateAnnotationIpcInput): Promise<TextAnnotation> {
+  const created = await invokeMain("documents:create-annotation", input);
+  assert.ok(!isFailure(created), `expected a created annotation, got ${JSON.stringify(created)}`);
+  return created;
 }
 
 describe("Document annotation IPC (M6, WU-14)", function () {
@@ -180,19 +172,18 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const from = content.indexOf("Trust through transparency");
     const to = from + "Trust through transparency".length;
 
-    const created = await invoke<TextAnnotation | AnnotationFailure>(
-      "documents:create-annotation",
-      {
-        path: filePath,
-        from,
-        to,
-        instruction: "Expand this with concrete examples.",
-        expectedAnnotationGeneration: 0,
-      },
-    );
+    const annotation = await invokeMain("documents:create-annotation", {
+      path: filePath,
+      from,
+      to,
+      instruction: "Expand this with concrete examples.",
+      expectedAnnotationGeneration: 0,
+    });
 
-    assert.ok(!isFailure(created), `expected a created annotation, got ${JSON.stringify(created)}`);
-    const annotation = created as TextAnnotation;
+    assert.ok(
+      !isFailure(annotation),
+      `expected a created annotation, got ${JSON.stringify(annotation)}`,
+    );
     assert.deepEqual(annotation.anchor, {
       state: "range",
       from,
@@ -211,7 +202,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const secondFrom = content.indexOf("Second target");
     const secondTo = secondFrom + "Second target".length;
 
-    const first = await invoke<TextAnnotation | AnnotationFailure>("documents:create-annotation", {
+    const first = await invokeMain("documents:create-annotation", {
       path: filePath,
       from: firstFrom,
       to: firstTo,
@@ -222,7 +213,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
 
     // The instruction is owner prose, not an identifier: repeating it, even
     // restyled, for another passage must be admitted like any other.
-    const second = await invoke<TextAnnotation | AnnotationFailure>("documents:create-annotation", {
+    const second = await invokeMain("documents:create-annotation", {
       path: filePath,
       from: secondFrom,
       to: secondTo,
@@ -231,9 +222,10 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     });
     assert.ok(!isFailure(second), `expected a second annotation, got ${JSON.stringify(second)}`);
 
-    const session = await invoke<
-      { annotations: { generation: number; items: TextAnnotation[] } } | undefined
-    >("documents-provider", { command: "get-collaboration-session", payload: { path: filePath } });
+    const session = await invokeMain("documents-provider", {
+      command: "get-collaboration-session",
+      payload: { path: filePath },
+    });
     assert.ok(session !== undefined);
     assert.equal(
       session.annotations.generation,
@@ -258,42 +250,33 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const from = content.indexOf("workspace target");
     const to = from + "workspace target".length;
 
-    const created = await invoke<TextAnnotation | AnnotationFailure>(
-      "documents:create-annotation",
-      {
-        path: filePath,
-        from,
-        to,
-        instruction: "Explain why this target matters.",
-        expectedAnnotationGeneration: 0,
-      },
-    );
+    const created = await invokeMain("documents:create-annotation", {
+      path: filePath,
+      from,
+      to,
+      instruction: "Explain why this target matters.",
+      expectedAnnotationGeneration: 0,
+    });
     assert.ok(!isFailure(created), "fixture annotation must be created before detaching");
 
     await provider.closeFileEverywhere(filePath);
 
-    const { sessions, unreadable } = await invoke<WorkspaceCollaborationListing>(
-      "documents-provider",
-      {
-        command: "get-workspace-collaboration-sessions",
-        payload: { paths: [filePath] },
-      },
-    );
+    const { sessions, unreadable } = await invokeMain("documents-provider", {
+      command: "get-workspace-collaboration-sessions",
+      payload: { paths: [filePath] },
+    });
 
     assert.deepEqual(unreadable, []);
 
     assert.equal(sessions.length, 1);
     assert.equal(sessions[0].documentPath, filePath);
     assert.equal(sessions[0].annotations.items.length, 1);
-    assert.equal(
-      sessions[0].annotations.items[0].annotationId,
-      (created as TextAnnotation).annotationId,
-    );
+    assert.equal(sessions[0].annotations.items[0].annotationId, created.annotationId);
     assert.equal(sessions[0].review, undefined);
   });
 
   it("refuses documents:create-annotation for a path with no open document", async function () {
-    const result = await invoke<TextAnnotation | AnnotationFailure>("documents:create-annotation", {
+    const result = await invokeMain("documents:create-annotation", {
       path: path.join(scratch, "never-opened.md"),
       from: 0,
       to: 1,
@@ -308,7 +291,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const content = "short\n";
     const filePath = await openFile("short.md", content);
 
-    const result = await invoke<TextAnnotation | AnnotationFailure>("documents:create-annotation", {
+    const result = await invokeMain("documents:create-annotation", {
       path: filePath,
       from: 0,
       to: content.length + 50,
@@ -325,7 +308,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const firstFrom = content.indexOf("One sentence here.");
     const firstTo = firstFrom + "One sentence here.".length;
 
-    const first = await invoke<TextAnnotation | AnnotationFailure>("documents:create-annotation", {
+    const first = await invokeMain("documents:create-annotation", {
       path: filePath,
       from: firstFrom,
       to: firstTo,
@@ -336,7 +319,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
 
     const secondFrom = content.indexOf("Another sentence here.");
     const secondTo = secondFrom + "Another sentence here.".length;
-    const stale = await invoke<TextAnnotation | AnnotationFailure>("documents:create-annotation", {
+    const stale = await invokeMain("documents:create-annotation", {
       // Still claiming generation 0, which the first creation already advanced past.
       path: filePath,
       from: secondFrom,
@@ -365,13 +348,10 @@ describe("Document annotation IPC (M6, WU-14)", function () {
       expectedAnnotationGeneration: 0,
       actor: "agent",
     };
-    const created = await invoke<TextAnnotation | AnnotationFailure>(
-      "documents:create-annotation",
-      forged,
-    );
+    const created = await invokeMain("documents:create-annotation", forged);
     assert.ok(!isFailure(created), "creation must still succeed");
     assert.equal(
-      (created as TextAnnotation).messages[0].author,
+      created.messages[0].author,
       "owner",
       "the forged actor field must never reach the transition",
     );
@@ -383,7 +363,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const from = content.indexOf("this clause");
     const to = from + "this clause".length;
 
-    const created = await invoke<TextAnnotation>("documents:create-annotation", {
+    const created = await createAnnotation({
       path: filePath,
       from,
       to,
@@ -391,18 +371,15 @@ describe("Document annotation IPC (M6, WU-14)", function () {
       expectedAnnotationGeneration: 0,
     });
 
-    const messaged = await invoke<AnnotationMessage | AnnotationFailure>(
-      "documents:add-annotation-message",
-      {
-        path: filePath,
-        annotationId: created.annotationId,
-        text: "a second turn",
-        expectedAnnotationGeneration: 1,
-      },
-    );
+    const messaged = await invokeMain("documents:add-annotation-message", {
+      path: filePath,
+      annotationId: created.annotationId,
+      text: "a second turn",
+      expectedAnnotationGeneration: 1,
+    });
     assert.ok(!isFailure(messaged), `expected a posted message, got ${JSON.stringify(messaged)}`);
-    assert.equal((messaged as AnnotationMessage).text, "a second turn");
-    assert.equal((messaged as AnnotationMessage).author, "owner");
+    assert.equal(messaged.text, "a second turn");
+    assert.equal(messaged.author, "owner");
   });
 
   it("wires documents:resolve-annotation and documents:reopen-annotation to the real lifecycle", async function () {
@@ -411,7 +388,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const from = content.indexOf("this");
     const to = from + "this".length;
 
-    const created = await invoke<TextAnnotation>("documents:create-annotation", {
+    const created = await createAnnotation({
       path: filePath,
       from,
       to,
@@ -419,33 +396,27 @@ describe("Document annotation IPC (M6, WU-14)", function () {
       expectedAnnotationGeneration: 0,
     });
 
-    const resolved = await invoke<TextAnnotation | AnnotationFailure>(
-      "documents:resolve-annotation",
-      {
-        path: filePath,
-        annotationId: created.annotationId,
-        expectedAnnotationGeneration: 1,
-      },
-    );
+    const resolved = await invokeMain("documents:resolve-annotation", {
+      path: filePath,
+      annotationId: created.annotationId,
+      expectedAnnotationGeneration: 1,
+    });
     assert.ok(
       !isFailure(resolved),
       `expected a resolved annotation, got ${JSON.stringify(resolved)}`,
     );
-    assert.equal((resolved as TextAnnotation).state, "resolved");
+    assert.equal(resolved.state, "resolved");
 
-    const reopened = await invoke<TextAnnotation | AnnotationFailure>(
-      "documents:reopen-annotation",
-      {
-        path: filePath,
-        annotationId: created.annotationId,
-        expectedAnnotationGeneration: 2,
-      },
-    );
+    const reopened = await invokeMain("documents:reopen-annotation", {
+      path: filePath,
+      annotationId: created.annotationId,
+      expectedAnnotationGeneration: 2,
+    });
     assert.ok(
       !isFailure(reopened),
       `expected a reopened annotation, got ${JSON.stringify(reopened)}`,
     );
-    assert.equal((reopened as TextAnnotation).state, "open");
+    assert.equal(reopened.state, "open");
   });
 
   it("wires documents:reattach-annotation to a freshly picked range", async function () {
@@ -454,7 +425,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const firstFrom = content.indexOf("First target");
     const firstTo = firstFrom + "First target".length;
 
-    const created = await invoke<TextAnnotation>("documents:create-annotation", {
+    const created = await createAnnotation({
       path: filePath,
       from: firstFrom,
       to: firstTo,
@@ -464,22 +435,19 @@ describe("Document annotation IPC (M6, WU-14)", function () {
 
     const secondFrom = content.indexOf("Second target");
     const secondTo = secondFrom + "Second target".length;
-    const reattached = await invoke<TextAnnotation | AnnotationFailure>(
-      "documents:reattach-annotation",
-      {
-        path: filePath,
-        annotationId: created.annotationId,
-        from: secondFrom,
-        to: secondTo,
-        expectedAnnotationGeneration: 1,
-      },
-    );
+    const reattached = await invokeMain("documents:reattach-annotation", {
+      path: filePath,
+      annotationId: created.annotationId,
+      from: secondFrom,
+      to: secondTo,
+      expectedAnnotationGeneration: 1,
+    });
     assert.ok(
       !isFailure(reattached),
       `expected a reattached annotation, got ${JSON.stringify(reattached)}`,
     );
     assert.deepEqual(
-      (reattached as TextAnnotation).anchor,
+      reattached.anchor,
       // quotedText survives the move unchanged (I1) — it still reads the ORIGINAL target.
       { state: "range", from: secondFrom, to: secondTo, quotedText: "First target" },
     );
@@ -491,7 +459,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const from = content.indexOf("this annotation");
     const to = from + "this annotation".length;
 
-    const created = await invoke<TextAnnotation>("documents:create-annotation", {
+    const created = await createAnnotation({
       path: filePath,
       from,
       to,
@@ -499,23 +467,20 @@ describe("Document annotation IPC (M6, WU-14)", function () {
       expectedAnnotationGeneration: 0,
     });
 
-    const deleted = await invoke<TextAnnotation | AnnotationFailure>(
-      "documents:delete-annotation",
-      {
-        path: filePath,
-        annotationId: created.annotationId,
-        expectedAnnotationGeneration: 1,
-      },
-    );
+    const deleted = await invokeMain("documents:delete-annotation", {
+      path: filePath,
+      annotationId: created.annotationId,
+      expectedAnnotationGeneration: 1,
+    });
     assert.ok(
       !isFailure(deleted),
       `expected the deletion to succeed, got ${JSON.stringify(deleted)}`,
     );
 
-    const session = await invoke<{ annotations: { items: TextAnnotation[] } } | undefined>(
-      "documents-provider",
-      { command: "get-collaboration-session", payload: { path: filePath } },
-    );
+    const session = await invokeMain("documents-provider", {
+      command: "get-collaboration-session",
+      payload: { path: filePath },
+    });
     assert.ok(session !== undefined);
     assert.equal(
       session?.annotations.items.some((item) => item.annotationId === created.annotationId),
@@ -557,14 +522,14 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const secondFrom = content.indexOf("Open target");
     const secondTo = secondFrom + "Open target".length;
 
-    const first = await invoke<TextAnnotation>("documents:create-annotation", {
+    const first = await createAnnotation({
       path: filePath,
       from: firstFrom,
       to: firstTo,
       instruction: "fix this",
       expectedAnnotationGeneration: 0,
     });
-    const second = await invoke<TextAnnotation>("documents:create-annotation", {
+    const second = await createAnnotation({
       path: filePath,
       from: secondFrom,
       to: secondTo,
@@ -573,22 +538,23 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     });
     const actedGeneration = await actAnnotation(filePath, first.annotationId, 2);
 
-    const resolved = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
-      "documents:resolve-acted-annotations",
-      { path: filePath, expectedAnnotationGeneration: actedGeneration, scope: "acted" },
-    );
+    const resolved = await invokeMain("documents:resolve-acted-annotations", {
+      path: filePath,
+      expectedAnnotationGeneration: actedGeneration,
+      scope: "acted",
+    });
     assert.ok(!isFailure(resolved), `expected a committed batch, got ${JSON.stringify(resolved)}`);
     assert.deepEqual(
       resolved.resolved.map((annotation) => annotation.annotationId),
       [first.annotationId],
       "exactly the acted annotation resolves, the untouched thread stays open",
     );
-    assert.equal((resolved.resolved[0] as TextAnnotation).state, "resolved");
+    assert.equal(resolved.resolved[0].state, "resolved");
 
-    const session = await invoke<{ annotations: { items: TextAnnotation[] } } | undefined>(
-      "documents-provider",
-      { command: "get-collaboration-session", payload: { path: filePath } },
-    );
+    const session = await invokeMain("documents-provider", {
+      command: "get-collaboration-session",
+      payload: { path: filePath },
+    });
     assert.ok(session !== undefined);
     assert.equal(
       session.annotations.items.find((item) => item.annotationId === first.annotationId)?.state,
@@ -606,7 +572,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const from = content.indexOf("backlog");
     const to = from + "backlog".length;
 
-    const created = await invoke<TextAnnotation>("documents:create-annotation", {
+    const created = await createAnnotation({
       path: filePath,
       from,
       to,
@@ -616,10 +582,11 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const actedGeneration = await actAnnotation(filePath, created.annotationId, 1);
     await provider.closeFileEverywhere(filePath);
 
-    const resolved = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
-      "documents:resolve-acted-annotations",
-      { path: filePath, expectedAnnotationGeneration: actedGeneration, scope: "acted" },
-    );
+    const resolved = await invokeMain("documents:resolve-acted-annotations", {
+      path: filePath,
+      expectedAnnotationGeneration: actedGeneration,
+      scope: "acted",
+    });
     assert.ok(
       !isFailure(resolved),
       `a closed document's acted backlog must resolve: ${JSON.stringify(resolved)}`,
@@ -638,14 +605,14 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const secondFrom = content.indexOf("Second target");
     const secondTo = secondFrom + "Second target".length;
 
-    const first = await invoke<TextAnnotation>("documents:create-annotation", {
+    const first = await createAnnotation({
       path: filePath,
       from: firstFrom,
       to: firstTo,
       instruction: "nothing acted on this thread",
       expectedAnnotationGeneration: 0,
     });
-    const second = await invoke<TextAnnotation>("documents:create-annotation", {
+    const second = await createAnnotation({
       path: filePath,
       from: secondFrom,
       to: secondTo,
@@ -653,18 +620,17 @@ describe("Document annotation IPC (M6, WU-14)", function () {
       expectedAnnotationGeneration: 1,
     });
 
-    const resolved = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
-      "documents:resolve-acted-annotations",
-      { path: filePath, expectedAnnotationGeneration: 2, scope: "open" },
-    );
+    const resolved = await invokeMain("documents:resolve-acted-annotations", {
+      path: filePath,
+      expectedAnnotationGeneration: 2,
+      scope: "open",
+    });
     assert.ok(
       !isFailure(resolved),
       `expected the open-scope batch, got ${JSON.stringify(resolved)}`,
     );
     assert.deepEqual(
-      (resolved as { resolved: TextAnnotation[] }).resolved.map(
-        (annotation) => annotation.annotationId,
-      ),
+      resolved.resolved.map((annotation) => annotation.annotationId),
       [first.annotationId, second.annotationId],
     );
   });
@@ -674,17 +640,18 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const filePath = await openFile("bulk-nothing-acted.md", content);
     const from = content.indexOf("Nothing");
     const to = from + "Nothing".length;
-    await invoke<TextAnnotation>("documents:create-annotation", {
+    await createAnnotation({
       path: filePath,
       from,
       to,
       instruction: "pending thread",
       expectedAnnotationGeneration: 0,
     });
-    const result = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
-      "documents:resolve-acted-annotations",
-      { path: filePath, expectedAnnotationGeneration: 1, scope: "acted" },
-    );
+    const result = await invokeMain("documents:resolve-acted-annotations", {
+      path: filePath,
+      expectedAnnotationGeneration: 1,
+      scope: "acted",
+    });
     assert.ok(isFailure(result), "an empty batch must be refused");
     assert.equal(result.code, "INVALID_PARAMS");
   });
@@ -697,62 +664,62 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const secondFrom = content.indexOf("Live target");
     const secondTo = secondFrom + "Live target".length;
 
-    const first = await invoke<TextAnnotation>("documents:create-annotation", {
+    const first = await createAnnotation({
       path: filePath,
       from: firstFrom,
       to: firstTo,
       instruction: "settled thread",
       expectedAnnotationGeneration: 0,
     });
-    await invoke<TextAnnotation>("documents:create-annotation", {
+    await createAnnotation({
       path: filePath,
       from: secondFrom,
       to: secondTo,
       instruction: "live thread",
       expectedAnnotationGeneration: 1,
     });
-    await invoke<TextAnnotation | AnnotationFailure>("documents:resolve-annotation", {
+    await invokeMain("documents:resolve-annotation", {
       path: filePath,
       annotationId: first.annotationId,
       expectedAnnotationGeneration: 2,
     });
 
-    const cleared = await invoke<{ deleted: TextAnnotation[] } | AnnotationFailure>(
-      "documents:clear-resolved-annotations",
-      { path: filePath, expectedAnnotationGeneration: 3 },
-    );
+    const cleared = await invokeMain("documents:clear-resolved-annotations", {
+      path: filePath,
+      expectedAnnotationGeneration: 3,
+    });
     assert.ok(
       !isFailure(cleared),
       `expected the cleanup to succeed, got ${JSON.stringify(cleared)}`,
     );
-    const deletedAnnotation = cleared as { deleted: TextAnnotation[] };
     assert.deepEqual(
-      deletedAnnotation.deleted.map((annotation) => annotation.annotationId),
+      cleared.deleted.map((annotation) => annotation.annotationId),
       [first.annotationId],
       "exactly the resolved annotation is deleted, the open thread survives",
     );
 
-    const session = await invoke<{ annotations: { items: TextAnnotation[] } } | undefined>(
-      "documents-provider",
-      { command: "get-collaboration-session", payload: { path: filePath } },
-    );
+    const session = await invokeMain("documents-provider", {
+      command: "get-collaboration-session",
+      payload: { path: filePath },
+    });
     assert.ok(session !== undefined);
     assert.equal(session.annotations.items.length, 1);
   });
 
   it("refuses both bulk channels for a path with no document and no sidecar", async function () {
     const neverOpened = path.join(scratch, "never-opened-bulk.md");
-    const resolveResult = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
-      "documents:resolve-acted-annotations",
-      { path: neverOpened, expectedAnnotationGeneration: 0, scope: "acted" },
-    );
+    const resolveResult = await invokeMain("documents:resolve-acted-annotations", {
+      path: neverOpened,
+      expectedAnnotationGeneration: 0,
+      scope: "acted",
+    });
     assert.ok(isFailure(resolveResult), "an unresolved path must be refused, not throw");
     assert.equal(resolveResult.code, "DOCUMENT_NOT_FOUND");
 
-    const clearResult = await invoke<{ deleted: TextAnnotation[] } | AnnotationFailure>(
-      "documents:clear-resolved-annotations",
-      { path: neverOpened, expectedAnnotationGeneration: 0 },
-    );
+    const clearResult = await invokeMain("documents:clear-resolved-annotations", {
+      path: neverOpened,
+      expectedAnnotationGeneration: 0,
+    });
     assert.ok(isFailure(clearResult), "an unresolved path must be refused, not throw");
     assert.equal(clearResult.code, "DOCUMENT_NOT_FOUND");
   });

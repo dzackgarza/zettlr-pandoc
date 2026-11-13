@@ -29,13 +29,8 @@ import path from "node:path";
 import ConfigProvider from "source/app/service-providers/config";
 import LogProvider from "source/app/service-providers/log";
 import UpdateProvider, { type UpdateState } from "source/app/service-providers/updates";
-import {
-  downloads,
-  home,
-  ipcMainHandlers,
-  net,
-  notifications,
-} from "./headless-electron-harness.cjs";
+import { downloads, home, net, notifications } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 const ASSET_NAME = "Zettlr-Pandoc-9.0.0-x86_64.AppImage";
@@ -155,13 +150,6 @@ describe("The failures of the update provider (#210)", function () {
     await rm(path.join(home, ".pandoc"), { recursive: true });
   });
 
-  /** Sends a command of the update window to the provider. */
-  async function send(command: string, payload?: string): Promise<void> {
-    const handler = ipcMainHandlers.get("update-provider");
-    assert.ok(handler !== undefined, "the provider registers no update-provider handler");
-    await handler({}, { command, payload });
-  }
-
   /** The state of the provider once `holds` is true of it, within five seconds. */
   async function stateWhen(
     what: string,
@@ -185,9 +173,12 @@ describe("The failures of the update provider (#210)", function () {
 
   /** Checks for the release and starts the download of its asset. */
   async function startDownload(): Promise<void> {
-    await send("check-for-update");
+    await invokeMain("update-provider", { command: "check-for-update" });
     assert.equal(provider.getUpdateState().updateAvailable, true);
-    await send("request-app-update", `${origin}/download/${ASSET_NAME}`);
+    await invokeMain("update-provider", {
+      command: "request-app-update",
+      payload: `${origin}/download/${ASSET_NAME}`,
+    });
   }
 
   /** Downloads the asset of the release to its end. */
@@ -201,17 +192,17 @@ describe("The failures of the update provider (#210)", function () {
   }
 
   it("says that a check without a network connection did not run", async function () {
-    await send("check-for-update");
+    await invokeMain("update-provider", { command: "check-for-update" });
     assert.equal(provider.getUpdateState().lastErrorCode, undefined);
     net.online = false;
-    await send("check-for-update");
+    await invokeMain("update-provider", { command: "check-for-update" });
     assert.equal(provider.getUpdateState().lastErrorCode, "EOFFLINE");
   });
 
   it("removes a download whose checksum is not the one of the release", async function () {
     release.sums = WRONG_SHA256;
     await downloadAsset();
-    await send("begin-update");
+    await invokeMain("update-provider", { command: "begin-update" });
     const state = await stateWhen("the verify fails", (s) => s.lastErrorCode !== undefined);
     assert.equal(state.lastErrorCode, "EVERIFY");
     assert.equal(
@@ -225,7 +216,7 @@ describe("The failures of the update provider (#210)", function () {
   it("names a download that is gone when the update starts", async function () {
     await downloadAsset();
     await rm(path.join(downloads, ASSET_NAME));
-    await send("begin-update");
+    await invokeMain("update-provider", { command: "begin-update" });
     const state = await stateWhen("the start fails", (s) => s.lastErrorCode !== undefined);
     assert.equal(state.lastErrorCode, "EREADFILE");
   });

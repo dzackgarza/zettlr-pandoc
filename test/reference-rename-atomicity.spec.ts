@@ -59,7 +59,8 @@ import {
   hashDocumentSource,
 } from "source/common/pandoc-util/extract-references";
 import type { MDFileDescriptor } from "source/types/common/fsal";
-import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
+import { userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const FIXTURE_ROOT = path.join("test", "fixtures", "reference-workspace");
 const RELATIVE_FILES = [
@@ -72,25 +73,6 @@ const RELATIVE_FILES = [
 
 const OLD_KEY = "thm:torelli";
 const NEW_KEY = "thm:torelli-enriques";
-
-type IpcInvoke = (
-  event: unknown,
-  message: { command: string; payload?: unknown },
-) => Promise<unknown> | unknown;
-
-/** The real registered 'reference-provider' handler, from the harness. */
-function referenceHandler(): IpcInvoke {
-  const handler = ipcMainHandlers.get("reference-provider") as IpcInvoke | undefined;
-  assert.ok(
-    handler !== undefined,
-    "constructing ReferenceProvider must register the reference-provider handler",
-  );
-  return handler;
-}
-
-async function invoke(command: string, payload?: unknown): Promise<unknown> {
-  return await referenceHandler()(undefined, { command, payload });
-}
 
 /** Builds the real markdown descriptor FSAL would emit for a scratch file. */
 function makeDescriptor(documentPath: string): MDFileDescriptor {
@@ -435,7 +417,7 @@ describe("Workspace rename commit protocol", function () {
 
       // The live overlay is untouched: Halphen still serves the authority's
       // load-time content, and no transaction reached any buffer.
-      const state = (await invoke("get-snapshot")) as WorkspaceReferenceState;
+      const state = await invokeMain("reference-provider", { command: "get-snapshot" });
       const halphen = state.snapshots.find((s) => s.documentPath === scratch.paths.halphen);
       assert.equal(
         halphen?.sourceHash,

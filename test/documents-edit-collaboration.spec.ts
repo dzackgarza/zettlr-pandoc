@@ -37,9 +37,8 @@ import { hashDocumentSource } from "source/common/pandoc-util/extract-references
 import { sha256Text } from "source/common/util/sha256";
 import type { AnnotationAnchor } from "source/types/common/annotation-domain";
 import { bootDocumentManager } from "./documents-provider-seam";
-import { appListeners, ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
-
-type AuthorityHandler = (event: undefined, message: unknown) => Promise<unknown>;
+import { appListeners, userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const SOURCE = "A lattice is a free abelian group with a bilinear form.\n";
 const TARGET_TEXT = "bilinear form";
@@ -94,11 +93,9 @@ describe("Documents-provider edits of a document with annotations", function () 
 
   it("keeps an annotation on its text when an editor inserts text before it", async function () {
     const { from, to } = await annotate();
-    const authority = ipcMainHandlers.get("documents-authority") as AuthorityHandler | undefined;
-    assert.ok(authority !== undefined, "the provider answers its editors");
     const { startVersion } = await provider.getDocument(filePath);
 
-    const accepted = await authority(undefined, {
+    const accepted = await invokeMain("documents-authority", {
       command: "push-updates",
       payload: {
         filePath,
@@ -282,8 +279,6 @@ describe("Documents-provider edits of a document with annotations", function () 
     const closedSource = "A closed document.\n";
     writeFileSync(closedPath, closedSource, "utf-8");
     chmodSync(closedPath, 0o444);
-    const editor = ipcMainHandlers.get("documents-authority") as AuthorityHandler | undefined;
-    assert.ok(editor !== undefined, "the provider answers its editors");
 
     // The editor sends the typed text when the transaction has checked the
     // buffer and writes the closed file: the update arrives during that
@@ -292,7 +287,7 @@ describe("Documents-provider edits of a document with annotations", function () 
     let typing: Promise<unknown> | undefined;
     async function type(current: string): Promise<void> {
       const { startVersion } = await provider.getDocument(filePath);
-      const accepted = await editor?.(undefined, {
+      const accepted = await invokeMain("documents-authority", {
         command: "push-updates",
         payload: {
           filePath,

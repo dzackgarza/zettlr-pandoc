@@ -43,13 +43,11 @@ import { bootDocumentManager } from "./documents-provider-seam";
 import {
   appListeners,
   appQuitRequests,
-  ipcMainHandlers,
   messageBoxes,
   sentMessagesFor,
   userData,
 } from "./headless-electron-harness.cjs";
-
-type OperationHandler = (event: unknown, input: unknown) => Promise<unknown>;
+import { invokeMain } from "./main-ipc";
 
 const REVIEWED_SOURCE = "A lattice is a free abelian group with a bilinear form.\n";
 const REVIEWED_TARGET = REVIEWED_SOURCE.replace("bilinear", "symmetric bilinear");
@@ -156,18 +154,14 @@ describe("Documents-provider quit with an open review", function () {
    * Annotations view. No file is written.
    */
   async function acceptInAnnotationsView(review: OpenReview): Promise<void> {
-    const acceptAll = ipcMainHandlers.get("documents:accept-all-workspace-review-chunks") as
-      | OperationHandler
-      | undefined;
-    assert.ok(acceptAll !== undefined, "the accept operation of the Annotations view exists");
-    const accepted = await acceptAll(undefined, {
+    const accepted = await invokeMain("documents:accept-all-workspace-review-chunks", {
       path: reviewedPath,
       reviewId: review.reviewId,
       expectedReviewGeneration: review.generation,
       expectedWorkingSha256: sha256Text(REVIEWED_TARGET),
     });
     assert.deepEqual(
-      [(accepted as { ok: boolean }).ok, readFileSync(reviewedPath, "utf-8")],
+      [accepted.ok, readFileSync(reviewedPath, "utf-8")],
       [true, REVIEWED_SOURCE],
       "the author accepts the proposal of the closed document, and no file is written",
     );
