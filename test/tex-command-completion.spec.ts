@@ -124,6 +124,30 @@ describe("package-aware TeX command completion", function () {
     assert.ok(labels.includes(bs + "xmapsto"));
   });
 
+  // The declaration forms of the central macro tree, without braces around the name (#203)
+  it("offers each macro that a macro source declares, in each declaration form", async function () {
+    const macroSource = {
+      path: "/notes/tex/macros.tex",
+      content: [
+        bs + "newcommand" + bs + "Restriction[2]{" + bs + "mathrm{Res}^{#1}_{#2}}",
+        bs + "renewcommand*" + bs + "Rring{" + bs + "mathbb{R}}",
+        bs + "DeclareMathOperator" + bs + "Rank{rank}",
+        bs + "DeclarePairedDelimiter" + bs + "Rabs{" + bs + "lvert}{" + bs + "rvert}",
+        bs + "NewDocumentCommand" + bs + "Rset{m}{" + bs + "{#1" + bs + "}}",
+        bs + "newcommand{" + bs + "Rbraced}{x}",
+      ].join("\n"),
+    };
+    const state = stateFor("$" + bs + "R", "markdown", [macroSource]);
+    const userMacros = (await completionFor(state))?.options
+      .filter((option) => option.detail === "[user macro]")
+      .map((option) => option.label)
+      .sort();
+    assert.deepEqual(
+      userMacros,
+      ["Rabs", "Rank", "Rbraced", "Restriction", "Rring", "Rset"].map((name) => bs + name),
+    );
+  });
+
   it("keeps prose dictionaries out of backslash command contexts", async function () {
     const phraseState = EditorState.create({
       doc: bs + "Sm",
