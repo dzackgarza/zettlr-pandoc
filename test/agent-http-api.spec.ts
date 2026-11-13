@@ -1225,7 +1225,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
   });
 
-  it("answers a request target that is not a URL instead of dying on it", async function () {
+  it("answers a request target that is not a URL as a refused request", async function () {
     // Absolute-form request targets are legal HTTP/1.1 and Node hands them to
     // the handler verbatim, so `new URL(req.url, ...)` refuses input that the
     // wire is entitled to send. A throw anywhere in the request callback is an
@@ -1241,13 +1241,21 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       socket.on("error", reject);
       socket.on("close", () => resolve(received));
     });
-    assert.match(raw.split("\r\n")[0], /^HTTP\/1\.1 500 /);
+    assert.match(raw.split("\r\n")[0], /^HTTP\/1\.1 400 /);
     assert.equal(
       parseAs(raw.split("\r\n\r\n")[1], "AgentErrorResponse").error.code,
-      "INTERNAL_ERROR",
+      "INVALID_PARAMS",
     );
 
     assert.equal((await httpRequest("GET", "/v1/ping")).status, 200);
+  });
+
+  it("answers a path whose percent-encoding is not UTF-8 as a refused request (#57)", async function () {
+    // `%E0%A4%A` is a truncated three-byte sequence: decodeURIComponent
+    // refuses it. The fault is in the request, so the caller gets 400.
+    const response = await httpRequest("GET", "/v1/documents/%E0%A4%A");
+    assert.equal(response.status, 400, response.body);
+    assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
   });
 
   it("GET /v1/ping returns protocol version", async function () {
