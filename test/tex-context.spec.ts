@@ -1,10 +1,21 @@
 import { strict as assert } from "node:assert";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import indexJson from "source/common/data/texstudio-command-index.json";
-import { collectTexContext } from "source/common/util/tex-context";
+import { collectTexContext, type TexDocument, texDocument } from "source/common/util/tex-context";
 import type { TexstudioCommandIndex } from "source/common/util/texstudio-command-index";
 
 const index = indexJson as TexstudioCommandIndex;
 const bs = String.fromCharCode(92);
+const markdown = markdownParser({ zknLinkParserConfig: { format: "link|title" } }).language.parser;
+
+/** A Markdown document with the metadata block of its syntax tree. */
+function markdownDocument(source: string): TexDocument {
+  return texDocument(source, "markdown", markdown.parse(source));
+}
+
+function latexDocument(source: string): TexDocument {
+  return { kind: "latex", source };
+}
 
 describe("TeX package context", function () {
   it("collects raw TeX, document-class and explicit frontmatter roots", function () {
@@ -22,7 +33,7 @@ describe("TeX package context", function () {
       bs + "RequirePackage{xcolor}",
       "$x+y$",
     ].join("\n");
-    const context = collectTexContext(index, source, "markdown");
+    const context = collectTexContext(index, markdownDocument(source));
     assert.deepEqual(context.packages, ["amsthm", "mathtools", "xcolor"]);
     assert.deepEqual(context.classes, ["class-amsart"]);
     assert.deepEqual(context.macroSources, ["tex/macros.sty"]);
@@ -48,7 +59,7 @@ describe("TeX package context", function () {
         String.fromCharCode(96) +
         "{=latex}",
     ].join("\n");
-    const context = collectTexContext(index, source, "markdown");
+    const context = collectTexContext(index, markdownDocument(source));
     assert.deepEqual(context.packages, ["amsthm", "graphicx"]);
   });
 
@@ -60,12 +71,12 @@ describe("TeX package context", function () {
       "~~~",
       bs + "usepackage{xcolor}",
     ].join("\n");
-    const context = collectTexContext(index, source, "markdown");
+    const context = collectTexContext(index, markdownDocument(source));
     assert.deepEqual(context.packages, ["xcolor"]);
   });
 
   it("takes package roots and user commands from authority-supplied TeX sources", function () {
-    const context = collectTexContext(index, "", "markdown", [
+    const context = collectTexContext(index, markdownDocument(""), [
       {
         path: "/notes/tex/macros.sty",
         content: [
@@ -84,11 +95,12 @@ describe("TeX package context", function () {
   it("ignores commented package requirements", function () {
     const context = collectTexContext(
       index,
-      [
-        "% " + bs + "usepackage{mathtools}",
-        bs + "usepackage{xcolor} % " + bs + "RequirePackage{amsthm}",
-      ].join("\n"),
-      "latex",
+      latexDocument(
+        [
+          "% " + bs + "usepackage{mathtools}",
+          bs + "usepackage{xcolor} % " + bs + "RequirePackage{amsthm}",
+        ].join("\n"),
+      ),
     );
     assert.deepEqual(context.packages, ["xcolor"]);
   });

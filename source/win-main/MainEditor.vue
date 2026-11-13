@@ -148,6 +148,7 @@ import {
   declaredTexMacroSources,
   type TexDocumentKind,
   type TexMacroSource,
+  texDocument,
 } from "@common/util/tex-context";
 import { resolveTexMacroSourcePaths } from "@common/util/tex-macro-source-resolution";
 import { wikilinkTargetsIn } from "@common/util/wikilink-target";
@@ -345,7 +346,14 @@ async function updateTexMacroSources(
   const kind = texDocumentKindForPath(editor.documentPath);
   if (kind === undefined) return;
 
-  const patterns = declaredTexMacroSources(editor.value, kind);
+  // The metadata block of the whole syntax tree: a block after the first
+  // screen declares sources too.
+  const state = editor.instance.state;
+  const tree = ensureSyntaxTree(state, state.doc.length, Number.POSITIVE_INFINITY);
+  if (tree === null) {
+    throw new Error(`The editor of ${editor.documentPath} has no syntax tree`);
+  }
+  const patterns = declaredTexMacroSources(texDocument(state.doc.toString(), kind, tree));
   const descriptors = workspaceStore.descriptorMap;
   const workspacePaths =
     patterns.length === 0
