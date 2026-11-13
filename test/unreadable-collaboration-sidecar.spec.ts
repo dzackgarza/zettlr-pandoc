@@ -90,6 +90,9 @@ describe("A collaboration sidecar that the application cannot read", function ()
     window.close();
     await provider.shutdown();
     await rm(root, { recursive: true, force: true });
+    // The sidecar directory belongs to the process: an unreadable file left
+    // in it refuses the workspace listings of the next spec file.
+    await rm(SIDECARS, { recursive: true, force: true });
   });
 
   function pane(): string {
