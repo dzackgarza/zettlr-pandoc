@@ -190,11 +190,17 @@ through its renderer collection. See `packages/pandoc-editor/README.md`.
 Upstream Zettlr only recognizes `$`/`$$`. This fork adds the LaTeX delimiters, and
 they must be threaded through **four** layers:
 
-- **Parser:** `packages/pandoc-editor/src/parser/math-parser.ts` —
-  `blockMathParser` (opens on `\[`, closes on `\]` incl. a trailing `.\]`),
-  `inlineBracketMathParser` (handles `\( \)` **and** `\[ \]` mid-paragraph, spanning
-  newlines; runs `before: 'Escape'` or the backslash opener is eaten as an escape).
-- **Registered:** `packages/pandoc-editor/src/parser/markdown-parser.ts`.
+- **Parser:** the Pandoc grammar fork, `vendor/lezer-markdown-pandoc/src/pandoc/math.ts`
+  (registered in `pandoc/index.ts`): `inlineMathParser` (`$ $`, `$$ $$`) and
+  `singleBackslashMathParser` (`\( \)`, `\[ \]`, spanning newlines; both run
+  `before: 'Escape'` or the backslash opener is eaten as an escape). A display
+  equation is an `InlineCode` node in a `Paragraph`, as Pandoc reads it as an
+  inline `Math` element; its first `CodeMark` is `$$` or `\[`. A consumer that
+  looks for display math tests that mark (`mathDisplayForOpen`), not the node
+  name. The `blockMathParser` of the same file is registered nowhere.
+- **TeX overlay:** `packages/pandoc-editor/src/parser/math-parser.ts`
+  (`mathCodeParse`, the stex parser inside a math node), used by
+  `packages/pandoc-editor/src/parser/markdown-parser.ts`.
 - **Shared pure helpers:** `packages/pandoc-editor/src/util/math-delimiters.ts`
   (`MATH_DELIMITERS`, `mathDisplayForOpen`, `stripMathDelimiters`). **This module must
   import nothing (no CodeMirror/lezer)** — `markdown-to-html` runs in the main
