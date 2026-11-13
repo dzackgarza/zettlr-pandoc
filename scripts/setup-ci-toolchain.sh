@@ -105,7 +105,7 @@ tlpdbopt_autobackup 0
 instopt_adjustpath 0
 PROFILE
 "${setup_dir}/install-tl/install-tl" --no-interaction --repository "${texlive_repository}" --profile "${setup_dir}/texlive.profile"
-"${tlmgr}" install bbm bbm-macros latexmk
+"${tlmgr}" install bbm bbm-macros latexmk latexpand
 fi
 sudo "${tlmgr}" path add
 
@@ -168,6 +168,7 @@ printf '| a |\n| - |\n| b |\n' | pandoc-flowmark -f markdown+sourcepos -t json \
   | jq --exit-status '[.. | objects | select(.t == "Table")][0].c[3][1][0][1][0][0][2] | any(.[0] == "data-pos")' >/dev/null
 command -v just >/dev/null
 command -v latexmk >/dev/null
+command -v latexpand >/dev/null
 command -v pdflatex >/dev/null
 command -v lualatex >/dev/null
 command -v biber >/dev/null

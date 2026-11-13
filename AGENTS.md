@@ -164,6 +164,12 @@ through its renderer collection. See `packages/pandoc-editor/README.md`.
   CommonHTML), wired in `source/common/modules/window-register/index.ts`.
 - **TikZ:** TeX compilation follows the real central `dzg-tikz` template/include
   graph.
+- **TeX export:** a TeX writer of `writeDefaults` gets the macro package
+  `~/.pandoc/styles/dzg-mathjax.sty` and the files it inputs, flattened by
+  `latexpand` into the header (`texMacroHeader`, `pandoc-math-headers.ts`). The
+  MathJax projection is for MathJax only: a projection of a macro that LaTeX
+  already defines (`\AA`) is no TeX definition. An absent package refuses the
+  export. Proof: `test/export-document.spec.ts` (a LaTeX export, pdflatex).
 - **Semantic invariant:** macro meanings and arities are owned by `~/.pandoc`; Zettlr
   may project or adapt them to a renderer but must not redefine their mathematics. See
   `~/.pandoc/AGENTS.md` for the object-valued/atomic macro rule.

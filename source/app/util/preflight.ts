@@ -37,7 +37,8 @@ export interface PathRequirement {
 /**
  * External commands this fork cannot function without. The PDF export pipeline
  * delegates to the ~/.pandoc `compile-pandoc` recipe, which shells out to pandoc,
- * latexmk, pdflatex, and biber; `just` runs the recipe itself.
+ * latexmk, pdflatex, and biber; `just` runs the recipe itself. A TeX export
+ * flattens the macro package of ~/.pandoc with latexpand.
  */
 export const REQUIRED_COMMANDS: CommandRequirement[] = [
   { command: "pandoc", purpose: "preview and export" },
@@ -46,6 +47,7 @@ export const REQUIRED_COMMANDS: CommandRequirement[] = [
   { command: "pdflatex", purpose: "PDF export" },
   { command: "biber", purpose: "PDF bibliography generation" },
   { command: "pandoc-crossref", purpose: "cross-references in Project exports" },
+  { command: "latexpand", purpose: "the macros of a TeX export" },
 ];
 
 /**

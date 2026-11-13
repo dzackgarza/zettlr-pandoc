@@ -11,6 +11,8 @@ import YAML from "yaml";
 
 const execFileAsync = promisify(execFile);
 
+// The ~/.pandoc directory of the export: its macro tree.
+const MACRO_TREE = path.resolve("test", "fixtures", "pandoc-macros");
 let macros: Record<string, MathJaxMacro>;
 before(async function () {
   macros = await loadMathJaxMacros("test/fixtures/mathjax-macros.json");
@@ -53,8 +55,11 @@ describe("Declarative export filter chain", function () {
       config,
       [markFilter], // the declared, ordered export filter chain
       directory,
-      path.join(directory, "unused.js"),
-      macros,
+      {
+        mathJaxComponent: path.join(directory, "unused.js"),
+        macros,
+        pandocDirectory: MACRO_TREE,
+      },
     );
 
     // The written defaults must list the declared filter BEFORE the profile's
@@ -102,8 +107,11 @@ describe("Export math-header injection toggle", function () {
       noInject,
       [],
       directory,
-      path.join(directory, "unused.js"),
-      macros,
+      {
+        mathJaxComponent: path.join(directory, "unused.js"),
+        macros,
+        pandocDirectory: MACRO_TREE,
+      },
     );
 
     const written = YAML.parse(
@@ -145,8 +153,11 @@ describe("Export template defaults", function () {
       cfg,
       [],
       directory,
-      path.join(directory, "unused.js"),
-      macros,
+      {
+        mathJaxComponent: path.join(directory, "unused.js"),
+        macros,
+        pandocDirectory: MACRO_TREE,
+      },
     );
     return YAML.parse(
       await readFile(path.join(directory, "defaults.yml"), { encoding: "utf8" }),

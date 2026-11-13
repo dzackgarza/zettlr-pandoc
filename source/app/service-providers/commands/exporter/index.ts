@@ -22,7 +22,6 @@ import {
 // Utilities
 import isFile from "@common/util/is-file";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
-import { type MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import type AssetsProvider from "@providers/assets";
 import { type PandocProfileMetadata, type ValidPandocProfile } from "@providers/assets";
 import type ConfigProvider from "@providers/config";
@@ -37,7 +36,7 @@ import YAML from "yaml";
 import { loadCanonicalMathJaxMacros } from "../../../util/load-mathjax-macros";
 import { runPandoc } from "../../../util/run-pandoc";
 import { plugin as DefaultExporter } from "./default-exporter";
-import { injectPandocMathHeaders } from "./pandoc-math-headers";
+import { type ExportMath, injectPandocMathHeaders } from "./pandoc-math-headers";
 import { runRecipeExport } from "./recipe-exporter";
 import { runScriptExport } from "./script-exporter";
 import { plugin as TextbundleExporter } from "./textbundle-exporter";
@@ -189,7 +188,11 @@ export async function makeExport(
   const inputFiles = options.sourceFiles.map((file) => file.textFile);
 
   // Load the central ~/.pandoc MathJax projection once for this export.
-  const macros = await loadCanonicalMathJaxMacros(app.getPath("home"));
+  const math: ExportMath = {
+    mathJaxComponent: path.join(__dirname, "assets/defaults/mathjax-tex-chtml.js"),
+    macros: await loadCanonicalMathJaxMacros(app.getPath("home")),
+    pandocDirectory: path.join(app.getPath("home"), ".pandoc"),
+  };
 
   // This is basically the "plugin API"
   const ctx: ExporterAPI = {
@@ -209,8 +212,7 @@ export async function makeExport(
         config.get(),
         config.get().export.filters,
         app.getPath("temp"),
-        path.join(__dirname, "assets/defaults/mathjax-tex-chtml.js"),
-        macros,
+        math,
         options.defaultsOverride,
       );
     },
@@ -253,8 +255,7 @@ export async function writeDefaults(
   config: DefaultsWriterConfig,
   filters: string[],
   temporaryDirectory: string,
-  mathJaxComponent: string,
-  macros: Record<string, MathJaxMacro>,
+  math: ExportMath,
   defaultsOverride?: DefaultsOverride,
 ): Promise<string> {
   const defaultsFile = path.join(temporaryDirectory, "defaults.yml");
@@ -355,12 +356,7 @@ export async function writeDefaults(
   // Inject the fork's local MathJax config/preamble unless the user defers math
   // to the profile's template (e.g. a ~/.pandoc template that owns MathJax).
   if (config.export.injectMathHeaders) {
-    await injectPandocMathHeaders(
-      defaults as Record<string, unknown>,
-      temporaryDirectory,
-      mathJaxComponent,
-      macros,
-    );
+    await injectPandocMathHeaders(defaults as Record<string, unknown>, temporaryDirectory, math);
   }
 
   const YAMLOptions = {

@@ -16,6 +16,8 @@ import YAML from "yaml";
 
 const execFileAsync = promisify(execFile);
 
+// The ~/.pandoc directory of the export: its macro tree.
+const MACRO_TREE = path.resolve("test", "fixtures", "pandoc-macros");
 let macros: Record<string, MathJaxMacro>;
 before(async function () {
   macros = await loadMathJaxMacros("test/fixtures/mathjax-macros.json");
@@ -57,15 +59,11 @@ describe("Pipeline-integrated export scripts", function () {
         const profile = YAML.parse(
           await readFile(`static/defaults/${profileName}`, { encoding: "utf8" }),
         ) as Record<string, unknown>;
-        return await writeDefaults(
-          profile,
-          overrides,
-          config,
-          [],
-          directory,
-          path.join(directory, "unused.js"),
+        return await writeDefaults(profile, overrides, config, [], directory, {
+          mathJaxComponent: path.join(directory, "unused.js"),
           macros,
-        );
+          pandocDirectory: MACRO_TREE,
+        });
       },
       listDefaults: async () => [
         { name: "LaTeX.yaml", reader: "markdown", writer: "latex", isInvalid: false },

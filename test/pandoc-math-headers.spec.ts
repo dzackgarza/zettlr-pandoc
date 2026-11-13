@@ -14,6 +14,8 @@ import YAML from "yaml";
 import { runProbe } from "./visual/display-probe";
 
 // Example macro fixture loaded through the real loader; the app ships none.
+// The ~/.pandoc directory of an export: its macro tree.
+const MACRO_TREE = path.resolve("test", "fixtures", "pandoc-macros");
 let macros: Record<string, MathJaxMacro>;
 before(async function () {
   macros = await loadMathJaxMacros("test/fixtures/mathjax-macros.json");
@@ -63,7 +65,11 @@ describe("Pandoc math export headers", function () {
     await writeFile(existingHeader, '<meta name="preserved-header" content="yes">');
     await mkdir(path.dirname(component), { recursive: true });
     await cp("node_modules/@mathjax/src/bundle/tex-chtml.js", component);
-    await injectPandocMathHeaders(defaults, directory, component, macros);
+    await injectPandocMathHeaders(defaults, directory, {
+      mathJaxComponent: component,
+      macros,
+      pandocDirectory: MACRO_TREE,
+    });
     await writeFile(
       defaultsFile,
       Object.entries(defaults)
@@ -163,8 +169,7 @@ describe("Pandoc math export headers", function () {
       config,
       [],
       directory,
-      component,
-      macros,
+      { mathJaxComponent: component, macros, pandocDirectory: MACRO_TREE },
     );
 
     await runPandoc(defaultsFile, outputFile);
@@ -238,8 +243,7 @@ describe("Pandoc math export headers", function () {
       config,
       [],
       directory,
-      component,
-      macros,
+      { mathJaxComponent: component, macros, pandocDirectory: MACRO_TREE },
     );
     const defaults = YAML.parse(await readFile(defaultsFile, { encoding: "utf8" })) as Record<
       string,
@@ -291,7 +295,11 @@ describe("Pandoc math export headers", function () {
 
     for (const [index, defaults] of profiles.entries()) {
       defaults["include-in-header"] = [existingHeader];
-      await injectPandocMathHeaders(defaults, profileDirectories[index], component, macros);
+      await injectPandocMathHeaders(defaults, profileDirectories[index], {
+        mathJaxComponent: component,
+        macros,
+        pandocDirectory: MACRO_TREE,
+      });
     }
 
     const [reveal, latex, plain] = profiles;
@@ -310,7 +318,7 @@ describe("Pandoc math export headers", function () {
     assert.deepStrictEqual(plain["include-in-header"], [existingHeader]);
   });
 
-  it("runs real Pandoc TeX with projected macros while preserving existing headers", async function () {
+  it("runs real Pandoc TeX with the macro tree while preserving existing headers", async function () {
     this.timeout(60000);
     const directory = await mkdtemp(path.join(os.tmpdir(), "zettlr-pandoc-tex-"));
     const inputFile = path.join(directory, "input.md");
@@ -327,7 +335,11 @@ describe("Pandoc math export headers", function () {
 
     await writeFile(inputFile, "$\\RR$ and $\\ce{H2O}$\n");
     await writeFile(existingHeader, "\\newcommand{\\Preserved}{yes}");
-    await injectPandocMathHeaders(defaults, directory, path.join(directory, "unused.js"), macros);
+    await injectPandocMathHeaders(defaults, directory, {
+      mathJaxComponent: path.join(directory, "unused.js"),
+      macros,
+      pandocDirectory: MACRO_TREE,
+    });
     await writeFile(
       defaultsFile,
       Object.entries(defaults)
@@ -338,9 +350,8 @@ describe("Pandoc math export headers", function () {
     const tex = await runPandoc(defaultsFile, outputFile);
 
     assert.match(tex, /\\usepackage\[version=4\]\{mhchem\}/);
-    // Projected macros use \providecommand so they never collide with a
-    // template preamble that already defines them (see macro-projections.ts).
-    assert.match(tex, /\\providecommand\{\\RR\}\{\\mathbb\{R\}\}/);
+    // The definition of the macro tree, not of its MathJax projection.
+    assert.match(tex, /\\newcommand\{\\RR\}\{\\mathbb\{R\}\}/);
     // The user's pre-existing include-header content is preserved verbatim.
     assert.match(tex, /\\newcommand\{\\Preserved\}\{yes\}/);
   });
