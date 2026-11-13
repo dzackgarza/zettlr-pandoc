@@ -475,7 +475,16 @@ describe("the Ctrl+P command launcher", function () {
       ])
     ).stdout.trim();
     assert.equal(await unlisted.getAttribute("data-just-repository"), workspaceRoot);
-    assert.match(await unlisted.innerText(), /workspace/);
+    // The row shows the first line of the diagnosis of Just, and its title the
+    // whole diagnosis with the line of the justfile.
+    assert.match(
+      await unlisted.innerText(),
+      /workspace: Just did not list the recipes: .*unterminated interpolation/,
+    );
+    assert.ok(
+      (await unlisted.getAttribute("title"))?.includes("@echo {{ unclosed"),
+      "the title of the row gives the diagnosis of Just",
+    );
     assert.equal(
       await unlisted.getAttribute("data-disabled"),
       "",
