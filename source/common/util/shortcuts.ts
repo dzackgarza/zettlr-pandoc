@@ -71,27 +71,22 @@ export function explodeAccelerator(accelerator: string): ExplodedShortcut {
 
 /**
  * Takes a CodeMirror-style shortcut (`Mod-Shift-t`) apart into its modifiers
- * and its key.
+ * and its key, as CodeMirror reads the name (`parseKeyName`): `Mod-Alt--`
+ * has the key `-`, and an upper-case letter is the letter with Shift.
  *
  * @param   {string}            shortcut  The shortcut
  *
  * @return  {ExplodedShortcut}            The exploded shortcut
  */
 export function explodeShortcut(shortcut: string): ExplodedShortcut {
-  const keys = shortcut.toLowerCase().split(/-/);
-  const altKey = keys.includes("alt") || keys.includes("option");
-  const shiftKey = keys.includes("shift");
-  const modKey =
-    keys.includes("mod") ||
-    (process.platform === "darwin" && keys.includes("cmd")) ||
-    (process.platform !== "darwin" && keys.includes("mod"));
-  const ctrlKey = keys.includes("ctrl");
+  const parsed = parseKeyName(shortcut);
+  const upperCaseLetter = /^[A-Z]$/.test(parsed.key);
   return {
-    altKey,
-    shiftKey,
-    modKey,
-    ctrlKey,
-    key: keys[keys.length - 1],
+    altKey: parsed.alt,
+    shiftKey: parsed.shift || upperCaseLetter,
+    modKey: parsed.mod || (process.platform === "darwin" && parsed.meta),
+    ctrlKey: parsed.ctrl,
+    key: upperCaseLetter ? parsed.key.toLowerCase() : parsed.key,
   };
 }
 

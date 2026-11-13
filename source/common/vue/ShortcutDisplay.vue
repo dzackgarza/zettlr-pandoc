@@ -5,36 +5,45 @@
       'muted': props.display === 'muted'
     }"
   >
-    <template v-if="props.shortcut.altKey">
-      <kbd>{{ altKeySymbol }}</kbd>
-    </template>
-    <template v-if="props.shortcut.ctrlKey">
-      <kbd>{{ ctrlKeySymbol }}</kbd>
-    </template>
-    <template v-if="props.shortcut.modKey">
-      <kbd>{{ modKeySymbol }}</kbd>
-    </template>
-    <template v-if="props.shortcut.shiftKey">
-      <kbd>⇧</kbd>
-    </template>
-    <template v-if="props.shortcut.key">
-      <kbd>{{ props.shortcut.key }}</kbd>
-    </template>
+    <kbd
+      v-for="label in labels"
+      v-bind:key="label"
+    >{{ label }}</kbd>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { ExplodedShortcut } from "@common/util/shortcuts";
-
-// Proper key symbols based on platform
-const modKeySymbol = process.platform === "darwin" ? "⌘" : "Ctrl";
-const altKeySymbol = process.platform === "darwin" ? "⎇" : "Alt";
-const ctrlKeySymbol = process.platform === "darwin" ? "⌃" : "Ctrl";
+import { computed } from "vue";
 
 const props = defineProps<{
   shortcut: ExplodedShortcut;
   display: "muted" | "full";
 }>();
+
+/** The label of a key whose name does not show it well. */
+const KEY_SYMBOLS: Readonly<Record<string, string>> = {
+  arrowup: "↑",
+  arrowdown: "↓",
+  arrowleft: "←",
+  arrowright: "→",
+  " ": "Space",
+};
+
+/**
+ * The modifiers in the order of the platform, then the key. macOS: Control,
+ * Option, Shift, Command (Apple Human Interface Guidelines, "Keyboards").
+ * Elsewhere: Ctrl, Alt, Shift, as the accelerators of the menu show them.
+ */
+const labels = computed((): string[] => {
+  const { altKey, ctrlKey, modKey, shiftKey, key } = props.shortcut;
+  const isMac = process.platform === "darwin";
+  const modifiers = isMac
+    ? [ctrlKey && "⌃", altKey && "⌥", shiftKey && "⇧", modKey && "⌘"]
+    : [(ctrlKey || modKey) && "Ctrl", altKey && "Alt", shiftKey && "⇧"];
+  const keyLabel = key === "" ? false : (KEY_SYMBOLS[key.toLowerCase()] ?? key);
+  return [...modifiers, keyLabel].filter((label): label is string => label !== false);
+});
 </script>
 
 <style lang="css" scoped>
