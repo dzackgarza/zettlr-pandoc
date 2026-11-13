@@ -1656,7 +1656,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.equal(limited.truncated, true);
     }
 
-
     // A workspace inside another workspace: its files belong to it, so an
     // include pattern is relative to it and it is the workspace of each hit.
     const inner = path.join(scratch, "zeta");
@@ -2138,7 +2137,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const peer = http.createServer((_request, response) => {
       requestCount += 1;
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ protocolVersion: "1.0.0" }));
+      response.end(JSON.stringify({ protocolVersion: openApiDocument.info.version }));
     });
     peerServers.push(peer);
     await new Promise<void>((resolve) => {

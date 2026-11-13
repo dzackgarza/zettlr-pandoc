@@ -42,7 +42,7 @@
     "build:pandoc-parser": "node vendor/lezer-markdown-pandoc/build.js",
     "generate:pandoc-reference-data": "node scripts/generate-pandoc-parser-reference-data.mjs",
     "check:pandoc-reference-data": "node scripts/generate-pandoc-parser-reference-data.mjs --check",
-    "generate:agent-api-types": "openapi-typescript source/app/service-providers/agent-api/openapi.yaml -o source/types/generated/agent-api.ts",
+    "generate:agent-api-types": "openapi-typescript source/app/service-providers/agent-api/openapi.yaml -o source/types/generated/agent-api.ts && bun x --package @biomejs/biome biome check --config-path $HOME/ai-review-ci/tool-configs/biome.json --write source/types/generated/agent-api.ts",
     "check:agent-api-types": "bun run generate:agent-api-types && git diff --exit-code -- source/types/generated/agent-api.ts",
     "test:e2e": "mocha --no-config --node-option import=tsx --reporter ./e2e/support/timed-spec-reporter.ts --timeout 90000 \"e2e/*.spec.ts\"",
     "test:push": "bun run test && just test-e2e",

@@ -371,6 +371,15 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   port only when its ping names the same id (`readAgentApiPort` in
   `e2e/support/electron-app.ts`). Proof: `test/agent-http-api.spec.ts`
   ("a stale discovery file").
+- **A change that an older client cannot use raises the major version.**
+  `info.version` of `openapi.yaml` is the protocol version that `/v1/ping`
+  answers, and `zettlr-pandoc-review-diff` refuses each other version
+  (`PROTOCOL_VERSION_UNSUPPORTED`) before it sends a request that changes
+  state. A new required field of a request, a removed operation or a removed
+  field of an answer raises the major version, and the constant of the CLI
+  follows. Version 2.0.0 made `clientRequestId` of a proposal required.
+  `bun run check:agent-api-types` proves that the generated types are those
+  of the document.
 - **Each request carries the token.** A caller sends
   `Authorization: Bearer <token>`, where the token is the value of
   `ZETTLR_AGENT_API_TOKEN` in the environment of the app. `dispatch`
