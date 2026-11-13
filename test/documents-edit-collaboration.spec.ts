@@ -24,11 +24,14 @@ import "./headless-electron-harness.cjs";
 import { ChangeSet } from "@codemirror/state";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
-import { chmodSync, mkdirSync, writeFileSync } from "fs";
+import EventEmitter from "events";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
+import LogProvider from "source/app/service-providers/log";
+import ReferenceProvider from "source/app/service-providers/references";
 import { runWorkspaceEditTransaction } from "source/app/service-providers/references/workspace-edit-transaction";
 import { hashDocumentSource } from "source/common/pandoc-util/extract-references";
 import { sha256Text } from "source/common/util/sha256";
@@ -165,6 +168,85 @@ describe("Documents-provider edits of a document with annotations", function () 
       "the sidecar holds the edit and the proposal",
     );
     assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 1);
+  });
+
+  it("restores the sidecar of a reviewed document when the app stopped during a workspace edit (#210)", async function () {
+    await annotate();
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text(SOURCE),
+      [
+        {
+          description: "Name the symmetry",
+          patch: createPatch("document", SOURCE, PROPOSED, "", "", { context: 0 }),
+        },
+      ],
+      "edit-collaboration-proposal",
+      0,
+    );
+    assert.ok(submitted.ok, "the agent submits the proposal");
+    const collaborationState = async (manager: DocumentManager) =>
+      (await manager.annotationQueries.listCollaborationSidecars()).map((sidecar) => ({
+        workingText: sidecar.workingText,
+        suggestionAnchors: sidecar.review?.suggestions.map((suggestion) => suggestion.anchors),
+        annotationAnchors: sidecar.annotations.items.map((item) => item.anchor),
+      }));
+    const beforeEdit = await collaborationState(provider);
+    assert.equal(beforeEdit[0]?.workingText, PROPOSED, "the buffer holds the proposal");
+
+    // The app stops after the reviewed buffer took its edit and before the
+    // transaction ends: the journal is the one that the transaction wrote.
+    const journalFile = path.join(root, "workspace-edit-journal.json");
+    let journalAtStop: string | undefined;
+    const stopping = {
+      readMarkdownBufferContent: (file: string) => provider.readMarkdownBufferContent(file),
+      applyWorkspaceTextEdits: async (
+        edits: Parameters<DocumentManager["applyWorkspaceTextEdits"]>[0],
+      ) => {
+        const updated = await provider.applyWorkspaceTextEdits(edits);
+        journalAtStop = readFileSync(journalFile, "utf-8");
+        return updated;
+      },
+    };
+    const insideTarget = PROPOSED.indexOf(TARGET_TEXT) + "bilinear".length;
+    await runWorkspaceEditTransaction(stopping, root, {
+      edits: [
+        { documentPath: filePath, range: { from: 0, to: 0 }, insert: PREFIX },
+        { documentPath: filePath, range: { from: insideTarget, to: insideTarget }, insert: "," },
+      ],
+      expectedSourceHashes: { [filePath]: hashDocumentSource(PROPOSED) },
+    });
+    assert.ok(journalAtStop !== undefined, "the transaction wrote its journal");
+    await provider.shutdown();
+    writeFileSync(journalFile, journalAtStop, "utf-8");
+
+    // The next start: the references provider recovers the journal before a
+    // document loads.
+    provider = await bootDocumentManager([root]);
+    const references = new ReferenceProvider(
+      new LogProvider(),
+      new EventEmitter(),
+      provider,
+      500,
+      root,
+      {
+        schedule: (callback: () => void) => {
+          callback();
+          return { cancel: () => {} };
+        },
+      },
+    );
+    await references.boot();
+    await references.shutdown();
+
+    assert.deepEqual(
+      await collaborationState(provider),
+      beforeEdit,
+      "the sidecar has the text and the anchors of the document before the transaction",
+    );
+    await provider.getDocument(filePath);
+    assert.equal(provider.readMarkdownBufferContent(filePath), PROPOSED);
+    assert.equal(provider.reviewStatus(provider.ensureDocumentId(filePath))?.unresolvedChunks, 1);
   });
 
   it("leaves an annotation where it was when a workspace edit is rolled back", async function () {
