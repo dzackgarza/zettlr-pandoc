@@ -22,6 +22,7 @@
  */
 
 import { hasMarkdownExt } from "@common/util/file-extention-checks";
+import isErrnoException from "@common/util/is-errno-exception";
 import { sha256Text } from "@common/util/sha256";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type {
@@ -1338,16 +1339,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    * listings; this is a route over that walk, not a subsystem.
    */
   private async handleListWorkspaceFiles(res: Reply<"listWorkspaces">): Promise<void> {
-    try {
-      this.sendJson(res, 200, await this._queries.listWorkspaceFiles());
-    } catch (error) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+    this.sendJson(res, 200, await this._queries.listWorkspaceFiles());
   }
 
   /**
@@ -1375,21 +1367,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: Reply<"listWorkspaces">,
     workspaceId: string,
   ): Promise<void> {
-    try {
-      const listing = await this._queries.listWorkspaceFilesByWorkspace(workspaceId);
-      if (listing === undefined) {
-        this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
-        return;
-      }
-      this.sendJson(res, 200, listing);
-    } catch (error) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+    const listing = await this._queries.listWorkspaceFilesByWorkspace(workspaceId);
+    if (listing === undefined) {
+      this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
+      return;
     }
+    this.sendJson(res, 200, listing);
   }
 
   /**
@@ -1401,21 +1384,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     res: Reply<"listWorkspaces">,
     workspaceId: string,
   ): Promise<void> {
-    try {
-      const directories = await this._queries.listWorkspaceDirectories(workspaceId);
-      if (directories === undefined) {
-        this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
-        return;
-      }
-      this.sendJson(res, 200, directories);
-    } catch (error) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+    const directories = await this._queries.listWorkspaceDirectories(workspaceId);
+    if (directories === undefined) {
+      this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
+      return;
     }
+    this.sendJson(res, 200, directories);
   }
 
   /**
@@ -1500,21 +1474,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     workspaceId: string,
     query: string | undefined,
   ): Promise<void> {
-    try {
-      const documents = await this._queries.listWorkspaceDocuments(workspaceId, query);
-      if (documents === undefined) {
-        this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
-        return;
-      }
-      this.sendJson(res, 200, documents);
-    } catch (error) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+    const documents = await this._queries.listWorkspaceDocuments(workspaceId, query);
+    if (documents === undefined) {
+      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
+      return;
     }
+    this.sendJson(res, 200, documents);
   }
 
   private async handleGetDocument(res: Reply<"getDocument">, documentId: string): Promise<void> {
@@ -2531,12 +2496,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 503, "MACROS_UNAVAILABLE", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw error;
     }
   }
 
@@ -2549,12 +2509,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 503, "SKILLS_NOT_CONFIGURED", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw error;
     }
   }
 
@@ -2578,12 +2533,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 400, "INVALID_PARAMS", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw error;
     }
   }
 
@@ -2597,12 +2547,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 404, "FIGURES_DIRECTORY_NOT_FOUND", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw error;
     }
   }
 
@@ -2626,12 +2571,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 400, "INVALID_PARAMS", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "PERSISTENCE_FAILED",
-        error instanceof Error ? error.message : String(error),
-      );
+      // A refusal of the filesystem is a failed write of the figure; any other
+      // error is a fault that the dispatcher logs.
+      if (!isErrnoException(error)) {
+        throw error;
+      }
+      this.sendError(res, 500, "PERSISTENCE_FAILED", error.message);
     }
   }
 
@@ -2645,12 +2590,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 404, "FIGURES_DIRECTORY_NOT_FOUND", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw error;
     }
   }
 
@@ -2678,12 +2618,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 400, "INVALID_PARAMS", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw error;
     }
   }
 
@@ -2705,12 +2640,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 400, "INVALID_PARAMS", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "PERSISTENCE_FAILED",
-        error instanceof Error ? error.message : String(error),
-      );
+      // A refusal of the filesystem is a failed write of the figure; any other
+      // error is a fault that the dispatcher logs.
+      if (!isErrnoException(error)) {
+        throw error;
+      }
+      this.sendError(res, 500, "PERSISTENCE_FAILED", error.message);
     }
   }
 
@@ -2738,211 +2673,202 @@ export default class AgentHTTPProvider extends ProviderContract {
     };
     let targets: Target[] = [];
 
-    try {
-      if (scope === "focused") {
-        if (context.focusedDocument === undefined) {
-          this.sendError(res, 404, "NO_FOCUSED_DOCUMENT", "No document is focused");
+    if (scope === "focused") {
+      if (context.focusedDocument === undefined) {
+        this.sendError(res, 404, "NO_FOCUSED_DOCUMENT", "No document is focused");
+        return;
+      }
+      if (context.focusedDocument.type !== "markdown") {
+        this.sendError(res, 400, "INVALID_PARAMS", "The focused document is not Markdown");
+        return;
+      }
+      targets = [
+        {
+          documentId: context.focusedDocument.documentId,
+          path: context.focusedDocument.path,
+          name: context.focusedDocument.name,
+          open: true,
+          focused: true,
+        },
+      ];
+    } else if (scope === "open") {
+      targets = context.openDocuments
+        .filter((document) => document.type === "markdown")
+        .map((document) => ({
+          documentId: document.documentId,
+          path: document.path,
+          name: document.name,
+          open: true,
+          focused: document.documentId === focusedDocumentId,
+        }));
+    } else {
+      const workspaceFiles = (await this._queries.listWorkspaceFiles()).files;
+      if (scope === "document") {
+        if (query.documentId === undefined || query.documentId === "") {
+          this.sendError(res, 400, "INVALID_PARAMS", "scope=document requires documentId");
           return;
         }
-        if (context.focusedDocument.type !== "markdown") {
-          this.sendError(res, 400, "INVALID_PARAMS", "The focused document is not Markdown");
+        const open = context.openDocuments.find(
+          (document) => document.documentId === query.documentId,
+        );
+        const workspaceFile = workspaceFiles.find((file) => file.documentId === query.documentId);
+        if (open === undefined && workspaceFile === undefined) {
+          this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
+          return;
+        }
+        const documentPath = open?.path ?? workspaceFile!.path;
+        if (!hasMarkdownExt(documentPath)) {
+          this.sendError(res, 400, "INVALID_PARAMS", "The requested document is not Markdown");
           return;
         }
         targets = [
           {
-            documentId: context.focusedDocument.documentId,
-            path: context.focusedDocument.path,
-            name: context.focusedDocument.name,
-            open: true,
-            focused: true,
+            documentId: query.documentId,
+            path: documentPath,
+            name: open?.name ?? workspaceFile!.name,
+            open: open !== undefined || workspaceFile?.open === true,
+            focused: query.documentId === focusedDocumentId,
           },
         ];
-      } else if (scope === "open") {
-        targets = context.openDocuments
-          .filter((document) => document.type === "markdown")
-          .map((document) => ({
-            documentId: document.documentId,
-            path: document.path,
-            name: document.name,
-            open: true,
-            focused: document.documentId === focusedDocumentId,
+      } else {
+        if (scope === "workspace") {
+          if (query.workspaceId === undefined || query.workspaceId === "") {
+            this.sendError(res, 400, "INVALID_PARAMS", "scope=workspace requires workspaceId");
+            return;
+          }
+          if (
+            !this._queries
+              .listWorkspaces()
+              .some((workspace) => workspace.workspaceId === query.workspaceId)
+          ) {
+            this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
+            return;
+          }
+        }
+        const selected =
+          scope === "workspace"
+            ? workspaceFiles.filter((file) => file.workspaceId === query.workspaceId)
+            : workspaceFiles;
+        const seen = new Set<string>();
+        targets = selected
+          .filter((file) => hasMarkdownExt(file.path))
+          .filter((file) => {
+            if (seen.has(file.path)) {
+              return false;
+            }
+            seen.add(file.path);
+            return true;
+          })
+          .map((file) => ({
+            documentId: file.documentId,
+            path: file.path,
+            name: file.name,
+            open: file.open,
+            focused: file.documentId === focusedDocumentId,
           }));
-      } else {
-        const workspaceFiles = (await this._queries.listWorkspaceFiles()).files;
-        if (scope === "document") {
-          if (query.documentId === undefined || query.documentId === "") {
-            this.sendError(res, 400, "INVALID_PARAMS", "scope=document requires documentId");
-            return;
-          }
-          const open = context.openDocuments.find(
-            (document) => document.documentId === query.documentId,
-          );
-          const workspaceFile = workspaceFiles.find((file) => file.documentId === query.documentId);
-          if (open === undefined && workspaceFile === undefined) {
-            this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
-            return;
-          }
-          const documentPath = open?.path ?? workspaceFile!.path;
-          if (!hasMarkdownExt(documentPath)) {
-            this.sendError(res, 400, "INVALID_PARAMS", "The requested document is not Markdown");
-            return;
-          }
-          targets = [
-            {
-              documentId: query.documentId,
-              path: documentPath,
-              name: open?.name ?? workspaceFile!.name,
-              open: open !== undefined || workspaceFile?.open === true,
-              focused: query.documentId === focusedDocumentId,
-            },
-          ];
-        } else {
-          if (scope === "workspace") {
-            if (query.workspaceId === undefined || query.workspaceId === "") {
-              this.sendError(res, 400, "INVALID_PARAMS", "scope=workspace requires workspaceId");
-              return;
-            }
-            if (
-              !this._queries
-                .listWorkspaces()
-                .some((workspace) => workspace.workspaceId === query.workspaceId)
-            ) {
-              this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
-              return;
-            }
-          }
-          const selected =
-            scope === "workspace"
-              ? workspaceFiles.filter((file) => file.workspaceId === query.workspaceId)
-              : workspaceFiles;
-          const seen = new Set<string>();
-          targets = selected
-            .filter((file) => hasMarkdownExt(file.path))
-            .filter((file) => {
-              if (seen.has(file.path)) {
-                return false;
-              }
-              seen.add(file.path);
-              return true;
-            })
-            .map((file) => ({
-              documentId: file.documentId,
-              path: file.path,
-              name: file.name,
-              open: file.open,
-              focused: file.documentId === focusedDocumentId,
-            }));
-        }
       }
-
-      const severityWeight = { info: 0, warning: 1, error: 2 } as const;
-      const minimum = query.minimumSeverity;
-      const textOf = async (target: Target): Promise<string> => {
-        const read = await this._queries.readDocumentContent(
-          target.documentId,
-          "working",
-          1,
-          Number.MAX_SAFE_INTEGER,
-        );
-        if (read === undefined || read === "OUTSIDE_WORKSPACE") {
-          throw new Error(`Could not read selected lint document ${target.path}`);
-        }
-        return read.content;
-      };
-      const result = (
-        target: Target,
-        record: DocumentLintRecord,
-        current: boolean,
-      ): LintResponse["documents"][number] => {
-        const diagnostics: LintDiagnostic[] = record.diagnostics.filter(
-          (diagnostic) => severityWeight[diagnostic.severity] >= severityWeight[minimum],
-        );
-        return {
-          ...target,
-          revision: { sha256: record.revision },
-          current,
-          lintedAt: record.lintedAt,
-          diagnostics,
-          counts: AgentHTTPProvider.lintCounts(diagnostics),
-        };
-      };
-      const documents: LintResponse["documents"] = [];
-      const pending: LintResponse["pending"] = [];
-      const failed: LintResponse["failed"] = [];
-      if (scope === "workspace" || scope === "all") {
-        // A workspace answers from the lint cache; the background linter
-        // brings every outdated or pending document current. It does not
-        // lint again a document whose run gave no result, so the caller gets
-        // that document with the cause and does not wait for it.
-        // A document whose file gives no text is one of the documents that
-        // were not linted; the answer for the other documents stands.
-        const sources = await Promise.all(
-          targets.map(
-            async (target): Promise<DocumentLintSource> =>
-              await textOf(target).then(
-                (text) => ({ path: target.path, text }),
-                (error: unknown) => {
-                  if (!(error instanceof DocumentUnreadableError)) {
-                    throw error;
-                  }
-                  return { path: target.path, unreadable: error.message };
-                },
-              ),
-          ),
-        );
-        const lookups = await workspaceLintRows(this._app.documentLint, sources);
-        lookups.forEach((lookup, index) => {
-          const target = targets[index];
-          const identity = {
-            documentId: target.documentId,
-            path: target.path,
-            name: target.name,
-          };
-          if (lookup.failure !== undefined) {
-            failed.push({
-              ...identity,
-              kind: lookup.failure.kind,
-              cause: lookup.failure.message,
-              failedAt: lookup.failure.failedAt,
-            });
-          }
-          if (lookup.record !== undefined) {
-            documents.push(result(target, lookup.record, lookup.current));
-          } else if (lookup.failure === undefined) {
-            pending.push(identity);
-          }
-        });
-      } else {
-        const records = await Promise.all(
-          targets.map(
-            async (target) => await this._app.documentLint.lint(target.path, await textOf(target)),
-          ),
-        );
-        records.forEach((record, index) => {
-          documents.push(result(targets[index], record, true));
-        });
-      }
-
-      const allDiagnostics = documents.flatMap((document) => document.diagnostics);
-      const queueStopped = this._app.documentLint.queueStopped();
-      this.sendJson(res, 200, {
-        scope,
-        documents,
-        documentCount: documents.length,
-        pending,
-        failed,
-        ...(queueStopped === null ? {} : { queueStopped }),
-        diagnosticCount: allDiagnostics.length,
-        counts: AgentHTTPProvider.lintCounts(allDiagnostics),
-      });
-    } catch (error) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
     }
+
+    const severityWeight = { info: 0, warning: 1, error: 2 } as const;
+    const minimum = query.minimumSeverity;
+    const textOf = async (target: Target): Promise<string> => {
+      const read = await this._queries.readDocumentContent(
+        target.documentId,
+        "working",
+        1,
+        Number.MAX_SAFE_INTEGER,
+      );
+      if (read === undefined || read === "OUTSIDE_WORKSPACE") {
+        throw new Error(`Could not read selected lint document ${target.path}`);
+      }
+      return read.content;
+    };
+    const result = (
+      target: Target,
+      record: DocumentLintRecord,
+      current: boolean,
+    ): LintResponse["documents"][number] => {
+      const diagnostics: LintDiagnostic[] = record.diagnostics.filter(
+        (diagnostic) => severityWeight[diagnostic.severity] >= severityWeight[minimum],
+      );
+      return {
+        ...target,
+        revision: { sha256: record.revision },
+        current,
+        lintedAt: record.lintedAt,
+        diagnostics,
+        counts: AgentHTTPProvider.lintCounts(diagnostics),
+      };
+    };
+    const documents: LintResponse["documents"] = [];
+    const pending: LintResponse["pending"] = [];
+    const failed: LintResponse["failed"] = [];
+    if (scope === "workspace" || scope === "all") {
+      // A workspace answers from the lint cache; the background linter
+      // brings every outdated or pending document current. It does not
+      // lint again a document whose run gave no result, so the caller gets
+      // that document with the cause and does not wait for it.
+      // A document whose file gives no text is one of the documents that
+      // were not linted; the answer for the other documents stands.
+      const sources = await Promise.all(
+        targets.map(
+          async (target): Promise<DocumentLintSource> =>
+            await textOf(target).then(
+              (text) => ({ path: target.path, text }),
+              (error: unknown) => {
+                if (!(error instanceof DocumentUnreadableError)) {
+                  throw error;
+                }
+                return { path: target.path, unreadable: error.message };
+              },
+            ),
+        ),
+      );
+      const lookups = await workspaceLintRows(this._app.documentLint, sources);
+      lookups.forEach((lookup, index) => {
+        const target = targets[index];
+        const identity = {
+          documentId: target.documentId,
+          path: target.path,
+          name: target.name,
+        };
+        if (lookup.failure !== undefined) {
+          failed.push({
+            ...identity,
+            kind: lookup.failure.kind,
+            cause: lookup.failure.message,
+            failedAt: lookup.failure.failedAt,
+          });
+        }
+        if (lookup.record !== undefined) {
+          documents.push(result(target, lookup.record, lookup.current));
+        } else if (lookup.failure === undefined) {
+          pending.push(identity);
+        }
+      });
+    } else {
+      const records = await Promise.all(
+        targets.map(
+          async (target) => await this._app.documentLint.lint(target.path, await textOf(target)),
+        ),
+      );
+      records.forEach((record, index) => {
+        documents.push(result(targets[index], record, true));
+      });
+    }
+
+    const allDiagnostics = documents.flatMap((document) => document.diagnostics);
+    const queueStopped = this._app.documentLint.queueStopped();
+    this.sendJson(res, 200, {
+      scope,
+      documents,
+      documentCount: documents.length,
+      pending,
+      failed,
+      ...(queueStopped === null ? {} : { queueStopped }),
+      diagnosticCount: allDiagnostics.length,
+      counts: AgentHTTPProvider.lintCounts(allDiagnostics),
+    });
   }
 
   // ==========================================================================
