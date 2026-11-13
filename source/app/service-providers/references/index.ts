@@ -330,6 +330,24 @@ export default class ReferenceProvider extends ProviderContract {
   }
 
   /**
+   * Brings the index to the text that an applied transaction left, before a
+   * broadcast announces the transaction (#57). The authority reports an
+   * edited buffer with the debounce of typing, so each pending extraction
+   * runs now. The FSAL gives the saved snapshot of a written file when its
+   * watcher reports the write; the index takes the snapshot of the text that
+   * the transaction wrote, which is the snapshot that the FSAL parser
+   * extracts from the same text.
+   *
+   * @param   {Record<string, string>}  closedFileTexts  The text of each written file
+   */
+  private _indexAppliedTransaction(closedFileTexts: Record<string, string>): void {
+    this._flushAuthorityReports();
+    for (const [filePath, content] of Object.entries(closedFileTexts)) {
+      this._index.applySavedSnapshot(extractReferences(filePath, content));
+    }
+  }
+
+  /**
    * The document authority closed a buffer: cancel any pending extraction
    * and drop its overlay immediately, reverting the document to its saved
    * FSAL snapshot.
@@ -471,6 +489,7 @@ export default class ReferenceProvider extends ProviderContract {
       expectedSourceHashes: result.resultingHashes,
     };
 
+    this._indexAppliedTransaction(result.closedFileTexts);
     broadcastIpcMessage("references");
 
     return {
@@ -518,6 +537,7 @@ export default class ReferenceProvider extends ProviderContract {
     // One-shot: the applied undo consumes the record.
     this._pendingUndo = undefined;
 
+    this._indexAppliedTransaction(result.closedFileTexts);
     broadcastIpcMessage("references");
 
     return {

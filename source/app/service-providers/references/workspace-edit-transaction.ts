@@ -59,6 +59,8 @@ export type WorkspaceEditTransactionResult =
   | {
       status: "applied";
       closedFilesWritten: string[];
+      /** The text that the transaction wrote to each closed file */
+      closedFileTexts: Record<string, string>;
       openBuffersUpdated: string[];
       resultingHashes: Record<string, string>;
     }
@@ -306,6 +308,9 @@ export async function runWorkspaceEditTransaction(
   return {
     status: "applied",
     closedFilesWritten: closedPaths,
+    closedFileTexts: Object.fromEntries(
+      closedFiles.map((document) => [document.documentPath, document.target]),
+    ),
     openBuffersUpdated,
     resultingHashes,
   };
