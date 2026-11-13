@@ -131,7 +131,7 @@ test-file file: sync-dependencies
 # Run one assembled-app spec against the packaged build of the source.
 test-e2e-file file: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _e2e-run "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --reporter ./e2e/support/timed-spec-reporter.ts --timeout 90000 "{{file}}"
+    @just _e2e-run node --import tsx "{{justfile_directory()}}/e2e/support/run-lanes.ts" "{{file}}"
 
 # An assembled-app spec starts the packaged build (`attach`), so a run
 # compiles the app one time. The build runs when the stamp of the package is
@@ -140,15 +140,9 @@ test-e2e-file file: _current-package
 _current-package: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/verify-build.py" --if-stale
 
-# Run a command in the environment of an e2e run. The run owns its X
-# display, its session bus and its loopback.
-#
-# The display is the one of the environment, or one virtual display for the
-# whole command when the environment has none. An assembled-app spec starts
-# the app with `--ozone-platform=x11`, and each start finds the display in
-# `DISPLAY`. The default
-# screen of xvfb-run is 640x480; a new window sizes itself from the screen,
-# and the three panes need more than that.
+# Run a command in the environment of an e2e run. The run owns its session
+# bus and its loopback; the lanes of `e2e/support/run-lanes.ts` own the X
+# displays (one Xvfb server for each lane, #70).
 #
 # The session bus has no services (`scripts/e2e-session-bus.conf`): a desktop
 # notification of the app of a run does not reach the desktop of the author.
@@ -166,9 +160,6 @@ _e2e-run +command:
     #!/usr/bin/env bash
     set -euo pipefail
     run=(dbus-run-session --config-file="{{justfile_directory()}}/scripts/e2e-session-bus.conf" --)
-    if [[ -z "${DISPLAY:-}" ]]; then
-      run+=(xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24')
-    fi
     exec unshare --user --map-current-user --net --keep-caps -- \
       bash -c 'ip link set lo up && exec setpriv --inh-caps=-all --ambient-caps=-all -- "$@"' e2e-run "${run[@]}" "$@"
 
@@ -220,7 +211,7 @@ test: sync-dependencies
 # Portable: runs on hosted CI and locally alike.
 test-e2e: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _e2e-run {{bun}} run test:e2e
+    @just _e2e-run node --import tsx "{{justfile_directory()}}/e2e/support/run-lanes.ts" e2e/*.spec.ts
 
 # Run the workstation-owned desktop-launcher proofs (e2e/desktop/). These
 # drive the installed desktop entry through a live Hyprland compositor and

@@ -16,7 +16,6 @@ import {
   utimes,
   writeFile,
 } from "node:fs/promises";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Browser, chromium, type Locator, type Page } from "playwright";
@@ -62,12 +61,15 @@ export function electronBinary(): string {
 }
 
 /**
- * The source fingerprint of this run, read at its first start. A run tests
- * the source that it started on: a source edit during the run does not stop
- * its later starts, and a build that replaces the package during the run (a
- * start from the desktop launcher) has another stamp and is refused.
+ * The source fingerprint of this run. A run tests the source that it
+ * started on: a source edit or a commit during the run does not stop its
+ * later starts, and a build that replaces the package during the run (a
+ * start from the desktop launcher) has another stamp and is refused. The
+ * lanes runner reads the fingerprint at its start and gives it to each spec
+ * file in `E2E_SOURCE_FINGERPRINT`; a Mocha process that no runner started
+ * is a run of its own and reads it at its first start.
  */
-let runFingerprint: string | undefined;
+let runFingerprint: string | undefined = process.env.E2E_SOURCE_FINGERPRINT;
 
 function sourceFingerprintOfRun(): string {
   if (runFingerprint === undefined) {
@@ -668,11 +670,7 @@ export async function launchElectron(
     });
   }
 
-  // Forge's dev server and logger need separate ports. Choose fresh loopback
-  // ports for this launch; the application owns the subsequent bind and will
-  // report an unrelated collision rather than silently changing ports.
-  const rendererPort = await reserveFreePort();
-  const loggerPort = await reserveFreePort();
+  const { rendererPort, loggerPort } = forgePortsOfLane();
   const forgeExecutable = path.join(REPO_ROOT, "node_modules", ".bin", "electron-forge");
   return spawn(forgeExecutable, ["start", "--", ...appArguments], {
     cwd: REPO_ROOT,
@@ -689,36 +687,26 @@ export async function launchElectron(
 }
 
 /**
- * Bind port 0, read what the kernel gave, release it, and hand it to the
- * caller. The reservation ends at the release: nothing owns the port until
- * the child binds it, so this is only admissible for ports whose bind owner
- * cannot choose its own port — Forge's webpack dev-server and logger, whose
- * entry URLs are baked from the configured port before the server starts.
- * Mocha runs specs serially in one process, and a collision fails the launch
- * loudly with the process output rather than silently changing ports. Ports
- * the application binds itself (the Agent API) must instead be requested as
- * `port: 0` and read back through readAgentApiPort().
+ * The ports of Forge's webpack dev server and logger for a start in this
+ * lane. Forge bakes the entry URLs from the configured port before the
+ * server binds it, so the port cannot be 0. A port that a probe binds and
+ * releases is free for any other process until Forge binds it, and three
+ * lanes start at the same time (#70). Each lane has two ports of its own,
+ * below the ephemeral range of Linux (`net.ipv4.ip_local_port_range`, 32768
+ * to 60999): the kernel gives no port of that range to a bind of port 0 or
+ * to an outgoing connection. The run has a network namespace of its own
+ * (`_e2e-run`), so no process of the host binds them, and a lane starts one
+ * app at a time.
  */
-async function reserveFreePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        reject(new Error("Could not reserve a loopback port"));
-        return;
-      }
-      const { port } = address;
-      server.close((error) => {
-        if (error !== undefined) {
-          reject(error);
-          return;
-        }
-        resolve(port);
-      });
-    });
-  });
+function forgePortsOfLane(): { rendererPort: number; loggerPort: number } {
+  const lane = process.env.E2E_LANE;
+  if (lane === undefined || !/^[1-9][0-9]*$/.test(lane)) {
+    throw new Error(
+      `A start that compiles the app runs in a lane of e2e/support/run-lanes.ts (E2E_LANE is ${JSON.stringify(lane)})`,
+    );
+  }
+  const rendererPort = 20_000 + 2 * Number(lane);
+  return { rendererPort, loggerPort: rendererPort + 1 };
 }
 
 export function observeRenderer(page: Page, rendererEvents: string[]): void {

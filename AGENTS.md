@@ -967,12 +967,20 @@ of an isolated instance are in the first comment of #132.
   `e2e/citation-library-thread.spec.ts` start the packaged binary itself,
   which writes its log to a file; such a spec reads the shutdown line through
   `readAppLog`. Each path refuses a build whose source fingerprint is not
-  that of the tree at the first start of the run; a source edit during the
-  run does not stop its later starts. The reporter (`e2e/support/timed-spec-reporter.ts`)
-  prints the seconds of each spec file and a table of the files, the slowest
-  first.
-- **A test or a hook has 90 s** (`--timeout 90000` of `test:e2e`,
-  `test-e2e-file` and `test:e2e:desktop`): two times the slowest spec file
+  that of the tree at the start of the run: the lanes runner reads it and
+  gives it to each file (`E2E_SOURCE_FINGERPRINT`). A source edit or a
+  commit during the run does not stop its later files.
+- **Spec files run in lanes.** `e2e/support/run-lanes.ts` runs three spec
+  files at the same time, each in a Mocha process of its own. A lane takes
+  the next file when its file ends. The runner prints the output of a file
+  whole when the file ends, then each file by time, the slowest first, and
+  the wall time of the run (#70). A spec file holds no state that another
+  file reads: its fixture is a temporary directory of its own, and the app
+  binds port 0 (`readAgentApiPort`). A start that compiles the app
+  (`buildEnvironment`) gives Forge the two ports of its lane
+  (`forgePortsOfLane`, below the ephemeral range): Forge cannot bind port 0.
+- **A test or a hook has 90 s** (`--timeout 90000` of `run-lanes.ts` and
+  `test:e2e:desktop`): two times the slowest spec file
   of a hosted run (46 s), and more than one start of the packaged app. A
   suite whose test or hook starts the app more than one time sets its limit
   from those starts (`2 * startDeadline({}) + 60_000`); no suite sets a
@@ -980,8 +988,11 @@ of an isolated instance are in the first comment of #132.
   package before the run too, so the boot script of the installed launcher
   starts the current build and does not package it in a test
   (`e2e/desktop/installed-launcher-delivery.spec.ts`).
-- **The run owns the display.** With `DISPLAY` unset the recipe starts the whole
-  Mocha process under one `xvfb-run`; a spec starts no X server of its own.
+- **A lane owns its display.** Each lane starts one Xvfb server
+  (`-displayfd`) and runs its files with that `DISPLAY`, also when the
+  environment has a display. A native message box, a key that `xdotool`
+  presses and the focus of a window are therefore not shared between the
+  files of two lanes. A spec starts no X server of its own.
 - **The run owns its session bus.** The recipe starts the Mocha process
   under `dbus-run-session` with `scripts/e2e-session-bus.conf`, a bus without
   services. A desktop notification of the app of a run goes to that bus and
@@ -1025,8 +1036,8 @@ of an isolated instance are in the first comment of #132.
   finds the box by its title with `xdotool`, captures it with ImageMagick
   `import`, and presses a key in it (`e2e/quit-with-open-review.spec.ts`). The
   CI toolchain installs both tools (`scripts/setup-ci-toolchain.sh`). Such a
-  spec runs on the display of the run only: with `DISPLAY` set, the keys go
-  to the desktop of the author.
+  spec runs through the lanes only: a Mocha run on the display of the
+  environment presses its keys on the desktop of the author.
 - **A file dialog is drawn on the display of the run.** `attach` starts the
   app with `--xdg-portal-required-version` at a version that no portal has
   (`NO_PORTAL_FILE_CHOOSER_VERSION`). Without the option the desktop portal
@@ -1407,7 +1418,7 @@ of an isolated instance are in the first comment of #132.
   main windows have the prompt.
 - **Proof:** `e2e/renderer-recovery.spec.ts` (a killed renderer, a renderer
   in an endless loop, and a close of a stopped window). It answers native
-  message boxes, so it runs on the display of the run only (§13).
+  message boxes, so it runs through the lanes only (§13).
 
 ### 18. Controls that a surface paints itself
 
