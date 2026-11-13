@@ -21,6 +21,8 @@ const READER = [
   "+footnotes",
   "+inline_notes",
   "+wikilinks_title_after_pipe",
+  // The Markdown reader of the exports (`writeDefaults`) reads `\(` and `\[`
+  "+tex_math_single_backslash",
 ].join("");
 
 function pandocDocument(source: string): unknown {
@@ -209,5 +211,25 @@ describe("Pandoc core syntax differential oracle", function () {
     const multiline = "first line\nsecond line\n=====\n";
     assert.equal(pandocTypeCount(pandocDocument(multiline), "Header"), 0);
     assert.equal(editorNodeCount(multiline, "SetextHeading1"), 0);
+  });
+
+  // The inlines of the heading line end at its line end: math that goes on
+  // over the `=` line makes no heading, and display math in the line does (#203)
+  it("matches Pandoc Setext admission for a line with math", function () {
+    for (const source of [
+      "$x\n=\ny$\n",
+      "\\(x\n=\ny\\)\n",
+      "Text $x\n=\ny$ more\n",
+      "$$a$$\n=\n",
+      "\\[a\\]\n=\n",
+      "Title $$a$$\n===\n",
+      "Price $5\n===\n",
+    ]) {
+      assert.equal(
+        editorNodeCount(source, "SetextHeading1"),
+        pandocTypeCount(pandocDocument(source), "Header"),
+        source,
+      );
+    }
   });
 });

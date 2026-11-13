@@ -92,6 +92,17 @@ describe("document title metadata", function () {
     });
   }
 
+  // Pandoc reads `Title $$a$$` over `===` as a heading with display math (#203)
+  for (const [open, close] of [
+    ["$$", "$$"],
+    ["\\[", "\\]"],
+  ]) {
+    it(`takes a Setext heading with display math in ${open} ${close} for a heading`, function () {
+      const metadata = documentTitleMetadata(`Title ${open}a${close}\n===\n\nBody.\n`);
+      assert.equal(metadata.firstHeading, "Title");
+    });
+  }
+
   it("prefers YAML title over the first heading", function () {
     const file = descriptor();
     file.yamlTitle = "YAML Wins";
