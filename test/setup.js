@@ -35,6 +35,11 @@ Module._extensions[".md"] = function (mod, filename) {
 // jsdom renders no CSS, so an imported stylesheet is an empty module.
 Module._extensions[".css"] = function () {};
 
+// DefinePlugin puts this constant into the app bundle (webpack.main.config.js,
+// webpack.renderer.config.js). A spec runs the source of a build with the
+// update check, the build of a release.
+globalThis.__UPDATES_DISABLED__ = "0";
+
 /**
  * Emulates a browser environment, which is required for some tests (especially if Vue is involved).
  * Code is essentially taken from https://github.com/enzymejs/enzyme/blob/master/docs/guides/jsdom.md.

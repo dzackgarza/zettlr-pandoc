@@ -94,8 +94,6 @@ describe("The tool probes of the start (issue #204)", function () {
 
   before(async function () {
     root = await mkdtemp(path.join(tmpdir(), "zettlr-start-probes-"));
-    // webpack defines this constant in the app bundle (webpack.main.config.js).
-    Object.assign(globalThis, { __UPDATES_DISABLED__: "0" });
   });
 
   beforeEach(function () {

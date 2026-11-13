@@ -43,11 +43,6 @@ import RecentDocumentsProvider from "source/app/service-providers/recent-docs";
 import { bootDocumentManager } from "./documents-provider-seam";
 import { sentMessagesFor } from "./headless-electron-harness.cjs";
 
-Object.defineProperty(globalThis, "__UPDATES_DISABLED__", {
-  configurable: true,
-  value: "0",
-});
-
 type MenuBuilder = typeof getWin32Menu;
 type Send = unknown[];
 
