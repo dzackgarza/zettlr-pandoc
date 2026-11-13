@@ -302,9 +302,20 @@ function getDirBasename(doc: OpenDocument): string {
   return pathBasename(pathDirname(doc.path));
 }
 
+/**
+ * The accessible name of a tab: what the tab shows, as words. A tab whose
+ * title another tab has also names its folder, as the visible tab does
+ * (`.deduplicate`), so a screen reader tells the two apart.
+ */
 function getAccessibleTabLabel(doc: OpenDocument): string {
-  const title = getSemanticDocumentTitle(doc);
-  return modifiedPaths.value.includes(doc.path) ? `${title} — ${unsavedChangesLabel}` : title;
+  const parts = [getSemanticDocumentTitle(doc)];
+  if (hasDuplicate(doc)) {
+    parts.push(getDirBasename(doc));
+  }
+  if (modifiedPaths.value.includes(doc.path)) {
+    parts.push(unsavedChangesLabel);
+  }
+  return parts.join(" — ");
 }
 
 /**
@@ -922,6 +933,7 @@ body div.tab-container {
       font-style: italic;
       font-size: 80%;
       opacity: 0.8;
+      margin-left: 4px;
     }
 
     // Unsaved changes read as an amber dot in the close control's own slot,
@@ -1018,6 +1030,7 @@ body.darwin {
       }
 
       .deduplicate {
+        margin-left: 0;
         margin-right: 10px;
       }
 
@@ -1059,6 +1072,16 @@ body.darwin {
         &:hover {
           background-color: rgb(200, 200, 200);
         }
+      }
+
+      // The dot takes the slot of the close control, which is at the left
+      // edge of a tab on macOS: the same box.
+      .modification-indicator {
+        right: auto;
+        left: 0;
+        width: (@tabbar-height / 3 * 1.9);
+        height: (@tabbar-height / 3 * 1.9);
+        margin: (@tabbar-height / 3 * 0.55);
       }
     }
   }
