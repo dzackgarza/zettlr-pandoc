@@ -428,6 +428,51 @@ describe("Workspace rename commit protocol", function () {
     });
   });
 
+  describe("a request that is not a previewed rename (#57)", function () {
+    let scratch: ScratchWorkspace;
+
+    before(async function () {
+      scratch = await setUpScratchWorkspace();
+    });
+
+    after(async function () {
+      await scratch.provider.shutdown();
+      await rm(scratch.root, { recursive: true, force: true });
+    });
+
+    it("commits no edit that the window made itself", async function () {
+      const preview = (await scratch.command.run("preview-reference-rename", {
+        oldKey: OLD_KEY,
+        newKey: NEW_KEY,
+      })) as ReferenceRenamePreview;
+      const shown = editOf(preview, "preview of the forged commit");
+      // The window sends the edit of the preview with a key that the author
+      // never saw. Each hash of the preview still holds.
+      const forged: WorkspaceReferenceEdit = {
+        ...shown,
+        edits: shown.edits.map((edit) => ({ ...edit, insert: "thm:forged" })),
+      };
+
+      await assert.rejects(
+        async () =>
+          await scratch.command.run("commit-reference-rename", {
+            edit: forged,
+          }),
+      );
+      assertWorkspaceBytes(scratch, scratch.originals, "after the refused commit");
+    });
+
+    it("previews no rename without a new key", async function () {
+      await assert.rejects(
+        async () =>
+          await scratch.command.run("preview-reference-rename", {
+            oldKey: OLD_KEY,
+          }),
+        (error: Error) => !(error instanceof TypeError),
+      );
+    });
+  });
+
   describe("applied path and one-shot undo", function () {
     let scratch: ScratchWorkspace;
     let previewedEdit: WorkspaceReferenceEdit | undefined;
