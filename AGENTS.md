@@ -1369,8 +1369,8 @@ of an isolated instance are in the first comment of #132.
   subtree with that class, so the rules of the surface decide with any
   weight. The collaboration surfaces carry it: the Annotations view, the
   inline thread, the review bar, the review chunk, the create-annotation
-  dialog and the two delete confirmations. The Replace All and the Fix All
-  confirmations carry it too.
+  dialog and the two delete confirmations. The preview of an edit of several
+  documents (§28) and the Fix All confirmation carry it too.
 - **A portal is not in the subtree of its component.** A dialog that reka-ui
   puts on `body` carries the class on its own content element, and no rule
   for it is nested in the rule of the view that opens it.
@@ -1380,8 +1380,7 @@ of an isolated instance are in the first comment of #132.
 - **Proof:** `e2e/annotation-button-colours.spec.ts` (each control of each
   collaboration surface, in dark and in light mode, has the colour of its
   token and the same painting with and without the platform class),
-  `e2e/search-replace.spec.ts` and `e2e/fix-all.spec.ts` (the two
-  confirmations).
+  `e2e/fix-all.spec.ts` (the Fix All confirmation).
 
 ### 19. A file that cannot be read
 
@@ -1423,7 +1422,7 @@ of an isolated instance are in the first comment of #132.
   or at a folder that it cannot list. It names each such file and folder
   (`kind`) with the cause: the broadcast `search-unread` for the Search
   view, which lists them above the results, and the list `notSearched` of
-  `GET /v1/workspace/search`. The Replace All confirmation
+  `GET /v1/workspace/search`. The preview of Replace All
   says that those files keep their text. An error that is no filesystem
   error ends the search with the failure `stopped`, which names the file.
 - **A walk names the folders that it could not read.**
@@ -1783,9 +1782,17 @@ of an isolated instance are in the first comment of #132.
   structured clone of IPC refuses a Vue proxy ("An object could not be
   cloned"). A window keeps an IPC payload in a `shallowRef` or sends
   `toRaw` of it.
-- Fix All and Replace All keep their own confirmations (§19, Debugging
-  entry points).
+- **Replace All of the Search view uses the same dialog.** The command
+  `preview-replace` of the search provider gives the changed lines, and
+  `replace-in-files` applies; both make their edits in `replacePlan`, from
+  the spans of the search and the hash of the text that the search read, so
+  a document that changed after the search is refused. The replace of one
+  file or one match from its row has no dialog: the row shows its
+  replacement before the click. A replace keeps one Undo in the view.
+- **Fix All shows its plan in its own dialog**, by rule and by document
+  (Debugging entry points), and applies through `applyWorkspaceEdit`.
 - **Proof:** `e2e/link-update-preview.spec.ts`, `e2e/rename-tag.spec.ts`,
+  `e2e/search-replace.spec.ts`,
   `e2e/reference-rename-preview.spec.ts`, `e2e/wikilinks.spec.ts`,
   `e2e/move-with-unwritable-review-state.spec.ts`,
   `test/workspace-edit-proposal.spec.ts`, `test/replace-links.spec.ts`.
