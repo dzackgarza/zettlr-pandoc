@@ -215,7 +215,7 @@ export interface MDFileDescriptor extends FSMetaInfo {
   /** First authored Markdown heading, regardless of heading depth. */
   firstHeading: string | null;
   /** First prose sentence, used only when no authored heading exists. */
-  firstSentence?: string | null;
+  firstSentence: string | null;
   /**
    * The identity of the parser that produced this descriptor: its version and
    * the settings it read. A cached descriptor of another parser is parsed again.

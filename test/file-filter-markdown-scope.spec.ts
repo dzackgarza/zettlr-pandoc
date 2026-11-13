@@ -20,6 +20,7 @@ const markdown: MDFileDescriptor = {
   wordCount: 1,
   charCount: 1,
   firstHeading: "Theorem",
+  firstSentence: null,
   yamlTitle: undefined,
   aliases: [],
   frontmatter: null,

@@ -7,6 +7,7 @@ import type {
   ProjectFileFilter,
   SortMethod,
 } from "@dts/common/fsal";
+import { listedDocumentName } from "./document-title";
 import { innermostRoot } from "./renderer-path-polyfill";
 
 export interface ExplorerSortDefaults {
@@ -15,6 +16,8 @@ export interface ExplorerSortDefaults {
   fileNameDisplay: FileNameDisplay;
   appLang: string;
   fileMetaTime: "modtime" | "creationtime";
+  /** The setting `display.markdownFileExtensions`. */
+  showMarkdownExtensions: boolean;
 }
 
 export interface ProjectMembership {
@@ -132,23 +135,6 @@ function splitSortMethod(method: SortMethod): { key: SortKey; direction: "up" | 
   };
 }
 
-function documentDisplayValue(descriptor: AnyDescriptor, display: FileNameDisplay): string {
-  if (descriptor.type !== "file") {
-    return descriptor.name;
-  }
-
-  const title = descriptor.frontmatter?.title;
-  const hasHeading = descriptor.firstHeading != null && descriptor.firstHeading.trim() !== "";
-
-  if (display.includes("title") && typeof title === "string" && title.trim() !== "") {
-    return title;
-  }
-  if (display.includes("heading") && hasHeading) {
-    return descriptor.firstHeading!;
-  }
-  return descriptor.name;
-}
-
 function scalarMetadataValue(
   descriptor: AnyDescriptor,
   key: string,
@@ -222,32 +208,19 @@ function compareByKey(
   projectRoot: ProjectDirDescriptor | undefined,
 ): number {
   const display = effectiveExplorerDisplay(displayOwner, defaults.fileNameDisplay);
+  // A sort by title or by heading sorts the name that this display would list
+  const listed = (descriptor: AnyDescriptor, by: FileNameDisplay): string =>
+    listedDocumentName(descriptor, by, defaults.showMarkdownExtensions);
 
   switch (key) {
     case "name":
-      return compareStrings(
-        documentDisplayValue(a, display),
-        documentDisplayValue(b, display),
-        defaults,
-      );
+      return compareStrings(listed(a, display), listed(b, display), defaults);
     case "filename":
       return compareStrings(a.name, b.name, defaults);
     case "title":
-      return compareStrings(
-        a.type === "file" && typeof a.frontmatter?.title === "string"
-          ? a.frontmatter.title
-          : a.name,
-        b.type === "file" && typeof b.frontmatter?.title === "string"
-          ? b.frontmatter.title
-          : b.name,
-        defaults,
-      );
+      return compareStrings(listed(a, "title"), listed(b, "title"), defaults);
     case "heading":
-      return compareStrings(
-        a.type === "file" && a.firstHeading != null ? a.firstHeading : a.name,
-        b.type === "file" && b.firstHeading != null ? b.firstHeading : b.name,
-        defaults,
-      );
+      return compareStrings(listed(a, "heading"), listed(b, "heading"), defaults);
     case "time": {
       // Preserve the historical `time-up` contract: "up" means newest first.
       const field = defaults.fileMetaTime;

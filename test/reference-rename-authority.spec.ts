@@ -75,6 +75,7 @@ function descriptorFor(filePath: string): MDFileDescriptor {
     creationtime: stat.birthtimeMs,
     linefeed: "\n",
     firstHeading: null,
+    firstSentence: null,
     yamlTitle: undefined,
     aliases: [],
     frontmatter: null,

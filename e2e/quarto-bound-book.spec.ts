@@ -495,7 +495,7 @@ describe("a workspace bound to the manifest in its assembly directory", function
     await waitUntil(async () => existsSync(created), "the new book chapter file to be created");
     await activePage
       .locator(CHAPTER)
-      .filter({ hasText: "New-Section.md" })
+      .filter({ hasText: "New-Section" })
       .waitFor({ state: "visible", timeout: 10_000 });
     assert.equal(
       (
@@ -503,8 +503,8 @@ describe("a workspace bound to the manifest in its assembly directory", function
           .locator(`${SECTION("book")} .quarto-book-outline .chrome-row-label`)
           .allTextContents()
       ).at(-1),
-      "New-Section.md",
-      "the placement selector can put a newly created chapter at top-level book end",
+      "New-Section",
+      "the placement selector puts the new chapter, titled as its tab, at the book end",
     );
 
     const manifest = await readFile(manifestPath, "utf8");

@@ -207,6 +207,7 @@ function tagsOf(markdown: string): string[] {
     creationtime: 0,
     linefeed: "\n",
     firstHeading: null,
+    firstSentence: null,
     yamlTitle: undefined,
     aliases: [],
     frontmatter: null,

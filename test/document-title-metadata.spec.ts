@@ -1,7 +1,7 @@
 import { strict as assert } from "assert";
+import { documentTitle } from "source/common/util/document-title";
 import { documentTitleMetadata } from "source/common/util/document-title-metadata";
 import type { MDFileDescriptor } from "source/types/common/fsal";
-import { getSemanticDescriptorTitle } from "source/win-main/util/get-document-title";
 
 function descriptor(path = "/tmp/title.md"): MDFileDescriptor {
   return {
@@ -58,7 +58,7 @@ describe("document title metadata", function () {
     file.firstSentence = metadata.firstSentence;
 
     assert.equal(file.firstHeading, "Lattice Folding");
-    assert.equal(getSemanticDescriptorTitle(file), "Lattice Folding");
+    assert.equal(documentTitle(file), "Lattice Folding");
   });
 
   // A line `=` in display math is no Setext underline (#203)
@@ -88,7 +88,7 @@ describe("document title metadata", function () {
 
       assert.equal(file.firstHeading, null);
       assert.equal(file.firstSentence, "A prose sentence before the calculation.");
-      assert.equal(getSemanticDescriptorTitle(file), "A prose sentence before the calculation.");
+      assert.equal(documentTitle(file), "A prose sentence before the calculation.");
     });
   }
 
@@ -112,7 +112,7 @@ describe("document title metadata", function () {
 
     assert.equal(file.yamlTitle, "YAML Wins");
     assert.equal(file.firstHeading, "Heading Loses");
-    assert.equal(getSemanticDescriptorTitle(file), "YAML Wins");
+    assert.equal(documentTitle(file), "YAML Wins");
   });
 
   it("falls back to prose only up to the first math region when there is no heading", function () {
@@ -125,7 +125,7 @@ describe("document title metadata", function () {
 
     assert.equal(file.firstHeading, null);
     assert.equal(file.firstSentence, "A useful description before");
-    assert.equal(getSemanticDescriptorTitle(file), "A useful description before");
+    assert.equal(documentTitle(file), "A useful description before");
   });
 
   it("uses the first sentence when there is no heading and no early math", function () {
@@ -137,6 +137,6 @@ describe("document title metadata", function () {
     file.firstSentence = metadata.firstSentence;
 
     assert.equal(file.firstSentence, "The first sentence is enough.");
-    assert.equal(getSemanticDescriptorTitle(file), "The first sentence is enough.");
+    assert.equal(documentTitle(file), "The first sentence is enough.");
   });
 });

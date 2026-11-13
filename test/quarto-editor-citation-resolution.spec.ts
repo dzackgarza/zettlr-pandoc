@@ -74,6 +74,7 @@ describe("Quarto editor citation resolution and startup race", function () {
     yamlTitle: undefined,
     aliases: [],
     firstHeading: null,
+    firstSentence: null,
     frontmatter: null,
     bom: "",
     linefeed: "\n",

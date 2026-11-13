@@ -138,6 +138,7 @@ import {
 } from "@common/pandoc-util/compute-reference-edits";
 import { annotateCompletionEntries } from "@common/pandoc-util/project-reference-status";
 import { documentCitationDatabase } from "@common/util/document-citation-database";
+import { documentTitle } from "@common/util/document-title";
 import { reportError } from "@common/util/error-reporting";
 import { getDocumentTypeForExtension, hasMarkdownExt } from "@common/util/file-extention-checks";
 import makeValidUri from "@common/util/make-valid-uri";
@@ -985,7 +986,7 @@ function updateProjectInfo(): ProjectInfo | null {
       wordCount: descriptor.wordCount,
       charCount: descriptor.charCount,
       path: descriptor.path,
-      displayName: descriptor.yamlTitle ?? descriptor.firstHeading ?? descriptor.name,
+      displayName: documentTitle(descriptor),
     }));
 
   const metadataByPath = new Map(extractedMetadata.map((file) => [file.path, file]));

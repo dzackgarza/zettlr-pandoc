@@ -32,6 +32,7 @@ import {
 } from "source/app/service-providers/fsal/fsal-directory";
 import { parse as parseFile } from "source/app/service-providers/fsal/fsal-file";
 import getMarkdownFileParser from "source/app/service-providers/fsal/util/file-parser";
+import { documentTitle } from "source/common/util/document-title";
 import type { DirectorySettings, ProjectSettings } from "source/types/common/fsal";
 import { buildQuartoBookOutline } from "source/win-main/file-manager/quarto-book-outline";
 
@@ -69,10 +70,7 @@ async function documentTitles(directory: string): Promise<Map<string, string>> {
   for (const name of await readdir(directory, { recursive: true })) {
     if (name.endsWith(".md") && !name.startsWith(".book")) {
       const descriptor = await parseFile(path.join(directory, name), null, parser);
-      titles.set(
-        descriptor.path,
-        descriptor.yamlTitle ?? descriptor.firstHeading ?? descriptor.name,
-      );
+      titles.set(descriptor.path, documentTitle(descriptor));
     }
   }
   return titles;

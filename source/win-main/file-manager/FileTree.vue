@@ -410,6 +410,7 @@ const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, strin
     fileNameDisplay: configStore.config.fileNameDisplay,
     appLang: configStore.config.appLang,
     fileMetaTime: configStore.config.fileMetaTime,
+    showMarkdownExtensions: configStore.config.display.markdownFileExtensions,
   } as const;
 
   for (const descriptor of getDirectories.value) {

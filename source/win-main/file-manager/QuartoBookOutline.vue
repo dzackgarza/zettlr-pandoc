@@ -169,6 +169,7 @@
  */
 
 import { trans } from "@common/i18n-renderer";
+import { documentTitle } from "@common/util/document-title";
 import { reportError } from "@common/util/error-reporting";
 import { projectRelativePath } from "@common/util/explorer-ordering";
 import { isInsideRoot, pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
@@ -215,7 +216,7 @@ const outline = computed(() =>
   buildQuartoBookOutline(props.rootPath, props.navigation, (filePath) => {
     const descriptor = workspaceStore.descriptorMap.get(filePath);
     if (descriptor?.type === "file") {
-      return descriptor.yamlTitle ?? descriptor.firstHeading ?? descriptor.name;
+      return documentTitle(descriptor);
     }
     return pathBasename(filePath);
   }),
@@ -260,7 +261,7 @@ const allMarkdownCandidates = computed<ChapterCandidate[]>(() => {
     .map((descriptor) => ({
       path: descriptor.path,
       relativePath: projectRelativePath(descriptor.path, props.rootPath),
-      label: descriptor.yamlTitle ?? descriptor.firstHeading ?? descriptor.name,
+      label: documentTitle(descriptor),
     }))
     .sort((a, b) => a.relativePath.localeCompare(b.relativePath, undefined, { numeric: true }));
 });

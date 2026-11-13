@@ -20,6 +20,7 @@ const DEFAULTS: ExplorerSortDefaults = {
   fileNameDisplay: "title+heading",
   appLang: "en-US",
   fileMetaTime: "modtime",
+  showMarkdownExtensions: false,
 };
 
 function directory(
@@ -91,6 +92,7 @@ function markdown(
     wordCount: 0,
     charCount: 0,
     firstHeading: options.heading ?? null,
+    firstSentence: null,
     yamlTitle: options.title,
     aliases: [],
     frontmatter: {
