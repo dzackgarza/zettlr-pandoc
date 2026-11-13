@@ -1892,7 +1892,6 @@ export default class DocumentManager
     }
 
     this._unload(doc);
-    this.syncWatchedFilePaths();
     return true;
   }
 
@@ -3054,9 +3053,10 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     }
 
-    // Second, get all open files. NOTE: This does not mean "open open", but
-    // rather paths that are "open" somewhere in a leaf. Not actively viewed.
-    let openFiles: string[] = [];
+    // Second, get the paths of the tabs of each pane and of each loaded
+    // document. A review loads a document that no tab shows; its buffer
+    // must learn of a change of its file as the buffer of a tab does.
+    let openFiles: string[] = this.documents.map((doc) => doc.filePath);
     for (const windowId in this._windows) {
       for (const leaf of this._windows[windowId].getAllLeafs()) {
         openFiles.push(...leaf.tabMan.openFiles.map((f) => f.path));
@@ -4297,6 +4297,7 @@ current contents from the editor somewhere else, and restart the application.`,
     this.documents.splice(index, 1);
     this._refusedCloses.delete(document.documentId);
     this._app.references.dropAuthorityBuffer(document.filePath);
+    this.syncWatchedFilePaths();
   }
 
   /**
@@ -4342,7 +4343,6 @@ current contents from the editor somewhere else, and restart the application.`,
         this.broadcastCollaborationState(documentId);
       } else {
         this._unload(document);
-        this.syncWatchedFilePaths();
       }
     }
     await refused.repeat();

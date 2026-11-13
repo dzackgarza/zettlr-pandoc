@@ -1152,6 +1152,12 @@ of an isolated instance are in the first comment of #132.
   sidecar with a review whose working text is not the text of its fence) and
   offers to open it. Proof: `test/documents-quit-with-review.spec.ts`,
   `e2e/accepted-text-of-closed-document.spec.ts`.
+- **The provider watches the file of each loaded document.** The watcher of
+  the documents provider follows the paths of the tabs and of each loaded
+  document (`syncWatchedFilePaths`, called at each load and unload). A
+  review loads a document that no tab shows, and a change of its file
+  freezes the review and sends the message of a kept change as for a
+  document in a tab. Proof: `e2e/accepted-text-of-closed-document.spec.ts`.
 - **"Close anyway" at a window close offers no proposal for a save.** The
   buffer of a document with an undecided proposal takes the text of the
   file; the review and its working text stay in the sidecar. `pullUpdates`
