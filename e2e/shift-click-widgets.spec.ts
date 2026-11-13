@@ -29,7 +29,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   type RunningApp,
   requireInitialized,
@@ -125,9 +124,9 @@ describe("assembled editor: Shift-click on a rendered widget extends the selecti
     });
     fixtureRoot = fixture.root;
     await writeFile(path.join(path.dirname(fixture.documentPath), "curves.md"), "# Curves\n");
-    app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    app = await attach(fixture.configDirectory, rendererEvents);
     page = await findEditorPage(app.browser, 60_000);
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: 60_000 });
     // A font that arrives after a measure moves the text and the widgets: the
     // CI runner reports "Fallback font will be used while loading".

@@ -51,7 +51,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
   requestQuit,
@@ -260,7 +259,7 @@ async function waitForWorkingText(
 }
 
 describe("a review that cannot be persisted", function () {
-  // One cold `forge start` compile plus the five failure scenarios.
+  // One start of the packaged app plus the five failure scenarios.
   this.timeout(300_000);
 
   let fixtureRoot: string | undefined;
@@ -292,14 +291,13 @@ describe("a review that cannot be persisted", function () {
     parkedPath = path.join(path.dirname(fixture.documentPath), "parked.md");
     await writeFile(parkedPath, PARKED, "utf8");
     sidecarDirectory = path.join(fixture.configDirectory, "review-sidecars");
-    const running = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const running = await attach(fixture.configDirectory, rendererEvents);
     appProcess = running.appProcess;
     browser = running.browser;
     getOutput = running.getOutput;
     api = agentClient(await readAgentApiPort(fixture.configDirectory, 60_000));
     page = await findEditorPage(running.browser, this.timeout());
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

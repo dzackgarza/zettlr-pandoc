@@ -286,12 +286,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--verify-only", action="store_true",
                         help="only verify the existing artifact; do not run a build")
+    parser.add_argument("--if-stale", action="store_true",
+                        help="build only when the stamp of the package is not the "
+                             "fingerprint of the source (an e2e run shares one build)")
     args = parser.parse_args()
 
     if args.verify_only:
         verify_artifact()
-    else:
-        build_and_verify()
+        return
+    if args.if_stale and ASAR.exists() and STAMP.exists() \
+            and STAMP.read_text().strip() == source_fingerprint():
+        print(f"[verify-build] {ASAR} is current: its stamp is the source fingerprint")
+        return
+    build_and_verify()
 
 
 if __name__ == "__main__":

@@ -34,7 +34,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -164,7 +163,7 @@ describe("A refused Open workspace", function () {
     await mkdir(hidden);
     await writeFile(path.join(hidden, "HEAD"), "ref: refs/heads/main\n");
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout(), {
+    const app = await attach(fixture.configDirectory, rendererEvents, {
       environment: {
         HOME: home,
         // The Flowmark update of the start runs uv: it keeps the tools and
@@ -179,7 +178,7 @@ describe("A refused Open workspace", function () {
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
   });
 

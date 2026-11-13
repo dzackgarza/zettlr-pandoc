@@ -94,7 +94,7 @@ describe("assembled app: wikilinks follow their documents", function () {
       await writeFile(path.join(workspace, relativePath), contents, "utf8");
     }
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;

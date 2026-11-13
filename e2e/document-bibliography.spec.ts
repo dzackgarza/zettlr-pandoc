@@ -31,7 +31,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requestWindowClose,
   requireInitialized,
@@ -151,14 +150,14 @@ describe("the bibliography of a document", function () {
 
     // The chapter is open at the start: the workspace walk has not listed
     // its folder when the editor and the views first ask for its library.
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout(), {
+    const app = await attach(fixture.configDirectory, rendererEvents, {
       files: [chapterPath],
     });
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(EDITOR).waitFor({ state: "visible", timeout: this.timeout() });
   });
 

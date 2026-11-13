@@ -19,13 +19,7 @@ import { strict as assert } from "node:assert";
 import { type ChildProcess } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { type Browser, type Page } from "playwright";
-import {
-  attach,
-  createFixture,
-  findEditorPage,
-  hideDevServerOverlay,
-  shutdown,
-} from "./support/electron-app";
+import { attach, createFixture, findEditorPage, shutdown } from "./support/electron-app";
 
 const DOCUMENT = String.raw`# TikZ live integration
 
@@ -59,12 +53,11 @@ describe("TikZ microlocal live preview in the assembled app", function () {
       documentContents: DOCUMENT,
     });
     fixtureRoot = fixture.root;
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

@@ -36,7 +36,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -175,12 +174,12 @@ describe("a move whose review state cannot follow the document", function () {
     await writeFile(indexPath, INDEX, "utf8");
     await writeFile(genusPath, GENUS, "utf8");
     await writeFile(rankPath, RANK, "utf8");
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
 
     await openAndAnnotate(page, notePath, "even unimodular");

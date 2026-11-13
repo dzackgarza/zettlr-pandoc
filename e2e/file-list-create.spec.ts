@@ -64,11 +64,7 @@ describe("New file and new folder from the file list (#202)", function () {
     workspace = path.dirname(fixture.documentPath);
     lattices = path.join(workspace, "lattices");
     await mkdir(lattices);
-    ({ browser, appProcess, getOutput } = await attach(
-      fixture.configDirectory,
-      [],
-      this.timeout(),
-    ));
+    ({ browser, appProcess, getOutput } = await attach(fixture.configDirectory, []));
     page = await findEditorPage(browser, this.timeout());
   });
 

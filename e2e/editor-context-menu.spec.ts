@@ -31,7 +31,6 @@ import {
   delay,
   findEditorPage,
   findMenuNode,
-  hideDevServerOverlay,
   readAgentApiPort,
   readApplicationMenu,
   requireInitialized,
@@ -172,9 +171,9 @@ describe("The context menu of the editor (#202)", function () {
     configDirectory = fixture.configDirectory;
     reviewedPath = path.join(path.dirname(fixture.documentPath), "localization.md");
     await writeFile(reviewedPath, REVIEWED, "utf8");
-    ({ browser, appProcess, getOutput } = await attach(configDirectory, [], this.timeout()));
+    ({ browser, appProcess, getOutput } = await attach(configDirectory, []));
     page = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".main-editor-wrapper .cm-content:visible").waitFor();
   });
 

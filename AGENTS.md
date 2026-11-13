@@ -922,14 +922,24 @@ of an isolated instance are in the first comment of #132.
 
 ### 13. Assembled-app E2E runs
 
-- `just test-e2e` and `just test-e2e-file <spec>` run the specs of `e2e/`. A spec
-  that starts the app through `attach` (`e2e/support/electron-app.ts`) runs
-  `electron-forge start`: a development build of the working tree for each start.
-  `e2e/application-lifecycle.spec.ts` and `e2e/citation-library-thread.spec.ts`
-  start the packaged binary. `currentPackagedBinary` refuses a build whose
-  source fingerprint is not that of the tree: run `just package` before such a
-  spec. The packaged app writes its log to a file; such a spec reads the
-  shutdown line through `readAppLog`.
+- `just test-e2e` and `just test-e2e-file <spec>` run the specs of `e2e/`.
+  The recipes first make the packaged build of the tree when it is not
+  current (`_current-package`: `verify-build.py --if-stale`), one build for
+  the run. A spec that starts the app through `attach`
+  (`e2e/support/electron-app.ts`) runs the archive of that build
+  (`currentPackagedArchive`) with the Electron of `node_modules`: the start
+  compiles nothing, and it has 60 s (`startDeadline`). A start with
+  `buildEnvironment` (variables that webpack reads, such as
+  `ZETTLR_DISABLE_UPDATE_CHECK`) compiles a development build of its own
+  through `electron-forge start` and has 240 s. A webpack cache does not
+  make that faster: a build from the cache lost the nodehun asset (#70).
+  `e2e/application-lifecycle.spec.ts` and
+  `e2e/citation-library-thread.spec.ts` start the packaged binary itself,
+  which writes its log to a file; such a spec reads the shutdown line through
+  `readAppLog`. Each path refuses a build whose source fingerprint is not
+  that of the tree. The reporter (`e2e/support/timed-spec-reporter.ts`)
+  prints the seconds of each spec file and a table of the files, the slowest
+  first.
 - **The run owns the display.** With `DISPLAY` unset the recipe starts the whole
   Mocha process under one `xvfb-run`; a spec starts no X server of its own.
 - **The run owns its session bus.** The recipe starts the Mocha process
@@ -941,7 +951,8 @@ of an isolated instance are in the first comment of #132.
   the run.
 - **The run owns its loopback.** The recipe (`_e2e-run`) starts the run in
   a network namespace with `lo` and no other interface. An app of the run
-  binds the Agent API port, the Forge ports and each other port there, so
+  binds the Agent API port, the Forge ports of a build start and each other
+  port there, so
   the desktop app of the author on port 27412 takes no port from a first
   start of the run (#215). The run reaches no service of the host (Zotero)
   and no network: a spec that needs a service starts it in the run. On the
@@ -956,9 +967,10 @@ of an isolated instance are in the first comment of #132.
   output and the X server errors when it fails (`test/visual/display-probe.ts`).
 - An e2e run and a `just package` build each need most of the memory of this
   workstation. Run one at a time. A start from the desktop launcher runs
-  `just package` when the source changed, and the build replaces `.webpack`
-  under a running e2e start: that run stops with "Cannot find module
-  '.webpack/main/index.cjs'" or a closed page. Run it again after the build.
+  `just package` when the source changed, and the build replaces the package
+  under a running e2e run: the next start of that run refuses the build of
+  another fingerprint, or a running app stops with a closed page. Run it
+  again after the build.
 - **A click that closes its page goes through `clickToClose`.** Playwright
   stops each action of a page that closes before the action ends, so a click
   whose handler closes the window races the close. `clickToClose` and

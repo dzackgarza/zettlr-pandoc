@@ -111,7 +111,7 @@ describe("Editor theme enum in the assembled app", function () {
       },
     });
     fixtureRoot = fixture.root;
-    const running = await attach(fixture.configDirectory, [], this.timeout());
+    const running = await attach(fixture.configDirectory, []);
     appProcess = running.appProcess;
     browser = running.browser;
     page = await findEditorPage(browser, this.timeout());

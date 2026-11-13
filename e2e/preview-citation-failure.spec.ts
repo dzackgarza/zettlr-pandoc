@@ -29,7 +29,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   type RunningApp,
   requireInitialized,
@@ -118,9 +117,9 @@ describe("assembled app: a preview whose citation cannot be rendered", function 
     });
     fixtureRoot = fixture.root;
     await writeFile(path.join(path.dirname(fixture.documentPath), "curves.md"), LINKED_DOCUMENT);
-    app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    app = await attach(fixture.configDirectory, rendererEvents);
     page = await findEditorPage(app.browser, 60_000);
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: 60_000 });
   });
 

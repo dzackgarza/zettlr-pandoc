@@ -128,18 +128,25 @@ test-file file: sync-dependencies
 
 # The unit-test launcher removes its temp directory at exit; an assembled-app
 # spec keeps its artifacts in the system temp directory, as under `test-e2e`.
-# Run one assembled-app spec with enough time for Electron to boot.
-test-e2e-file file: sync-dependencies
+# Run one assembled-app spec against the packaged build of the source.
+test-e2e-file file: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _e2e-run "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --timeout 180000 "{{file}}"
+    @just _e2e-run "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --reporter ./e2e/support/timed-spec-reporter.ts --timeout 180000 "{{file}}"
+
+# An assembled-app spec starts the packaged build (`attach`), so a run
+# compiles the app one time. The build runs when the stamp of the package is
+# not the fingerprint of the source.
+[private]
+_current-package: sync-dependencies
+    python3 "{{justfile_directory()}}/scripts/verify-build.py" --if-stale
 
 # Run a command in the environment of an e2e run. The run owns its X
 # display, its session bus and its loopback.
 #
 # The display is the one of the environment, or one virtual display for the
 # whole command when the environment has none. An assembled-app spec starts
-# the app with `--ozone-platform=x11`, through Forge or as the packaged
-# binary itself, and each start finds the display in `DISPLAY`. The default
+# the app with `--ozone-platform=x11`, and each start finds the display in
+# `DISPLAY`. The default
 # screen of xvfb-run is 640x480; a new window sizes itself from the screen,
 # and the three panes need more than that.
 #
@@ -211,8 +218,7 @@ test: sync-dependencies
 
 # Run the assembled Electron app against its isolated document workspace.
 # Portable: runs on hosted CI and locally alike.
-test-e2e:
-    {{bun}} x {{package_manager}} install --frozen-lockfile
+test-e2e: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     @just _e2e-run {{bun}} run test:e2e
 
@@ -412,7 +418,7 @@ capture-annotations output="/tmp/zettlr-pandoc-annotations-captures": sync-depen
 # sidebar and the annotation panel visible, in light and dark at 1500 and
 # 1100 px wide. The proof surface for the chrome convergence milestones.
 # Runs under xvfb; never starts a dev server or the system browser.
-capture-chrome output="/tmp/zettlr-pandoc-chrome-captures" launch_timeout_ms="180000": sync-dependencies
+capture-chrome output="/tmp/zettlr-pandoc-chrome-captures" launch_timeout_ms="180000": _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     xvfb-run -a --server-args="-screen 0 1920x1080x24" node --import tsx "{{justfile_directory()}}/scripts/chrome-capture.ts" "{{output}}" "{{launch_timeout_ms}}"
 

@@ -1,6 +1,6 @@
-// Shared assembled-app harness. Both E2E specs launch the real Forge app
-// against a throwaway data directory and attach over CDP; keeping that in one
-// module is what stops the second spec from copying the first one's 300 lines.
+// Shared assembled-app harness. A spec starts the packaged build of the run
+// against a throwaway data directory and attaches over CDP; keeping that in
+// one module stops each spec from copying the start sequence.
 import { strict as assert } from "node:assert";
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -31,6 +31,30 @@ export const REPO_ROOT = path.resolve(process.cwd());
  * the desktop launcher compares.
  */
 export function currentPackagedBinary(): string {
+  return path.join(currentPackagedDirectory(), "zettlr-pandoc");
+}
+
+/**
+ * The application archive of the packaged build. A spec starts it with the
+ * Electron of `node_modules` (`launchElectron`): the code is the code that
+ * the package ships, and the app is not packaged for Electron
+ * (`app.isPackaged`), so it writes its log to its output too.
+ */
+export function currentPackagedArchive(): string {
+  return path.join(currentPackagedDirectory(), "resources", "app.asar");
+}
+
+/**
+ * The Electron binary of the installed `electron` package, found as the
+ * `index.js` of that package finds it: `dist/` and the name in `path.txt`.
+ */
+export function electronBinary(): string {
+  const packageDirectory = path.join(REPO_ROOT, "node_modules", "electron");
+  const name = readFileSync(path.join(packageDirectory, "path.txt"), "utf8");
+  return path.join(packageDirectory, "dist", name);
+}
+
+function currentPackagedDirectory(): string {
   const packagedDirectory = path.join(REPO_ROOT, "out", "Zettlr-Pandoc-linux-x64");
   const binary = path.join(packagedDirectory, "zettlr-pandoc");
   const stamp = path.join(packagedDirectory, ".source-fingerprint");
@@ -48,7 +72,7 @@ export function currentPackagedBinary(): string {
     fingerprint,
     `The packaged build at ${packagedDirectory} is older than the source. Run \`just package\` first.`,
   );
-  return binary;
+  return packagedDirectory;
 }
 
 export function delay(milliseconds: number): Promise<void> {
@@ -78,39 +102,6 @@ export function requireInitialized<T>(value: T | undefined, message: string): T 
 
 export function outputTail(output: string): string {
   return output.split("\n").slice(-100).join("\n");
-}
-
-/**
- * Bind port 0, read what the kernel gave, release it, and hand it to the
- * caller. The reservation ends at the release: nothing owns the port until
- * the child binds it, so this is only admissible for ports whose bind owner
- * cannot choose its own port — Forge's webpack dev-server and logger, whose
- * entry URLs are baked from the configured port before the server starts.
- * Mocha runs specs serially in one process, and a collision fails the launch
- * loudly with the process output rather than silently changing ports. Ports
- * the application binds itself (the Agent API) must instead be requested as
- * `port: 0` and read back through readAgentApiPort().
- */
-export async function reserveFreePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        reject(new Error("Could not reserve a loopback port"));
-        return;
-      }
-      const { port } = address;
-      server.close((error) => {
-        if (error !== undefined) {
-          reject(error);
-          return;
-        }
-        resolve(port);
-      });
-    });
-  });
 }
 
 export async function waitForDevTools(
@@ -316,18 +307,6 @@ export async function preserveArtifacts(
   }
 }
 
-/**
- * Takes the dev server's error overlay out of the way. `forge start` injects a
- * full-window iframe that intercepts pointer events, so a Playwright click on
- * a real control is refused for a reason that belongs to the harness rather
- * than to the application.
- */
-export async function hideDevServerOverlay(page: Page): Promise<void> {
-  await page.addStyleTag({
-    content: "#webpack-dev-server-client-overlay { display: none !important; }",
-  });
-}
-
 export interface SerializedMenuNode {
   id?: string;
   label?: string;
@@ -442,9 +421,8 @@ function transientConnectionFailure(error: unknown): undefined {
 
 /**
  * Reads the port the running instance actually bound, from the discovery
- * file the Agent API publishes into its user-data directory. This is the
- * race-free counterpart of reserveFreePort(): the bind owner chose the port,
- * so no other process can have taken it. The port must also answer
+ * file the Agent API publishes into its user-data directory. The bind owner
+ * chose the port, so no other process can have taken it. The port must also answer
  * `/v1/ping` before it is handed out — a killed process leaves its file
  * behind, and a stale port must read as "not published yet", not as the
  * endpoint of the instance currently booting.
@@ -620,16 +598,21 @@ export interface LaunchOptions {
   flags?: string[];
   /** Variables set over the inherited environment of the app process. */
   environment?: NodeJS.ProcessEnv;
+  /**
+   * Variables that webpack reads when it compiles the app, such as
+   * `ZETTLR_DISABLE_UPDATE_CHECK` (`__UPDATES_DISABLED__` of
+   * `webpack.main.config.js`). A start with them compiles a development
+   * build of its own through `electron-forge start`; a start without them
+   * runs the packaged build of the run.
+   */
+  buildEnvironment?: NodeJS.ProcessEnv;
 }
 
 export async function launchElectron(
   configDirectory: string,
   options: LaunchOptions = {},
 ): Promise<ChildProcess> {
-  const forgeExecutable = path.join(REPO_ROOT, "node_modules", ".bin", "electron-forge");
-  const forgeArguments = [
-    "start",
-    "--",
+  const appArguments = [
     `--data-dir=${configDirectory}`,
     "--remote-debugging-port=0",
     "--disable-hardware-acceleration",
@@ -647,10 +630,22 @@ export async function launchElectron(
     `--xdg-portal-required-version=${NO_PORTAL_FILE_CHOOSER_VERSION}`,
   ];
   if (options.flags !== undefined) {
-    forgeArguments.push(...options.flags);
+    appArguments.push(...options.flags);
   }
   if (options.files !== undefined) {
-    forgeArguments.push(...options.files);
+    appArguments.push(...options.files);
+  }
+  const environment = { ...process.env, ...AGENT_API_ENVIRONMENT, ...options.environment };
+
+  if (options.buildEnvironment === undefined) {
+    // The archive of the packaged build that the run made one time
+    // (`just test-e2e`): the start compiles nothing.
+    return spawn(electronBinary(), [currentPackagedArchive(), ...appArguments], {
+      cwd: REPO_ROOT,
+      detached: true,
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   }
 
   // Forge's dev server and logger need separate ports. Choose fresh loopback
@@ -658,22 +653,51 @@ export async function launchElectron(
   // report an unrelated collision rather than silently changing ports.
   const rendererPort = await reserveFreePort();
   const loggerPort = await reserveFreePort();
-
-  const childEnvironment: NodeJS.ProcessEnv = {
-    ...process.env,
-    NODE_ENV: "develop",
-    ZETTLR_E2E: "1",
-    ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
-    ZETTLR_FORGE_LOGGER_PORT: String(loggerPort),
-    ...AGENT_API_ENVIRONMENT,
-    ...options.environment,
-  };
-
-  return spawn(forgeExecutable, forgeArguments, {
+  const forgeExecutable = path.join(REPO_ROOT, "node_modules", ".bin", "electron-forge");
+  return spawn(forgeExecutable, ["start", "--", ...appArguments], {
     cwd: REPO_ROOT,
     detached: true,
-    env: childEnvironment,
+    env: {
+      ...environment,
+      ...options.buildEnvironment,
+      NODE_ENV: "develop",
+      ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
+      ZETTLR_FORGE_LOGGER_PORT: String(loggerPort),
+    },
     stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+/**
+ * Bind port 0, read what the kernel gave, release it, and hand it to the
+ * caller. The reservation ends at the release: nothing owns the port until
+ * the child binds it, so this is only admissible for ports whose bind owner
+ * cannot choose its own port — Forge's webpack dev-server and logger, whose
+ * entry URLs are baked from the configured port before the server starts.
+ * Mocha runs specs serially in one process, and a collision fails the launch
+ * loudly with the process output rather than silently changing ports. Ports
+ * the application binds itself (the Agent API) must instead be requested as
+ * `port: 0` and read back through readAgentApiPort().
+ */
+async function reserveFreePort(): Promise<number> {
+  return await new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        reject(new Error("Could not reserve a loopback port"));
+        return;
+      }
+      const { port } = address;
+      server.close((error) => {
+        if (error !== undefined) {
+          reject(error);
+          return;
+        }
+        resolve(port);
+      });
+    });
   });
 }
 
@@ -706,12 +730,29 @@ export interface RunningApp {
   devToolsUrl: string;
 }
 
+/**
+ * The time a start has to expose DevTools and to boot (#70). A start of the
+ * packaged build compiles nothing, so a start that takes longer hangs. The
+ * deadline is shorter than the hook timeout of mocha, so the error of the
+ * start names the hang with the output of the app; the hook timeout would
+ * end the hook without it. A start with a build environment compiles
+ * webpack first.
+ */
+const PACKAGED_START_DEADLINE_MS = 60_000;
+const BUILD_START_DEADLINE_MS = 240_000;
+
+export function startDeadline(options: LaunchOptions): number {
+  return options.buildEnvironment === undefined
+    ? PACKAGED_START_DEADLINE_MS
+    : BUILD_START_DEADLINE_MS;
+}
+
 export async function attach(
   configDirectory: string,
   rendererEvents: string[],
-  timeoutMs: number,
   options: LaunchOptions = {},
 ): Promise<RunningApp> {
+  const timeoutMs = startDeadline(options);
   const appProcess = await launchElectron(configDirectory, options);
   let attached = false;
   let browser: Browser | undefined;

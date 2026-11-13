@@ -34,7 +34,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
   shutdown,
@@ -85,12 +84,12 @@ describe("assembled app: accepted text of a closed document", function () {
     configDirectory = fixture.configDirectory;
     reviewedPath = path.join(path.dirname(fixture.documentPath), "genus.md");
     await writeFile(reviewedPath, REVIEWED, "utf8");
-    const app = await attach(configDirectory, rendererEvents, this.timeout());
+    const app = await attach(configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
   });
 

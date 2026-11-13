@@ -314,7 +314,7 @@ async function boot(fixture: RunningFixture, timeoutMs: number): Promise<void> {
   });
   fixture.fixtureRoot = created.root;
   fixture.documentPath = created.documentPath;
-  const app = await attach(created.configDirectory, fixture.rendererEvents, timeoutMs);
+  const app = await attach(created.configDirectory, fixture.rendererEvents);
   fixture.appProcess = app.appProcess;
   fixture.browser = app.browser;
   fixture.getOutput = app.getOutput;

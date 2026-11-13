@@ -29,7 +29,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requestWindowClose,
   requireInitialized,
@@ -135,12 +134,12 @@ describe("a refused change of Project settings", function () {
     settingsFile = path.join(workspace, ".ztr-directory");
     await writeFile(settingsFile, JSON.stringify(PROJECT_SETTINGS), "utf8");
     await writeFile(path.join(workspace, "genus.md"), GENUS, "utf8");
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     // From here the settings file of the Project takes no write.
     await chmod(settingsFile, 0o400);

@@ -78,8 +78,8 @@ jobs:
       # module (e.g. `from 'electron'`, which drags in `child_process`) passes
       # lint yet breaks `bun run start`. `just package` runs the same webpack
       # compile as launching the app, minus the installer makers, and fails
-      # when the build wrote no app.asar of this commit. The assembled-app
-      # E2E step starts this binary, so the build comes first.
+      # when the build wrote no app.asar of this commit. Each start of the
+      # assembled-app E2E step runs this build, so the build comes first.
       - name: Build app bundle
         run: just package
       # The packaged app holds a copy of the Electron distribution. The

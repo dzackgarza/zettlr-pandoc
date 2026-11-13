@@ -37,7 +37,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   readAgentApiPort,
   requireInitialized,
   shutdown,
@@ -425,7 +424,7 @@ async function waitForNoCards(page: Page): Promise<void> {
 }
 
 describe("a review decision waits for the document authority", function () {
-  // One cold `forge start` compile plus the interactions below.
+  // One start of the packaged app plus the interactions below.
   this.timeout(300_000);
 
   let fixtureRoot: string | undefined;
@@ -450,14 +449,13 @@ describe("a review decision waits for the document authority", function () {
     });
     fixtureRoot = fixture.root;
     documentPath = fixture.documentPath;
-    const running = await attach(fixture.configDirectory, [], this.timeout());
+    const running = await attach(fixture.configDirectory, []);
     appProcess = running.appProcess;
     browser = running.browser;
     api = agentClient(await readAgentApiPort(fixture.configDirectory, 60_000));
     page = await findEditorPage(running.browser, this.timeout());
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     await definePageNameHelper(page);
-    await hideDevServerOverlay(page);
 
     // One claim per line: each change carries its own justification.
     const claims: Array<{ description: string; patch: string }> = [];

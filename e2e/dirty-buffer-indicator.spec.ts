@@ -68,7 +68,7 @@ async function bootWithTabRow(fixture: RunningFixture, darkMode: boolean): Promi
     "utf8",
   );
 
-  const app = await attach(created.configDirectory, fixture.rendererEvents, 240_000);
+  const app = await attach(created.configDirectory, fixture.rendererEvents);
   fixture.appProcess = app.appProcess;
   fixture.browser = app.browser;
   fixture.getOutput = app.getOutput;

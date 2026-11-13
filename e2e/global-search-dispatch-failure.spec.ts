@@ -115,7 +115,7 @@ async function boot(fixture: RunningFixture, timeoutMs: number): Promise<void> {
   config.app.openWorkspaces = [...config.app.openWorkspaces, vanishingWorkspace];
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
-  const app = await attach(created.configDirectory, fixture.rendererEvents, timeoutMs);
+  const app = await attach(created.configDirectory, fixture.rendererEvents);
   fixture.appProcess = app.appProcess;
   fixture.browser = app.browser;
   fixture.getOutput = app.getOutput;

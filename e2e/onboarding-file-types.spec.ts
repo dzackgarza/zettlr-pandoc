@@ -42,7 +42,7 @@ describe("assembled app: first-start onboarding and the file type filters", func
   }
 
   before(async function () {
-    start = await startFirstRun("zettlr-onboarding-e2e-", rendererEvents, this.timeout());
+    start = await startFirstRun("zettlr-onboarding-e2e-", rendererEvents);
   });
 
   after(async function () {

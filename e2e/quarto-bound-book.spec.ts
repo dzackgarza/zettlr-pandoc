@@ -33,7 +33,6 @@ import {
   createWorkspaceFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   REPO_ROOT,
   requireInitialized,
@@ -132,13 +131,12 @@ describe("a workspace bound to the manifest in its assembly directory", function
     const app = await attach(
       requireInitialized(configDirectory, "config directory"),
       rendererEvents,
-      this.timeout(),
     );
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     await page.setViewportSize({ width: 1500, height: 950 });
   });
@@ -334,13 +332,12 @@ describe("a workspace bound to the manifest in its assembly directory", function
     const restarted = await attach(
       requireInitialized(configDirectory, "config directory"),
       rendererEvents,
-      this.timeout(),
     );
     appProcess = restarted.appProcess;
     browser = restarted.browser;
     getOutput = restarted.getOutput;
     page = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     activePage = requireInitialized(page, "The relaunched editor page must be initialized");
     await activePage.setViewportSize({ width: 1500, height: 950 });
 

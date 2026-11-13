@@ -46,7 +46,7 @@ describe("assembled app: wikilinks of the format title|link", function () {
     await mkdir(path.join(workspace, "old"));
     await writeFile(path.join(workspace, "old", "lattices.md"), "# Lattices\n", "utf8");
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;

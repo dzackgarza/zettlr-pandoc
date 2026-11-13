@@ -28,7 +28,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -83,16 +82,10 @@ describe("Reveal in File Browser (#202)", function () {
     await chmod(xdgOpen, 0o755);
     await writeFile(opened, "");
 
-    ({ browser, appProcess, getOutput } = await attach(
-      fixture.configDirectory,
-      [],
-      this.timeout(),
-      {
-        environment: { PATH: `${bin}:${process.env.PATH}` },
-      },
-    ));
+    ({ browser, appProcess, getOutput } = await attach(fixture.configDirectory, [], {
+      environment: { PATH: `${bin}:${process.env.PATH}` },
+    }));
     page = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

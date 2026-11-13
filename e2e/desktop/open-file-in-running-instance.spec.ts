@@ -80,7 +80,7 @@ describe("opening a file while the app is already running", function () {
     deliveredDocumentPath = path.join(path.dirname(fixture.documentPath), "delivered.md");
     await writeFile(deliveredDocumentPath, DELIVERED_CONTENTS, "utf8");
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
