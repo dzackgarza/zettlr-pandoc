@@ -616,6 +616,8 @@ const NO_PORTAL_FILE_CHOOSER_VERSION = 1000;
 export interface LaunchOptions {
   /** Files delivered as literal application arguments on a cold start. */
   files?: string[];
+  /** Options of the application on its command line (`cli-provider.ts`). */
+  flags?: string[];
   /** Variables set over the inherited environment of the app process. */
   environment?: NodeJS.ProcessEnv;
 }
@@ -644,6 +646,9 @@ export async function launchElectron(
     // the run, where a spec finds it (`native-dialog.ts`).
     `--xdg-portal-required-version=${NO_PORTAL_FILE_CHOOSER_VERSION}`,
   ];
+  if (options.flags !== undefined) {
+    forgeArguments.push(...options.flags);
+  }
   if (options.files !== undefined) {
     forgeArguments.push(...options.files);
   }
