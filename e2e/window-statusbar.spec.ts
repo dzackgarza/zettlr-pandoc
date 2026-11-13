@@ -282,4 +282,57 @@ describe("the window status bar", function () {
       .locator(".editor-pane .cm-panel-lint")
       .waitFor({ state: "detached", timeout: 10_000 });
   });
+
+  // Typing a quote inserts MagicQuotes only while autocorrect is on
+  // (`handleQuote`), as Preferences states. The status bar offers no pair
+  // that typing would not use (#204).
+  it("offers a MagicQuotes pair only while autocorrect is on", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const setAutoCorrect = async (active: boolean): Promise<void> => {
+      await activePage.evaluate(
+        (value) =>
+          window.ipc.sendSync("config-provider", {
+            command: "set-config-single",
+            payload: { key: "editor.autoCorrect.active", val: value },
+          }),
+        active,
+      );
+    };
+    const readPair = async (): Promise<unknown> =>
+      (
+        (await readConfigValue(activePage, "editor", "autoCorrect")) as {
+          magicQuotes: unknown;
+        }
+      ).magicQuotes;
+    const menu = activePage.locator(".application-menu");
+    const pairItem = menu.locator('.menu-item[data-id="fr-FR"]');
+
+    await setAutoCorrect(false);
+    const before = await readPair();
+    await activePage.locator(ITEM("magic-quotes")).click();
+    await menu.waitFor({ state: "visible", timeout: 10_000 });
+    const enabledChoices = await menu
+      .locator(".menu-item.checkbox:not(.disabled)")
+      .evaluateAll((items) => items.map((item) => (item as HTMLElement).dataset.id));
+    assert.deepEqual(
+      enabledChoices,
+      [],
+      "with autocorrect off the menu offers no quote choice that typing would use",
+    );
+    screenshots.set("magic-quotes-autocorrect-off.png", await activePage.screenshot());
+    await pairItem.click();
+    await delay(500);
+    assert.deepEqual(await readPair(), before, "a choice with autocorrect off changes no setting");
+    await activePage.keyboard.press("Escape");
+    await menu.waitFor({ state: "detached", timeout: 10_000 });
+
+    await setAutoCorrect(true);
+    await activePage.locator(ITEM("magic-quotes")).click();
+    await menu.waitFor({ state: "visible", timeout: 10_000 });
+    await pairItem.click();
+    await waitUntil(
+      async () => JSON.stringify(await readPair()) !== JSON.stringify(before),
+      "the French pair to persist",
+    );
+  });
 });
