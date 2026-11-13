@@ -32,7 +32,7 @@ import type FSAL from "source/app/service-providers/fsal";
 import LogProvider from "source/app/service-providers/log";
 import LongRunningTaskProvider from "source/app/service-providers/long-running-tasks";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
-import { bootFsal } from "./fsal-seam";
+import { bootFilteredFsal, bootFsal } from "./fsal-seam";
 import { messageBoxes, notifications, userData } from "./headless-electron-harness.cjs";
 import { installRecordingJust, type RecordingJust } from "./recording-just";
 import { unexpectedStoreWriteFailure } from "./store-write-failure";
@@ -376,6 +376,52 @@ describe("Project export", function () {
       assert.equal(exported, true);
       assert.deepEqual(await recipeRuns(), [
         ["--justfile", RECIPE_FILE, "compile-pandoc", "chapter.md", "pdf-of-one-chapter", template],
+      ]);
+    });
+
+    it("gives the recipe a chapter that a rule of the file filters hides", async function () {
+      // The application starts with the file filters on. The workspace hides
+      // the drafts folder of the book; the book still has its chapter there.
+      const filteredRoot = await mkdtemp(path.join(tmpdir(), "zettlr-project-export-filtered-"));
+      const book = path.join(filteredRoot, "book");
+      await mkdir(path.join(book, "drafts"), { recursive: true });
+      await writeFile(path.join(filteredRoot, ".zettlrignore"), "drafts/\n");
+      await writeFile(path.join(book, "one.md"), CHAPTER);
+      await writeFile(path.join(book, "drafts", "two.md"), CHAPTER);
+      await writeFile(
+        path.join(book, ".ztr-directory"),
+        JSON.stringify({
+          sorting: "name-up",
+          project: {
+            title: "book",
+            profiles: ["PDF.yaml"],
+            files: ["one.md", "drafts/two.md"],
+            cslStyle: "",
+            templates: { tex: template, html: "" },
+          },
+          icon: null,
+          color: null,
+        }),
+      );
+      const filtered = await bootFilteredFsal(filteredRoot);
+      messageBoxes.answer = 0;
+
+      const exported = await exportProject({ ...services, fsal: filtered }, book);
+      await filtered.shutdown();
+      await rm(filteredRoot, { recursive: true });
+
+      assert.deepEqual(messageBoxes.shown, [], "the export says that no chapter is missing");
+      assert.equal(exported, true);
+      assert.deepEqual(await recipeRuns(), [
+        [
+          "--justfile",
+          RECIPE_FILE,
+          "compile-pandoc-project",
+          "book",
+          template,
+          "one.md",
+          "drafts/two.md",
+        ],
       ]);
     });
 
