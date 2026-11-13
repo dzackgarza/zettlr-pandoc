@@ -370,6 +370,30 @@ describe("Project export", function () {
       ]);
     });
 
+    it("runs the recipe for a PDF when the profiles of the author hold an old PDF.yaml", async function () {
+      // userData/defaults is copied once and never pruned. Versions before the
+      // PDF recipe shipped a PDF.yaml with the pandoc PDF writer.
+      const stale = path.join(userData, "defaults", "PDF.yaml");
+      await writeFile(stale, "reader: markdown\nwriter: pdf\npdf-engine: pdflatex\n");
+
+      const exported = await exportProject(services, pdfOfChapters);
+      await rm(stale);
+
+      assert.deepEqual(errorWindows, []);
+      assert.equal(exported, true);
+      assert.deepEqual(await recipeRuns(), [
+        [
+          "--justfile",
+          RECIPE_FILE,
+          "compile-pandoc-project",
+          "pdf-of-chapters",
+          template,
+          "one.md",
+          "two.md",
+        ],
+      ]);
+    });
+
     it("gives the recipe the template for a PDF of one chapter", async function () {
       const exported = await exportProject(services, pdfOfOneChapter);
 
