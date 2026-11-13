@@ -604,8 +604,13 @@ export class CollaborationApplicationService {
         annotations: annotationPlan.nextAnnotations,
       });
     }
-    for (const draft of [...(reviewPlan?.events ?? []), ...(annotationPlan?.events ?? [])]) {
-      this.deps.emit(draft.event, draft.payload);
+    for (const plan of [reviewPlan, annotationPlan]) {
+      if (plan === undefined) {
+        continue;
+      }
+      for (const draft of plan.events) {
+        this.deps.emit(draft.event, draft.payload);
+      }
     }
     this.deps.authority.broadcastCollaborationState(documentId);
   }
@@ -651,8 +656,13 @@ export class CollaborationApplicationService {
           pendingSave: sidecar.pendingSave,
         }),
       );
-      for (const draft of [...(reviewPlan?.events ?? []), ...(annotationPlan?.events ?? [])]) {
-        this.deps.emit(draft.event, draft.payload);
+      for (const plan of [reviewPlan, annotationPlan]) {
+        if (plan === undefined) {
+          continue;
+        }
+        for (const draft of plan.events) {
+          this.deps.emit(draft.event, draft.payload);
+        }
       }
       return true;
     });
