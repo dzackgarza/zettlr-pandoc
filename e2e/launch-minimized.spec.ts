@@ -45,8 +45,11 @@ const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-launch-minimized-e2e-late
 
 /**
  * Starts the application a second time on the same profile, from the same
- * packaged archive as the first start. The start gives its request to the
- * running session (`acquireLaunch`) and exits.
+ * packaged archive as the first start, as the desktop launcher does: a start
+ * without files and without `--open-in-running-instance`, which opens files
+ * only. The start gives its request to the running session
+ * (`acquireLaunch`) and exits. A start that took the lock would run the app
+ * a second time; the time limit ends it.
  */
 async function startAgain(configDirectory: string): Promise<string> {
   const { stdout } = await promisify(execFile)(
@@ -54,11 +57,10 @@ async function startAgain(configDirectory: string): Promise<string> {
     [
       currentPackagedArchive(),
       `--data-dir=${configDirectory}`,
-      "--open-in-running-instance",
       "--disable-hardware-acceleration",
       "--ozone-platform=x11",
     ],
-    { cwd: REPO_ROOT, env: { ...process.env, ...AGENT_API_ENVIRONMENT } },
+    { cwd: REPO_ROOT, env: { ...process.env, ...AGENT_API_ENVIRONMENT }, timeout: 60_000 },
   );
   return stdout;
 }
