@@ -115,6 +115,14 @@ recipe exists. Key recipes (see the `justfile` for the exact commands):
   from `scripts/get-git-hash.js`, referenced by `source/win-about/Debug-Tab.vue`).
   Run `just verify-build-only` to instantly answer "is my installed app actually
   current?".
+- **A build that a signal ends fails.** `electron-forge package` runs its
+  subcommand `electron-forge-package.js` as a child process through
+  commander 11, which exited 0 for a child that a signal ended (#71: earlyoom
+  sends SIGTERM to the compile). `patches/commander@11.1.0.patch` makes the
+  command exit 128 + the number of the signal, and `verify-build.py` names the
+  signal. Commander 12 fixes the cause (tj/commander.js#2023, exit 1); drop
+  the patch when Forge depends on it. Proof:
+  `test/forge-subcommand-signal.spec.ts`.
 
 ## The global-app launcher
 

@@ -24,6 +24,7 @@ from collections import deque
 import json
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 import threading
@@ -161,6 +162,7 @@ def run_build_streaming(env: dict[str, str]) -> tuple[int, str]:
     # coreutils timeout(1) runs the build in its own process group and signals
     # the whole group on expiry, then KILLs it after the grace period, so no
     # Forge or download child outlives a timed-out build.
+    started = time.monotonic()
     process = subprocess.Popen(
         [
             "timeout",
@@ -190,12 +192,25 @@ def run_build_streaming(env: dict[str, str]) -> tuple[int, str]:
     returncode = process.wait()
     reader.join(timeout=2)
     # timeout(1) exits 124 after its TERM, or 128+KILL once the grace ran out.
-    if returncode in (124, 128 + 9):
+    # A build that a SIGKILL of another sender ended exits 128+KILL too, so
+    # the time decides.
+    if returncode in (124, 128 + signal.SIGKILL) and time.monotonic() - started >= BUILD_TIMEOUT_S:
         fail(
             f"build TIMED OUT after {BUILD_TIMEOUT_S}s; timeout(1) terminated its process group",
             "".join(tail),
         )
     return returncode, "".join(tail)
+
+
+def exit_cause(returncode: int) -> str:
+    """The cause of a non-zero exit of the build.
+
+    A program that a signal ended exits 128 + the signal number, as the
+    patched Forge CLI does for its subcommand (issue #71).
+    """
+    if returncode > 128 and returncode - 128 in signal.valid_signals():
+        return f"build exited {returncode}: a signal ended it ({signal.Signals(returncode - 128).name})"
+    return f"build exited {returncode}"
 
 
 def fail(msg: str, out: str = "", err: str = "") -> "typing.NoReturn":  # noqa: F821
@@ -252,7 +267,7 @@ def build_and_verify() -> None:
     })
 
     if returncode != 0:
-        fail(f"build exited {returncode}", build_tail)
+        fail(exit_cause(returncode), build_tail)
 
     # Exit 0 is NOT proof: the whole point is that a swallowed failure exits 0.
     if not ASAR.exists() or ASAR.stat().st_mtime_ns < start:
