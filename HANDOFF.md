@@ -27,7 +27,7 @@ the `closes` line of the PR body; this list is from 2026-11-13):
 | --- | --- |
 | Backlogs and ledgers | #16, #18, #19, #20, #21, #57, #66, #69, #96, #115, #132, #197 |
 | Architecture | #6, #8, #13, #203 |
-| Defects | #71, #92, #94, #105, #118, #123, #181, #210 (four updater defects) |
+| Defects | #94, #105, #118, #123, #181, #210 (four updater defects) |
 | Quarto | #83 |
 | Test and CI | #38, #47, #62, #70, #82, #91, #108, #112, #131, #160 |
 
