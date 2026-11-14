@@ -16,7 +16,8 @@
  * END HEADER
  */
 
-import type { Cloneable, IpcArgument } from "@dts/common/ipc";
+import { sendIPCMessage } from "@common/util/broadcast-ipc-message";
+import type { IpcBroadcastArgs, IpcBroadcastContracts } from "@dts/renderer/ipc-bridge";
 import type { BrowserWindow } from "electron";
 
 /** A window without a renderer has nothing that receives a message. */
@@ -31,18 +32,18 @@ function hasRenderer(window: BrowserWindow | undefined): window is BrowserWindow
  *
  * @param   {Array}          addressed  The main windows that the event concerns; undefined for a window that is gone
  * @param   {BrowserWindow}  lastUsed   The main window that the author used last
- * @param   {string}         channel    The channel of the message
- * @param   {Array}          args       The arguments of the message; IPC must be able to carry each
+ * @param   {string}         channel    A channel of IpcBroadcastContracts
+ * @param   {Array}          args       The arguments that the table declares for the channel
  */
-export default function tellMainWindows<A extends readonly IpcArgument[]>(
+export default function tellMainWindows<C extends keyof IpcBroadcastContracts>(
   addressed: ReadonlyArray<BrowserWindow | undefined>,
   lastUsed: BrowserWindow | undefined,
-  channel: string,
-  ...args: A & Cloneable<A>
+  channel: C,
+  ...args: IpcBroadcastArgs<C>
 ): void {
   const named = addressed.filter(hasRenderer);
   const receivers = named.length > 0 ? named : [lastUsed].filter(hasRenderer);
   for (const window of receivers) {
-    window.webContents.send(channel, ...args);
+    sendIPCMessage(window.webContents, channel, ...args);
   }
 }

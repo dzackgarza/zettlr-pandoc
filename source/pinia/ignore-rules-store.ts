@@ -73,7 +73,7 @@ export const useIgnoreRulesStore = defineStore("ignore-rules", () => {
     })
     .catch((err) => reportError("Could not fetch the ignore rules", err));
 
-  ipcRenderer.on("fsal-ignore-rules", (_, next: IgnoreRuleSources) => {
+  ipcRenderer.on("fsal-ignore-rules", (_, next) => {
     sources.value = next;
   });
 

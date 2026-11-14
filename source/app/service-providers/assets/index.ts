@@ -233,6 +233,12 @@ export type AssetsProviderIPCContract = {
 
 export type AssetsProviderIPCAPI = IPCMessage<AssetsProviderIPCContract>;
 
+/** An `assets-provider` message to the windows: which asset changed. */
+export type AssetsProviderBroadcast =
+  | "snippets-updated"
+  | "phrase-completions-updated"
+  | "quicktex-updated";
+
 /** The file name of a Lua filter for the name that a caller gives. */
 function luaFilename(name: string): string {
   const trimmed = name.trim();

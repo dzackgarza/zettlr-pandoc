@@ -14,6 +14,7 @@
  * END HEADER
  */
 
+import { sendIPCMessage } from "@common/util/broadcast-ipc-message";
 import errorToString from "@common/util/error-to-string";
 import type ConfigProvider from "@providers/config";
 import type DocumentManager from "@providers/documents";
@@ -83,10 +84,10 @@ export default function createMainWindow(
   window.on("app-command", (event, command) => {
     if (command === "browser-backward") {
       // docs.back().catch(e => logger.error(e.message, e))
-      window.webContents.send("shortcut", "navigate-back");
+      sendIPCMessage(window.webContents, "shortcut", "navigate-back");
     } else if (command === "browser-forward") {
       // docs.forward().catch(e => logger.error(e.message, e))
-      window.webContents.send("shortcut", "navigate-forward");
+      sendIPCMessage(window.webContents, "shortcut", "navigate-forward");
     }
   });
 
@@ -94,10 +95,10 @@ export default function createMainWindow(
   window.on("swipe", (event, direction) => {
     if (direction === "left") {
       // docs.back().catch(e => logger.error(e.message, e))
-      window.webContents.send("shortcut", "navigate-back");
+      sendIPCMessage(window.webContents, "shortcut", "navigate-back");
     } else if (direction === "right") {
       // docs.forward().catch(e => logger.error(e.message, e))
-      window.webContents.send("shortcut", "navigate-forward");
+      sendIPCMessage(window.webContents, "shortcut", "navigate-forward");
     }
   });
 
@@ -110,10 +111,13 @@ export default function createMainWindow(
   });
 
   window.on("enter-full-screen", () => {
-    window.webContents.send("window-controls", { command: "fullscreen", payload: true });
+    sendIPCMessage(window.webContents, "window-controls", { command: "fullscreen", payload: true });
   });
   window.on("leave-full-screen", () => {
-    window.webContents.send("window-controls", { command: "fullscreen", payload: false });
+    sendIPCMessage(window.webContents, "window-controls", {
+      command: "fullscreen",
+      payload: false,
+    });
   });
 
   // Emitted when the user wants to close the window.

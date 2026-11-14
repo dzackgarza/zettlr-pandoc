@@ -42,11 +42,11 @@ import {
   AGENT_API_DISCOVERY_FILE,
   parseAgentApiDiscovery,
 } from "source/app/service-providers/agent-api/discovery-file";
-import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
 import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import LogProvider from "source/app/service-providers/log";
 import { SearchProvider } from "source/app/service-providers/search";
@@ -158,11 +158,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         }),
         getFirstMainWindow: () => undefined,
         // The spec has no main window, so no window gets a message.
-        tellMainWindows: (
-          _windowIds: readonly string[],
-          _channel: string,
-          ..._args: readonly unknown[]
-        ) => {},
+        tellMainWindows: () => {},
         getMainWindowKey: (_window: unknown) => activeWindowId,
         // No operation of this spec asks the author for a file.
         saveFile: async (_filePath: string): Promise<string | undefined> => {

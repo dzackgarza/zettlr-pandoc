@@ -56,7 +56,6 @@ import { defineStore } from "pinia";
 import type {
   AnnotationLifecycleIpcInput,
   BulkAnnotationIpcInput,
-  DocumentsUpdateContext,
 } from "source/app/service-providers/documents";
 import type {
   AnnotationFailure,
@@ -182,26 +181,23 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   // caller joins the first caller's promise instead of starting its own.
   const pendingFetches = new Map<string, Promise<void>>();
 
-  ipcRenderer.on(
-    "documents-update",
-    (_event, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
-      const { event, context } = payload;
-      if (event === DP_EVENTS.DOCUMENT_COLLABORATION && context.filePath !== undefined) {
-        if (context.collaborationSession !== undefined) {
-          newestSourceByPath.set(context.filePath, ++sourceClock);
-          setSession(context.filePath, context.collaborationSession);
-        }
-      } else if (event === DP_EVENTS.CLOSE_FILE && context.filePath !== undefined) {
-        // Workspace panel state outlives editor panes. A closed workspace
-        // document keeps its last authoritative snapshot until the next
-        // workspace refresh projects its persisted sidecar.
-        if (!workspacePathSet.has(context.filePath)) {
-          dropSession(context.filePath);
-        }
-        pendingFetches.delete(context.filePath);
+  ipcRenderer.on("documents-update", (_event, payload) => {
+    const { event, context } = payload;
+    if (event === DP_EVENTS.DOCUMENT_COLLABORATION && context.filePath !== undefined) {
+      if (context.collaborationSession !== undefined) {
+        newestSourceByPath.set(context.filePath, ++sourceClock);
+        setSession(context.filePath, context.collaborationSession);
       }
-    },
-  );
+    } else if (event === DP_EVENTS.CLOSE_FILE && context.filePath !== undefined) {
+      // Workspace panel state outlives editor panes. A closed workspace
+      // document keeps its last authoritative snapshot until the next
+      // workspace refresh projects its persisted sidecar.
+      if (!workspacePathSet.has(context.filePath)) {
+        dropSession(context.filePath);
+      }
+      pendingFetches.delete(context.filePath);
+    }
+  });
 
   /**
    * Hydrate the cache for one document path. The first caller for a path —

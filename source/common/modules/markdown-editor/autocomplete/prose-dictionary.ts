@@ -12,7 +12,6 @@ import type {
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import type { SyntaxNode } from "@lezer/common";
-import type { DictionaryProviderBroadcast } from "@providers/dictionary/ipc-contract";
 import { tikzBlockAt } from "../tikz-block";
 import { isMathPosition } from "../util/is-math-position";
 import { withCompletionSource } from "./completion-presentation";
@@ -74,7 +73,7 @@ async function loadCatalogue(): Promise<ProseCatalogue> {
   return await loading;
 }
 
-window.ipc.on("dictionary-provider", (_event, message: DictionaryProviderBroadcast) => {
+window.ipc.on("dictionary-provider", (_event, message) => {
   if (message.command === "prose-completions-updated" || message.command === "invalidate-dict") {
     cached = null;
   }

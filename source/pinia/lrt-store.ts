@@ -44,7 +44,7 @@ export const useLRTStore = defineStore("lrt", () => {
     .catch((err) => reportError("Could not fetch long running tasks", err));
 
   // Hook event listeners
-  ipcRenderer.on("lrt-provider", (event, args: LRTIPCSyncMessage) => {
+  ipcRenderer.on("lrt-provider", (event, args) => {
     if (args.command === "update-task") {
       // A single task was updated
       const { task } = args.payload;
@@ -68,7 +68,7 @@ export const useLRTStore = defineStore("lrt", () => {
     }
   });
 
-  ipcRenderer.on("lrt-provider", (event, args: LRTIPCSyncMessage) => {
+  ipcRenderer.on("lrt-provider", (event, args) => {
     if (args.command === "new-task") {
       // A new task has been started
       tasks.value.push(args.payload.task);

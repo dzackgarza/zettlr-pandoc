@@ -67,6 +67,7 @@ import {
 } from "@dts/common/documents";
 import type { AnyDescriptor, CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type { DocumentLocation, SourceRange, WorkspaceTextEdit } from "@dts/common/references";
+import type { IpcBroadcastContracts } from "@dts/renderer/ipc-bridge";
 import { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
@@ -207,13 +208,13 @@ type DocumentManagerApp = {
   >;
 };
 
-/** What the provider tells the author about one document (_tellAbout). */
-type DocumentMessage =
-  | SaveRefusedBroadcast
-  | FileRemovedKeptBroadcast
-  | RemoteChangeKeptBroadcast
-  | CollaborationFileUnreadableBroadcast
-  | CollaborationFileUnwritableBroadcast;
+/** The channels on which the provider tells the author about one document (_tellAbout). */
+type DocumentMessageChannel =
+  | typeof SAVE_REFUSED_CHANNEL
+  | typeof FILE_REMOVED_KEPT_CHANNEL
+  | typeof REMOTE_CHANGE_KEPT_CHANNEL
+  | typeof COLLABORATION_FILE_UNREADABLE_CHANNEL
+  | typeof COLLABORATION_FILE_UNWRITABLE_CHANNEL;
 
 // Keep no more than this many updates.
 const MAX_VERSION_HISTORY = 100;
@@ -265,6 +266,9 @@ export type DocumentsUpdateContext = {
     diagnostic: string;
   };
 };
+
+/** A `documents-update` message to the windows: the event and what it concerns. */
+export type DocumentsUpdateBroadcast = { event: DP_EVENTS; context: DocumentsUpdateContext };
 
 /** A close that the provider refused, and what the author's answer to it does. */
 interface RefusedClose {
@@ -1392,11 +1396,11 @@ export default class DocumentManager
    * the main window that the author used last when none of those can show
    * it.
    */
-  private _tellAbout(
+  private _tellAbout<C extends DocumentMessageChannel>(
     filePath: string,
     startedBy: string | undefined,
-    channel: string,
-    payload: DocumentMessage,
+    channel: C,
+    ...message: IpcBroadcastContracts[C]
   ): void {
     const addressed =
       startedBy !== undefined
@@ -1408,7 +1412,7 @@ export default class DocumentManager
                 .some((leaf) => leaf.tabMan.openFiles.some((file) => file.path === filePath)),
             )
             .map(([windowId]) => windowId);
-    this._app.windows.tellMainWindows(addressed, channel, payload);
+    this._app.windows.tellMainWindows(addressed, channel, ...message);
   }
 
   private _pathsShownInPanes(): Set<string> {
@@ -1808,7 +1812,7 @@ export default class DocumentManager
     }
   }
 
-  private broadcastEvent(event: DP_EVENTS, context?: DocumentsUpdateContext): void {
+  private broadcastEvent(event: DP_EVENTS, context: DocumentsUpdateContext): void {
     // Here we blast an event notification across every line of code of the app
     broadcastIpcMessage("documents-update", { event, context });
     this._emitter.emit(event, context);

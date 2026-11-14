@@ -92,7 +92,6 @@
 import { trans } from "@common/i18n-renderer";
 import { explodeAccelerator } from "@common/util/shortcuts";
 import ShortcutDisplay from "@common/vue/ShortcutDisplay.vue";
-import { menuProviderMessageSchema } from "@dts/common/serialized-menu";
 import { computed, onBeforeMount, onBeforeUnmount, ref } from "vue";
 import { allMenuLeafRows } from "../../launcher/launcher-rows";
 
@@ -126,8 +125,7 @@ const accelerator = ref<string | undefined>(undefined);
 let stopListening: () => void = () => {};
 
 onBeforeMount(() => {
-  stopListening = ipcRenderer.on("menu-provider", (_event, payload: unknown) => {
-    const message = menuProviderMessageSchema.parse(payload);
+  stopListening = ipcRenderer.on("menu-provider", (_event, message) => {
     if (message.command === "application-menu") {
       accelerator.value = allMenuLeafRows(message.payload).find(
         (row) => row.id === TOGGLE_ITEM_ID,

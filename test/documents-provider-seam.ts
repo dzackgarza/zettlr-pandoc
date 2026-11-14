@@ -39,7 +39,7 @@ import askSaveChanges from "source/app/service-providers/windows/dialog/ask-save
 import saveFileDialog from "source/app/service-providers/windows/dialog/save-dialog";
 import tellMainWindows from "source/app/service-providers/windows/tell-main-windows";
 import type { AnyDescriptor } from "source/types/common/fsal";
-import type { IpcValue } from "source/types/common/ipc";
+import type { IpcBroadcastArgs, IpcBroadcastContracts } from "source/types/renderer/ipc-bridge";
 import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 type WatchdogListener = (event: string, filePath: string) => void;
@@ -177,7 +177,11 @@ export async function bootDocumentManager(
       // The real file dialog, with no window to attach it to.
       saveFile: async (filePath: string) => await saveFileDialog(log, dialogConfig, null, filePath),
       // The real addressing, over the windows that the spec has open.
-      tellMainWindows: (windowIds: readonly string[], channel: string, payload: IpcValue) => {
+      tellMainWindows: <C extends keyof IpcBroadcastContracts>(
+        windowIds: readonly string[],
+        channel: C,
+        ...message: IpcBroadcastArgs<C>
+      ) => {
         const open = BrowserWindow.getAllWindows();
         tellMainWindows(
           windowIds
@@ -185,7 +189,7 @@ export async function bootDocumentManager(
             .filter((window) => window !== undefined && open.includes(window)),
           open[0],
           channel,
-          payload,
+          ...message,
         );
       },
     },

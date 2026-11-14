@@ -274,12 +274,9 @@ describe("global-search and project-properties failure recovery", function () {
     await openSearchPane(page, 30_000);
     await page.evaluate(() => {
       window.searchBroadcasts = [];
-      window.ipc.on(
-        "search-provider",
-        (_event: unknown, message: { type: string; generation: number }) => {
-          window.searchBroadcasts.push(`${message.generation} ${message.type}`);
-        },
-      );
+      window.ipc.on("search-provider", (_event, message) => {
+        window.searchBroadcasts.push(`${message.generation} ${message.type}`);
+      });
     });
 
     // The first query matches each corpus file. The edited query starts at

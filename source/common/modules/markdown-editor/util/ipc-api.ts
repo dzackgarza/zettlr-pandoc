@@ -14,7 +14,6 @@
  */
 
 import { type DocumentType, DP_EVENTS, type SerializedUpdate } from "@dts/common/documents";
-import type { DocumentsUpdateContext } from "source/app/service-providers/documents";
 import { type DocumentAuthorityAPI } from "..";
 
 const ipcRenderer = window.ipc;
@@ -27,27 +26,24 @@ async function pullUpdates(filePath: string, version: number): Promise<false | S
   // a dozen IPC calls are hanging in the air with no resolution in sight.
   return await new Promise((resolve, reject) => {
     // Begin listening for the correct event
-    const stopListening = ipcRenderer.on(
-      "documents-update",
-      (evt, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
-        const { event, context } = payload;
-        if (event !== DP_EVENTS.CHANGE_FILE_STATUS || context.filePath !== filePath) {
-          return;
-        }
+    const stopListening = ipcRenderer.on("documents-update", (evt, payload) => {
+      const { event, context } = payload;
+      if (event !== DP_EVENTS.CHANGE_FILE_STATUS || context.filePath !== filePath) {
+        return;
+      }
 
-        ipcRenderer
-          .invoke("documents-authority", {
-            command: "pull-updates",
-            payload: { filePath, version },
-          })
-          .then((result: false | SerializedUpdate[]) => {
-            // Clean up to not pollute the event listener with millions of callbacks
-            stopListening();
-            resolve(result);
-          })
-          .catch((err) => reject(err));
-      },
-    );
+      ipcRenderer
+        .invoke("documents-authority", {
+          command: "pull-updates",
+          payload: { filePath, version },
+        })
+        .then((result: false | SerializedUpdate[]) => {
+          // Clean up to not pollute the event listener with millions of callbacks
+          stopListening();
+          resolve(result);
+        })
+        .catch((err) => reject(err));
+    });
   });
 }
 

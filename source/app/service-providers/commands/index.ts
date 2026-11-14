@@ -26,6 +26,7 @@ import type {
   IssuedReferenceRenamePreview,
   UndoRenameOutcome,
 } from "@common/pandoc-util/compute-reference-edits";
+import { sendIPCMessage } from "@common/util/broadcast-ipc-message";
 import enumDictFiles from "@common/util/enum-dict-files";
 import enumLangFiles from "@common/util/enum-lang-files";
 import type { LinkPreviewResult } from "@common/util/fetch-link-preview";
@@ -600,7 +601,10 @@ export default class CommandProvider extends ProviderContract {
    * whose window is gone.
    */
   private _showFailure(failure: CommandFailedBroadcast): void {
-    this._startingWindow()?.send(COMMAND_FAILED_CHANNEL, failure);
+    const window = this._startingWindow();
+    if (window !== undefined) {
+      sendIPCMessage(window, COMMAND_FAILED_CHANNEL, failure);
+    }
   }
 
   /**
@@ -631,7 +635,7 @@ export default class CommandProvider extends ProviderContract {
     }
     this._proposals.set(proposal.id, proposal);
     window.once("destroyed", () => this._proposals.delete(proposal.id));
-    window.send(WORKSPACE_EDIT_PROPOSAL_CHANNEL, proposal);
+    sendIPCMessage(window, WORKSPACE_EDIT_PROPOSAL_CHANNEL, proposal);
   }
 
   /** The proposal with the id, which no other call can take after this one. */
@@ -676,7 +680,7 @@ export default class CommandProvider extends ProviderContract {
         throw new Error("The file filter dialog has no main window to open in.");
       }
       mainWindow.show();
-      mainWindow.webContents.send("shortcut", "edit-ignore-rules");
+      sendIPCMessage(mainWindow.webContents, "shortcut", "edit-ignore-rules");
       return true;
     } else if (command === "open-preferences") {
       this._app.windows.showPreferences(payload as PreferenceNavigationTarget | undefined);

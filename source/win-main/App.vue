@@ -231,31 +231,22 @@ import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import {
   COLLABORATION_FILE_UNREADABLE_CHANNEL,
   COLLABORATION_FILE_UNWRITABLE_CHANNEL,
-  type CollaborationFileUnreadableBroadcast,
-  type CollaborationFileUnwritableBroadcast,
 } from "@dts/common/document-collaboration";
 import {
   DocumentType,
   DP_EVENTS,
   FILE_REMOVED_KEPT_CHANNEL,
-  type FileRemovedKeptBroadcast,
   type LeafNodeJSON,
   REMOTE_CHANGE_KEPT_CHANNEL,
-  type RemoteChangeKeptBroadcast,
   SAVE_REFUSED_CHANNEL,
-  type SaveRefusedBroadcast,
 } from "@dts/common/documents";
 import { referenceLabelSeparator, type SourceRange } from "@dts/common/references";
 import {
   type EditorCommandName,
-  insertTablePayloadSchema,
   isEditorCommandName,
-  isShortcutName,
   type ShortcutName,
 } from "@dts/common/shortcut-names";
 import { isSidebarViewId } from "@dts/common/sidebar-views";
-import type { DocumentsUpdateContext } from "@providers/documents";
-import { type UpdateState } from "@providers/updates";
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
 import type {
   CustomExportIPCAPI,
@@ -992,7 +983,7 @@ function navigateHistory(command: "navigate-back" | "navigate-forward"): void {
   navigatePaneHistory(windowId, leafId, command, view);
 }
 // A wikilink to `[[file#heading]]` opens the file at that heading.
-ipcRenderer.on("jump-to-line", (event, target: { filePath: string; line: number }) => {
+ipcRenderer.on("jump-to-line", (event, target) => {
   jtl(target.filePath, target.line, false);
 });
 
@@ -1003,7 +994,7 @@ onMounted(() => {
   // promise to carry their result, so the provider broadcasts refusals here.
   // Without this the prompt closes and the window stays open with no reason
   // given anywhere the user can see.
-  ipcRenderer.on(SAVE_REFUSED_CHANNEL, (event, payload: SaveRefusedBroadcast) => {
+  ipcRenderer.on(SAVE_REFUSED_CHANNEL, (event, payload) => {
     const name = pathBasename(payload.filePath);
     const message = `${name}: ${payload.refusal.message}`;
     const refused = payload.refused;
@@ -1042,53 +1033,47 @@ onMounted(() => {
   // A document opened without its annotations and its review: their file
   // could not be read. The author can move the file aside, so that the
   // document takes new annotations; the file is kept.
-  ipcRenderer.on(
-    COLLABORATION_FILE_UNREADABLE_CHANNEL,
-    (event, payload: CollaborationFileUnreadableBroadcast) => {
-      const name = pathBasename(payload.filePath);
-      showToast(
-        trans(
-          "%s opened without its annotations and its review. Their file cannot be read: %s",
-          name,
-          payload.cause,
-        ),
-        "error",
-        12000,
-        {
-          label: trans("Move the file aside"),
-          onAction: () => {
-            collaborationStore.setAsideCollaborationFile(payload.file).then(
-              (aside) => showToast(trans("The file is kept as %s.", aside), "info", 12000),
-              (err: Error) =>
-                showToast(trans("Could not move the file aside: %s", err.message), "error", 12000),
-            );
-          },
+  ipcRenderer.on(COLLABORATION_FILE_UNREADABLE_CHANNEL, (event, payload) => {
+    const name = pathBasename(payload.filePath);
+    showToast(
+      trans(
+        "%s opened without its annotations and its review. Their file cannot be read: %s",
+        name,
+        payload.cause,
+      ),
+      "error",
+      12000,
+      {
+        label: trans("Move the file aside"),
+        onAction: () => {
+          collaborationStore.setAsideCollaborationFile(payload.file).then(
+            (aside) => showToast(trans("The file is kept as %s.", aside), "info", 12000),
+            (err: Error) =>
+              showToast(trans("Could not move the file aside: %s", err.message), "error", 12000),
+          );
         },
-      );
-    },
-  );
+      },
+    );
+  });
 
   // A document opened without its annotations and its review: their file
   // was read, and the attach to the text of the file could not write it.
   // The next load of the document attaches the file again.
-  ipcRenderer.on(
-    COLLABORATION_FILE_UNWRITABLE_CHANNEL,
-    (event, payload: CollaborationFileUnwritableBroadcast) => {
-      showToast(
-        trans(
-          "%s opened without its annotations and its review. Their file cannot be written: %s",
-          pathBasename(payload.filePath),
-          payload.cause,
-        ),
-        "error",
-        12000,
-      );
-    },
-  );
+  ipcRenderer.on(COLLABORATION_FILE_UNWRITABLE_CHANNEL, (event, payload) => {
+    showToast(
+      trans(
+        "%s opened without its annotations and its review. Their file cannot be written: %s",
+        pathBasename(payload.filePath),
+        payload.cause,
+      ),
+      "error",
+      12000,
+    );
+  });
 
   // A loaded file changed on disk and the editor kept its contents. The user
   // decides, when they choose, whether the disk version replaces them.
-  ipcRenderer.on(REMOTE_CHANGE_KEPT_CHANNEL, (event, payload: RemoteChangeKeptBroadcast) => {
+  ipcRenderer.on(REMOTE_CHANGE_KEPT_CHANNEL, (event, payload) => {
     const name = pathBasename(payload.filePath);
     if (payload.frozenReview) {
       // The review of the document refuses a save over the new file, so the
@@ -1116,7 +1101,7 @@ onMounted(() => {
   // The file of a document with unsaved text was removed, and the document
   // stayed open. The save of a document with a review needs the file, so
   // that document offers a copy of its text.
-  ipcRenderer.on(FILE_REMOVED_KEPT_CHANNEL, (event, payload: FileRemovedKeptBroadcast) => {
+  ipcRenderer.on(FILE_REMOVED_KEPT_CHANNEL, (event, payload) => {
     const name = pathBasename(payload.filePath);
     if (payload.saveWritesFile) {
       showToast(
@@ -1144,26 +1129,21 @@ onMounted(() => {
   // cause one time: a pane has an editor for each of its tabs, and two panes
   // can hold the file. Only a file in a tab is watched, so a window with the
   // file in a tab is there for each failure.
-  ipcRenderer.on(
-    "documents-update",
-    (event, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
-      if (payload.event !== DP_EVENTS.FILE_REMOTE_CHANGE_ERROR) {
-        return;
-      }
-      const { filePath, documentLoadError } = payload.context;
-      if (filePath === undefined || documentLoadError === undefined) {
-        throw new Error(
-          `Received ${DP_EVENTS.FILE_REMOTE_CHANGE_ERROR} without a file and a cause`,
-        );
-      }
-      const holdsFile = documentTreeStore.paneData.some((pane) =>
-        pane.openFiles.some((file) => file.path === filePath),
-      );
-      if (holdsFile) {
-        surfaceDocumentLoadFailure(filePath, documentLoadError);
-      }
-    },
-  );
+  ipcRenderer.on("documents-update", (event, payload) => {
+    if (payload.event !== DP_EVENTS.FILE_REMOTE_CHANGE_ERROR) {
+      return;
+    }
+    const { filePath, documentLoadError } = payload.context;
+    if (filePath === undefined || documentLoadError === undefined) {
+      throw new Error(`Received ${DP_EVENTS.FILE_REMOTE_CHANGE_ERROR} without a file and a cause`);
+    }
+    const holdsFile = documentTreeStore.paneData.some((pane) =>
+      pane.openFiles.some((file) => file.path === filePath),
+    );
+    if (holdsFile) {
+      surfaceDocumentLoadFailure(filePath, documentLoadError);
+    }
+  });
 
   // The window-level shortcuts this component owns, by their typed name. The
   // main process sends the same names from the application menu; names other
@@ -1249,19 +1229,16 @@ onMounted(() => {
     "open-terminal-here": openTerminalHere,
   };
 
-  ipcRenderer.on("shortcut", (event, shortcut: unknown, payload: unknown) => {
-    if (typeof shortcut !== "string" || !isShortcutName(shortcut)) {
-      throw new Error(`The main process sent an unknown shortcut: ${String(shortcut)}`);
-    }
-    if (shortcut === "insert-table") {
-      insertTable(insertTablePayloadSchema.parse(payload));
-      return;
-    }
+  ipcRenderer.on("shortcut", (event, shortcut) => {
     if (isEditorCommandName(shortcut)) {
       runEditorCommand(shortcut);
       return;
     }
     shortcutHandlers[shortcut]?.();
+  });
+
+  ipcRenderer.on("insert-table", (event, size) => {
+    insertTable(size);
   });
 
   // Check if there is an update available.
@@ -1273,10 +1250,8 @@ onMounted(() => {
     .catch((err) => reportError(err));
 
   // Also, listen for any changes in the update available state
-  ipcRenderer.on("update-provider", (event, command: string, updateState: UpdateState) => {
-    if (command === "state-changed") {
-      isUpdateAvailable.value = updateState.updateAvailable;
-    }
+  ipcRenderer.on("update-provider", (event, command, updateState) => {
+    isUpdateAvailable.value = updateState.updateAvailable;
   });
 });
 

@@ -170,7 +170,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
       isLoading.value = false;
       // Now we can set up the watchers. (We need to do this afterwards to not cause a hiccup)
       // Finally, listen to FSAL events and keep the descriptor map updated.
-      ipcRenderer.on("fsal-events", (_, events: FSALEventPayload[]) => {
+      ipcRenderer.on("fsal-events", (_, events) => {
         applyEvents(events);
       });
     });

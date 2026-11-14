@@ -276,7 +276,7 @@ onBeforeMount(() => {
       populateDynamicValues();
     }
   });
-  ipcRenderer.on("preferences-navigate", (_event, target: PreferenceNavigationTarget) => {
+  ipcRenderer.on("preferences-navigate", (_event, target) => {
     revealPreferenceTarget(target).catch((err) =>
       reportError("[Preferences] Could not reveal preference target", err),
     );

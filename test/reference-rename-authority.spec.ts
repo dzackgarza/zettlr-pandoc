@@ -25,8 +25,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
-import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import DocumentManager from "source/app/service-providers/documents";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import LogProvider from "source/app/service-providers/log";
 import ReferenceProvider from "source/app/service-providers/references";
@@ -164,11 +164,7 @@ async function createScratchBoundary(): Promise<ScratchBoundary> {
       askSaveChanges: async (_detail?: string) => ({ response: 0, checkboxChecked: false }),
       getFirstMainWindow: () => undefined,
       // The spec has no main window, so no window gets a message.
-      tellMainWindows: (
-        _windowIds: readonly string[],
-        _channel: string,
-        ..._args: readonly unknown[]
-      ) => {},
+      tellMainWindows: () => {},
       getMainWindowKey: (_window: unknown) => "",
       // No operation of this spec asks the author for a file.
       saveFile: async (_filePath: string): Promise<string | undefined> => {

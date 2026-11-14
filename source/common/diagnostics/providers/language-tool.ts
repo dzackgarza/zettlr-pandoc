@@ -2,7 +2,6 @@ import type { ExternalLinter } from "@common/diagnostics/external-linter";
 import { ipcExternalLinter } from "@common/diagnostics/providers/ipc";
 import { reportError } from "@common/util/error-reporting";
 import type { LanguageToolIgnoredRuleEntry } from "@providers/config/get-config-template";
-import type { DictionaryProviderBroadcast } from "@providers/dictionary/ipc-contract";
 
 const userDictionary = new Set<string>();
 
@@ -32,7 +31,7 @@ export function languageToolUserDictionary(): string[] {
 // The window has the listener from the load of the module, so the set of its
 // IPC listeners does not change when the first check runs (#70).
 if (window.ipc !== undefined) {
-  window.ipc.on("dictionary-provider", (_event, message: DictionaryProviderBroadcast) => {
+  window.ipc.on("dictionary-provider", (_event, message) => {
     if (message.command === "invalidate-dict") {
       refreshLanguageToolUserDictionary();
     }

@@ -16,6 +16,11 @@
 
 import type { ColoredTag, TagRecord } from "./index";
 
+/** A `tag-provider` message to the windows: the tags or the coloured tags changed. */
+export type TagProviderBroadcast =
+  | [command: "tags-updated", tags: TagRecord[]]
+  | [command: "colored-tags-updated", coloredTags: ColoredTag[]];
+
 export type TagProviderIPCContract = {
   "get-all-tags": {
     request: { payload?: undefined };

@@ -16,6 +16,7 @@
 
 import { editMenuItems } from "@common/commands/editing-menu-items";
 import { trans } from "@common/i18n-main";
+import { sendIPCMessage } from "@common/util/broadcast-ipc-message";
 import { DocumentType } from "@dts/common/documents";
 import { app, BrowserWindow, dialog, type MenuItemConstructorOptions, shell } from "electron";
 import path from "path";
@@ -168,7 +169,7 @@ export default function getMenu(
           id: "menu.new_dir",
           label: trans("New directory…"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "new-dir");
+            sendShortcut(focusedWindow, "new-dir");
           },
         },
         {
@@ -204,7 +205,7 @@ export default function getMenu(
           id: "menu.save",
           label: trans("Save"),
           click: function (_menuItem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "save-file");
+            sendShortcut(focusedWindow, "save-file");
           },
         },
         {
@@ -220,14 +221,20 @@ export default function getMenu(
             // use (create-main-window.ts). It goes to the main window that the
             // author used last: with the focus in Preferences or another
             // window without panes, that main window goes back (#57).
-            windows.getFirstMainWindow()?.webContents.send("shortcut", "navigate-back");
+            const mainWindow = windows.getFirstMainWindow();
+            if (mainWindow !== undefined) {
+              sendIPCMessage(mainWindow.webContents, "shortcut", "navigate-back");
+            }
           },
         },
         {
           id: "menu.next_file",
           label: trans("Next file"),
           click: function () {
-            windows.getFirstMainWindow()?.webContents.send("shortcut", "navigate-forward");
+            const mainWindow = windows.getFirstMainWindow();
+            if (mainWindow !== undefined) {
+              sendIPCMessage(mainWindow.webContents, "shortcut", "navigate-forward");
+            }
           },
         },
         {
@@ -246,14 +253,14 @@ export default function getMenu(
           id: "menu.export",
           label: trans("Export…"),
           click: function (_menuItem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "export");
+            sendShortcut(focusedWindow, "export");
           },
         },
         {
           id: "menu.print",
           label: trans("Print…"),
           click: function (_menuItem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "print");
+            sendShortcut(focusedWindow, "print");
           },
         },
         {
@@ -311,10 +318,7 @@ export default function getMenu(
           id: "menu.rename_file",
           label: trans("Rename file"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "rename-file",
-            );
+            sendShortcut(focusedWindow, "rename-file");
           },
         },
         {
@@ -324,10 +328,7 @@ export default function getMenu(
           id: "menu.delete_file",
           label: trans("Delete file"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "delete-file",
-            );
+            sendShortcut(focusedWindow, "delete-file");
           },
         },
         {
@@ -369,10 +370,7 @@ export default function getMenu(
         {
           ...edit.copyAsHtml,
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "copy-as-html",
-            );
+            sendShortcut(focusedWindow, "copy-as-html");
           },
         },
         {
@@ -382,10 +380,7 @@ export default function getMenu(
         {
           ...edit.pasteAsPlain,
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "paste-as-plain",
-            );
+            sendShortcut(focusedWindow, "paste-as-plain");
           },
         },
         {
@@ -399,27 +394,21 @@ export default function getMenu(
           id: "menu.find_file",
           label: trans("Find in current file"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "search");
+            sendShortcut(focusedWindow, "search");
           },
         },
         {
           id: "menu.find_dir",
           label: trans("Search all files"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "global-search",
-            );
+            sendShortcut(focusedWindow, "global-search");
           },
         },
         {
           id: "menu.filter_files",
           label: trans("Search files"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "filter-files",
-            );
+            sendShortcut(focusedWindow, "filter-files");
           },
         },
         ignoreRulesItem(),
@@ -434,17 +423,14 @@ export default function getMenu(
           id: "menu.generate_id",
           label: trans("Generate new ID"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "insert-id");
+            sendShortcut(focusedWindow, "insert-id");
           },
         },
         {
           id: "menu.copy_id",
           label: trans("Copy ID"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "copy-current-id",
-            );
+            sendShortcut(focusedWindow, "copy-current-id");
           },
         },
       ],
@@ -485,20 +471,14 @@ export default function getMenu(
           id: "menu.toggle_distraction_free",
           label: trans("Distraction-free mode"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "toggle-distraction-free",
-            );
+            sendShortcut(focusedWindow, "toggle-distraction-free");
           },
         },
         {
           id: "menu.toggle_typewriter_mode",
           label: trans("Typewriter mode"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "toggle-typewriter-mode",
-            );
+            sendShortcut(focusedWindow, "toggle-typewriter-mode");
           },
         },
         {
@@ -613,64 +593,49 @@ export default function getMenu(
           id: "menu.tab_close",
           label: trans("Close Tab"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "close-window",
-            );
+            sendShortcut(focusedWindow, "close-window");
           },
         },
         {
           id: "menu.tab_reopen_closed",
           label: trans("Reopen Closed Tab"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "reopen-closed-tab",
-            );
+            sendShortcut(focusedWindow, "reopen-closed-tab");
           },
         },
         {
           id: "menu.tabs_close_all",
           label: trans("Close All Tabs"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "close-all-tabs",
-            );
+            sendShortcut(focusedWindow, "close-all-tabs");
           },
         },
         {
           id: "menu.tabs_save_all",
           label: trans("Save All"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "save-all");
+            sendShortcut(focusedWindow, "save-all");
           },
         },
         {
           id: "menu.tabs_save_all_close",
           label: trans("Save All and Close"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "save-all-and-close",
-            );
+            sendShortcut(focusedWindow, "save-all-and-close");
           },
         },
         {
           id: "menu.tab_previous",
           label: trans("Previous Tab"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
-              "shortcut",
-              "previous-tab",
-            );
+            sendShortcut(focusedWindow, "previous-tab");
           },
         },
         {
           id: "menu.tab_next",
           label: trans("Next Tab"),
           click: function (_menuitem, focusedWindow) {
-            (focusedWindow as BrowserWindow | undefined)?.webContents.send("shortcut", "next-tab");
+            sendShortcut(focusedWindow, "next-tab");
           },
         },
         {

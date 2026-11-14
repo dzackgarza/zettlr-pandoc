@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import broadcastIPCMessage from "@common/util/broadcast-ipc-message";
+import broadcastIPCMessage, { replyIPCMessage } from "@common/util/broadcast-ipc-message";
 import { showNativeNotification } from "@common/util/show-notification";
 import type { SerializedMenuItem, SerializedSubmenu } from "@dts/common/serialized-menu";
 import type ConfigProvider from "@providers/config";
@@ -92,7 +92,7 @@ export default class MenuProvider extends ProviderContract {
       const { command } = message;
 
       if (command === "get-application-menu") {
-        event.reply("menu-provider", {
+        replyIPCMessage(event, "menu-provider", {
           command: "application-menu",
           payload: this.serializableApplicationMenu,
         });
@@ -118,7 +118,7 @@ export default class MenuProvider extends ProviderContract {
           return;
         }
 
-        event.reply("menu-provider", {
+        replyIPCMessage(event, "menu-provider", {
           command: "application-submenu",
           payload: {
             id: itemID,
