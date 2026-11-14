@@ -380,7 +380,9 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   contract (a new error code, a new operation) raises the minor version. The
   CLI accepts one version, so its constant follows each change. Version 2.0.0
   made `clientRequestId` of a proposal required; version 2.1.0 added
-  `PROPOSAL_NOT_FOUND`.
+  `PROPOSAL_NOT_FOUND`; version 3.0.0 removed `active` of a view of
+  `/v1/views`, which was a copy of `focused` (`documentId` names the
+  active tab).
   `bun run check:agent-api-types` proves that the generated types are those
   of the document; the hosted `check.yml` runs it.
 - **Each status on the wire is one that the document declares.** A handler

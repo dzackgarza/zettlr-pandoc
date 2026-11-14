@@ -592,7 +592,6 @@ export default class AgentDocumentQueries {
         leafId,
         documentId: activePath === undefined ? undefined : this.documents.getDocumentId(activePath),
         focused: isFocused,
-        active: isFocused,
         documents: tabMan.openFiles.map((openFile) => ({
           documentId: this.documents.getDocumentId(openFile.path),
           path: openFile.path,

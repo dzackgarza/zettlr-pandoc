@@ -14,7 +14,7 @@ const http = require("http");
 const path = require("path");
 
 const PROGRAM = path.basename(process.argv[1] ?? "zettlr-pandoc-review-diff");
-const AGENT_API_PROTOCOL_VERSION = "2.1.0";
+const AGENT_API_PROTOCOL_VERSION = "3.0.0";
 // The editor answers only a caller that sends the token of its own
 // environment. The launcher of the editor and this CLI read one variable.
 const TOKEN_VARIABLE = "ZETTLR_AGENT_API_TOKEN";

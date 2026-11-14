@@ -616,7 +616,9 @@ export interface components {
       viewId: string;
       windowId: string;
       leafId: string;
+      /** @description The view is the pane of the editor that the author used last. */
       focused: boolean;
+      /** @description The document is the active tab of the view. */
       active: boolean;
     };
     DocumentSummary: {
@@ -821,9 +823,10 @@ export interface components {
       viewId: string;
       windowId: string;
       leafId: string;
+      /** @description The document of the active tab of the view; absent for a view without tabs. */
       documentId?: string;
+      /** @description The view is the pane of the editor that the author used last. */
       focused: boolean;
-      active: boolean;
       documents?: {
         documentId?: string;
         path: string;
