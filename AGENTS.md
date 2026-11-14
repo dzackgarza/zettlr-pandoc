@@ -1914,6 +1914,17 @@ of an isolated instance are in the first comment of #132.
     carries the place of the caret in the editor that the pane shows, so
     the opposite move restores it, and a refusal shows one message. Proof:
     `e2e/menu-navigation-auxiliary-window.spec.ts`.
+  - Follow link goes through `followLinkAt`
+    (`markdown-editor/plugins/click-listeners.ts`) for a Mod-click and for
+    the command `nav-follow-link` (`followLinkAtCursor`: the key F12 and
+    File → Follow link). It follows a plain address, a Markdown link, a
+    wikilink, a tag, a cross-reference and a footnote. The command takes
+    the link around the caret, else the link that starts at the caret,
+    else the link that ends at it; a caret on no link leaves the key to
+    the next binding. An editor gives its openers of a wikilink and a tag
+    as facets (`wikilinkOpener`, `tagOpener`); an editor without them (a
+    table cell) follows no such link. Proof:
+    `e2e/follow-link-key.spec.ts`.
 - **The contract types each command and its handler.**
   `ApplicationIPCContract` (`commands/index.ts`) names each command of the
   `application` channel with its payload and its answer. The invoke of a

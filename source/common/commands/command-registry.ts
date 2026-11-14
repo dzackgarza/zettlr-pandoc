@@ -281,6 +281,17 @@ const registrations = [
     palette: false,
     menuItems: ["menu.next_file"],
   }),
+  // The key of VS Code's Go to Definition.
+  registerCommand({
+    id: "nav-follow-link",
+    label: "Follow the link at the caret",
+    group: "Navigation",
+    scope: "editor",
+    when: "editorFocus",
+    defaultKeybinding: { key: "F12" },
+    palette: false,
+    menuItems: ["menu.follow_link"],
+  }),
   registerCommand({
     id: "folding-fold-at-cursor",
     label: "Fold at cursor",

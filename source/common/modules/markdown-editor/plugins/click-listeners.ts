@@ -7,38 +7,123 @@
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     Defines a DomEventHandler for clicks on links. Can be
- *                  included in CodeMirror 6 states via
- *                  `EditorView.DomEventHandlers`.
+ * Description:     Follows the link at a place of the document: a plain
+ *                  address, a Markdown link, a wikilink, a tag, a
+ *                  cross-reference and a footnote. A Mod-click follows the
+ *                  link under the pointer (`clickListeners`, for
+ *                  `EditorView.domEventHandlers`), and the command
+ *                  `followLinkAtCursor` the link at the caret.
  *
  * END HEADER
  */
 import { syntaxTree } from "@codemirror/language";
-import type { DOMEventHandlers } from "@codemirror/view";
+import { Facet } from "@codemirror/state";
+import type { DOMEventHandlers, EditorView } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import openMarkdownLink from "../util/open-markdown-link";
 import {
   followReferenceNavigationIntent,
   resolveReferenceNavigationIntent,
 } from "../util/reference-navigation";
+import { wikilinkOpener } from "./wikilink-resolutions-field";
 
-export interface ClickListenerCallbacks {
-  onWikiLink?: (url: string) => void;
-  onTag?: (tag: string) => void;
+/** Opens the tag whose text after `#` is the argument. */
+export const tagOpener = Facet.define<(tag: string) => void, ((tag: string) => void) | undefined>({
+  combine: (values) => values[0],
+});
+
+const WIKILINK_NODES = ["ZknLink", "ZknLinkContent", "ZknLinkTitle", "ZknLinkPipe", "ZknLinkMark"];
+
+/** Opens an address of the document: a wikilink in `[[…]]`, or a Markdown link. */
+function openAddress(view: EditorView, url: string): void {
+  if (url.startsWith("[[") && url.endsWith("]]")) {
+    view.state.facet(wikilinkOpener)?.(url.substring(2, url.length - 2));
+  } else {
+    openMarkdownLink(url, view);
+  }
 }
 
 /**
- * Defines DOM event listeners for clicks on potential links within CodeMirror
- * Markdown syntax trees. Offers optional callbacks for Wikilinks and Tags which
- * may require further handling.
+ * Follows the link at a position. An editor without an opener for wikilinks
+ * or tags (a table cell) follows no such link, and the link still takes the
+ * action.
  *
- * @param   {ClickListenerCallbacks<T>}  callbacks  The optional callbacks
+ * @param   view  The editor
+ * @param   pos   The position in the document
+ * @param   side  The side of `pos` whose node is read, as for
+ *                `SyntaxNode.resolve`: 0 for a node around `pos`, 1 for a
+ *                node that can start at it, -1 for a node that can end at it
  *
- * @return  {DOMEventHandlers<T>}                   The DOMEventHandlers.
+ * @return        Whether the position has a link
  */
-export function clickListeners<T = unknown>(
-  callbacks?: ClickListenerCallbacks,
-): DOMEventHandlers<T> {
+function followLinkAt(view: EditorView, pos: number, side: -1 | 0 | 1): boolean {
+  const nodeAt = syntaxTree(view.state).resolve(pos, side);
+
+  // Both plain URLs as well as Zettelkasten links and tags are implemented
+  // on the syntax tree.
+  if (nodeAt.type.name === "URL") {
+    openAddress(view, view.state.sliceDoc(nodeAt.from, nodeAt.to));
+    return true;
+  }
+
+  if (WIKILINK_NODES.includes(nodeAt.type.name)) {
+    // A position on the boundary between two children of the link (the
+    // first character of a label whose target is hidden) resolves to the
+    // link itself; otherwise the parent is it.
+    const linkNode = nodeAt.type.name === "ZknLink" ? nodeAt : nodeAt.parent;
+    const contentNode = linkNode?.getChild("ZknLinkContent");
+    if (contentNode != null) {
+      view.state.facet(wikilinkOpener)?.(view.state.sliceDoc(contentNode.from, contentNode.to));
+    }
+    return true;
+  }
+
+  if (nodeAt.type.name === "ZknTag") {
+    const mark = nodeAt.getChild("ZknTagMark");
+    view.state.facet(tagOpener)?.(view.state.sliceDoc(mark ? mark.to : nodeAt.from, nodeAt.to));
+    return true;
+  }
+
+  // Reference occurrences (supported-family Citation clusters) and footnote
+  // refs (issue #1 Phase 5): same-file intents select the definition in this
+  // view, cross-file intents request the documents provider to open the
+  // defining document.
+  const intent = resolveReferenceNavigationIntent(view, pos);
+  if (intent !== null) {
+    followReferenceNavigationIntent(view, intent);
+    return true;
+  }
+
+  // Lastly, the position may be somewhere in a link. The link description
+  // can take various inline elements, so move up the tree to a 'Link'
+  // element or to the top.
+  let currentNode: SyntaxNode | null = nodeAt;
+  while (currentNode !== null && currentNode.name !== "Link") {
+    currentNode = currentNode.parent;
+  }
+  const urlNode = currentNode?.getChild("URL");
+  if (urlNode == null) {
+    return false;
+  }
+  openAddress(view, view.state.sliceDoc(urlNode.from, urlNode.to));
+  return true;
+}
+
+/**
+ * Follows the link at the caret: the link around it, else the link that
+ * starts at it, else the link that ends at it. Answers false when the caret
+ * is on no link, so the key goes to the next binding.
+ */
+export function followLinkAtCursor(view: EditorView): boolean {
+  const { head } = view.state.selection.main;
+  return ([0, 1, -1] as const).some((side) => followLinkAt(view, head, side));
+}
+
+/**
+ * The DOM event listeners that follow the link under the pointer at a
+ * Mod-click. An ordinary click reaches no link: it edits.
+ */
+export function clickListeners<T = unknown>(): DOMEventHandlers<T> {
   return {
     mousedown(event, view) {
       const cmd = event.metaKey && process.platform === "darwin";
@@ -48,85 +133,11 @@ export function clickListeners<T = unknown>(
       }
 
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-      if (pos === null) {
+      if (pos === null || !followLinkAt(view, pos, 0)) {
         return false;
       }
-
-      const nodeAt = syntaxTree(view.state).resolve(pos, 0);
-
-      // Both plain URLs as well as Zettelkasten links and tags are
-      // implemented on the syntax tree.
-      if (nodeAt.type.name === "URL") {
-        // We found a plain link!
-        const url = view.state.sliceDoc(nodeAt.from, nodeAt.to);
-        if (url.startsWith("[[") && url.endsWith("]]")) {
-          callbacks?.onWikiLink?.(url.substring(2, url.length - 2));
-        } else {
-          openMarkdownLink(url, view);
-        }
-        event.preventDefault();
-        return true;
-      } else if (
-        ["ZknLink", "ZknLinkContent", "ZknLinkTitle", "ZknLinkPipe", "ZknLinkMark"].includes(
-          nodeAt.type.name,
-        )
-      ) {
-        // We found a Zettelkasten link! A click on the boundary between two of
-        // its children (the first character of a label whose target is
-        // hidden) resolves to the link itself; otherwise the parent is it.
-        event.preventDefault();
-        const linkNode = nodeAt.type.name === "ZknLink" ? nodeAt : nodeAt.parent;
-        const contentNode = linkNode?.getChild("ZknLinkContent");
-        if (contentNode != null) {
-          const linkContents = view.state.sliceDoc(contentNode.from, contentNode.to);
-          callbacks?.onWikiLink?.(linkContents);
-        }
-        return true;
-      } else if (nodeAt.type.name === "ZknTag") {
-        // A tag!
-        const mark = nodeAt.getChild("ZknTagMark");
-        const tagContents = view.state.sliceDoc(mark ? mark.to : nodeAt.from, nodeAt.to);
-        callbacks?.onTag?.(tagContents);
-        event.preventDefault();
-        return true;
-      }
-
-      // Reference occurrences (supported-family Citation clusters) and
-      // footnote refs join the Mod-click navigation surface (issue #1
-      // Phase 5): same-file intents select the definition in this view,
-      // cross-file intents request the documents provider to open the
-      // defining document. Ordinary clicks never reach this branch (the
-      // Mod-key guard at the top), so edit-first behavior is untouched.
-      const intent = resolveReferenceNavigationIntent(view, pos);
-      if (intent !== null) {
-        event.preventDefault();
-        followReferenceNavigationIntent(view, intent);
-        return true;
-      }
-
-      // Lastly, the user may have clicked somewhere in a link. However,
-      // since the link description can take various inline elements, we
-      // have to recursively move up the tree until we find a 'Link' element
-      // or abort if we reach the top
-      let currentNode: SyntaxNode | null = nodeAt;
-      while (currentNode !== null && currentNode.name !== "Link") {
-        currentNode = currentNode.parent;
-      }
-
-      if (currentNode !== null) {
-        // We have a link
-        const urlNode = currentNode.getChild("URL");
-        if (urlNode !== null) {
-          const url = view.state.sliceDoc(urlNode.from, urlNode.to);
-          if (url.startsWith("[[") && url.endsWith("]]")) {
-            callbacks?.onWikiLink?.(url.substring(2, url.length - 2));
-          } else {
-            openMarkdownLink(url, view);
-          }
-          event.preventDefault();
-          return true;
-        }
-      }
+      event.preventDefault();
+      return true;
     },
   };
 }

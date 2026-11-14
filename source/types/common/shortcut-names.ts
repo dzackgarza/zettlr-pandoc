@@ -39,6 +39,7 @@ export const EDITOR_COMMAND_NAMES = [
   "markdownOrderedList",
   "toggleReadabilityMode",
   "toggleLintPanel",
+  "followLink",
 ] as const;
 
 export type EditorCommandName = (typeof EDITOR_COMMAND_NAMES)[number];

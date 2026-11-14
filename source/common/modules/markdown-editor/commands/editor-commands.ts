@@ -17,6 +17,7 @@
 
 import { type EditorView } from "@codemirror/view";
 import type { EditorCommandName } from "@dts/common/shortcut-names";
+import { followLinkAtCursor } from "../plugins/click-listeners";
 import { createReferenceLabel } from "../plugins/create-reference-label";
 import { toggleReadability } from "../renderers/readability";
 import { toggleLintPanel } from "../statusbar/diagnostics";
@@ -63,6 +64,7 @@ const EDITOR_COMMANDS: Record<EditorCommandName, (view: EditorView) => boolean> 
   markdownOrderedList: applyOrderedList,
   toggleReadabilityMode: toggleReadability,
   toggleLintPanel,
+  followLink: followLinkAtCursor,
 };
 
 /** Runs the editor command `name` on `view`. */

@@ -123,6 +123,13 @@
         "accelerator": "CmdOrCtrl+Shift+-"
       },
       {
+        "type": "normal",
+        "id": "menu.follow_link",
+        "label": "Follow link",
+        "enabled": true,
+        "accelerator": "F12"
+      },
+      {
         "type": "separator"
       },
       {

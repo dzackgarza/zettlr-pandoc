@@ -506,14 +506,10 @@ export default class MarkdownEditor extends EventEmitter {
       onWikiLink(url) {
         editorInstance.emit("zettelkasten-link", url);
       },
-      domEventsListeners: clickListeners({
-        onWikiLink(url) {
-          editorInstance.emit("zettelkasten-link", url);
-        },
-        onTag(tag) {
-          editorInstance.emit("zettelkasten-tag", tag);
-        },
-      }),
+      onTag(tag) {
+        editorInstance.emit("zettelkasten-tag", tag);
+      },
+      domEventsListeners: clickListeners(),
       referenceKeyEditListener: (intent) => {
         // The selection left a directly edited definition-id token: surface
         // the prompt intent to the shell (MainEditor.vue confirms and runs

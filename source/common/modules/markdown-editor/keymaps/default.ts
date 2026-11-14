@@ -143,6 +143,7 @@ import { toDoubleQuotes } from "../commands/transforms/to-double-quotes";
 import { toSentenceCase } from "../commands/transforms/to-sentence-case";
 import { toTitleCase } from "../commands/transforms/to-title-case";
 import { zapGremlins } from "../commands/transforms/zap-gremlins";
+import { followLinkAtCursor } from "../plugins/click-listeners";
 import { requestFormatDocument } from "../plugins/format-document-effect";
 import { expandQuickTexOnSpace } from "../quicktex";
 import {
@@ -275,6 +276,8 @@ export function mainEditorKeybindings(
     // command returns false in views without editor metadata (window/leaf
     // IDs), so non-main editors fall through to the next binding.
     { key: sc("nav-history-forward"), run: navigateHistoryForward, preventDefault: true },
+    // A caret on no link leaves the key to the next binding.
+    { key: sc("nav-follow-link"), run: followLinkAtCursor },
     { key: "Mod-Alt-ArrowRight", run: cursorSyntaxRight },
     { key: sc("table-add-col-after"), run: addColAfter },
     { key: "Alt-Shift-ArrowRight", mac: "Ctrl-Shift-ArrowRight", run: selectSyntaxRight },

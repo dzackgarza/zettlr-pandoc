@@ -270,6 +270,13 @@ export default function getMenu(
           },
         },
         {
+          id: "menu.follow_link",
+          label: trans("Follow link"),
+          click: function (_item, focusedWindow) {
+            sendShortcut(focusedWindow, "followLink");
+          },
+        },
+        {
           type: "separator",
         },
         {
