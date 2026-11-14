@@ -19,6 +19,7 @@
  */
 
 import { BrowserWindow } from "electron";
+import { EventEmitter } from "events";
 import { readFileSync, rmSync, statSync, unlinkSync } from "fs";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
@@ -27,6 +28,7 @@ import DirDelete from "source/app/service-providers/commands/dir-delete";
 import FileDelete from "source/app/service-providers/commands/file-delete";
 import ConfigProvider from "source/app/service-providers/config";
 import DocumentManager from "source/app/service-providers/documents";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import FSAL from "source/app/service-providers/fsal";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import { parse as parseMarkdownFile } from "source/app/service-providers/fsal/fsal-file";
@@ -49,6 +51,14 @@ export function emitWatchdogEvent(event: "add" | "change" | "unlink", filePath: 
     throw new Error("No DocumentManager subscribed to the watchdog");
   }
   watchdogListener(event, filePath);
+}
+
+/** The publication of the FSAL: each batch of `fsal-events`. */
+const fsalPublication = new EventEmitter();
+
+/** Publishes one batch of FSAL events to the booted manager, as the FSAL does. */
+export function publishFsalEvents(events: FSALEventPayload[]): void {
+  fsalPublication.emit("fsal-events", events);
 }
 
 /** The main window of each window id of a provider, while the window is open. */
@@ -132,6 +142,12 @@ export async function bootDocumentManager(
     config,
     fsal: {
       getWatchdog: () => watcher,
+      on: (evt: "fsal-events", callback: (events: FSALEventPayload[]) => void) => {
+        fsalPublication.on(evt, callback);
+      },
+      off: (evt: "fsal-events", callback: (events: FSALEventPayload[]) => void) => {
+        fsalPublication.off(evt, callback);
+      },
       getDescriptorForAnySupportedFile: descriptorFor,
       loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, "utf-8"),
       getDescriptorFor: descriptorFor,
