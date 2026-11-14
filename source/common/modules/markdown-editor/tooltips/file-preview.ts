@@ -27,7 +27,9 @@ import type { ForceOpenAPI } from "source/app/service-providers/commands/force-o
 import { documentCitationDatabase } from "source/common/util/document-citation-database";
 import { imageSourceUri } from "source/common/util/image-source-uri";
 import { pathDirname } from "source/common/util/renderer-path-polyfill";
+import { MOD_KEY_LABEL } from "../plugins/link-modifier";
 import { configField } from "../util/configuration";
+import { linkGestureLine, linkGestureTheme } from "./link-gesture";
 
 const ipcRenderer = window.ipc;
 
@@ -50,7 +52,7 @@ async function filePreviewTooltip(
   const wrapperNode = nodeAt.type.name === "ZknLink" ? nodeAt : nodeAt.parent;
   const contentNode = wrapperNode?.getChild("ZknLinkContent");
 
-  if (contentNode == null) {
+  if (wrapperNode === null || contentNode == null) {
     return null;
   }
 
@@ -63,6 +65,7 @@ async function filePreviewTooltip(
   });
 
   const { zknLinkFormat } = view.state.field(configField);
+  const linkFrom = wrapperNode.from;
 
   // By annotating a range (providing `end`) the hover tooltip will stay as long
   // as the user is somewhere over the links
@@ -70,9 +73,16 @@ async function filePreviewTooltip(
     pos: nodeAt.from,
     end: nodeAt.to,
     above: true,
-    create(_view) {
+    create(view) {
       if (res.status === "resolved") {
-        return { dom: getPreviewElement(res, fileToDisplay, sourcePath, zknLinkFormat) };
+        const dom = getPreviewElement(res, fileToDisplay, sourcePath, zknLinkFormat);
+        dom.appendChild(
+          linkGestureLine(view, trans("%s+Click to open", MOD_KEY_LABEL), {
+            selector: ".wikilink-chip",
+            sourceFrom: linkFrom,
+          }),
+        );
+        return { dom };
       }
       const dom = document.createElement("div");
       const { target } = splitWikilinkTarget(fileToDisplay);
@@ -208,6 +218,7 @@ function getPreviewElement(
 
 export const filePreview = [
   hoverTooltip(filePreviewTooltip, { hoverTime: 100 }),
+  linkGestureTheme,
   // Provide basic styles for these tooltips
   EditorView.baseTheme({
     ".editor-note-preview": {

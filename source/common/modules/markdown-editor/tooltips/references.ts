@@ -46,7 +46,9 @@
  * END HEADER
  */
 
+import { syntaxTree } from "@codemirror/language";
 import { EditorView, hoverTooltip, type Tooltip } from "@codemirror/view";
+import { trans } from "@common/i18n-renderer";
 import {
   computeProjectReferenceStatus,
   projectStatusDisplayName,
@@ -56,9 +58,13 @@ import {
   type ReferenceDefinition,
   referenceFamilyDisplayName,
 } from "@dts/common/references";
+import { NODES } from "@dzack/pandoc-editor/parser/citation-parser";
+import { type SyntaxNode } from "@lezer/common";
+import { MOD_KEY_LABEL } from "../plugins/link-modifier";
 import { workspaceReferencesField } from "../plugins/workspace-references-field";
 import { configField } from "../util/configuration";
 import { renderReferencePreview } from "../util/reference-preview";
+import { linkGestureLine, linkGestureTheme } from "./link-gesture";
 
 /**
  * The hover source for workspace reference occurrences: the specs drive this
@@ -103,7 +109,14 @@ export function referenceTooltip(view: EditorView, pos: number, side: 1 | -1): T
     above: true,
     create(view) {
       return {
-        dom: getPreviewElement(view, occurrence.key, definition, activeDocumentPath, projectRoots),
+        dom: getPreviewElement(
+          view,
+          occurrence.key,
+          occurrence.range.from,
+          definition,
+          activeDocumentPath,
+          projectRoots,
+        ),
       };
     },
   };
@@ -116,6 +129,7 @@ export function referenceTooltip(view: EditorView, pos: number, side: 1 | -1): T
  *
  * @param   {EditorView}                     view                The editor view
  * @param   {string}                         key                 The authored key
+ * @param   {number}                         keyFrom             The start of the `@key` token
  * @param   {ReferenceDefinition}            definition          The resolved definition
  * @param   {string}                         activeDocumentPath  The hovering document
  * @param   {ProjectRootSpec[]|undefined}    projectRoots        The visible Project roots
@@ -125,6 +139,7 @@ export function referenceTooltip(view: EditorView, pos: number, side: 1 | -1): T
 function getPreviewElement(
   view: EditorView,
   key: string,
+  keyFrom: number,
   definition: ReferenceDefinition,
   activeDocumentPath: string,
   projectRoots: ProjectRootSpec[] | undefined,
@@ -203,12 +218,33 @@ function getPreviewElement(
 
   wrapper.appendChild(excerpt);
   wrapper.appendChild(expand);
+  wrapper.appendChild(
+    linkGestureLine(view, trans("%s+Click to go to definition", MOD_KEY_LABEL), {
+      selector: ".reference-chip-cluster",
+      sourceFrom: clusterStart(view, keyFrom),
+    }),
+  );
 
   return wrapper;
 }
 
+/**
+ * The start of the cluster of a `@key` token: a chip replaces the whole
+ * cluster, brackets included.
+ */
+function clusterStart(view: EditorView, keyFrom: number): number {
+  let node: SyntaxNode | null = syntaxTree(view.state).resolveInner(keyFrom, 1);
+  for (; node !== null; node = node.parent) {
+    if (node.type.name === NODES.CITATION) {
+      return node.from;
+    }
+  }
+  return keyFrom;
+}
+
 export const referenceTooltips = [
   hoverTooltip(referenceTooltip, { hoverTime: 500 }),
+  linkGestureTheme,
   // Provide basic styles for these tooltips
   EditorView.baseTheme({
     ".reference-hover-preview": {

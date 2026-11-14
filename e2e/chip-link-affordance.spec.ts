@@ -134,22 +134,12 @@ describe("assembled app: a chip shows that it is a link", function () {
   const rendererEvents: string[] = [];
   const screenshots = new Map<string, Buffer>();
 
-  /** A picture of the lines of the document and of what is open over them. */
+  /**
+   * A picture of the window. It has no clip: Chromium moves the viewport to
+   * the clip of a picture, and the pointer then leaves the hover tooltip.
+   */
   async function capture(name: string): Promise<void> {
-    const shown = requireInitialized(page, "editor page");
-    const box = await shown.locator(".cm-content").boundingBox();
-    assert.ok(box !== null, "The editor has a content box");
-    screenshots.set(
-      name,
-      await shown.screenshot({
-        clip: {
-          x: box.x,
-          y: Math.max(box.y - 150, 0),
-          width: Math.min(box.width, 700),
-          height: 480,
-        },
-      }),
-    );
+    screenshots.set(name, await requireInitialized(page, "editor page").screenshot());
   }
 
   before(async function () {

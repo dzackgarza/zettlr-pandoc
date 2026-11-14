@@ -27,6 +27,7 @@ import {
 } from "@dzack/pandoc-editor/renderers/base-renderer";
 import clickAndSelect from "@dzack/pandoc-editor/renderers/click-and-select";
 import { type SyntaxNodeRef } from "@lezer/common";
+import { linkModifier } from "../plugins/link-modifier";
 import { wikilinkOpener, wikilinkResolutionsField } from "../plugins/wikilink-resolutions-field";
 
 class WikilinkChipWidget extends WidgetType implements RowJoinedWidget {
@@ -137,6 +138,14 @@ const chipTheme = EditorView.baseTheme({
     border: "1px solid rgba(129, 199, 132, 0.4)",
     color: "#a5d6a7",
   },
+  // A chip under the pointer has a stronger tint. While the Mod key is
+  // held, a click opens the link, and the label has the look of a link.
+  "&light .wikilink-chip:hover": { backgroundColor: "rgba(46, 125, 50, 0.24)" },
+  "&dark .wikilink-chip:hover": { backgroundColor: "rgba(129, 199, 132, 0.32)" },
+  "&.cm-link-modifier .wikilink-chip:hover": {
+    color: "var(--zettlr-editor-primary-color)",
+    textDecoration: "underline",
+  },
 });
 
 export const renderWikilinks = [
@@ -149,4 +158,5 @@ export const renderWikilinks = [
       after.field(wikilinkResolutionsField, false),
   ),
   chipTheme,
+  linkModifier,
 ];

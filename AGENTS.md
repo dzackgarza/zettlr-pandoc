@@ -1125,6 +1125,10 @@ of an isolated instance are in the first comment of #132.
   field has the focus (`e2e/refused-save.spec.ts`). A dialog that opens in a
   folder of the fixture (`dialogPaths` of the configuration) shows no folder
   of the author (`e2e/import-files.spec.ts`).
+- **A screenshot of a hover tooltip has no `clip`.** For a clipped
+  screenshot Chromium moves the viewport, and the editor closes its hover
+  tooltip. A spec takes the screenshot of the whole page
+  (`e2e/chip-link-affordance.spec.ts`).
 - **Shared helpers.** `e2e/support/native-dialog.ts` finds, captures and
   answers a native window. `e2e/support/panes.ts` gives the panes of a
   window and opens a document in one.
@@ -1925,6 +1929,17 @@ of an isolated instance are in the first comment of #132.
     as facets (`wikilinkOpener`, `tagOpener`); an editor without them (a
     table cell) follows no such link. Proof:
     `e2e/follow-link-key.spec.ts`.
+  - A chip shows that it is a link. A chip that follows a link on a
+    Mod-click (a reference chip, a wikilink chip) has the pointer cursor and
+    a stronger tint under the pointer. While the Mod key is down and the
+    pointer is in the editor, the editor has the class `cm-link-modifier`
+    (`linkModifier`, `markdown-editor/plugins/link-modifier.ts`), and the
+    chip under the pointer has an underline and the link colour of the
+    theme. The hover tooltip of the link names its gestures
+    (`linkGestureLine`, `tooltips/link-gesture.ts`): the Mod-click, and the
+    click that shows the source while the chip is drawn. A new chip that
+    follows a link has the same three things. Proof:
+    `e2e/chip-link-affordance.spec.ts`.
 - **The contract types each command and its handler.**
   `ApplicationIPCContract` (`commands/index.ts`) names each command of the
   `application` channel with its payload and its answer. The invoke of a
