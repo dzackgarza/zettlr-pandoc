@@ -675,6 +675,20 @@ of an isolated instance are in the first comment of #132.
   its list of paths has a new member or lost one (#126). Proof:
   `test/annotations-sidebar.spec.ts`,
   `test/annotations-panel-animation.spec.ts`.
+- **A review with many chunks costs work for the chunks that change.**
+  The review field (`plugins/review-chunks.ts`) keeps each chunk in a
+  range set by its extent with its decorations. A typed character maps the
+  chunks that it touches and moves the others; a broadcast of the
+  installed review is the effect `reviewChunksBroadcast`, not a
+  reconfigure, and a suggestion that it does not change keeps its
+  decorations and its control. The field states what a transaction changed
+  (`delta`, and `changed` of `PreviewSuppression`); the chunk controls and
+  `incrementalNodeDecorations` (`changedReach`) compute only that again. A
+  new consumer of the review state reads the delta; it does not walk
+  `getReviewChunks` for each transaction. The provider still maps each
+  suggestion for each pushed update, and a broadcast still compares the
+  text of the document with the working text. Proof:
+  `test/editor-review-chunk-cost.spec.ts`.
 - **The editor takes one new width for one slide of a side pane.** A side
   pane of the main window slides for 180 ms. `paneSlide`
   (`win-main/util/pane-slide.ts`) gives the panes their final sizes in one
