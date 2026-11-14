@@ -1728,7 +1728,7 @@ export interface components {
         "application/json": components["schemas"]["AgentErrorResponse"];
       };
     };
-    /** @description The server failed; the message names the cause (INTERNAL_ERROR) */
+    /** @description The server failed (INTERNAL_ERROR), or it could not write the review state of the document and changed nothing (PERSISTENCE_FAILED); the message names the cause */
     InternalError: {
       headers: {
         [name: string]: unknown;

@@ -57,8 +57,9 @@ components:
           schema:
             $ref: '#/components/schemas/AgentErrorResponse'
     InternalError:
-      description: The server failed; the message names the cause 
-        (INTERNAL_ERROR)
+      description: The server failed (INTERNAL_ERROR), or it could not write
+        the review state of the document and changed nothing
+        (PERSISTENCE_FAILED); the message names the cause
       content:
         application/json:
           schema:
