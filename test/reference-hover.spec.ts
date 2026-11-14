@@ -19,6 +19,7 @@
  * END HEADER
  */
 
+import "./provision-renderer-window-seams";
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
