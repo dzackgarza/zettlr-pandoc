@@ -636,7 +636,9 @@ outside`;
       for (const doc of [unclosed, outerUnclosed]) {
         const view = createEditor(doc, 0);
         view.dispatch({ selection: { anchor: doc.length } });
-        assert.match(view.dom.textContent ?? "", /:::+ \{\.(proof|theorem)\}/);
+        const shown = view.dom.textContent;
+        assert.ok(shown !== null, "the editor has text");
+        assert.match(shown, /:::+ \{\.(proof|theorem)\}/);
       }
       await new Promise((resolve) => setTimeout(resolve, 0));
     } finally {
