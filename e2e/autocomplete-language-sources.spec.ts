@@ -7,7 +7,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type EditorView } from "@codemirror/view";
 import { type Browser, type Page } from "playwright";
-import { attach, createFixture, findEditorPage, shutdown } from "./support/electron-app";
+import { attach, createFixture, delay, findEditorPage, shutdown } from "./support/electron-app";
 
 const DOCUMENT = String.raw`# Completion integration
 
@@ -95,7 +95,14 @@ describe("language-aware completion sources in the assembled editor", function (
     assert.strictEqual(replaced, true, `fixture must contain ${needle}`);
   }
 
-  async function completionLabelsAfter(needle: string): Promise<string[]> {
+  /**
+   * The labels of the completion list after `needle`. A source that asks the
+   * main process (the macros, Flowmark's vocabulary) answers after the
+   * sources that do not, and the open list takes its options when they
+   * arrive. The answer is therefore the list that holds `awaited`, or the
+   * list at the end of the wait.
+   */
+  async function completionLabelsAfter(needle: string, awaited: string): Promise<string[]> {
     assert.ok(page !== undefined);
     await page.keyboard.press("Escape");
     const positioned = await page.evaluate((target) => {
@@ -111,12 +118,18 @@ describe("language-aware completion sources in the assembled editor", function (
     await page.keyboard.press("Control+Space");
     const popup = page.locator(".cm-tooltip-autocomplete");
     await popup.waitFor({ state: "visible", timeout: 10_000 });
-    return await popup.locator(".cm-completionLabel").allTextContents();
+    const deadline = Date.now() + 10_000;
+    let labels = await popup.locator(".cm-completionLabel").allTextContents();
+    while (!labels.includes(awaited) && Date.now() < deadline) {
+      await delay(50);
+      labels = await popup.locator(".cm-completionLabel").allTextContents();
+    }
+    return labels;
   }
 
   async function completionInfoAfter(needle: string, expectedLabel: string): Promise<string> {
     assert.ok(page !== undefined);
-    const labels = await completionLabelsAfter(needle);
+    const labels = await completionLabelsAfter(needle, expectedLabel);
     assert.ok(
       labels.includes(expectedLabel),
       `${expectedLabel} missing from ${JSON.stringify(labels)}`,
@@ -143,13 +156,13 @@ describe("language-aware completion sources in the assembled editor", function (
   }
 
   it("offers prose phrases, LaTeX in math, and LaTeX plus TikZ inside TikZ", async function () {
-    const prose = await completionLabelsAfter("Prose: on t");
+    const prose = await completionLabelsAfter("Prose: on t", "on the other hand");
     assert.ok(
       prose.includes("on the other hand"),
       `portable phrase missing from ${JSON.stringify(prose)}`,
     );
 
-    const math = await completionLabelsAfter("Math: $\\fr");
+    const math = await completionLabelsAfter("Math: $\\fr", "\\fractionalpart");
     assert.ok(
       math.includes("\\fracId"),
       `user-defined fraction macro missing from ${JSON.stringify(math)}`,
@@ -169,22 +182,22 @@ describe("language-aware completion sources in the assembled editor", function (
       `user macros should outrank stock LaTeX commands for the shared \\fr prefix: ${JSON.stringify(math)}`,
     );
 
-    const construction = await completionLabelsAfter("Construction: $bma");
+    const construction = await completionLabelsAfter("Construction: $bma", "bmat");
     assert.ok(
       construction.includes("bmat"),
       `bmatrix construction missing from ${JSON.stringify(construction)}`,
     );
 
-    const centralMacro = await completionLabelsAfter("Central macro: $\\fiberpr");
+    const centralMacro = await completionLabelsAfter("Central macro: $\\fiberpr", "\\fiberprod");
     assert.ok(
       centralMacro.includes("\\fiberprod"),
       `central ~/.pandoc semantic macro missing from ${JSON.stringify(centralMacro)}`,
     );
 
-    const tikz = await completionLabelsAfter("\\dr");
+    const tikz = await completionLabelsAfter("\\dr", "\\draw");
     assert.ok(tikz.includes("\\draw"), `TikZ command missing from ${JSON.stringify(tikz)}`);
 
-    const latexInTikz = await completionLabelsAfter("\\incl");
+    const latexInTikz = await completionLabelsAfter("\\incl", "\\includegraphics");
     assert.ok(
       latexInTikz.includes("\\includegraphics"),
       `ordinary LaTeX command missing inside TikZ: ${JSON.stringify(latexInTikz)}`,
@@ -237,7 +250,7 @@ describe("language-aware completion sources in the assembled editor", function (
     );
     const probe = templateOnly.slice(0, Math.min(templateOnly.length, 4));
     await replaceFixtureText("\\TEMPLATEPROBE", probe);
-    const templateMacro = await completionLabelsAfter(probe);
+    const templateMacro = await completionLabelsAfter(probe, templateOnly);
     assert.ok(
       templateMacro.includes(templateOnly),
       `template-owned macro ${templateOnly} missing from ${JSON.stringify(templateMacro)}`,
@@ -258,7 +271,7 @@ describe("language-aware completion sources in the assembled editor", function (
   // The window asks Flowmark for the TeX vocabulary of its lint (#118)
   it("offers a command of a package that the document loads, from Flowmark's index", async function () {
     assert.ok(page !== undefined);
-    await completionLabelsAfter("Package command: $\\xmapst");
+    await completionLabelsAfter("Package command: $\\xmapst", "\\xmapsto");
     const details = await page
       .locator(".cm-tooltip-autocomplete li")
       .filter({ has: page.locator(".cm-completionLabel", { hasText: /^\\xmapsto$/u }) })
@@ -280,7 +293,7 @@ describe("language-aware completion sources in the assembled editor", function (
     assert.strictEqual(result.filePath, proseFile);
     assert.match(await readFile(proseFile, "utf8"), /\nas a result\n/u);
 
-    const labels = await completionLabelsAfter("Added phrase: as a r");
+    const labels = await completionLabelsAfter("Added phrase: as a r", "as a result");
     assert.ok(
       labels.includes("as a result"),
       `new portable phrase missing from ${JSON.stringify(labels)}`,

@@ -300,6 +300,7 @@ describe("global-search and project-properties failure recovery", function () {
       undefined,
       { polling: "raf", timeout: 60_000 },
     );
+    const beforeEdit = await page.evaluate(() => window.searchBroadcasts);
     await queryInput.fill("replacementtoken");
     await queryInput.press("Enter");
     // The pane labels a result with the name of its file.
@@ -320,19 +321,23 @@ describe("global-search and project-properties failure recovery", function () {
       "the pane shows only the result of the edited query",
     );
 
-    const generations = [...new Set(broadcasts.map((entry) => entry.split(" ")[0]))];
-    assert.equal(generations.length, 2, "one search for each query");
-    const [first, edited] = generations.map((generation) =>
+    // The query field starts a search 200 ms after a change of its text, and
+    // the Enter key starts one at once. A change and its Enter that are more
+    // than 200 ms apart are therefore two searches of one query, so the
+    // number of searches is not a property of the two queries.
+    const generationOf = (entry: string): string => entry.split(" ")[0];
+    const messagesOf = (generation: string | undefined): string[] =>
       broadcasts
-        .filter((entry) => entry.split(" ")[0] === generation)
-        .map((entry) => entry.split(" ")[1]),
-    );
-    // The edited query replaced a search that still ran: the first search
-    // sent results and never its end.
-    assert.ok(first.includes("search-result"), "the first search sent results");
+        .filter((entry) => generationOf(entry) === generation)
+        .map((entry) => entry.split(" ")[1]);
+    const first = [...new Set(beforeEdit.map(generationOf))].flatMap(messagesOf);
+    const edited = messagesOf(broadcasts.map(generationOf).at(-1));
+    // The edited query replaced a search that still ran: the searches of the
+    // first query sent results and never an end.
+    assert.ok(first.includes("search-result"), "the first query sent results");
     assert.ok(
       !first.includes("search-end"),
-      "the first search was still running when the edited query started",
+      "a search of the first query was still running when the edited query started",
     );
     // The edited search ends one time, after each of its other messages: an
     // end before them hides the running presentation while it still reads.
