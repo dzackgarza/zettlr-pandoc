@@ -2781,6 +2781,77 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
   });
 
+  it("answers a retraction of an unknown proposal with 404, and of a closed review with its review (#57)", async function () {
+    const windowId = provider.windowKeys()[0];
+    const reviewedPath = path.join(scratch, "closed-retraction.md");
+    const documentId = await openInPane(reviewedPath, "before\n");
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text("before\n"),
+      [
+        {
+          description: "closed review",
+          patch: createPatch("document", "before\n", "after\n", "", "", { context: 0 }),
+        },
+      ],
+      "closed-retraction",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The review proposal was refused: ${submitted.code}`);
+    }
+    saveDialogResponse = 0;
+    assert.equal(
+      await provider.closeFile(windowId, provider.leafIds(windowId)[0], reviewedPath),
+      true,
+    );
+
+    // Another document's sidecar, as a later version of the app writes it.
+    const laterPath = path.join(scratch, "later-retraction.md");
+    const laterId = await openInPane(laterPath, "Written by a later version.\n");
+    const annotated = await provider.createAnnotation(laterId, "owner", 0, 7, "Later.", 0);
+    assert.ok("annotationId" in annotated);
+    assert.equal(
+      await provider.closeFile(windowId, provider.leafIds(windowId)[0], laterPath),
+      true,
+    );
+    const laterSidecar = collaborationSidecarFilePath(
+      path.join(userData, "review-sidecars"),
+      laterPath,
+    );
+    const written: { version: number } = JSON.parse(readFileSync(laterSidecar, "utf8"));
+    writeFileSync(
+      laterSidecar,
+      JSON.stringify({ ...written, version: written.version + 1 }),
+      "utf8",
+    );
+    caseSidecars.push(laterSidecar);
+
+    async function retract(packetId: string): Promise<{ status: number; body: string }> {
+      return await httpRequest("POST", `/v1/proposals/${encodeURIComponent(packetId)}/retract`, {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expectedReviewGeneration: submitted.reviewGeneration,
+          expectedWorkingSha256: sha256Text("after\n"),
+        }),
+      });
+    }
+
+    // The packet of the closed review names its review and the cause.
+    const closed = await retract(submitted.packetIds[0]);
+    assert.equal(closed.status, 409, closed.body);
+    const closedError = parseAs(closed.body, "AgentErrorResponse").error;
+    assert.equal(closedError.code, "DOCUMENT_CLOSED");
+    assert.equal(closedError.reviewId, submitted.reviewId);
+
+    // No review holds an unknown packet, so the refusal names none.
+    const unknown = await retract(randomUUID());
+    assert.equal(unknown.status, 404, unknown.body);
+    const unknownError = parseAs(unknown.body, "AgentErrorResponse").error;
+    assert.equal(unknownError.code, "PROPOSAL_NOT_FOUND");
+    assert.equal("reviewId" in unknownError, false, unknown.body);
+  });
+
   it("answers PERSISTENCE_FAILED for a retraction and a review comment that the sidecar refuses (#57)", async function () {
     const filePath = path.join(scratch, "unwritable-review.md");
     const documentId = await openInPane(filePath, "alpha\nbeta\n");
