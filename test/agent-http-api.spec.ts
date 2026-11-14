@@ -4066,6 +4066,49 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   // ==========================================================================
   // ==========================================================================
 
+  it("gives a view the same focus and the same active document in both view listings (#57)", async function () {
+    // A view of the document listing says whether the document is the active
+    // tab of the view. The view listing names that tab in documentId; no
+    // field of it says "active" with another meaning.
+    const backgroundId = await openInPane(path.join(scratch, "views-background.md"), "Behind.\n");
+    const activeId = await openInPane(path.join(scratch, "views-active.md"), "In front.\n");
+    const windowId = provider.windowKeys()[0];
+    const leafId = provider.leafIds(windowId)[0];
+    assert.ok(leafId !== undefined);
+    const viewId = `view-${windowId}-${leafId}`;
+
+    const listing = parseAs((await httpRequest("GET", "/v1/views")).body, "ViewsResponse");
+    const view = listing.views.find((candidate) => candidate.viewId === viewId);
+    assert.ok(view !== undefined, JSON.stringify(listing));
+    const background = parseAs(
+      (await httpRequest("GET", `/v1/documents/${backgroundId}`)).body,
+      "DocumentSummary",
+    ).views.find((candidate) => candidate.viewId === viewId);
+    const active = parseAs(
+      (await httpRequest("GET", `/v1/documents/${activeId}`)).body,
+      "DocumentSummary",
+    ).views.find((candidate) => candidate.viewId === viewId);
+
+    assert.deepEqual(
+      { background, active },
+      {
+        background: { viewId, windowId, leafId, focused: view.focused, active: false },
+        active: { viewId, windowId, leafId, focused: view.focused, active: true },
+      },
+    );
+    assert.deepEqual(view, {
+      viewId,
+      windowId,
+      leafId,
+      documentId: activeId,
+      focused: view.focused,
+      documents: [
+        { documentId: backgroundId, path: path.join(scratch, "views-background.md") },
+        { documentId: activeId, path: path.join(scratch, "views-active.md") },
+      ],
+    });
+  });
+
   describe("live OpenAPI response conformance", function () {
     it("serves the remaining declared bodies matching their schemas", async function () {
       // Keep this boundary check limited to response shapes.
