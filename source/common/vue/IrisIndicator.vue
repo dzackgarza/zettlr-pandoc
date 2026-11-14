@@ -103,7 +103,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (indicator !== undefined) {
-    indicator.pauseRendering();
+    indicator.dispose();
   }
 });
 
