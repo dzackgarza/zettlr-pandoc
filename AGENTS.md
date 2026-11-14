@@ -1143,6 +1143,14 @@ of an isolated instance are in the first comment of #132.
   screenshot Chromium moves the viewport, and the editor closes its hover
   tooltip. A spec takes the screenshot of the whole page
   (`e2e/chip-link-affordance.spec.ts`).
+- **A role query has the surface as its root.** A row of the file tree
+  outside the viewport computes no style (`content-visibility: auto`,
+  `TreeItem.vue`). `getByRole` of a page asks each element for its
+  visibility, and each such row then computes its style: 4 s for a folder of
+  1,026 files on a workstation, and more than a wait of 10 s on a hosted
+  runner. A spec of a window that shows the tree starts a role query at the
+  locator of its surface (`page.locator(".popover").getByRole(...)`;
+  `e2e/global-search-dispatch-failure.spec.ts`).
 - **Shared helpers.** `e2e/support/native-dialog.ts` finds, captures and
   answers a native window. `e2e/support/panes.ts` gives the panes of a
   window and opens a document in one.
