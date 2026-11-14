@@ -11,7 +11,8 @@
  *                  its processes. A first start of the app binds the default
  *                  Agent API port, so two such files in two lanes each bind
  *                  it. A file that leaves a process holds no lane, and the
- *                  process does not outlive the file. A run can take one
+ *                  process does not outlive the file, and a file does not
+ *                  outlive its runner. A run can take one
  *                  shard of its files; the shards of a run hold each file
  *                  one time.
  *
@@ -19,8 +20,8 @@
  */
 
 import { strict as assert } from "node:assert";
-import { type SpawnSyncReturns, spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { type SpawnSyncReturns, spawn, spawnSync } from "node:child_process";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -95,6 +96,18 @@ it("does not end", function (done) {
 });
 `;
 
+// A spec file whose test accepts connections at a socket of the run
+// directory and does not end.
+const ENDLESS_LISTENING_SPEC_SOURCE = `
+const net = require("node:net");
+const path = require("node:path");
+
+it("accepts connections and does not end", function (done) {
+  this.timeout(0);
+  net.createServer().listen(path.join(process.env.RUN_LANES_PROOF_DIRECTORY, "file.sock"));
+});
+`;
+
 // A spec file whose one test passes.
 const PASSING_SPEC_SOURCE = `
 it("passes", function () {});
@@ -111,6 +124,35 @@ async function connectOutcome(socketPath: string): Promise<string> {
   return outcome;
 }
 
+/** The arguments of each process that the user can read, by process id. */
+async function processArguments(): Promise<Map<number, string[]>> {
+  const found = new Map<number, string[]>();
+  for (const name of await readdir("/proc")) {
+    if (!/^\d+$/.test(name)) {
+      continue;
+    }
+    // A process that ended after the listing has no arguments to read.
+    const commandLine = await readFile(`/proc/${name}/cmdline`, "utf8").catch(() => "");
+    found.set(Number(name), commandLine.split("\0"));
+  }
+  return found;
+}
+
+/** Waits until a connection to the path has the outcome, for at most the limit. */
+async function untilConnectOutcome(
+  socketPath: string,
+  outcome: string,
+  limitMs: number,
+): Promise<string> {
+  const deadline = Date.now() + limitMs;
+  let last = await connectOutcome(socketPath);
+  while (last !== outcome && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    last = await connectOutcome(socketPath);
+  }
+  return last;
+}
+
 describe("E2E lanes runner", function () {
   this.timeout(90_000);
   let directory = "";
@@ -120,6 +162,13 @@ describe("E2E lanes runner", function () {
   });
 
   afterEach(async function () {
+    // A process of a run that a test left names the run directory in its
+    // arguments.
+    for (const [pid, argv] of await processArguments()) {
+      if (argv.some((argument) => argument.startsWith(directory))) {
+        process.kill(pid, "SIGKILL");
+      }
+    }
     await rm(directory, { recursive: true, force: true });
   });
 
@@ -219,5 +268,34 @@ describe("E2E lanes runner", function () {
       `the run ends and fails when a file passed its limit (${String(run.error)}): ${run.stdout}${run.stderr}`,
     );
     assert.match(run.stdout, /does-not-end\.cjs \(no end in 2 s\)/);
+  });
+
+  it("ends the file of a runner that SIGKILL ended", async function () {
+    const file = path.join(directory, "accepts-and-does-not-end.cjs");
+    const socketPath = path.join(directory, "file.sock");
+    await writeFile(file, ENDLESS_LISTENING_SPEC_SOURCE, "utf8");
+    const runner = [process.execPath, "--import", "tsx", RUNNER, "--file-limit-seconds", "60"];
+    spawn("just", ["_e2e-run", ...runner, file], {
+      cwd: REPOSITORY,
+      env: { ...process.env, RUN_LANES_PROOF_DIRECTORY: directory },
+      stdio: "ignore",
+    });
+    assert.equal(
+      await untilConnectOutcome(socketPath, "accepted", 30_000),
+      "accepted",
+      "the file of the run accepts connections",
+    );
+    const runners = [...(await processArguments())].filter(
+      ([, argv]) => argv[0] === process.execPath && argv.includes(RUNNER) && argv.includes(file),
+    );
+    assert.equal(runners.length, 1, `one process is the runner of the file: ${String(runners)}`);
+
+    process.kill(runners[0][0], "SIGKILL");
+
+    assert.equal(
+      await untilConnectOutcome(socketPath, "ECONNREFUSED", 10_000),
+      "ECONNREFUSED",
+      "the file does not run after its runner",
+    );
   });
 });
