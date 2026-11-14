@@ -12,10 +12,10 @@
  *                  Agent API port, so two such files in two lanes each bind
  *                  it. A file that leaves a process holds no lane, and the
  *                  process does not outlive the file. A file and the
- *                  display of a lane do not outlive their runner. A run
- *                  can take one
- *                  shard of its files; the shards of a run hold each file
- *                  one time.
+ *                  display of a lane do not outlive their runner. No
+ *                  process of a run outlives the just process that
+ *                  started it. A run can take one shard of its files; the
+ *                  shards of a run hold each file one time.
  *
  * END HEADER
  */
@@ -139,18 +139,33 @@ async function processArguments(): Promise<Map<number, string[]>> {
   return found;
 }
 
-/** The process ids of the children of a process (proc(5): the field after the state). */
-async function childrenOf(parent: number): Promise<number[]> {
-  const children: number[] = [];
+/** The parent of each process, by process id (proc(5): the field after the state). */
+async function processParents(): Promise<Map<number, number>> {
+  const parents = new Map<number, number>();
   for (const pid of (await processArguments()).keys()) {
     // A process that ended after the listing has no status to read.
     const stat = await readFile(`/proc/${pid}/stat`, "utf8").catch(() => "");
     const afterName = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-    if (Number(afterName[1]) === parent) {
-      children.push(pid);
-    }
+    parents.set(pid, Number(afterName[1]));
   }
-  return children;
+  return parents;
+}
+
+/** The process ids of the children of a process. */
+async function childrenOf(parent: number): Promise<number[]> {
+  return [...(await processParents())].filter(([, owner]) => owner === parent).map(([pid]) => pid);
+}
+
+/** The process ids of each process that a process started, directly or not. */
+async function descendantsOf(ancestor: number): Promise<number[]> {
+  const parents = await processParents();
+  const descendants: number[] = [];
+  for (let found = [ancestor]; found.length > 0; ) {
+    const from = new Set(found);
+    found = [...parents].filter(([, owner]) => from.has(owner)).map(([pid]) => pid);
+    descendants.push(...found);
+  }
+  return descendants;
 }
 
 /** Of the processes, the program of each one that runs, after at most the limit. */
@@ -339,4 +354,36 @@ describe("E2E lanes runner", function () {
       "the file does not run after its runner",
     );
   });
+
+  // SIGTERM is the stop of timeout(1) and of a supervisor; SIGKILL is the
+  // stop that no process handles.
+  for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+    it(`leaves no process of a run whose just process ${signal} ended`, async function () {
+      const file = path.join(directory, "accepts-and-does-not-end.cjs");
+      const socketPath = path.join(directory, "file.sock");
+      await writeFile(file, ENDLESS_LISTENING_SPEC_SOURCE, "utf8");
+      const runner = [process.execPath, "--import", "tsx", RUNNER, "--file-limit-seconds", "60"];
+      const just = spawn("just", ["_e2e-run", ...runner, file], {
+        cwd: REPOSITORY,
+        env: { ...process.env, RUN_LANES_PROOF_DIRECTORY: directory },
+        stdio: "ignore",
+      });
+      assert.equal(
+        await untilConnectOutcome(socketPath, "accepted", 30_000),
+        "accepted",
+        "the file of the run accepts connections",
+      );
+      assert.ok(just.pid !== undefined, "the just process of the run has an id");
+
+      orphans = await descendantsOf(just.pid);
+
+      process.kill(just.pid, signal);
+
+      assert.deepEqual(
+        await programsStillRunning(orphans, 10_000),
+        [],
+        "no process that the run started runs after its just process",
+      );
+    });
+  }
 });
