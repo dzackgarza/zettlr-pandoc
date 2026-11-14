@@ -14,6 +14,7 @@
  *                  container. If logging itself is unavailable or fails, the
  *                  independent stderr sink remains as the final diagnostic
  *                  surface and never recursively attempts to log itself.
+ *                  In a renderer that surface is the console of the window.
  *
  * END HEADER
  */
@@ -57,12 +58,18 @@ function normalizeErrorArguments(args: readonly unknown[]): { message: string; d
   };
 }
 
-/** Final independent fallback that bypasses the application logger itself. */
+/**
+ * Final independent fallback that bypasses the application logger itself.
+ * A sandboxed renderer has no `process`: there the text goes to the console
+ * of the window, which the main process records (`attachLogger`).
+ */
 export function stderrError(...args: readonly unknown[]): void {
   const text = args.map(describeErrorValue).join(" ");
-  if (typeof process !== "undefined" && process.stderr !== undefined) {
-    process.stderr.write(`${text}\n`);
+  if (typeof process === "undefined") {
+    console.error(text);
+    return;
   }
+  process.stderr.write(`${text}\n`);
 }
 
 /**
