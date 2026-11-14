@@ -17,7 +17,7 @@
  */
 
 import { strict as assert } from "node:assert";
-import { spawnSync } from "node:child_process";
+import { type SpawnSyncReturns, spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
@@ -109,7 +109,7 @@ describe("E2E lanes runner", function () {
   });
 
   /** Runs the lanes runner on the files in the environment of an e2e run. */
-  function runLanes(files: string[], timeoutMs: number): ReturnType<typeof spawnSync<string>> {
+  function runLanes(files: string[], timeoutMs: number): SpawnSyncReturns<string> {
     return spawnSync("just", ["_e2e-run", process.execPath, "--import", "tsx", RUNNER, ...files], {
       cwd: REPOSITORY,
       encoding: "utf8",

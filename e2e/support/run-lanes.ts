@@ -6,8 +6,13 @@
  * time. A lane owns one virtual X display (Xvfb), and a spec file of the lane
  * runs on that display alone: a native message box, a key that `xdotool`
  * presses and the focus of a window are not shared with the spec of another
- * lane. Each file runs in a Mocha process of its own, so a file that leaves a
- * handle open stops no other file. The process gets the number of its lane
+ * lane. Each file runs in a Mocha process of its own, in namespaces of its
+ * own (`FILE_NAMESPACES`): a loopback, so each file binds the port that
+ * another file binds (a first start of the app binds the default Agent API
+ * port), and a process tree, so no process of a file runs after the file.
+ * Mocha ends when the tests and the hooks of the file ended (`--exit`), so a
+ * handle or a process that a file left holds no lane; each test and each hook
+ * has a time limit, so each file ends. The process gets the number of its lane
  * in `E2E_LANE`; a start that compiles the app takes its Forge ports from it
  * (`forgePortsOfLane`, `electron-app.ts`). Each file gets the source
  * fingerprint of the start of the run in `E2E_SOURCE_FINGERPRINT`.
@@ -22,6 +27,7 @@
 
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
+import { userInfo } from "node:os";
 import path from "node:path";
 import type { Readable } from "node:stream";
 
@@ -33,7 +39,36 @@ import type { Readable } from "node:stream";
 const LANES = 3;
 
 /** A test or a hook has 90 s (AGENTS.md §13). */
-const MOCHA_ARGS = ["--no-config", "--node-option", "import=tsx", "--timeout", "90000"];
+const MOCHA_ARGS = ["--no-config", "--node-option", "import=tsx", "--timeout", "90000", "--exit"];
+
+/**
+ * The namespaces of one spec file (unshare(1)), inside those of the run
+ * (`_e2e-run` of the justfile). The network namespace has `lo` and no other
+ * interface. The process namespace ends with its first process: the kernel
+ * then ends each process that is left in it (pid_namespaces(7)).
+ */
+const FILE_NAMESPACES = [
+  "--user",
+  "--map-root-user",
+  "--net",
+  "--pid",
+  "--fork",
+  "--kill-child",
+  "--mount-proc",
+];
+
+/**
+ * The first process of the namespaces of a file: a shell that turns the
+ * loopback on, runs the command of its arguments as the user of the run, and
+ * exits with the status of the command. The shell stays the first process
+ * (the `exit` after the command): it takes each process that lost its parent,
+ * and the command has the signal rules of an ordinary process.
+ */
+const FILE_INIT = [
+  "ip link set lo up",
+  '&& unshare --map-user="$0" --map-group="$1" -- "${@:2}"',
+  "; exit $?",
+].join(" ");
 
 interface FileResult {
   file: string;
@@ -106,7 +141,9 @@ const sourceFingerprint = execFileSync(
 async function runFile(file: string, lane: number, display: Display): Promise<FileResult> {
   const mocha = path.join(process.cwd(), "node_modules", ".bin", "mocha");
   const startedAt = Date.now();
-  const child = spawn(mocha, [...MOCHA_ARGS, file], {
+  const { uid, gid } = userInfo();
+  const init = ["bash", "-c", FILE_INIT, String(uid), String(gid)];
+  const child = spawn("unshare", [...FILE_NAMESPACES, "--", ...init, mocha, ...MOCHA_ARGS, file], {
     env: {
       ...process.env,
       DISPLAY: display.name,
@@ -179,13 +216,16 @@ async function main(files: string[]): Promise<number> {
   return results.some((result) => result.failed) ? 1 : 0;
 }
 
-// A stop ends the running files, and no lane takes another file.
+// A stop ends the running files, and no lane takes another file. The
+// unshare process of a file blocks SIGINT and SIGTERM while it waits for
+// the file; SIGKILL ends it, and the first process of the namespaces with it
+// (`--kill-child`), so no process of the file is left.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     stoppedBy = signal;
     queue.length = 0;
     for (const child of running) {
-      child.kill(signal);
+      child.kill("SIGKILL");
     }
   });
 }

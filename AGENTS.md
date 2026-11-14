@@ -1067,6 +1067,18 @@ of an isolated instance are in the first comment of #132.
   hosted runner, `just setup-ci` permits the namespace
   (`kernel.apparmor_restrict_unprivileged_userns`). Proof:
   `test/e2e-run-loopback.spec.ts`.
+- **A spec file owns its loopback and its processes.** The lanes runner
+  starts the Mocha process of a file in namespaces of its own
+  (`FILE_NAMESPACES`, `e2e/support/run-lanes.ts`), inside those of the run.
+  The network namespace has `lo` and no other interface: a first start of
+  the app (`startFirstRun`) has no configuration and binds the default Agent
+  API port, and two such files in two lanes each bind it. The process
+  namespace ends with the file, and the kernel ends each process that the
+  file left: an app whose after hook failed takes no display and no memory
+  from the next file. Mocha ends when the tests and the hooks of the file
+  ended (`--exit`), so a handle that a file left holds no lane. A stop of
+  the run ends each file and its processes with SIGKILL. Proof:
+  `test/e2e-run-lanes.spec.ts`.
 - **A provider that cannot start is in the log before its error box.** The
   native box of `_informativeBoot` stops the main process, and the app exits
   after it; the log has the cause first (`LogProvider.flush`). Proof:
