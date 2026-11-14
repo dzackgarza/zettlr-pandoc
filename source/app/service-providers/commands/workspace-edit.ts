@@ -34,14 +34,6 @@ export default class WorkspaceEditCommand extends ZettlrCommand {
     super(app);
   }
 
-  async run(evt: string, arg: { id: string }): Promise<boolean | undefined> {
-    if (evt === "discard-workspace-edit") {
-      this.discard(arg.id);
-      return undefined;
-    }
-    return await this.apply(arg.id);
-  }
-
   /** Drops the proposal with the id, which the author did not apply. */
   discard(id: string): void {
     this._app.commands.takeProposal(id);

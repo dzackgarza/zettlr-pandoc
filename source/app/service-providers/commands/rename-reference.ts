@@ -37,7 +37,6 @@
  *                    undoRename() outcome: the one-shot, hash-fenced
  *                    inverse application restoring every touched document.
  *
- *                  A payload of another shape is refused with an error.
  *                  The window shows the preview in the workspace edit
  *                  preview dialog (WorkspaceEditPreviewDialog) and commits
  *                  on Apply; a rejection is a typed result that the window
@@ -55,38 +54,17 @@ import type {
 } from "@common/pandoc-util/compute-reference-edits";
 import type { WorkspaceReferenceEdit } from "@dts/common/references";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import ZettlrCommand, { type CommandWireValue } from "./zettlr-command";
+import ZettlrCommand from "./zettlr-command";
 
-export default class RenameReference extends ZettlrCommand {
+export default class RenameReference extends ZettlrCommand<
+  Pick<AppServiceContainer, "references">
+> {
   /** The edit of the last accepted preview, under the id the window got. */
   private _previewed: { id: string; edit: WorkspaceReferenceEdit } | undefined;
 
-  constructor(app: AppServiceContainer) {
+  constructor(app: Pick<AppServiceContainer, "references">) {
     super(app);
     this._previewed = undefined;
-  }
-
-  /**
-   * Runs one of the three rename protocol events by delegating to the
-   * ReferenceProvider.
-   *
-   * @param   {string}            evt  One of the three bound rename events
-   * @param   {CommandWireValue}  arg  The payload that the window sent
-   *
-   * @return  {Promise<IssuedReferenceRenamePreview|CommitRenameOutcome|UndoRenameOutcome>}
-   *   The provider's typed outcome
-   */
-  async run(
-    evt: string,
-    arg: CommandWireValue,
-  ): Promise<IssuedReferenceRenamePreview | CommitRenameOutcome | UndoRenameOutcome> {
-    if (evt === "preview-reference-rename") {
-      return await this.preview(arg);
-    } else if (evt === "commit-reference-rename") {
-      return await this.commit(arg);
-    } else {
-      return await this.undo();
-    }
   }
 
   /** Undoes the last rename. */
@@ -94,17 +72,7 @@ export default class RenameReference extends ZettlrCommand {
     return await this._app.references.undoRename();
   }
 
-  async preview(arg: CommandWireValue): Promise<IssuedReferenceRenamePreview> {
-    if (
-      typeof arg !== "object" ||
-      arg === null ||
-      !("oldKey" in arg) ||
-      !("newKey" in arg) ||
-      typeof arg.oldKey !== "string" ||
-      typeof arg.newKey !== "string"
-    ) {
-      throw new Error("preview-reference-rename requires the keys oldKey and newKey as text");
-    }
+  async preview(arg: { oldKey: string; newKey: string }): Promise<IssuedReferenceRenamePreview> {
     this._previewed = undefined;
     const preview = await this._app.references.previewRename(arg.oldKey, arg.newKey);
     if (preview.status === "rejected") {
@@ -115,10 +83,7 @@ export default class RenameReference extends ZettlrCommand {
     return { ...preview, id };
   }
 
-  async commit(arg: CommandWireValue): Promise<CommitRenameOutcome> {
-    if (typeof arg !== "object" || arg === null || !("id" in arg) || typeof arg.id !== "string") {
-      throw new Error("commit-reference-rename requires the id of a preview");
-    }
+  async commit(arg: { id: string }): Promise<CommitRenameOutcome> {
     const previewed = this._previewed;
     if (previewed === undefined || previewed.id !== arg.id) {
       throw new Error(trans("The rename is no longer available. No file changed."));

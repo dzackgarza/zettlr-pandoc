@@ -18,31 +18,14 @@
 import { type AppServiceContainer } from "../../app-service-container";
 
 /**
- * A payload or result of `ZettlrCommand.run()`. The handler map of
- * `CommandProvider` gives each command the payload of the contract; each
- * command declares the precise shape it accepts and returns in its own
- * `run()`.
- */
-export type CommandWireValue = unknown;
-
-/**
  * A command of the application. `Services` is the part of the service
  * container that the command uses; a command that states none gets the whole
  * container. The handler map of `CommandProvider` names the commands of the
- * contract that a command answers.
+ * contract that a command answers, and each command declares the methods
+ * that its handlers call with the types of the contract.
  */
 export default abstract class ZettlrCommand<Services = AppServiceContainer> {
   protected readonly _app: Services;
-
-  /**
-   * Derived classes must implement this method which will be called upon request.
-   *
-   * @param   {string}        evt  The command of the contract that runs
-   * @param   {CommandWireValue}           arg  The payload the command requires
-   *
-   * @return  {Promise<CommandWireValue>}       The run method must run asynchronously.
-   */
-  abstract run(evt: string, arg: CommandWireValue): Promise<CommandWireValue>;
 
   constructor(app: Services) {
     // The app is the api entry point for all things we can do.

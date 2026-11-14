@@ -51,37 +51,6 @@ export default class FixAll extends ZettlrCommand {
     super(app);
   }
 
-  async run(
-    evt: string,
-    arg:
-      | FixAllRequest
-      | { plan: FixAllPlan }
-      | ListProblemsRequest
-      | ApplyProblemFixRequest
-      | undefined,
-  ): Promise<FixAllPlan | FixAllOutcome | WorkspaceProblems | undefined> {
-    if (evt === "retry-workspace-lint") {
-      await this.retry();
-      return undefined;
-    }
-    if (arg === undefined) {
-      throw new Error(`${evt} requires a payload`);
-    }
-    if (evt === "list-workspace-lint") {
-      return await this.listProblems(arg);
-    }
-    if (evt === "apply-lint-fix") {
-      return await this.applyProblemFix(arg);
-    }
-    if (evt === "preview-fix-all") {
-      return await this.preview(arg);
-    }
-    if (!("plan" in arg)) {
-      throw new Error("commit-fix-all requires a plan");
-    }
-    return await this.commit(arg.plan);
-  }
-
   /** Lints again each document whose last run gave no result. */
   async retry(): Promise<void> {
     await this._app.documentLint.retry();

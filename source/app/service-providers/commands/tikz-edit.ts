@@ -60,15 +60,6 @@ export default class TikzEdit extends ZettlrCommand {
     super(app);
   }
 
-  /** `tikz-edit-open` takes the diagram; `tikz-edit-close` takes the session id. */
-  async run(_evt: string, arg: TikzEditOpenRequest | string): Promise<TikzEditOutcome | undefined> {
-    if (typeof arg === "string") {
-      this.close(arg);
-      return undefined;
-    }
-    return await this.open(arg);
-  }
-
   /** Stops the editor of the session with the id. */
   close(id: string): void {
     this.sessions.close(id);
