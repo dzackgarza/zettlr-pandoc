@@ -185,13 +185,19 @@ export type SearchProviderBroadcast =
   | { type: "search-unread"; generation: number; file: UnsearchedFile; progress: number }
   | { type: "search-failed"; generation: number; failure: SearchFailure };
 
-export class SearchProvider implements ProviderContract {
-  /** How many files this search will read, for the progress it reports. */
-  private sumFilesToSearch: number;
+/** A search that reads files. Its queue belongs to it alone. */
+interface RunningSearch {
+  pattern: RegExp;
+  generation: number;
   /** The absolute paths still to read. */
-  private fileSearchQueue: string[];
+  queue: string[];
+  /** How many files this search reads, for the progress it reports. */
+  total: number;
+}
+
+export class SearchProvider implements ProviderContract {
   /** The search running now, or undefined between searches. */
-  private currentSearch: { pattern: RegExp; generation: number } | undefined;
+  private currentSearch: RunningSearch | undefined;
   /**
    * Every search gets a number, and a result carrying a stale one is
    * dropped: a query typed one character at a time starts a search per
@@ -227,8 +233,6 @@ export class SearchProvider implements ProviderContract {
     private readonly _journalDirectory: string,
   ) {
     this.currentSearch = undefined;
-    this.fileSearchQueue = [];
-    this.sumFilesToSearch = 0;
     this.searchGeneration = 0;
     this.lastPattern = undefined;
     this.pendingUndo = undefined;
@@ -313,11 +317,9 @@ export class SearchProvider implements ProviderContract {
   }
 
   private cancelSearch(): void {
-    // Letting the running read finish and dropping the queue is enough: the
-    // generation on the next start is what silences anything still in flight.
+    // The read that runs goes to its end; the next step of the search sees
+    // that the search is not current and stops (searchNextFile).
     this.currentSearch = undefined;
-    this.fileSearchQueue = [];
-    this.sumFilesToSearch = 0;
   }
 
   /**
@@ -361,13 +363,17 @@ export class SearchProvider implements ProviderContract {
         progress: 0,
       } satisfies SearchProviderBroadcast);
     }
-    this.fileSearchQueue = files.queue;
-    this.currentSearch = { pattern: compiled.pattern, generation };
+    const search: RunningSearch = {
+      pattern: compiled.pattern,
+      generation,
+      queue: files.queue,
+      total: files.queue.length,
+    };
+    this.currentSearch = search;
     this.lastPattern = compiled.pattern;
-    this.sumFilesToSearch = this.fileSearchQueue.length;
 
-    this.searchNextFile();
-    return this.sumFilesToSearch;
+    this.searchNextFile(search);
+    return search.total;
   }
 
   /**
@@ -507,18 +513,16 @@ export class SearchProvider implements ProviderContract {
     return relative.split(path.sep).join("/");
   }
 
-  /** Reads the next file in the queue, reports it, and moves on. */
-  private searchNextFile(): void {
-    const search = this.currentSearch;
-    const nextFile = this.fileSearchQueue.shift();
-    if (search === undefined) {
-      // Nothing is running: the queue was cancelled between two files.
-      broadcastIPCMessage("search-provider", {
-        type: "search-end",
-        generation: this.searchGeneration,
-      } satisfies SearchProviderBroadcast);
+  /**
+   * Reads the next file of a search, reports it, and moves on. A search that
+   * a newer search replaced, or that was cancelled, stops here: it sends
+   * nothing more, and it reads nothing of the queue of another search.
+   */
+  private searchNextFile(search: RunningSearch): void {
+    if (this.currentSearch !== search) {
       return;
     }
+    const nextFile = search.queue.shift();
     if (nextFile === undefined) {
       this.currentSearch = undefined;
       broadcastIPCMessage("search-provider", {
@@ -530,11 +534,10 @@ export class SearchProvider implements ProviderContract {
 
     this.searchFile(nextFile, search.pattern)
       .then((outcome) => {
-        if (this.currentSearch?.generation !== search.generation) {
+        if (this.currentSearch !== search) {
           return; // A newer search started; this belongs to the old query.
         }
-        const progress =
-          (this.sumFilesToSearch - this.fileSearchQueue.length) / this.sumFilesToSearch;
+        const progress = (search.total - search.queue.length) / search.total;
         if (outcome.kind === "no-matches") {
           broadcastIPCMessage("search-provider", {
             type: "search-progress",
@@ -558,7 +561,7 @@ export class SearchProvider implements ProviderContract {
         }
       })
       .catch((err) => {
-        if (this.currentSearch?.generation !== search.generation) {
+        if (this.currentSearch !== search) {
           return; // A newer search started; this belongs to the old query.
         }
         // No filesystem error: the search of this file failed in the app.
@@ -575,7 +578,7 @@ export class SearchProvider implements ProviderContract {
         } satisfies SearchProviderBroadcast);
       })
       .finally(() => {
-        this.searchNextFile();
+        this.searchNextFile(search);
       });
   }
 
