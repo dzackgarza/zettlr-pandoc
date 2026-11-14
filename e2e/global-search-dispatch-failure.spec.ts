@@ -385,9 +385,15 @@ describe("global-search and project-properties failure recovery", function () {
     );
     await propertiesItem.waitFor({ state: "visible", timeout: 10_000 });
     await propertiesItem.click();
-    await mainPage.locator(".popover").waitFor({ state: "visible", timeout: 10_000 });
+    const properties = mainPage.locator(".popover");
+    await properties.waitFor({ state: "visible", timeout: 10_000 });
     screenshots.set("directory-properties.png", await mainPage.screenshot());
-    const projectSettingsButton = mainPage.getByRole("button", {
+    // The role query is for the popover only. A role query of the page asks
+    // each element for its visibility, and each row of the tree outside the
+    // viewport (content-visibility: auto) then computes its style: 4 s for
+    // the 1,026 rows of this workspace on a workstation, more than the wait
+    // on a hosted runner.
+    const projectSettingsButton = properties.getByRole("button", {
       name: "Project Settings…",
       exact: true,
     });

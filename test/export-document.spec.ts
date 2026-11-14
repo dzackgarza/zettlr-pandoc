@@ -291,12 +291,21 @@ describe("Export of one document", function () {
     const notes = path.join(root, "Notes.md");
     await writeFile(notes, DOCUMENT);
     await typeUnsaved(notes);
-    const before = await readdir(tmpdir());
-
-    await exportDocument(services, { file: notes, profile: PDF, exportTo: "cwd" });
+    // The export gets a temporary directory of its own. The directory of the
+    // run also holds the files of each spec file that runs at the same time.
+    const temporaryDirectoryOfRun = tmpdir();
+    const temporaryDirectoryOfExport = await mkdtemp(
+      path.join(temporaryDirectoryOfRun, "zettlr-export-own-tmp-"),
+    );
+    process.env.TMPDIR = temporaryDirectoryOfExport;
+    try {
+      await exportDocument(services, { file: notes, profile: PDF, exportTo: "cwd" });
+    } finally {
+      process.env.TMPDIR = temporaryDirectoryOfRun;
+    }
 
     assert.deepEqual(errorWindows, []);
-    assert.deepEqual(await readdir(tmpdir()), before);
+    assert.deepEqual(await readdir(temporaryDirectoryOfExport), []);
   });
 
   it("gives the PDF recipe the name of a document whose text is on disk", async function () {

@@ -1077,8 +1077,12 @@ of an isolated instance are in the first comment of #132.
   file left: an app whose after hook failed takes no display and no memory
   from the next file. Mocha ends when the tests and the hooks of the file
   ended (`--exit`), so a handle that a file left holds no lane. A stop of
-  the run ends each file and its processes with SIGKILL. Proof:
-  `test/e2e-run-lanes.spec.ts`.
+  the run ends each file and its processes with SIGKILL. A runner that
+  SIGKILL ends runs no handler, and the time limit of a file is a timer of
+  the runner: the runner starts each child (the file, the Xvfb server of a
+  lane) through `setpriv --pdeathsig KILL` (`ENDS_WITH_RUNNER`), so the
+  kernel ends the child with the runner. A new child of the runner starts
+  the same way. Proof: `test/e2e-run-lanes.spec.ts`.
 - **Each wait of a run has a limit.** A test or a hook has its Mocha limit.
   A Mocha process ends with its last hook (`--exit` of the lanes runner,
   `exit` of `.mocharc.js` for the unit suite). A spec file of the lanes has
@@ -1139,6 +1143,14 @@ of an isolated instance are in the first comment of #132.
   screenshot Chromium moves the viewport, and the editor closes its hover
   tooltip. A spec takes the screenshot of the whole page
   (`e2e/chip-link-affordance.spec.ts`).
+- **A role query has the surface as its root.** A row of the file tree
+  outside the viewport computes no style (`content-visibility: auto`,
+  `TreeItem.vue`). `getByRole` of a page asks each element for its
+  visibility, and each such row then computes its style: 4 s for a folder of
+  1,026 files on a workstation, and more than a wait of 10 s on a hosted
+  runner. A spec of a window that shows the tree starts a role query at the
+  locator of its surface (`page.locator(".popover").getByRole(...)`;
+  `e2e/global-search-dispatch-failure.spec.ts`).
 - **Shared helpers.** `e2e/support/native-dialog.ts` finds, captures and
   answers a native window. `e2e/support/panes.ts` gives the panes of a
   window and opens a document in one.
@@ -2254,6 +2266,14 @@ of an isolated instance are in the first comment of #132.
   commit. 51a1b362b deleted the test that an ordinary edit is no review
   decision with the editor label, and the rule had no test until
   ed4346a48.
+- The unit suite runs its spec files in four worker processes
+  (`.mocharc.js`), and a worker loads a file after files that no serial run
+  put before it. A spec file therefore owns the state that it reads: a
+  temporary directory of its own, and no module state that another file
+  set. `test/setup.js` installs what each file needs before the first one
+  (the `electron` stub, the browser globals, the IPC double). A file that
+  passes in the suite and fails alone (`just test-file`) reads state of
+  another file.
 - An install goes through `just sync-dependencies`, which uses the bun that
   `package.json` declares. The bun of the system (1.4) puts a second copy of
   the vendored `@lezer/markdown` into

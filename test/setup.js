@@ -112,3 +112,10 @@ function mockBrowser() {
 }
 
 mockBrowser();
+
+// The preload bridge of the window goes in before the first spec. A store
+// reads `window.ipc` when its module loads and keeps what it read, so a spec
+// file that loaded a store under the bridge of its own test gave each later
+// spec file of the process a store without this one. Mocha's parallel mode
+// loads a spec file when its turn comes, in a process that ran other files.
+require("./document-collaboration-ipc-double.ts");
