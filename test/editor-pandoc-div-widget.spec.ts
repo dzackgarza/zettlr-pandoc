@@ -610,6 +610,46 @@ outside`;
     assert.match(view.dom.textContent ?? "", /::: \{\.definition\}/);
   });
 
+  it("records no application error for a div that the author did not close", async function () {
+    // Pandoc closes such a div at the end of its container and gives the
+    // warning that Flowmark shows (`pandoc/unclosed-fenced-div`). The source
+    // of the div stays visible: the state is one of the document.
+    const recorded: string[] = [];
+    const ipcBefore = Object.getOwnPropertyDescriptor(window, "ipc");
+    Object.defineProperty(window, "ipc", {
+      configurable: true,
+      value: {
+        invoke: async (
+          channel: string,
+          message: { command: string; payload: { message: string } },
+        ): Promise<void> => {
+          if (channel === "log-provider" && message.command === "record-error") {
+            recorded.push(message.payload.message);
+          }
+        },
+      },
+    });
+    try {
+      const unclosed = "# Lattices\n\n::: {.proof}\nThe form is even.\n\nIt is unimodular.\n";
+      const outerUnclosed =
+        ":::: {.theorem}\nA statement.\n\n::: {.proof}\nIts proof.\n\n::::\n\nText after.\n";
+      for (const doc of [unclosed, outerUnclosed]) {
+        const view = createEditor(doc, 0);
+        view.dispatch({ selection: { anchor: doc.length } });
+        assert.match(view.dom.textContent ?? "", /:::+ \{\.(proof|theorem)\}/);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      if (ipcBefore === undefined) {
+        Reflect.deleteProperty(window, "ipc");
+      } else {
+        Object.defineProperty(window, "ipc", ipcBefore);
+      }
+    }
+
+    assert.deepEqual(recorded, [], "a missing closing fence is no failure of the application");
+  });
+
   it("preserves ordinary editing and undo history inside an active div", function () {
     const doc = "::: definition\nBody.\n:::\n\noutside";
     const insertion = doc.indexOf("Body") + 4;
