@@ -268,7 +268,6 @@ import {
   useWorkspaceStore,
 } from "source/pinia";
 import type { PaneSetting } from "source/pinia/window-state-store";
-import { type AnyDescriptor } from "source/types/common/fsal";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import chimeFile from "./assets/chime.mp3";
 import alarmFile from "./assets/digital_alarm.mp3";
@@ -529,7 +528,7 @@ const createLabelSeparator = ref<":" | "-">(":");
  */
 function openCreateReferenceLabel(prompt: CreateReferenceLabelDialogPrompt): void {
   Promise.all([
-    invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+    invokeReferenceProviderRecoverably(
       async (channel, message) => await ipcRenderer.invoke(channel, message),
       { command: "get-snapshot" },
       trans("Loading workspace references"),
@@ -1218,13 +1217,8 @@ onMounted(() => {
           command: "get-descriptor",
           payload: documentTreeStore.lastLeafActiveFile.path,
         })
-        .then((descriptor: AnyDescriptor | AnyDescriptor[] | undefined) => {
-          if (
-            descriptor !== undefined &&
-            !Array.isArray(descriptor) &&
-            descriptor.type === "file" &&
-            descriptor.id !== ""
-          ) {
+        .then((descriptor) => {
+          if (descriptor.type === "file" && descriptor.id !== "") {
             navigator.clipboard.writeText(descriptor.id).catch((err) => reportError(err));
           }
         })

@@ -571,7 +571,7 @@ function collectProjectRoots(): ProjectRootSpec[] {
 
 /** Loads the workspace reference snapshot; a failed fetch surfaces its own toast and returns false. */
 async function loadReferences(): Promise<boolean> {
-  const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+  const outcome = await invokeReferenceProviderRecoverably(
     async (channel, message) => await ipcRenderer.invoke(channel, message),
     { command: "get-snapshot" },
     trans("Loading workspace references"),

@@ -64,7 +64,6 @@
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
-import type { CodeFileDescriptor, MDFileDescriptor, OtherFileDescriptor } from "@dts/common/fsal";
 import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { useDocumentTreeStore, useTagsStore, useWorkspaceStore } from "source/pinia";
 import { computed, ref, watch } from "vue";
@@ -131,13 +130,12 @@ async function recomputeRelatedFiles(): Promise<void> {
     return;
   }
 
-  const descriptor: MDFileDescriptor | CodeFileDescriptor | OtherFileDescriptor | undefined =
-    await ipcRenderer.invoke("fsal", {
-      command: "get-descriptor",
-      payload: lastActiveFile.value.path,
-    });
+  const descriptor = await ipcRenderer.invoke("fsal", {
+    command: "get-descriptor",
+    payload: lastActiveFile.value.path,
+  });
 
-  if (descriptor === undefined || descriptor.type === "code") {
+  if (descriptor.type !== "file" && descriptor.type !== "other") {
     relatedFiles.value = [];
     return;
   }

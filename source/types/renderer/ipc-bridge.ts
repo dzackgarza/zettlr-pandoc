@@ -113,19 +113,15 @@ type IpcResponseOf<E> = E extends { response: infer R } ? R : never;
 /**
  * The invoke signature derived from the channel table: a literal command
  * resolves to its owner-declared response, and a wrong channel, command, or
- * payload is a compile error at the call site. The R parameter lets a call
- * site narrow a response to a subtype it can prove via a plain annotation —
- * never widen past the owner's contract, and never produce any.
+ * payload is a compile error at the call site. A caller gets the response
+ * that the owner declares; a caller that needs a narrower value examines the
+ * response.
  */
 export interface IpcInvoke {
-  <
-    C extends keyof IpcInvokeContracts,
-    K extends keyof IpcInvokeContracts[C] & string,
-    R extends IpcResponseOf<IpcInvokeContracts[C][K]> = IpcResponseOf<IpcInvokeContracts[C][K]>,
-  >(
+  <C extends keyof IpcInvokeContracts, K extends keyof IpcInvokeContracts[C] & string>(
     channel: C,
     message: { command: K } & IpcRequestOf<IpcInvokeContracts[C][K]>,
-  ): Promise<R>;
+  ): Promise<IpcResponseOf<IpcInvokeContracts[C][K]>>;
   <C extends keyof IpcFixedChannelContracts>(
     channel: C,
     message: IpcFixedChannelContracts[C]["request"],

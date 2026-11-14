@@ -1,9 +1,6 @@
 import { reportError } from "@common/util/error-reporting";
 import { defineStore } from "pinia";
-import type {
-  LRTIPCAsyncMessage,
-  LRTIPCSyncMessage,
-} from "source/app/service-providers/long-running-tasks";
+import type { LRTIPCSyncMessage } from "source/app/service-providers/long-running-tasks";
 import type { LRT_JSON } from "source/app/service-providers/long-running-tasks/task";
 import { ref } from "vue";
 
@@ -33,7 +30,7 @@ export enum TaskStatus {
 const ipcRenderer = window.ipc;
 
 async function fetchTasks(): Promise<LRT_JSON[]> {
-  return await ipcRenderer.invoke("lrt-provider", { command: "get-tasks" } as LRTIPCAsyncMessage);
+  return await ipcRenderer.invoke("lrt-provider", { command: "get-tasks" });
 }
 
 export const useLRTStore = defineStore("lrt", () => {
@@ -106,7 +103,7 @@ export const useLRTStore = defineStore("lrt", () => {
       .invoke("lrt-provider", {
         command: "delete-task",
         payload: { id: task.id },
-      } as LRTIPCAsyncMessage)
+      })
       .catch((err) => reportError("Could not delete task", err));
   }
 

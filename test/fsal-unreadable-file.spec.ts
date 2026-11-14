@@ -84,7 +84,7 @@ describe("FSAL: a file whose text cannot be read", function () {
 
   it("answers the descriptors of every path that a window asks for", async function () {
     const descriptors = await invokeMain("fsal", {
-      command: "get-descriptor",
+      command: "get-descriptors",
       payload: [readable, unreadable, unreadableCode],
     });
     assert.ok(Array.isArray(descriptors), "a list of paths is answered with a list of descriptors");

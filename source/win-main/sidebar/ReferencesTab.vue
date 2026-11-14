@@ -31,7 +31,6 @@ import { reportError } from "@common/util/error-reporting";
 import { uncitedItems } from "@common/util/nocite";
 import type { CitationResourceProblem } from "@dts/common/citeproc";
 import { DP_EVENTS } from "@dts/common/documents";
-import { type AnyDescriptor } from "@dts/common/fsal";
 import type { CiteprocProviderIPCAPI } from "source/app/service-providers/citeproc";
 import { type DocumentsUpdateContext } from "source/app/service-providers/documents";
 import { hasMarkdownExt } from "source/common/util/file-extention-checks";
@@ -155,12 +154,12 @@ async function updateBibliography(): Promise<void> {
     return;
   }
 
-  const descriptor: AnyDescriptor | undefined = await ipcRenderer.invoke("fsal", {
+  const descriptor = await ipcRenderer.invoke("fsal", {
     command: "get-descriptor",
     payload: activeFile.value.path,
   });
 
-  if (descriptor === undefined || descriptor.type !== "file") {
+  if (descriptor.type !== "file") {
     bibliography.value = undefined;
     return;
   }

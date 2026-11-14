@@ -438,11 +438,7 @@ function updateProperties(): void {
       payload: dirPath,
     })
     .then((descriptor) => {
-      if (
-        descriptor === undefined ||
-        Array.isArray(descriptor) ||
-        descriptor.type !== "directory"
-      ) {
+      if (descriptor.type !== "directory") {
         return refuseUpdate(
           trans("Could not update project settings because the project folder is no longer open."),
         );
@@ -476,7 +472,7 @@ async function fetchProperties(): Promise<void> {
     command: "get-descriptor",
     payload: dirPath,
   });
-  if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== "directory") {
+  if (descriptor.type !== "directory") {
     throw new Error(
       "Could not load project settings because the project folder is no longer open.",
     );

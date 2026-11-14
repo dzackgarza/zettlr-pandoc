@@ -52,7 +52,6 @@ import Checkbox from "@common/vue/form/elements/CheckboxControl.vue";
 import ProgressElement from "@common/vue/form/elements/ProgressControl.vue";
 import SelectElement from "@common/vue/form/elements/SelectControl.vue";
 import TextElement from "@common/vue/form/elements/TextControl.vue";
-import { type MDFileDescriptor } from "@dts/common/fsal";
 import * as d3 from "d3";
 import { type SimulationNodeDatum } from "d3";
 import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
@@ -547,14 +546,10 @@ async function buildGraph(): Promise<void> {
     buildProgress.value.currentFile += 1;
     // We have to specifically add the source, since isolates will have 0
     // targets, and hence we cannot rely on the Graph adding these vertices
-    const sourceDescriptor: MDFileDescriptor | undefined = await ipcRenderer.invoke("fsal", {
+    const sourceDescriptor = await ipcRenderer.invoke("fsal", {
       command: "get-descriptor",
       payload: sourcePath,
     });
-    if (sourceDescriptor === undefined) {
-      console.warn(`Could not find descriptor for ${sourcePath}. Not adding to graph.`);
-      continue;
-    }
 
     DG.addVertex(sourcePath, getDocumentTitle(sourceDescriptor));
 
@@ -566,11 +561,11 @@ async function buildGraph(): Promise<void> {
         DG.addArc(sourcePath, edge.target);
         continue;
       }
-      const found: MDFileDescriptor | undefined = await ipcRenderer.invoke("fsal", {
+      const found = await ipcRenderer.invoke("fsal", {
         command: "get-descriptor",
         payload: edge.path,
       });
-      DG.addVertex(edge.path, found === undefined ? edge.target : getDocumentTitle(found));
+      DG.addVertex(edge.path, getDocumentTitle(found));
       DG.addArc(sourcePath, edge.path);
     }
   }

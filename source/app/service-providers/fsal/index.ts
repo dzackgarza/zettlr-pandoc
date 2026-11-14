@@ -213,32 +213,30 @@ export default class FSAL extends ProviderContract {
         }
       } else if (command === "read-directory" && typeof payload === "string") {
         return await this.readDirectory(payload);
+      } else if (command === "get-descriptor" && typeof payload === "string") {
+        return await this.getDescriptorFor(payload);
       } else if (
-        command === "get-descriptor" &&
-        (typeof payload === "string" ||
-          (Array.isArray(payload) && payload.every((p) => typeof p === "string")))
+        command === "get-descriptors" &&
+        Array.isArray(payload) &&
+        payload.every((p) => typeof p === "string")
       ) {
-        if (Array.isArray(payload)) {
-          const descriptors: AnyDescriptor[] = [];
-          for (const absPath of payload) {
-            // Check every path for existence to ensure an array lookup does not
-            // fail.
-            if (
-              this.deadWorkspaces.has(absPath) ||
-              (await this.isFile(absPath)) ||
-              (await this.isDir(absPath))
-            ) {
-              descriptors.push(await this.getDescriptorFor(absPath));
-            } else {
-              this._logger.error(
-                `[FSAL] Could not provide descriptor for requested path ${absPath}: Neither file nor directory.`,
-              );
-            }
+        const descriptors: AnyDescriptor[] = [];
+        for (const absPath of payload) {
+          // Check every path for existence to ensure an array lookup does not
+          // fail.
+          if (
+            this.deadWorkspaces.has(absPath) ||
+            (await this.isFile(absPath)) ||
+            (await this.isDir(absPath))
+          ) {
+            descriptors.push(await this.getDescriptorFor(absPath));
+          } else {
+            this._logger.error(
+              `[FSAL] Could not provide descriptor for requested path ${absPath}: Neither file nor directory.`,
+            );
           }
-          return descriptors;
-        } else {
-          return await this.getDescriptorFor(payload);
         }
+        return descriptors;
       } else if (command === "get-ignore-rules") {
         return this.ignoreSources;
       } else if (

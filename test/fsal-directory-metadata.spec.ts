@@ -182,7 +182,7 @@ describe("FSAL: directory metadata that cannot be used", function () {
   });
 
   it("answers the descriptors of every path that a window asks for", async function () {
-    const descriptors = await invokeMain("fsal", { command: "get-descriptor", payload: folders });
+    const descriptors = await invokeMain("fsal", { command: "get-descriptors", payload: folders });
     assert.ok(Array.isArray(descriptors), "a list of paths is answered with a list of descriptors");
     assert.deepEqual(
       descriptors.map((descriptor) => [descriptor.type, descriptor.path]),

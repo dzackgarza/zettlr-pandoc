@@ -665,14 +665,8 @@ const stopDocumentUpdates = ipcRenderer.on(
       ipcRenderer
         .invoke("fsal", { command: "get-descriptor", payload: props.file.path })
         .then(async (descriptor) => {
-          if (
-            descriptor === undefined ||
-            Array.isArray(descriptor) ||
-            (descriptor.type !== "file" && descriptor.type !== "code")
-          ) {
-            throw new Error(
-              `Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`,
-            );
+          if (descriptor.type !== "file" && descriptor.type !== "code") {
+            throw new Error(`${props.file.path} is not a Markdown or code file`);
           }
 
           activeFileDescriptor.value = descriptor;
@@ -1425,14 +1419,8 @@ async function loadDocument(): Promise<void> {
     command: "get-descriptor",
     payload: props.file.path,
   });
-  if (
-    descriptor === undefined ||
-    Array.isArray(descriptor) ||
-    (descriptor.type !== "file" && descriptor.type !== "code")
-  ) {
-    throw new Error(
-      `Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`,
-    );
+  if (descriptor.type !== "file" && descriptor.type !== "code") {
+    throw new Error(`${props.file.path} is not a Markdown or code file`);
   }
 
   activeFileDescriptor.value = descriptor;
@@ -1669,7 +1657,7 @@ async function updateReferenceEntries(): Promise<void> {
   // failed fetch surfaces one closable toast and the editor keeps its last
   // known reference state — never a fabricated fallback, never an
   // uncloseable overlay.
-  const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+  const outcome = await invokeReferenceProviderRecoverably(
     async (channel, message) => await ipcRenderer.invoke(channel, message),
     { command: "get-snapshot" },
     trans("Loading workspace references"),

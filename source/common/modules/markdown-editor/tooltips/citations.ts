@@ -25,7 +25,6 @@ import { setSanitizedHTML } from "@common/util/sanitize-html";
 import { referenceFamilyOf } from "@dts/common/references";
 import { NODES, nodeToCiteItem } from "@dzack/pandoc-editor/parser/citation-parser";
 import type { SyntaxNode } from "@lezer/common";
-import type { CiteprocProviderIPCAPI } from "source/app/service-providers/citeproc";
 import { trans } from "source/common/i18n-renderer";
 import type { CitationDatabase } from "source/types/common/citeproc";
 import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
@@ -39,19 +38,20 @@ const ipcRenderer = window.ipc;
  * @param   {string[]}  citekeys  The cite keys
  * @param   {string}    database  The library to use
  *
- * @return  {any}                 The bibliography
+ * @return  The bibliography, or undefined when the library holds no key of
+ *          the citation or is not loaded
  */
 async function fetchBibliography(
   citekeys: string[],
   database: CitationDatabase,
-): Promise<[BibliographyOptions, string[]]> {
+): Promise<[BibliographyOptions, string[]] | undefined> {
   return await ipcRenderer.invoke("citeproc-provider", {
     command: "get-bibliography",
     payload: {
       database,
       citations: [...new Set(citekeys)],
     },
-  } as Extract<CiteprocProviderIPCAPI, { command: "get-bibliography" }>);
+  });
 }
 
 /**
@@ -92,6 +92,12 @@ function citationTooltip(view: EditorView, pos: number, side: 1 | -1): Tooltip |
         database,
       )
         .then((bibliography) => {
+          if (bibliography === undefined) {
+            content.textContent = trans(
+              "The library holds no entry of this citation, or the library is not loaded.",
+            );
+            return;
+          }
           // Render bibliography into the content dom.
           const options = bibliography[0];
 
