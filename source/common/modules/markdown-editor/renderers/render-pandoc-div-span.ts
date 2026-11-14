@@ -447,10 +447,10 @@ function divHeaderDecorations(state: EditorState, from: number, to: number): Ran
  * The header of a div depends on a selection anywhere in the div, so the reach
  * of a selection range is the start of each div that the range touches.
  */
-function divHeaderReach(state: EditorState): SourceRange[] {
+function divHeaderReach(state: EditorState, ranges: readonly SourceRange[]): SourceRange[] {
   const starts: SourceRange[] = [];
   const tree = syntaxTree(state);
-  for (const range of state.selection.ranges) {
+  for (const range of ranges) {
     tree.iterate({
       from: range.from,
       to: range.to,
@@ -472,8 +472,22 @@ const pandocDivHeaderField = incrementalNodeDecorations({
       after.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
     );
   },
-  reach: divHeaderReach,
-  reachChanged: (before, after) => before.selection !== after.selection,
+  // The start of each div that the old or the new selection touches.
+  changedReach: (transaction) => {
+    if (
+      !transaction.docChanged &&
+      transaction.startState.selection === transaction.state.selection
+    ) {
+      return [];
+    }
+    const changes = transaction.changes;
+    return [
+      ...divHeaderReach(transaction.startState, transaction.startState.selection.ranges).map(
+        (start) => ({ from: changes.mapPos(start.from, -1), to: changes.mapPos(start.to, 1) }),
+      ),
+      ...divHeaderReach(transaction.state, transaction.state.selection.ranges),
+    ];
+  },
 });
 
 function createDivDecorations(view: EditorView): RangeSet<BlockWrapper> {

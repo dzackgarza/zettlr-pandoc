@@ -109,7 +109,11 @@ import {
   type PushUpdateCallback,
   reloadStateEffect,
 } from "./plugins/remote-doc";
-import { markReviewChunksStale, reviewChunksExtension } from "./plugins/review-chunks";
+import {
+  markReviewChunksStale,
+  reviewChunksBroadcast,
+  reviewChunksExtension,
+} from "./plugins/review-chunks";
 import { countField, updateWordCountEffect } from "./plugins/statistics-fields";
 import {
   annotationChipClickedEffect,
@@ -1166,9 +1170,14 @@ export default class MarkdownEditor extends EventEmitter {
     this.activeReviewDiffSession = session;
     // The review-diff-active styling scope rides in the extension itself
     // (an editorAttributes facet), so installing the compartment is what
-    // styles the pane — nothing here to keep in sync.
+    // styles the pane — nothing here to keep in sync. A later broadcast of
+    // the same review is an effect on the installed field: each chunk that
+    // the broadcast does not change keeps its decorations and its control,
+    // so a broadcast costs work for the chunks that it changed (#57).
     this._instance.dispatch({
-      effects: this.reviewDiffCompartment.reconfigure(this.buildReviewExtension(session)),
+      effects: arriving
+        ? this.reviewDiffCompartment.reconfigure(this.buildReviewExtension(session))
+        : reviewChunksBroadcast.of(session.suggestions),
     });
     // Focus follows a review's arrival only. Every later broadcast of the
     // same review (a note, a reply, a keystroke elsewhere) would otherwise

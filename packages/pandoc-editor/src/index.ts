@@ -17,7 +17,11 @@ import { markdownSyntaxHighlighter } from "./theme/syntax";
 
 export { default as markdownParser } from "./parser/markdown-parser";
 export { previewConfig } from "./util/configuration";
-export { previewSuppression } from "./util/range-in-preview-suppression";
+export {
+  type PreviewSuppression,
+  previewSuppression,
+  type SourceRange,
+} from "./util/range-in-preview-suppression";
 
 export interface MarkdownRendering {
   renderingMode: "preview" | "raw";

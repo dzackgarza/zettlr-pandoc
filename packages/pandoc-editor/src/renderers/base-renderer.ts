@@ -35,8 +35,7 @@ import { type SyntaxNodeRef } from "@lezer/common";
 import { previewConfiguration } from "../util/configuration";
 import { incrementalNodeDecorations } from "../util/incremental-node-decorations";
 import {
-  previewSuppressionChanged,
-  previewSuppressionRanges,
+  previewSuppressionChangedRanges,
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
 } from "../util/range-in-preview-suppression";
@@ -439,8 +438,7 @@ const sharedBlockRendererField = incrementalNodeDecorations({
       specs.some((spec) => spec.inputsChanged(before, after))
     );
   },
-  reach: previewSuppressionRanges,
-  reachChanged: previewSuppressionChanged,
+  changedReach: previewSuppressionChangedRanges,
 });
 
 /**
