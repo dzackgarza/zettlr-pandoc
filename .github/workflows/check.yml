@@ -66,6 +66,8 @@ jobs:
         run: bun ci
       - name: Verify pinned Pandoc parser reference data
         run: bun run check:pandoc-reference-data
+      - name: Typecheck the sources and the contract fixtures
+        run: bun run typecheck
       # The types of the Agent API are generated from openapi.yaml and
       # formatted with the global biome configuration of ai-review-ci.
       - name: Verify generated Agent API types
