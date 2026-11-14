@@ -886,6 +886,84 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(parseAs(changed.body, "ReadDocumentResponse").content, elsewhere);
   });
 
+  it("takes only a patch that changes the text of the reviewed document (#57)", async function () {
+    const before = "alpha\nbeta\n";
+    const after = "alpha\nBETA\n";
+    const hunk = "@@ -1,2 +1,2 @@\n alpha\n-beta\n+BETA\n";
+    const filePath = path.join(scratch, "patch-gate.md");
+    const otherPath = path.join(scratch, "patch-gate-other.md");
+    const documentId = await openFile(filePath, before);
+    const relative = filePath.slice(1);
+
+    let reviewGeneration = 0;
+    async function propose(patch: string): Promise<{ status: number; body: string }> {
+      return await httpRequest("POST", `/v1/documents/${documentId}/proposals`, {
+        body: JSON.stringify({
+          baselineSha256: sha256Text(before),
+          expectedReviewGeneration: reviewGeneration,
+          claims: [{ description: "Capitalize the second word.", patch }],
+          clientRequestId: randomUUID(),
+        }),
+      });
+    }
+
+    // Each patch below has hunks that apply to the document; only what the
+    // patch says about files makes it no change of this document's text.
+    const refused: Record<string, string> = {
+      binary: `diff --git a/${relative} b/${relative}\nindex 1111111..2222222 100644\nGIT binary patch\nliteral 4\nLcmZ?d00001\n\n`,
+      rename: `diff --git a/${relative} b/${otherPath.slice(1)}\nrename from ${relative}\nrename to ${otherPath.slice(1)}\n--- document\n+++ document\n${hunk}`,
+      copy: `diff --git a/${relative} b/${otherPath.slice(1)}\ncopy from ${relative}\ncopy to ${otherPath.slice(1)}\n--- document\n+++ document\n${hunk}`,
+      create: `diff --git a/${relative} b/${relative}\nnew file mode 100644\n--- document\n+++ document\n${hunk}`,
+      delete: `diff --git a/${relative} b/${relative}\ndeleted file mode 100644\n--- document\n+++ document\n${hunk}`,
+      mode: `diff --git a/${relative} b/${relative}\nold mode 100644\nnew mode 100755\n--- document\n+++ document\n${hunk}`,
+      "/dev/null": `--- /dev/null\n+++ ${otherPath}\n${hunk}`,
+      basename: `--- patch-gate.md\n+++ patch-gate.md\n${hunk}`,
+      "relative path": `--- ${relative}\n+++ ${relative}\n${hunk}`,
+      "other file": `--- ${otherPath}\n+++ ${otherPath}\n${hunk}`,
+      "other file, git prefix": `--- a/${otherPath.slice(1)}\n+++ b/${otherPath.slice(1)}\n${hunk}`,
+      "new header of another file": `--- ${filePath}\n+++ ${otherPath}\n${hunk}`,
+      "old header of another file": `--- ${otherPath}\n+++ ${filePath}\n${hunk}`,
+    };
+    for (const [kind, patch] of Object.entries(refused)) {
+      const answer = await propose(patch);
+      assert.equal(answer.status, 400, `${kind}: ${answer.body}`);
+      assert.equal(parseAs(answer.body, "AgentErrorResponse").error.code, "PATCH_INVALID", kind);
+    }
+    assert.equal(existsSync(otherPath), false);
+    assert.equal(readFileSync(filePath, "utf8"), before);
+    const unchanged = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
+    assert.equal(parseAs(unchanged.body, "ReadDocumentResponse").content, before);
+
+    // The headers that name this document: `document`, its path, and its
+    // path behind the git prefix that drops the leading slash. No refusal
+    // above opened a review, so the first proposal names generation 0.
+    const accepted: Record<string, string> = {
+      document: `--- document\n+++ document\n${hunk}`,
+      path: `--- ${filePath}\n+++ ${filePath}\n${hunk}`,
+      "git prefix": `--- a/${relative}\n+++ b/${relative}\n${hunk}`,
+    };
+    for (const [kind, patch] of Object.entries(accepted)) {
+      const answer = await propose(patch);
+      assert.equal(answer.status, 200, `${kind}: ${answer.body}`);
+      const shown = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
+      assert.equal(parseAs(shown.body, "ReadDocumentResponse").content, after, kind);
+      const proposal = parseAs(answer.body, "SubmitProposalResponse");
+      const retracted = await httpRequest(
+        "POST",
+        `/v1/proposals/${encodeURIComponent(proposal.packetIds[0])}/retract`,
+        {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            expectedReviewGeneration: proposal.reviewGeneration,
+            expectedWorkingSha256: sha256Text(after),
+          }),
+        },
+      );
+      assert.equal(retracted.status, 200, `${kind}: ${retracted.body}`);
+      reviewGeneration = parseAs(retracted.body, "RetractProposalResponse").reviewGeneration;
+    }
+  });
+
   it("fails enabled startup when the configured port is taken", async function () {
     // An enabled API without its configured listener is a broken application
     // state. Startup must report the bind failure instead of claiming success.
