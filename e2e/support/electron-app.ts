@@ -648,6 +648,13 @@ export interface LaunchOptions {
    * up after it. A start that must succeed keeps `startDeadline`.
    */
   hangDeadlineMs?: number;
+  /**
+   * A start whose windows have WebGL. A start without it turns hardware
+   * acceleration off, and Chromium then gives a window no WebGL context. A
+   * display of a run has no GPU, so the contexts of this start are those
+   * of SwiftShader, the software renderer of Chromium.
+   */
+  softwareWebGL?: true;
 }
 
 export async function launchElectron(
@@ -657,7 +664,9 @@ export async function launchElectron(
   const appArguments = [
     `--data-dir=${configDirectory}`,
     "--remote-debugging-port=0",
-    "--disable-hardware-acceleration",
+    ...(options.softwareWebGL === true
+      ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+      : ["--disable-hardware-acceleration"]),
     // The run owns the X display (`just test-e2e`, `just test-e2e-file`):
     // DISPLAY names the desktop's server or the virtual one of the run.
     // Chromium prefers a Wayland compositor whenever WAYLAND_DISPLAY is
