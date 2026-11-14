@@ -21,7 +21,7 @@ import {
   isInsideRoot,
   pathDirname,
 } from "source/common/util/renderer-path-polyfill";
-import { useWindowStateStore, useWorkspaceStore } from "source/pinia";
+import { useConfigStore, useWindowStateStore } from "source/pinia";
 import {
   type BranchNodeJSON,
   DP_EVENTS,
@@ -161,9 +161,10 @@ function copyDelta(
  */
 function maybeUncollapseDirectories(filePath: string): void {
   const windowStateStore = useWindowStateStore();
-  const workspaceStore = useWorkspaceStore();
-
-  const containingWs = innermostRoot(filePath, workspaceStore.workspaceMap.keys());
+  // The configuration has the workspaces when the window starts. The
+  // workspace store has them only after it read their files, which can be
+  // after the window got its active document.
+  const containingWs = innermostRoot(filePath, useConfigStore().config.app.openWorkspaces);
 
   if (containingWs === undefined) {
     return; // File path is not part of a workspace, uncollapsing not applicable

@@ -1840,6 +1840,13 @@ of an isolated instance are in the first comment of #132.
   the row only while no later read started. A read that fails is in the log
   as `[File manager]`. A new row component gets its children from
   `useItemChildren`. Proof: `e2e/file-list-row-children.spec.ts`.
+- **The tree shows the active document at the start.** The window opens
+  each folder from the workspace to the active document of a pane
+  (`maybeUncollapseDirectories`, `pinia/document-tree-store.ts`). It takes
+  the workspaces from the configuration: the workspace store has them only
+  after it read their files, which can be after the window got its active
+  document. Code that needs the workspace of a path while the window starts
+  reads the configuration. Proof: `e2e/tree-reveals-active-document.spec.ts`.
 - **One listener for the rows of a window.** `followChildren`
   (`file-manager/util/follow-children.ts`) has the one `fsal-events`
   listener of the file manager; it calls the rows of the parent folder of
