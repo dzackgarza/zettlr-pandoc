@@ -129,6 +129,7 @@ import {
   type ChunkDecisionResponse,
   type ClearReviewResponse,
   type DiscardReviewResponse,
+  type ProposalNotFound,
   type ProposalRefusal,
   type ReapplyReviewResponse,
   type RetractProposalResponse,
@@ -4740,46 +4741,8 @@ current contents from the editor somewhere else, and restart the application.`,
   public async retractProposal(
     packetId: string,
     precondition: ReviewMutationPrecondition,
-  ): Promise<
-    | RetractProposalResponse
-    | {
-        ok: false;
-        code: AgentErrorCode;
-        message: string;
-        reviewId: string;
-        canClearUnresolved: boolean;
-        actual?: { sha256: string };
-        reviewGeneration?: number;
-      }
-  > {
-    const result = await this._reviewApplication.retractProposal(packetId, precondition);
-    if (
-      "ok" in result &&
-      !result.ok &&
-      result.code === "PACKET_NOT_RETRACTABLE" &&
-      result.reviewId === ""
-    ) {
-      // GET /v1/reviews/{id}/packets hands out a detached review's packetIds,
-      // so this route owes them an answer. The live store dropped them when
-      // the file closed; the sidecar still carries them, and the refusal it
-      // earns is the same one every reviewId route gives — the file is shut,
-      // not the packet missing. Clearing is shut too, so say so.
-      const detached = (await this._reviewApplication.listReviewQueries()).find(
-        (query) =>
-          !query.attached &&
-          query.sidecar.review.packets.some((packet) => packet.packetId === packetId),
-      );
-      if (detached !== undefined && !detached.attached) {
-        return {
-          ok: false,
-          code: "DOCUMENT_CLOSED",
-          message: `The reviewed document ${detached.sidecar.documentPath} is closed. Open it before retracting this proposal.`,
-          reviewId: detached.sidecar.review.reviewId,
-          canClearUnresolved: false,
-        };
-      }
-    }
-    return result;
+  ): Promise<RetractProposalResponse | (ReviewFailure & { reviewId: string }) | ProposalNotFound> {
+    return await this._reviewApplication.retractProposal(packetId, precondition);
   }
 
   /**

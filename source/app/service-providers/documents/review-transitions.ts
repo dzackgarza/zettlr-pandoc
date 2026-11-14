@@ -105,13 +105,16 @@ export type ProposalRefusal =
   | { ok: false; code: AgentErrorCode; message: string }
   | DuplicateClaimError;
 
-export interface RetractionError {
+/** No review holds the packet. */
+export interface ProposalNotFound {
   ok: false;
-  code: "PACKET_NOT_RETRACTABLE";
+  code: "PROPOSAL_NOT_FOUND";
   message: string;
-  reviewId: string;
-  canClearUnresolved: true;
 }
+
+export type RetractionError =
+  | { ok: false; code: "PACKET_NOT_RETRACTABLE"; message: string; reviewId: string }
+  | ProposalNotFound;
 
 /**
  * A plan and an error are told apart by the discriminant only errors carry.
@@ -1349,13 +1352,12 @@ export function prepareRetraction(input: {
     code: "PACKET_NOT_RETRACTABLE",
     message,
     reviewId: input.review.reviewId,
-    canClearUnresolved: true,
   });
   const packetIndex = input.review.packets.findIndex(
     (packet) => packet.packetId === input.packetId,
   );
   if (packetIndex === -1) {
-    return refuse("Proposal not found.");
+    return { ok: false, code: "PROPOSAL_NOT_FOUND", message: "Proposal not found." };
   }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);

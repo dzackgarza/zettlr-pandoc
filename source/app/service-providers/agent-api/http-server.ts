@@ -182,6 +182,7 @@ const STATUS_BY_CODE = {
   PATCH_NOT_APPLICABLE: 400,
   CLAIM_NOT_ATOMIC: 400,
   PACKET_NOT_RETRACTABLE: 409,
+  PROPOSAL_NOT_FOUND: 404,
   CHUNK_NOT_FOUND: 404,
   ANNOTATION_NOT_FOUND: 404,
   ANNOTATION_GENERATION_MISMATCH: 409,
@@ -2177,16 +2178,16 @@ export default class AgentHTTPProvider extends ProviderContract {
         unresolvedChunks: result.unresolvedChunks,
         documentRevision: result.documentRevision,
       });
-    } else {
-      // PACKET_NOT_RETRACTABLE and DOCUMENT_CLOSED both land on STATUS_BY_CODE's
-      // 409: the packet has already reached a terminal state, or its file is
-      // closed. Both name the review that owns the packet, which is the
-      // only thing the caller can re-read from — disposing of the suggestions
-      // is the reviewer's.
+    } else if ("reviewId" in result) {
+      // A refusal of a packet that a review holds names that review, which
+      // the caller can read again: the packet reached a terminal state, its
+      // file is closed, or the precondition is stale.
       this.sendRefusal(this.operation("retractProposal"), res, result.code, result.message, {
         reviewId: result.reviewId,
         ...AgentHTTPProvider.conflictDetail(result),
       });
+    } else {
+      this.sendRefusal(this.operation("retractProposal"), res, result.code, result.message);
     }
   }
 

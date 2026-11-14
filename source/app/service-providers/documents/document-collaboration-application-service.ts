@@ -106,6 +106,7 @@ import {
   freezeReview,
   INVALIDATED_REVIEW_MESSAGE,
   isTransitionError,
+  type ProposalNotFound,
   type ProposalRefusal,
   prepareAcceptAll,
   prepareChunkComment,
@@ -2197,35 +2198,27 @@ export class CollaborationApplicationService {
   public async retractProposal(
     packetId: string,
     precondition: ReviewMutationPrecondition,
-  ): Promise<
-    RetractProposalResponse | (ReviewFailure & { reviewId: string; canClearUnresolved: boolean })
-  > {
-    // Reviews and their packets are few; a scan is cheaper to keep correct
-    // than an index every mutation must remember to maintain.
+  ): Promise<RetractProposalResponse | (ReviewFailure & { reviewId: string }) | ProposalNotFound> {
+    // The reviews of open documents and their packets are few; a scan is
+    // cheaper to keep correct than an index every mutation must maintain.
     const owner = this.reviews
       .listReviews()
       .find((candidate) => candidate.packets.some((packet) => packet.packetId === packetId));
     if (owner === undefined) {
-      return {
-        ok: false,
-        code: "PACKET_NOT_RETRACTABLE",
-        message: "Proposal not found.",
-        reviewId: "",
-        canClearUnresolved: true,
-      };
+      return await this.refuseRetractionWithoutLiveReview(packetId);
     }
     return await this.withDocumentLock(owner.documentId, async () => {
       const context = this.contextForReview(owner.reviewId);
       if ("ok" in context) {
-        return { ...context, reviewId: owner.reviewId, canClearUnresolved: false };
+        return { ...context, reviewId: owner.reviewId };
       }
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
-        return { ...fence, reviewId: owner.reviewId, canClearUnresolved: false };
+        return { ...fence, reviewId: owner.reviewId };
       }
       const stale = this.checkPrecondition(context, precondition);
       if (stale !== undefined) {
-        return { ...stale, reviewId: owner.reviewId, canClearUnresolved: true };
+        return { ...stale, reviewId: owner.reviewId };
       }
       const result = await this.commitReviewMutation(context, () => {
         const plan = prepareRetraction({
@@ -2234,14 +2227,42 @@ export class CollaborationApplicationService {
           packetId,
         });
         return isTransitionError(plan)
-          ? { ok: false, code: plan.code as AgentErrorCode, message: plan.message }
+          ? { ok: false, code: plan.code, message: plan.message }
           : plan;
       });
-      if ("ok" in result && !result.ok) {
-        return { ...result, reviewId: context.review.reviewId, canClearUnresolved: true };
+      if (!("ok" in result) || result.ok) {
+        return result;
       }
-      return result;
+      // Another call retracted the packet after the lookup above.
+      if (result.code === "PROPOSAL_NOT_FOUND") {
+        return { ok: false, code: result.code, message: result.message };
+      }
+      return { ...result, reviewId: context.review.reviewId };
     });
+  }
+
+  /**
+   * GET /v1/reviews/{id}/packets gives the packet ids of a review of a
+   * closed document, so a retraction of such a packet names that review
+   * and the closed file. A packet that no review holds is not found.
+   */
+  private async refuseRetractionWithoutLiveReview(
+    packetId: string,
+  ): Promise<(ReviewFailure & { reviewId: string }) | ProposalNotFound> {
+    const sidecar = await this.sidecars.findReviewOfPacket(packetId);
+    if (
+      sidecar === undefined ||
+      !holdsReview(sidecar) ||
+      this.deps.authority.isDocumentOpen(sidecar.documentPath)
+    ) {
+      return { ok: false, code: "PROPOSAL_NOT_FOUND", message: "Proposal not found." };
+    }
+    return {
+      ok: false,
+      code: "DOCUMENT_CLOSED",
+      message: `The reviewed document ${sidecar.documentPath} is closed. Open it before retracting this proposal.`,
+      reviewId: sidecar.review.reviewId,
+    };
   }
 
   // ==========================================================================

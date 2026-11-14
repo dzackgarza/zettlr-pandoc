@@ -710,6 +710,7 @@ export interface components {
         | "PATCH_NOT_APPLICABLE"
         | "CLAIM_NOT_ATOMIC"
         | "PACKET_NOT_RETRACTABLE"
+        | "PROPOSAL_NOT_FOUND"
         | "CHUNK_NOT_FOUND"
         | "ANNOTATION_NOT_FOUND"
         | "ANNOTATION_GENERATION_MISMATCH"

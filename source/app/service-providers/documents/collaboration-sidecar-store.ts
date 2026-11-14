@@ -385,6 +385,14 @@ export class CollaborationSidecarUnreadableError extends Error {
   }
 }
 
+function reviewKey(reviewId: string): string {
+  return `review:${reviewId}`;
+}
+
+function packetKey(packetId: string): string {
+  return `packet:${packetId}`;
+}
+
 export class CollaborationSidecarStore {
   /**
    * The files whose last read in this session gave a sidecar or no file.
@@ -402,15 +410,16 @@ export class CollaborationSidecarStore {
   private readonly locks = new Map<string, Mutex>();
 
   /**
-   * The review of each sidecar file, and the file of each review. A sidecar
-   * file is named by its document, not by its review. The store is the one
-   * writer of its directory: the directory is in userData, and one instance
-   * of the app holds userData (`requestSingleInstanceLock`). So after one
-   * inventory the maps name the review of each readable file, and each
-   * read, write, removal and move aside keeps them so.
+   * The keys of each sidecar file (its review and the packets of that
+   * review), and the file of each key. A sidecar file is named by its
+   * document, not by its review. The store is the one writer of its
+   * directory: the directory is in userData, and one instance of the app
+   * holds userData (`requestSingleInstanceLock`). So after one inventory the
+   * maps name the keys of each readable file, and each read, write, removal
+   * and move aside keeps them so.
    */
-  private readonly reviewOfFile = new Map<string, string>();
-  private readonly fileOfReview = new Map<string, string>();
+  private readonly keysOfFile = new Map<string, string[]>();
+  private readonly fileOfKey = new Map<string, string>();
   /** Whether an inventory read the directory in this session. */
   private indexed = false;
   /** The files whose last read failed; a review can be in each of them. */
@@ -425,8 +434,14 @@ export class CollaborationSidecarStore {
     if (sidecar === undefined || sidecar.review === null) {
       return;
     }
-    this.reviewOfFile.set(file, sidecar.review.reviewId);
-    this.fileOfReview.set(sidecar.review.reviewId, file);
+    const keys = [
+      reviewKey(sidecar.review.reviewId),
+      ...sidecar.review.packets.map((packet) => packetKey(packet.packetId)),
+    ];
+    this.keysOfFile.set(file, keys);
+    for (const key of keys) {
+      this.fileOfKey.set(key, file);
+    }
   }
 
   private recordUnreadable(file: string): void {
@@ -435,11 +450,14 @@ export class CollaborationSidecarStore {
   }
 
   private forgetFile(file: string): void {
-    const review = this.reviewOfFile.get(file);
-    if (review !== undefined) {
-      this.fileOfReview.delete(review);
-      this.reviewOfFile.delete(file);
+    const keys = this.keysOfFile.get(file);
+    if (keys === undefined) {
+      return;
     }
+    for (const key of keys) {
+      this.fileOfKey.delete(key);
+    }
+    this.keysOfFile.delete(file);
   }
 
   private exclusive<T>(target: string, run: () => Promise<T>): Promise<T> {
@@ -542,10 +560,31 @@ export class CollaborationSidecarStore {
    * only when no readable file holds the review, as the review can be in it.
    */
   async findReview(reviewId: string): Promise<CollaborationSidecarData | undefined> {
-    const known = this.fileOfReview.get(reviewId);
+    return await this.findHolder(
+      reviewKey(reviewId),
+      (sidecar) => sidecar.review?.reviewId === reviewId,
+    );
+  }
+
+  /**
+   * The sidecar whose review holds the packet `packetId`, or undefined. The
+   * reads are those of `findReview`.
+   */
+  async findReviewOfPacket(packetId: string): Promise<CollaborationSidecarData | undefined> {
+    return await this.findHolder(
+      packetKey(packetId),
+      (sidecar) => sidecar.review?.packets.some((packet) => packet.packetId === packetId) === true,
+    );
+  }
+
+  private async findHolder(
+    key: string,
+    holds: (sidecar: CollaborationSidecarData) => boolean,
+  ): Promise<CollaborationSidecarData | undefined> {
+    const known = this.fileOfKey.get(key);
     if (known !== undefined) {
       const sidecar = await this.exclusive(known, () => this.readFile(known));
-      if (sidecar !== undefined && sidecar.review?.reviewId === reviewId) {
+      if (sidecar !== undefined && holds(sidecar)) {
         return sidecar;
       }
     }
@@ -553,7 +592,7 @@ export class CollaborationSidecarStore {
       return undefined;
     }
     const { sidecars, unreadable } = await this.inventory();
-    const holder = sidecars.find((sidecar) => sidecar.review?.reviewId === reviewId);
+    const holder = sidecars.find(holds);
     if (holder !== undefined) {
       return holder;
     }

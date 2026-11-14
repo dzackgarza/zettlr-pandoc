@@ -376,8 +376,11 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   answers, and `zettlr-pandoc-review-diff` refuses each other version
   (`PROTOCOL_VERSION_UNSUPPORTED`) before it sends a request that changes
   state. A new required field of a request, a removed operation or a removed
-  field of an answer raises the major version, and the constant of the CLI
-  follows. Version 2.0.0 made `clientRequestId` of a proposal required.
+  field of an answer raises the major version; another change of the
+  contract (a new error code, a new operation) raises the minor version. The
+  CLI accepts one version, so its constant follows each change. Version 2.0.0
+  made `clientRequestId` of a proposal required; version 2.1.0 added
+  `PROPOSAL_NOT_FOUND`.
   `bun run check:agent-api-types` proves that the generated types are those
   of the document; the hosted `check.yml` runs it.
 - **Each status on the wire is one that the document declares.** A handler

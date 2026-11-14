@@ -2827,11 +2827,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
     caseSidecars.push(laterSidecar);
 
+    const expectedReviewGeneration = submitted.reviewGeneration;
     async function retract(packetId: string): Promise<{ status: number; body: string }> {
       return await httpRequest("POST", `/v1/proposals/${encodeURIComponent(packetId)}/retract`, {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          expectedReviewGeneration: submitted.reviewGeneration,
+          expectedReviewGeneration,
           expectedWorkingSha256: sha256Text("after\n"),
         }),
       });
@@ -2844,8 +2845,18 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(closedError.code, "DOCUMENT_CLOSED");
     assert.equal(closedError.reviewId, submitted.reviewId);
 
-    // No review holds an unknown packet, so the refusal names none.
-    const unknown = await retract(randomUUID());
+    // The file that cannot be read can hold an unknown packet.
+    const unknownPacket = randomUUID();
+    const undecided = await retract(unknownPacket);
+    assert.equal(undecided.status, 409, undecided.body);
+    assert.equal(
+      parseAs(undecided.body, "AgentErrorResponse").error.code,
+      "COLLABORATION_STATE_UNREADABLE",
+    );
+
+    // When each file can be read, no review holds it, and the refusal names none.
+    writeFileSync(laterSidecar, JSON.stringify(written), "utf8");
+    const unknown = await retract(unknownPacket);
     assert.equal(unknown.status, 404, unknown.body);
     const unknownError = parseAs(unknown.body, "AgentErrorResponse").error;
     assert.equal(unknownError.code, "PROPOSAL_NOT_FOUND");

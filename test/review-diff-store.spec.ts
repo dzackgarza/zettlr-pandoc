@@ -308,7 +308,7 @@ describe("pure review transitions", function () {
       workingText,
       packetId: "not-the-latest-packet",
     });
-    assertTransitionError(refused, "PACKET_NOT_RETRACTABLE");
+    assertTransitionError(refused, "PROPOSAL_NOT_FOUND");
     assert.deepEqual(review, before);
   });
 });
