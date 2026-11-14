@@ -74,6 +74,8 @@ interface RunningFixture {
   getOutput: () => string;
   rendererEvents: string[];
   screenshots: Map<string, Buffer>;
+  /** The Project properties window that a test opened. */
+  propertiesPage: Page | undefined;
 }
 
 /**
@@ -134,6 +136,14 @@ async function boot(fixture: RunningFixture): Promise<void> {
 }
 
 async function teardown(fixture: RunningFixture): Promise<void> {
+  // The application quits when its last window closes, so the Project
+  // properties window closes before the main window does.
+  const propertiesPage = fixture.propertiesPage;
+  if (propertiesPage !== undefined && !propertiesPage.isClosed()) {
+    const closed = propertiesPage.waitForEvent("close", { timeout: 10_000 });
+    await requestWindowClose(propertiesPage);
+    await closed;
+  }
   await shutdown(fixture.browser, fixture.appProcess);
   await preserveArtifacts(
     ARTIFACT_DIRECTORY,
@@ -257,6 +267,7 @@ describe("global-search and project-properties failure recovery", function () {
     getOutput: () => "",
     rendererEvents: [],
     screenshots: new Map<string, Buffer>(),
+    propertiesPage: undefined,
   };
   const { screenshots } = running;
 
@@ -301,7 +312,6 @@ describe("global-search and project-properties failure recovery", function () {
     await page.locator(RUNNING_INDICATOR).waitFor({ state: "hidden", timeout: 60_000 });
     screenshots.set("search-edited-query.png", await page.screenshot());
     const broadcasts = await page.evaluate(() => window.searchBroadcasts);
-    console.log(`Search broadcasts: ${broadcasts.join(", ")}`);
     // A corpus result here is a result of the first query that the edited
     // query did not cancel. The list keeps rows that it does not show.
     assert.deepEqual(
@@ -375,6 +385,8 @@ describe("global-search and project-properties failure recovery", function () {
     );
     await propertiesItem.waitFor({ state: "visible", timeout: 10_000 });
     await propertiesItem.click();
+    await mainPage.locator(".popover").waitFor({ state: "visible", timeout: 10_000 });
+    screenshots.set("directory-properties.png", await mainPage.screenshot());
     const projectSettingsButton = mainPage.getByRole("button", {
       name: "Project Settings…",
       exact: true,
@@ -383,29 +395,26 @@ describe("global-search and project-properties failure recovery", function () {
     await projectSettingsButton.click();
 
     const propertiesPage = await findProjectPropertiesPage(running.browser, 30_000);
-    try {
-      const titleInput = propertiesPage.getByLabel("Project Title");
-      await titleInput.waitFor({ state: "visible", timeout: 30_000 });
-      assert.equal(await titleInput.inputValue(), "Initial project");
+    running.propertiesPage = propertiesPage;
+    const titleInput = propertiesPage.getByLabel("Project Title");
+    await titleInput.waitFor({ state: "visible", timeout: 30_000 });
+    assert.equal(await titleInput.inputValue(), "Initial project");
 
-      await rm(projectSettingsFile);
-      await waitForProjectState(mainPage, workspace, false);
-      await titleInput.fill("First edit cannot persist");
-      // Renderer errors are now routed through the process-wide LogProvider
-      // boundary rather than written to the renderer console. Observe the
-      // durable application log transport, not the retired console side effect.
-      await waitForProcessOutput(running.getOutput, "this folder is no longer a Project", 30_000);
+    await rm(projectSettingsFile);
+    await waitForProjectState(mainPage, workspace, false);
+    await titleInput.fill("First edit cannot persist");
+    // The main process logs the refused edit.
+    await waitForProcessOutput(running.getOutput, "this folder is no longer a Project", 30_000);
 
-      await writeFile(projectSettingsFile, JSON.stringify(PROJECT_SETTINGS), "utf8");
-      await waitForProjectState(mainPage, workspace, true);
-      await titleInput.fill("Recovered project title");
-      await waitForProjectTitle(projectSettingsFile, "Recovered project title", 10_000);
-    } finally {
-      if (!propertiesPage.isClosed()) {
-        await requestWindowClose(propertiesPage);
-        await propertiesPage.waitForEvent("close", { timeout: 10_000 });
-      }
-    }
+    await writeFile(projectSettingsFile, JSON.stringify(PROJECT_SETTINGS), "utf8");
+    await waitForProjectState(mainPage, workspace, true);
+    await titleInput.fill("Recovered project title");
+    await waitForProjectTitle(projectSettingsFile, "Recovered project title", 10_000);
+
+    // The next test sends menu items to the main window, which must hold the focus.
+    const closed = propertiesPage.waitForEvent("close", { timeout: 10_000 });
+    await requestWindowClose(propertiesPage);
+    await closed;
   });
 
   it("names a workspace that went away as not searched, and shows the matches of the others", async function () {
