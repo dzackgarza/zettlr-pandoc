@@ -10,8 +10,9 @@
  * Description:     Another program rewrites the file of an open document
  *                  that has no unsaved text. The editor loads the new text
  *                  and keeps the place of the author: the paragraph at the
- *                  same height of the pane, the caret in its text, and the
- *                  folded section.
+ *                  same height of the pane, the caret in its text, the
+ *                  folded section, and the focus of a field outside the
+ *                  editor.
  *
  * END HEADER
  */
@@ -282,6 +283,28 @@ describe("an open document that another program rewrites", function () {
       warnings.filter((warning) => /Measure loop|Viewport failed/.test(warning)),
       [],
       "the view measures each reload without a restart limit",
+    );
+  });
+
+  it("leaves the focus in the field that the author types in", async function () {
+    const editorPage = requireInitialized(page, "The editor page must be initialized");
+    const filter = editorPage.locator(".file-manager-filter-input");
+    await filter.click();
+    await editorPage.keyboard.type("lat");
+
+    const countBefore = await shownCharacterCount(editorPage);
+    const paragraphs = fixtureParagraphs();
+    paragraphs[SECTIONS - 1] = `${paragraphOf(SECTIONS)} A change while the author types.`;
+    await rewrite(documentText(paragraphs, []));
+    await editorLoadedAnotherText(editorPage, countBefore);
+    await delay(VIEW_SETTLED_MS);
+    screenshots.set("focus.png", await editorPage.screenshot());
+
+    await editorPage.keyboard.type("tice");
+    assert.equal(
+      await filter.inputValue(),
+      "lattice",
+      "the keys of the author go to the field that had the focus before the reload",
     );
   });
 });
