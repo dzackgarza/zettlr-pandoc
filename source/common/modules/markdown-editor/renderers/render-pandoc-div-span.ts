@@ -47,7 +47,11 @@ import {
 } from "@dzack/pandoc-editor/util/range-in-preview-suppression";
 import { rangeInSelection } from "@dzack/pandoc-editor/util/range-in-selection";
 import { visitVisibleSyntaxNodes } from "@dzack/pandoc-editor/util/visible-syntax-nodes";
-import { divModelFromNode, type PandocDivModel } from "source/common/pandoc-util/pandoc-div-model";
+import {
+  divIsUnclosed,
+  divModelFromNode,
+  type PandocDivModel,
+} from "source/common/pandoc-util/pandoc-div-model";
 import { parsePandocAttributes } from "source/common/pandoc-util/parse-pandoc-attributes";
 import { reportError } from "source/common/util/error-reporting";
 import { mathJaxToElem } from "source/common/util/mathtex-to-html";
@@ -284,7 +288,10 @@ function collectVisibleDivs(view: EditorView): PandocDivModel[] {
       const model = divModelFromNode(view.state.doc, node.node);
       if (model !== undefined) {
         divs.set(key, model);
-      } else if (syntaxTreeAvailable(view.state, view.state.doc.length)) {
+      } else if (
+        !divIsUnclosed(node.node) &&
+        syntaxTreeAvailable(view.state, view.state.doc.length)
+      ) {
         reportUnmodeledDiv(view, node.from, node.to);
       }
     }
@@ -418,7 +425,7 @@ function divHeaderDecorations(state: EditorState, from: number, to: number): Ran
       }
       const div = divModelFromNode(state.doc, node.node);
       if (div === undefined) {
-        if (syntaxTreeAvailable(state, state.doc.length)) {
+        if (!divIsUnclosed(node.node) && syntaxTreeAvailable(state, state.doc.length)) {
           reportError(
             "Pandoc fenced div at " +
               String(node.from) +
