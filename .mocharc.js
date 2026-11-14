@@ -8,6 +8,10 @@ module.exports = {
   // `bun run test` fell through to the default, which is the invocation the
   // push gate uses, so the gate failed on a different real-tool spec each run.
   timeout: 120000,
+  // The limit above ends a test, not the process: Mocha waits for each open
+  // handle after the last test. A handle that a spec left would hold the run
+  // without a limit, so the process ends with the last test.
+  exit: true,
   "node-option": ["import=tsx"],
   require: ["./test/setup.js"],
   extension: ["ts"],

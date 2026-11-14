@@ -22,6 +22,9 @@ jobs:
   check:
     name: Unit Tests / Lint
     runs-on: ubuntu-latest
+    # A run of the job takes 25 minutes; the limit is two times that. Without
+    # a limit, a step that does not end holds the runner for 6 hours.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
