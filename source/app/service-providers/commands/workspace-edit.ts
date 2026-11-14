@@ -31,14 +31,25 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class WorkspaceEditCommand extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, ["apply-workspace-edit", "discard-workspace-edit"]);
+    super(app);
   }
 
   async run(evt: string, arg: { id: string }): Promise<boolean | undefined> {
-    const proposal = this._app.commands.takeProposal(arg.id);
     if (evt === "discard-workspace-edit") {
+      this.discard(arg.id);
       return undefined;
     }
+    return await this.apply(arg.id);
+  }
+
+  /** Drops the proposal with the id, which the author did not apply. */
+  discard(id: string): void {
+    this._app.commands.takeProposal(id);
+  }
+
+  /** Applies the proposal with the id; a conflict and an unsaved document reject. */
+  async apply(id: string): Promise<boolean> {
+    const proposal = this._app.commands.takeProposal(id);
     const outcome = await applyWorkspaceEdit(this._app.documents, app.getPath("userData"), {
       edits: proposal.edits,
       expectedSourceHashes: proposal.expectedSourceHashes,

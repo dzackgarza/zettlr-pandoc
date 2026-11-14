@@ -24,7 +24,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class RenameTag extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "rename-tag");
+    super(app);
   }
 
   /**

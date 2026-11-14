@@ -18,8 +18,8 @@
  *                  - The constructor follows the LinkProvider pattern
  *                    (../links/index.ts): it receives its LogProvider, FSAL,
  *                    and document-authority dependencies by injection and
- *                    registers exactly one ipcMain.handle('reference-provider',
- *                    …) handler serving exactly one command:
+ *                    registers the 'reference-provider' channel through
+ *                    handleInvokeChannel, with exactly one command:
  *
  *                      'get-snapshot' -> index.getSnapshot()
  *
@@ -87,10 +87,10 @@ import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import { editedText, previewOf } from "@common/util/workspace-edit-preview";
 import type { WorkspaceReferenceEdit, WorkspaceTextEdit } from "@dts/common/references";
 import type LogProvider from "@providers/log";
-import { ipcMain } from "electron";
 import { readFile } from "fs/promises";
+import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import type { FSALEventPayload } from "../fsal";
-import ProviderContract, { type IPCMessage } from "../provider-contract";
+import ProviderContract from "../provider-contract";
 import { extractPandocCitations, knownPandocCitations } from "./pandoc-citations";
 import { ReferenceIndex, type WorkspaceReferenceState } from "./reference-index";
 import {
@@ -129,8 +129,6 @@ export type ReferenceProviderIPCContract = {
     response: WorkspaceReferenceState;
   };
 };
-
-export type ReferenceProviderIPCAPI = IPCMessage<ReferenceProviderIPCContract>;
 
 /**
  * The slice of the document authority (the documents provider) this provider
@@ -232,17 +230,10 @@ export default class ReferenceProvider extends ProviderContract {
     this._index = new ReferenceIndex();
     this._pendingReports = new Map();
 
-    ipcMain.handle("reference-provider", (_event, message: ReferenceProviderIPCAPI) => {
-      const { command } = message;
-
-      if (command === "get-snapshot") {
-        return this._index.getSnapshot();
-      }
-
-      // Fail loud (issue #5, B20): a command outside the delegation map is
-      // a caller bug, never a silently-undefined response. The renderer
-      // report channel of the pre-#53 architecture lands here by design.
-      throw new Error(`reference-provider: unknown command ${String(command)}`);
+    // A command outside the map throws (issue #5, B20): the renderer report
+    // channel of the pre-#53 architecture lands there by design.
+    handleInvokeChannel("reference-provider", {
+      "get-snapshot": () => this._index.getSnapshot(),
     });
   }
 

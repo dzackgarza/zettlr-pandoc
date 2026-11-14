@@ -17,7 +17,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class DirRemoveProject extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "dir-remove-project");
+    super(app);
   }
 
   /**

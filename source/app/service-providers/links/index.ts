@@ -29,9 +29,9 @@ import {
 import { splitWikilinkTarget } from "@common/util/wikilink-target";
 import type { WorkspaceEditProposal } from "@dts/common/workspace-edit";
 import type LogProvider from "@providers/log";
-import { ipcMain } from "electron";
 import { existsSync } from "fs";
 import path from "path";
+import { handleInvokeChannel } from "source/app/util/handle-ipc-channel";
 import { proposalOf, type WorkspaceEditDocuments } from "source/app/util/workspace-edit-proposal";
 import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import type { MDFileDescriptor } from "source/types/common/fsal";
@@ -82,29 +82,16 @@ export default class LinkProvider extends ProviderContract {
     this._index = new WikilinkIndex([]);
     this._indexEntries = [];
 
-    ipcMain.handle("link-provider", async (event, message) => {
-      const { command } = message;
-
-      if (command === "get-inbound-links") {
-        // Return whatever links to the given file
-        const filePath: string = message.payload.filePath;
-        return {
-          inbound: this.retrieveInbound(filePath),
-          outbound: this.retrieveOutbound(filePath),
-        };
-      } else if (command === "get-link-database") {
-        return this.linkDatabase();
-      } else if (command === "get-link-targets") {
-        return this.linkTargets();
-      } else if (command === "resolve-wikilinks") {
-        const { sourcePath, targets } = message.payload as {
-          sourcePath: string;
-          targets: string[];
-        };
-        return Object.fromEntries(
-          targets.map((target) => [target, this.resolve(target, sourcePath)]),
-        );
-      }
+    handleInvokeChannel("link-provider", {
+      // Whatever links to the given file, and whatever it links to
+      "get-inbound-links": (_event, { payload: { filePath } }) => ({
+        inbound: this.retrieveInbound(filePath),
+        outbound: this.retrieveOutbound(filePath),
+      }),
+      "get-link-database": () => this.linkDatabase(),
+      "get-link-targets": () => this.linkTargets(),
+      "resolve-wikilinks": (_event, { payload: { sourcePath, targets } }) =>
+        Object.fromEntries(targets.map((target) => [target, this.resolve(target, sourcePath)])),
     });
   }
 

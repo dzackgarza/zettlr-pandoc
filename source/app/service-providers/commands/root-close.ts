@@ -17,7 +17,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class RootClose extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "root-close");
+    super(app);
   }
 
   /**

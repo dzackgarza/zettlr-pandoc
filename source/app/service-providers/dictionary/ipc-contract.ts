@@ -65,6 +65,6 @@ export type DictionaryProviderIPCContract = {
   };
   "open-prose-completion-file": {
     request: { payload?: undefined };
-    response: string;
+    response: void;
   };
 };

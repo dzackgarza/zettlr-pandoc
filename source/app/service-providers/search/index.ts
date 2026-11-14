@@ -26,8 +26,8 @@ import { editedText, type ProposedDocument, previewOf } from "@common/util/works
 import type { UnsavedDocument } from "@dts/common/documents";
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import type { WorkspaceEditDocumentPreview } from "@dts/common/workspace-edit";
-import { ipcMain } from "electron";
 import path from "path";
+import { handleInvokeChannel } from "source/app/util/handle-ipc-channel";
 import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
 import isErrnoException from "source/common/util/is-errno-exception";
 import { innermostRoot } from "source/common/util/renderer-path-polyfill";
@@ -237,33 +237,22 @@ export class SearchProvider implements ProviderContract {
     this.lastPattern = undefined;
     this.pendingUndo = undefined;
 
-    ipcMain.handle("search-provider", async (_event, message: SearchProviderIPCAPI) => {
-      const { command, payload } = message;
-
-      if (command === "start-full-text-search") {
-        return await this.startSearch(payload.query);
-      } else if (command === "cancel-search") {
+    handleInvokeChannel("search-provider", {
+      "start-full-text-search": async (_event, { payload }) =>
+        await this.startSearch(payload.query),
+      "cancel-search": () => {
         this.cancelSearch();
         this.searchGeneration++;
         broadcastIPCMessage("search-provider", {
           type: "search-end",
           generation: this.searchGeneration,
         } satisfies SearchProviderBroadcast);
-      } else if (command === "preview-replace") {
-        return await this.previewReplace(
-          payload.targets,
-          payload.replacement,
-          payload.preserveCase,
-        );
-      } else if (command === "replace-in-files") {
-        return await this.replaceInFiles(
-          payload.targets,
-          payload.replacement,
-          payload.preserveCase,
-        );
-      } else if (command === "undo-last-replace") {
-        return await this.undoLastReplace();
-      }
+      },
+      "preview-replace": async (_event, { payload }) =>
+        await this.previewReplace(payload.targets, payload.replacement, payload.preserveCase),
+      "replace-in-files": async (_event, { payload }) =>
+        await this.replaceInFiles(payload.targets, payload.replacement, payload.preserveCase),
+      "undo-last-replace": async () => await this.undoLastReplace(),
     });
   }
 

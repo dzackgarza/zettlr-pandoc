@@ -21,7 +21,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class DirNew extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "dir-new");
+    super(app);
   }
 
   /**

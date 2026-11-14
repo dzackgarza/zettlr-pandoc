@@ -15,11 +15,12 @@
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import { hasErrnoCode } from "@common/util/is-errno-exception";
 import type LogProvider from "@providers/log";
-import { app, ipcMain } from "electron";
+import { app } from "electron";
 import EventEmitter from "events";
 import { promises as fs } from "fs";
 import path from "path";
 import { refusedAs } from "../../util/authored-file-error";
+import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import { writeTextFile } from "../fsal/util/write-text-file";
 import ProviderContract from "../provider-contract";
 
@@ -33,16 +34,10 @@ export default class CssProvider extends ProviderContract {
 
     this._emitter = new EventEmitter();
 
-    ipcMain.handle("css-provider", async (event, payload) => {
-      const { command } = payload;
-      if (command === "get-custom-css-path") {
-        return this._filePath;
-      } else if (command === "get-custom-css") {
-        return await this.get();
-      } else if (command === "set-custom-css") {
-        const css: string = payload.css;
-        return await this.set(css);
-      }
+    handleInvokeChannel("css-provider", {
+      "get-custom-css-path": () => this._filePath,
+      "get-custom-css": async () => await this.get(),
+      "set-custom-css": async (_event, { css }) => await this.set(css),
     });
   }
 

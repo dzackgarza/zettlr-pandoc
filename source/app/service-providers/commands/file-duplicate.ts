@@ -22,7 +22,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class FileDuplicate extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "file-duplicate");
+    super(app);
   }
 
   /**

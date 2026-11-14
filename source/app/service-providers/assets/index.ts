@@ -26,11 +26,12 @@ import type { QuickTexCatalogue } from "@dts/common/quicktex";
 import type { SnippetCatalogue, SnippetFileDiagnostic, UserSnippet } from "@dts/common/snippets";
 import { exportProfiles } from "@providers/commands/exporter";
 import { FSWatcher } from "chokidar";
-import { app, ipcMain } from "electron";
+import { app } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
 import YAML from "yaml";
 import { nameTaken, refusedAs } from "../../util/authored-file-error";
+import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import { loadPhraseDictionaries } from "../../util/load-phrase-dictionaries";
 import { loadQuickTex } from "../../util/load-quicktex";
 import { openPath } from "../../util/open-path";
@@ -38,7 +39,7 @@ import type ConfigProvider from "../config";
 import { isTaken } from "../fsal/util/fs";
 import { createTextFile, writeTextFile } from "../fsal/util/write-text-file";
 import type LogProvider from "../log";
-import ProviderContract, { type IPCMessage } from "../provider-contract";
+import ProviderContract from "../provider-contract";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -230,8 +231,6 @@ export type AssetsProviderIPCContract = {
     response: void;
   };
 };
-
-export type AssetsProviderIPCAPI = IPCMessage<AssetsProviderIPCContract>;
 
 /** An `assets-provider` message to the windows: which asset changed. */
 export type AssetsProviderBroadcast =
@@ -427,65 +426,56 @@ export default class AssetsProvider extends ProviderContract {
       }
     });
 
-    ipcMain.handle("assets-provider", async (event, message: AssetsProviderIPCAPI) => {
-      const { command, payload } = message;
-      // NOTE: Any *renderer* who requests a defaults file will always receive
-      // the verbatim file contents, not a parsed object. Renderers who need to
-      // work with the file contents programmatically should thus make use of
-      // the bundled YAML module to parse and stringify the files accordingly.
-      if (command === "get-filter") {
-        return await this.getFilter(payload.filename);
-      } else if (command === "set-filter") {
-        return await this.setFilter(payload.filename, payload.contents);
-      } else if (command === "create-filter") {
-        return await this.createFilter(payload.filename);
-      } else if (command === "rename-filter") {
-        return await this.renameFilter(payload.oldName, payload.newName);
-      } else if (command === "remove-filter") {
-        return await this.removeFilter(payload.filename);
-      } else if (command === "list-filter") {
-        return await this.listFilters();
-      } else if (command === "list-protected-filter") {
-        return this.listProtectedFilters();
-      } else if (command === "open-filter-directory") {
+    // NOTE: Any *renderer* who requests a defaults file will always receive
+    // the verbatim file contents, not a parsed object. Renderers who need to
+    // work with the file contents programmatically should thus make use of
+    // the bundled YAML module to parse and stringify the files accordingly.
+    handleInvokeChannel("assets-provider", {
+      "get-filter": async (_event, { payload }) => await this.getFilter(payload.filename),
+      "set-filter": async (_event, { payload }) =>
+        await this.setFilter(payload.filename, payload.contents),
+      "create-filter": async (_event, { payload }) => await this.createFilter(payload.filename),
+      "rename-filter": async (_event, { payload }) =>
+        await this.renameFilter(payload.oldName, payload.newName),
+      "remove-filter": async (_event, { payload }) => await this.removeFilter(payload.filename),
+      "list-filter": async () => await this.listFilters(),
+      "list-protected-filter": () => this.listProtectedFilters(),
+      "open-filter-directory": async () => {
         this._logger.info(`[Assets Provider] Opening path ${this._filterPath}`);
-        return await openPath(this._filterPath);
-      } else if (command === "get-defaults-file") {
-        return await this.getDefaultsFileContents(payload.filename);
-      } else if (command === "set-defaults-file") {
-        return await this.setDefaultsFile(payload.filename, payload.contents, true);
-      } else if (command === "create-defaults-file") {
-        return await this.createDefaultsFile(payload.filename, payload.contents);
-      } else if (command === "rename-defaults-file") {
-        return await this.renameDefaultsFile(payload.oldName, payload.newName);
-      } else if (command === "remove-defaults-file") {
-        return await this.removeDefaultsFile(payload.filename);
-      } else if (command === "list-defaults") {
-        return await this.listDefaults();
-      } else if (command === "list-export-profiles") {
-        return await this.listExportProfiles();
-      } else if (command === "list-available-filters") {
-        return await this.listAvailableFilters();
-      } else if (command === "open-defaults-directory") {
+        await openPath(this._filterPath);
+      },
+      "get-defaults-file": async (_event, { payload }) =>
+        await this.getDefaultsFileContents(payload.filename),
+      "set-defaults-file": async (_event, { payload }) =>
+        await this.setDefaultsFile(payload.filename, payload.contents, true),
+      "create-defaults-file": async (_event, { payload }) =>
+        await this.createDefaultsFile(payload.filename, payload.contents),
+      "rename-defaults-file": async (_event, { payload }) =>
+        await this.renameDefaultsFile(payload.oldName, payload.newName),
+      "remove-defaults-file": async (_event, { payload }) =>
+        await this.removeDefaultsFile(payload.filename),
+      "list-defaults": async () => await this.listDefaults(),
+      "list-export-profiles": async () => await this.listExportProfiles(),
+      "list-available-filters": async () => await this.listAvailableFilters(),
+      "open-defaults-directory": async () => {
         this._logger.info(`[AssetsProvider] Opening path ${this._defaultsPath}`);
-        return await openPath(this._defaultsPath);
-      } else if (command === "get-snippets-source") {
-        return await this.getSnippetsSource();
-      } else if (command === "set-snippets-source") {
-        return await this.setSnippetsSource(payload.contents);
-      } else if (command === "list-snippets") {
-        return await this.listSnippets();
-      } else if (command === "get-quicktex") {
-        return this._quickTexCatalogue;
-      } else if (command === "open-snippets-file") {
+        await openPath(this._defaultsPath);
+      },
+      "get-snippets-source": async () => await this.getSnippetsSource(),
+      "set-snippets-source": async (_event, { payload }) =>
+        await this.setSnippetsSource(payload.contents),
+      "list-snippets": async () => await this.listSnippets(),
+      "get-quicktex": () => this._quickTexCatalogue,
+      "open-snippets-file": async () => {
         this._logger.info(`[AssetsProvider] Opening path ${this._snippetsFile}`);
-        return await openPath(this._snippetsFile);
-      } else if (command === "list-phrase-completions") {
-        return await loadPhraseDictionaries(this._phraseCompletionsPath);
-      } else if (command === "open-phrase-completions-directory") {
+        await openPath(this._snippetsFile);
+      },
+      "list-phrase-completions": async () =>
+        await loadPhraseDictionaries(this._phraseCompletionsPath),
+      "open-phrase-completions-directory": async () => {
         this._logger.info(`[AssetsProvider] Opening path ${this._phraseCompletionsPath}`);
-        return await openPath(this._phraseCompletionsPath);
-      }
+        await openPath(this._phraseCompletionsPath);
+      },
     });
   }
 

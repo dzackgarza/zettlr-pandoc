@@ -170,10 +170,10 @@ export interface IpcBareChannelContracts {
 }
 
 /** The request half of one contract entry. */
-type IpcRequestOf<E> = E extends { request: infer R } ? R : never;
+export type IpcRequestOf<E> = E extends { request: infer R } ? R : never;
 
 /** The response half of one contract entry. */
-type IpcResponseOf<E> = E extends { response: infer R } ? R : never;
+export type IpcResponseOf<E> = E extends { response: infer R } ? R : never;
 
 /**
  * The invoke signature derived from the channel table: a literal command
