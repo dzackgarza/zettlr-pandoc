@@ -3757,12 +3757,25 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       // wrote a 500 into the dead socket.
       await new Promise((resolve) => setTimeout(resolve, DEADLINE_MS + 100));
       await lifecycleLog.shutdown();
+      const lines = readLogAfter(logBoundary).split("\n");
       assert.equal(
-        readLogAfter(logBoundary)
-          .split("\n")
-          .some((line) => line.includes("[Error]")),
+        lines.some((line) => line.includes("[Error]")),
         false,
         "An abandoned request must not emit an error record into the production logfile.",
+      );
+      // The operator sees the request that lost its body and the cause that
+      // the transport gave: Node reports a client that hangs up mid-body as
+      // the stream error "aborted" (ECONNRESET).
+      const abandoned = lines.filter(
+        (line) =>
+          line.includes("[Warning]") &&
+          line.includes("POST /v1/documents/doc-lifecycle/proposals") &&
+          line.includes("ECONNRESET"),
+      );
+      assert.equal(
+        abandoned.length,
+        1,
+        `One warning names the abandoned request and its cause. Log:\n${lines.join("\n")}`,
       );
 
       // And the server is still answering.
