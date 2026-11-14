@@ -10,7 +10,7 @@ export const EMPTY_QUICKTEX: QuickTexCatalogue = {
   math: {},
   excludeChars: ["{", "(", "["],
   sourceFile: "",
-  diagnostics: [],
+  problem: undefined,
 };
 
 export const quickTexField = StateField.define<QuickTexCatalogue>({

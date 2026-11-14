@@ -60,6 +60,7 @@
 
 import { trans } from "@common/i18n-renderer";
 import { followCitationProblems } from "@common/util/citation-problems";
+import { followQuickTexProblem } from "@common/util/quicktex-problem";
 import { reportError } from "@common/util/error-reporting";
 import { resolveLangCode } from "@common/util/map-lang-code";
 import SelectableList from "@common/vue/form/elements/SelectableList.vue";
@@ -68,6 +69,7 @@ import FormBuilder from "@common/vue/form/FormBuilder.vue";
 import ListDetailSplit from "@common/vue/window/ListDetailSplit.vue";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import type { CitationResourceProblem } from "@dts/common/citeproc";
+import type { QuickTexProblem } from "@dts/common/quicktex";
 import { type PreferenceNavigationTarget, PreferencesGroups } from "@dts/common/preferences";
 import { useConfigStore } from "source/pinia";
 import { computed, nextTick, onBeforeMount, onMounted, ref, watch } from "vue";
@@ -140,6 +142,7 @@ const showKeyboardShortcutsEditor = computed(
 
 // The files of the citation settings that the citation provider could not load
 const citationProblems = ref<CitationResourceProblem[]>([]);
+const quickTexProblem = ref<QuickTexProblem | undefined>(undefined);
 
 // For each setting whose last value from its field the main process refused,
 // the reason. The setting keeps its old value until the field gives one that
@@ -147,7 +150,12 @@ const citationProblems = ref<CitationResourceProblem[]>([]);
 const refusals = ref<Record<string, string>>({});
 
 const fieldsets = computed(() => {
-  return getPreferenceFieldsets(configStore.config, appLangOptions.value, citationProblems.value);
+  return getPreferenceFieldsets(
+    configStore.config,
+    appLangOptions.value,
+    citationProblems.value,
+    quickTexProblem.value,
+  );
 });
 
 const filteredFieldsets = computed(() => {
@@ -269,6 +277,9 @@ function preferenceTargetFromLocation(): PreferenceNavigationTarget | undefined 
 onBeforeMount(() => {
   followCitationProblems((problems) => {
     citationProblems.value = problems;
+  });
+  followQuickTexProblem((problem) => {
+    quickTexProblem.value = problem;
   });
   ipcRenderer.on("dictionary-provider", (event, message) => {
     const { command } = message;

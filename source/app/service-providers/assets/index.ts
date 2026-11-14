@@ -22,7 +22,7 @@ import { SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
 import { parseReaderWriter } from "@common/pandoc-util/parse-reader-writer";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import type { PhraseDictionaryEntry } from "@common/util/phrase-dictionary";
-import type { QuickTexCatalogue } from "@dts/common/quicktex";
+import type { QuickTexCatalogue, QuickTexProblem } from "@dts/common/quicktex";
 import type { SnippetCatalogue, SnippetFileDiagnostic, UserSnippet } from "@dts/common/snippets";
 import { exportProfiles } from "@providers/commands/exporter";
 import { FSWatcher } from "chokidar";
@@ -33,7 +33,7 @@ import YAML from "yaml";
 import { nameTaken, refusedAs } from "../../util/authored-file-error";
 import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import { loadPhraseDictionaries } from "../../util/load-phrase-dictionaries";
-import { loadQuickTex } from "../../util/load-quicktex";
+import { loadQuickTex, quickTexPluginScript } from "../../util/load-quicktex";
 import { openPath } from "../../util/open-path";
 import type ConfigProvider from "../config";
 import { isTaken } from "../fsal/util/fs";
@@ -314,7 +314,7 @@ export default class AssetsProvider extends ProviderContract {
     math: {},
     excludeChars: ["{", "(", "["],
     sourceFile: "",
-    diagnostics: [],
+    problem: undefined,
   };
   /** Watches the configured snippet and QuickTeX files so external edits update open editors. */
   private readonly _snippetsWatcher: FSWatcher;
@@ -581,36 +581,77 @@ export default class AssetsProvider extends ProviderContract {
   }
 
   private async configureQuickTexFile(): Promise<void> {
+    const { quickTexFile, quickTexPluginDirectory } = this._config.get().editor;
     const nextFile = this.configuredQuickTexFile();
-    const pluginDirectory = this._config.get().editor.quickTexPluginDirectory.trim();
-    const resolvedPluginDirectory = pluginDirectory === "" ? "" : path.resolve(pluginDirectory);
     if (this._quickTexFile !== "" && nextFile !== this._quickTexFile) {
       await this._snippetsWatcher.unwatch(this._quickTexFile);
     }
     this._quickTexFile = nextFile;
+    this._quickTexCatalogue = await this.readQuickTex(quickTexFile, quickTexPluginDirectory);
+    broadcastIpcMessage("assets-provider", "quicktex-updated");
+  }
+
+  /**
+   * Reads the QuickTeX configuration that the two settings name. A
+   * configuration that the app cannot use gives no expansions and the
+   * problem, which each window shows at its setting. No configuration file
+   * is no configuration, and no problem.
+   *
+   * @param  fileSetting    The value of `editor.quickTexFile`
+   * @param  pluginSetting  The value of `editor.quickTexPluginDirectory`
+   */
+  private async readQuickTex(
+    fileSetting: string,
+    pluginSetting: string,
+  ): Promise<QuickTexCatalogue> {
+    const file = this._quickTexFile;
+    const withoutExpansions = (problem: QuickTexProblem | undefined): QuickTexCatalogue => ({
+      prose: {},
+      math: {},
+      excludeChars: ["{", "(", "["],
+      sourceFile: file,
+      problem,
+    });
+    if (file === "") {
+      return withoutExpansions(undefined);
+    }
+    const unavailable = (
+      setting: QuickTexProblem["setting"],
+      settingValue: string,
+      error: unknown,
+    ): QuickTexCatalogue => {
+      const cause = error instanceof Error ? error.message : String(error);
+      this._logger.error(`[Assets Provider] QuickTeX is unavailable: ${cause}`, error);
+      return withoutExpansions({ setting, path: settingValue, cause });
+    };
+
     try {
-      if (this._quickTexFile !== "") {
-        await fs.access(this._quickTexFile);
-        this._snippetsWatcher.add(this._quickTexFile);
-      }
-      this._quickTexCatalogue =
-        this._quickTexFile === "" || resolvedPluginDirectory === ""
-          ? { prose: {}, math: {}, excludeChars: ["{", "(", "["], sourceFile: "", diagnostics: [] }
-          : await loadQuickTex(this._quickTexFile, resolvedPluginDirectory);
-      broadcastIpcMessage("assets-provider", "quicktex-updated");
+      await fs.access(file);
     } catch (error) {
-      this._quickTexCatalogue = {
-        prose: {},
-        math: {},
-        excludeChars: ["{", "(", "["],
-        sourceFile: this._quickTexFile,
-        diagnostics: [error instanceof Error ? error.message : String(error)],
-      };
-      broadcastIpcMessage("assets-provider", "quicktex-updated");
-      this._logger.error(
-        `[Assets Provider] QuickTeX is unavailable: ${error instanceof Error ? error.message : String(error)}`,
-        error,
+      return unavailable("editor.quickTexFile", fileSetting, error);
+    }
+    this._snippetsWatcher.add(file);
+
+    if (pluginSetting.trim() === "") {
+      return unavailable(
+        "editor.quickTexPluginDirectory",
+        pluginSetting,
+        new Error(
+          `The configuration ${file} needs the QuickTeX plugin, and no setting names the directory of the plugin.`,
+        ),
       );
+    }
+    const pluginDirectory = path.resolve(pluginSetting.trim());
+    try {
+      await fs.access(quickTexPluginScript(pluginDirectory));
+    } catch (error) {
+      return unavailable("editor.quickTexPluginDirectory", pluginSetting, error);
+    }
+
+    try {
+      return await loadQuickTex(file, pluginDirectory);
+    } catch (error) {
+      return unavailable("editor.quickTexFile", fileSetting, error);
     }
   }
 

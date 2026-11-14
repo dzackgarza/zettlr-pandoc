@@ -90,7 +90,7 @@ export const useWindowStateStore = defineStore("window-state", () => {
     math: {},
     excludeChars: ["{", "(", "["],
     sourceFile: "",
-    diagnostics: [],
+    problem: undefined,
   });
   const phraseCompletions = ref<PhraseDictionaryEntry[]>([]);
   const writingTargets = ref<WritingTarget[]>([]);

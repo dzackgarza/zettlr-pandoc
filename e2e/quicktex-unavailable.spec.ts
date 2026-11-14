@@ -12,14 +12,16 @@
  *                  expansions. The main window names the file and the cause
  *                  and opens the setting, and the Preferences window marks
  *                  the field. A setting that names no configuration ends the
- *                  mark.
+ *                  mark. A configuration that is there needs the plugin: the
+ *                  window marks the plugin directory that has no plugin, and
+ *                  the setting that names no directory.
  *
  * END HEADER
  */
 
 import { strict as assert } from "node:assert";
 import { type ChildProcess } from "node:child_process";
-import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Browser, type Page } from "playwright";
@@ -37,6 +39,7 @@ import {
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-quicktex-unavailable-e2e-latest");
 const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
 const CONFIGURATION_FIELD = '[id="field-input-editor.quickTexFile"]';
+const PLUGIN_FIELD_ID = "field-input-editor.quickTexPluginDirectory";
 
 /** The message of the failure that an access of this absent file gives. */
 async function accessFailure(file: string): Promise<string> {
@@ -182,5 +185,39 @@ describe("assembled app: a QuickTeX configuration that cannot be loaded", functi
       "the field has no mark without a configuration",
     );
     screenshots.set("quicktex-no-configuration-preferences.png", await preferences.screenshot());
+  });
+
+  it("marks the plugin directory when the configuration is there and the plugin is not", async function () {
+    const preferences = requireInitialized(
+      preferencesPage(requireInitialized(browser, "The app must be attached")),
+      "The Preferences window must be open",
+    );
+    const configuration = path.join(resources, "quicktex_dict.vim");
+    await writeFile(configuration, "let g:quicktex_prose = {}\n");
+    const cause = await accessFailure(path.join(resources, "quicktex", "plugin", "quicktex.vim"));
+    const mark = preferences.locator(".file-problem");
+    const markText = async (): Promise<string> =>
+      (await mark.count()) === 1 ? await mark.innerText() : "";
+
+    await preferences.locator(CONFIGURATION_FIELD).fill(configuration);
+
+    assert.ok(
+      await until(async () => (await markText()).includes(cause), 30_000),
+      `the field names the absent plugin script: ${await markText()}`,
+    );
+    assert.deepEqual(await markedFields(preferences), [PLUGIN_FIELD_ID]);
+    screenshots.set("quicktex-no-plugin-preferences.png", await preferences.screenshot());
+
+    await preferences.locator(`[id="${PLUGIN_FIELD_ID}"]`).fill("");
+
+    assert.ok(
+      await until(
+        async () => (await markText()).includes("no setting names the directory"),
+        30_000,
+      ),
+      `the field says that the configuration needs a plugin directory: ${await markText()}`,
+    );
+    assert.deepEqual(await markedFields(preferences), [PLUGIN_FIELD_ID]);
+    screenshots.set("quicktex-no-plugin-directory-preferences.png", await preferences.screenshot());
   });
 });

@@ -295,6 +295,7 @@ import {
   SIDEBAR_VIEWS,
 } from "./sidebar/sidebar-views";
 import { showCitationProblems } from "./util/citation-problem-toasts";
+import { showQuickTexProblem } from "./util/quicktex-problem-toast";
 import {
   type DesktopCommandContext,
   resolveDirectoryHere,
@@ -989,6 +990,7 @@ ipcRenderer.on("jump-to-line", (event, target) => {
 
 onMounted(() => {
   showCitationProblems();
+  showQuickTexProblem();
 
   // Saves that main initiated — the close-and-save prompts — have no renderer
   // promise to carry their result, so the provider broadcasts refusals here.
