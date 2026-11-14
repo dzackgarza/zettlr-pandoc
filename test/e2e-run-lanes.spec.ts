@@ -12,7 +12,9 @@
  *                  Agent API port, so two such files in two lanes each bind
  *                  it. A file that leaves a process holds no lane, and the
  *                  process does not outlive the file. A file and the
- *                  display of a lane do not outlive their runner. No
+ *                  display of a lane do not outlive their runner. The
+ *                  files of a run have a session bus of the run, which
+ *                  starts no service. No
  *                  process of a run outlives the just process that
  *                  started it. A run can take one shard of its files; the
  *                  shards of a run hold each file one time.
@@ -106,6 +108,35 @@ const path = require("node:path");
 it("accepts connections and does not end", function (done) {
   this.timeout(0);
   net.createServer().listen(path.join(process.env.RUN_LANES_PROOF_DIRECTORY, "file.sock"));
+});
+`;
+
+// A spec file that asks its session bus for the services that the bus can
+// start. The bus of the environment of the run is in
+// RUN_LANES_PROOF_OUTER_BUS.
+const SESSION_BUS_SPEC_SOURCE = `
+const assert = require("node:assert").strict;
+const { execFileSync } = require("node:child_process");
+
+it("has a session bus of the run, and the bus starts no service", function () {
+  assert.notEqual(
+    process.env.DBUS_SESSION_BUS_ADDRESS,
+    process.env.RUN_LANES_PROOF_OUTER_BUS,
+    "the bus of the file is not the bus of the environment of the run",
+  );
+  const reply = execFileSync(
+    "dbus-send",
+    [
+      "--session",
+      "--print-reply",
+      "--dest=org.freedesktop.DBus",
+      "/org/freedesktop/DBus",
+      "org.freedesktop.DBus.ListActivatableNames",
+    ],
+    { encoding: "utf8" },
+  );
+  const names = [...reply.matchAll(/string "([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(names, ["org.freedesktop.DBus"], "the bus starts no service but itself");
 });
 `;
 
@@ -253,6 +284,30 @@ describe("E2E lanes runner", function () {
       run.status,
       0,
       `each of two files of one run binds 127.0.0.1:27412: ${run.stdout}${run.stderr}`,
+    );
+  });
+
+  it("gives the files of a run a session bus without services", async function () {
+    const file = path.join(directory, "asks-the-session-bus.cjs");
+    await writeFile(file, SESSION_BUS_SPEC_SOURCE, "utf8");
+    const outerBus = `unix:path=${path.join(directory, "bus-of-the-environment")}`;
+    const runner = [process.execPath, "--import", "tsx", RUNNER, "--file-limit-seconds", "60"];
+
+    const run = spawnSync("just", ["_e2e-run", ...runner, file], {
+      cwd: REPOSITORY,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DBUS_SESSION_BUS_ADDRESS: outerBus,
+        RUN_LANES_PROOF_OUTER_BUS: outerBus,
+      },
+      timeout: 60_000,
+    });
+
+    assert.equal(
+      run.status,
+      0,
+      `the file gets an answer from a bus of the run (${String(run.error)}): ${run.stdout}${run.stderr}`,
     );
   });
 
