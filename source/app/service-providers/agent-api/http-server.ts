@@ -278,8 +278,9 @@ function requestTargetUrl(requestUrl: string): URL {
  * into a dead socket.
  */
 class RequestAbandonedError extends Error {
-  constructor() {
-    super("Client disconnected before the request body completed");
+  /** @param cause What the transport reported: a stream error or a close. */
+  constructor(cause: string) {
+    super(`The request body did not arrive: ${cause}`);
   }
 }
 
@@ -800,12 +801,10 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
       if (err instanceof RequestAbandonedError) {
-        // The client hung up mid-body. There is no one left to answer and
-        // nothing failed on this side; an error logged here would be an
-        // invented fault.
-        this._log.verbose(
-          `[AgentHTTPProvider] Client disconnected before finishing ${method} ${pathname}; dropped the body read`,
-        );
+        // The connection ended mid-body. There is no one left to answer, and
+        // nothing failed on this side, but a caller (the tunnel too) lost a
+        // request: the operator sees which one and why.
+        this._log.warning(`[AgentHTTPProvider] ${method} ${pathname}: ${err.message}`);
         return;
       }
       // Log the stack and which operation failed; `${err}` alone drops both,
@@ -2879,9 +2878,10 @@ export default class AgentHTTPProvider extends ProviderContract {
    * Reads the request body, bounded in size and time. The promise settles
    * exactly once: with the body on a completed read, RequestTooLargeError
    * past the size cap, RequestBodyTimeoutError when the client stalls past
-   * the deadline, or RequestAbandonedError when the connection dies first —
-   * any 'error' on an incoming request stream is the transport failing
-   * mid-body, which leaves nobody to answer. Every path clears the timer and
+   * the deadline, or RequestAbandonedError when the connection ends first.
+   * That error carries what the transport reported: the stream error (Node
+   * gives "aborted", ECONNRESET, for a client that hangs up) or a close
+   * without one. Nobody is left to answer. Every path clears the timer and
    * detaches all four listeners, so a request that never completes cannot
    * hold its buffers or closure alive beyond the deadline.
    */
@@ -2895,7 +2895,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         req.removeListener("data", onData);
         req.removeListener("end", onEnd);
         req.removeListener("error", onError);
-        req.removeListener("close", onError);
+        req.removeListener("close", onClose);
         outcome();
       };
       const onData = (chunk: Buffer): void => {
@@ -2913,8 +2913,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       const onEnd = (): void => {
         settle(() => resolve(Buffer.concat(chunks).toString("utf8")));
       };
-      const onError = (): void => {
-        settle(() => reject(new RequestAbandonedError()));
+      const onError = (err: NodeJS.ErrnoException): void => {
+        const code = err.code === undefined ? "" : ` (${err.code})`;
+        settle(() => reject(new RequestAbandonedError(`${err.message}${code}`)));
+      };
+      const onClose = (): void => {
+        settle(() =>
+          reject(new RequestAbandonedError("the connection closed before the body ended")),
+        );
       };
       deadline = setTimeout(() => {
         // No req.destroy() here: the 408 the dispatcher answers with must
@@ -2924,7 +2930,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       req.on("data", onData);
       req.on("end", onEnd);
       req.on("error", onError);
-      req.on("close", onError);
+      req.on("close", onClose);
     });
   }
 
