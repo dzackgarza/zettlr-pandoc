@@ -105,7 +105,6 @@ export class DTLeaf {
    */
   public split(direction: "horizontal" | "vertical", insertion: "before" | "after"): DTLeaf {
     if (this._parent instanceof DocumentTree) {
-      console.log("Replacing this leaf with a new branch as the tree node");
       const newBranch = new DTBranch(this._parent, direction);
       const newLeaf = new DTLeaf(newBranch);
 

@@ -130,7 +130,6 @@ export async function showOnboardingWindow(
     });
 
     onboardingWindow.on("closed", () => {
-      console.log("CLOSED EVENT EMITTED");
       // NOTE: We must "destroy" the window, because otherwise 'closable: false'
       // will prevent programmatic closing.
       onboardingWindow.destroy();

@@ -121,7 +121,7 @@ watch(lastActiveFile, () => {
 });
 
 watch(roots, () => {
-  recomputeRelatedFiles().catch((err) => console.log("Could not recompute related files:", err));
+  recomputeRelatedFiles().catch((err) => reportError("Could not recompute related files:", err));
 });
 
 async function recomputeRelatedFiles(): Promise<void> {

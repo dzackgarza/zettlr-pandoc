@@ -42,7 +42,6 @@ import { parseChildren } from "./parse-children";
  *                                      returned instead.
  */
 export function parseTableNode(node: SyntaxNode, markdown: string): Table | TextNode {
-  // logLezerTree(node, { markdown, logNodes: true })
   // A few NOTEs on how the Lezer parser handles Markdown tables.
   // 1. It only supports GFM tables, i.e., pipe tables. Marijn has implemented
   //    this spec: https://github.github.com/gfm/#tables-extension-
@@ -75,8 +74,6 @@ export function parseTableNode(node: SyntaxNode, markdown: string): Table | Text
     console.warn(
       "Could not parse Table: Could not find a delimiting row. This can be caused by ambiguous table markup.",
     );
-    // logLezerTree(node)
-    // console.log(markdown.slice(node.from, node.to))
     return genericTextNode(node.from, node.to, markdown.slice(node.from, node.to));
   }
 

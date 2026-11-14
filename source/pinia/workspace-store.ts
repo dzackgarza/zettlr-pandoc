@@ -56,7 +56,6 @@ async function retrieveInitialUpdate(
   workspaceMap: Ref<Map<string, string[]>>,
   descriptorMap: Ref<Map<string, AnyDescriptor>>,
 ) {
-  let start = Date.now();
   const entries: Array<[string, string[]]> = [];
   const flatMap: string[] = [];
   for (const rootPath of rootPaths) {
@@ -64,12 +63,9 @@ async function retrieveInitialUpdate(
     entries.push([rootPath, response]);
     flatMap.push(...response);
   }
-  console.log(`Fetched all paths in ${Date.now() - start}ms`);
-  start = Date.now();
 
   // Now do one huge roundtrip to main to fetch every descriptor at once.
   const descriptors = await getDescriptorsFor(flatMap);
-  console.log(`Fetched all descriptors in ${Date.now() - start}ms`);
 
   // Now we can set the stuff immediately
   workspaceMap.value = new Map(entries);

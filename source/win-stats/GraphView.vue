@@ -539,7 +539,6 @@ async function buildGraph(): Promise<void> {
 
   const DG = new DirectedGraph();
 
-  const startTime = performance.now();
   DG.startOperation();
   // Fortunately, the fileLinkDatabase is basically just one large edgelist
   for (const [sourcePath, targets] of database) {
@@ -600,10 +599,6 @@ async function buildGraph(): Promise<void> {
   }
   // END: Component determining
 
-  const duration = performance.now() - startTime;
-  console.log(
-    `[Link Provider] Graph constructed in ${Math.round(duration)}ms. Graph contains ${DG.countVertices} nodes, ${DG.countArcs} arcs and ${DG.countComponents} components.`,
-  );
   isBuildingGraph.value = false;
   fileGraph.value = DG.graph;
   startSimulation();
