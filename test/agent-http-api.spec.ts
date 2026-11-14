@@ -220,8 +220,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   let configuredSkillsDirectory: string | null;
   let saveDialogResponse = 2;
   let peerServers: http.Server[] = [];
-  /** The sidecar files that a case made unreadable; afterEach removes them. */
-  let unreadableSidecars: string[] = [];
+  /** The sidecar files that a case wrote itself; afterEach removes them. */
+  let caseSidecars: string[] = [];
   // The configured workspace set, read live by the config seam so a test can
   // exercise the no-workspace-open profile the app ships with.
   let openWorkspaces: string[] = [];
@@ -639,10 +639,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
     peerServers = [];
     saveDialogResponse = 2;
-    for (const file of unreadableSidecars) {
+    for (const file of caseSidecars) {
       rmSync(file, { force: true });
     }
-    unreadableSidecars = [];
+    caseSidecars = [];
     await fsal?.shutdown();
     fsal = undefined;
     walk = walkWorkspace;
@@ -2481,7 +2481,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       JSON.stringify({ ...written, version: written.version + 1 }),
       "utf8",
     );
-    unreadableSidecars.push(laterSidecar);
+    caseSidecars.push(laterSidecar);
 
     // The review lives in its own file; a file of another document does not
     // decide whether it can be read.
@@ -2495,6 +2495,53 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(
       parseAs(unknown.body, "AgentErrorResponse").error.code,
       "COLLABORATION_STATE_UNREADABLE",
+    );
+  });
+
+  it("answers a lookup of an unknown review without a read of each sidecar", async function () {
+    const windowId = provider.windowKeys()[0];
+    const annotatedPath = path.join(scratch, "annotated.md");
+    const annotatedId = await openInPane(annotatedPath, "An annotated note.\n");
+    const annotated = await provider.createAnnotation(annotatedId, "owner", 0, 2, "Note.", 0);
+    assert.ok("annotationId" in annotated);
+    assert.equal(
+      await provider.closeFile(windowId, provider.leafIds(windowId)[0], annotatedPath),
+      true,
+    );
+
+    // The sidecars of 3000 closed documents, as an earlier session left them.
+    const sidecarDirectory = path.join(userData, "review-sidecars");
+    const template: { documentPath: string } = JSON.parse(
+      readFileSync(collaborationSidecarFilePath(sidecarDirectory, annotatedPath), "utf8"),
+    );
+    for (let index = 0; index < 3000; index++) {
+      const documentPath = path.join(scratch, `closed-${index}.md`);
+      const file = collaborationSidecarFilePath(sidecarDirectory, documentPath);
+      writeFileSync(file, JSON.stringify({ ...template, documentPath }), "utf8");
+      caseSidecars.push(file);
+    }
+
+    async function unknownLookupMs(): Promise<number> {
+      const started = performance.now();
+      const answer = await httpRequest("GET", `/v1/reviews/${randomUUID()}`);
+      const elapsed = performance.now() - started;
+      assert.equal(answer.status, 404, answer.body);
+      assert.equal(parseAs(answer.body, "AgentErrorResponse").error.code, "REVIEW_NOT_FOUND");
+      return elapsed;
+    }
+
+    // The first lookup of the session reads the directory. A later lookup
+    // costs the request, not the number of sidecars.
+    const first = await unknownLookupMs();
+    const later: number[] = [];
+    for (let index = 0; index < 5; index++) {
+      later.push(await unknownLookupMs());
+    }
+    later.sort((a, b) => a - b);
+    const median = later[2];
+    assert.ok(
+      median * 10 < first,
+      `A later lookup took ${median.toFixed(1)} ms; the first, which read 3000 sidecars, took ${first.toFixed(1)} ms`,
     );
   });
 
