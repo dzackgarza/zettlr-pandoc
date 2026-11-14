@@ -85,6 +85,14 @@ it("starts a process and does not stop it", function (done) {
 });
 `;
 
+// A spec file whose test does not end and has no time limit of its own.
+const ENDLESS_SPEC_SOURCE = `
+it("does not end", function (done) {
+  this.timeout(0);
+  setInterval(() => {}, 1000);
+});
+`;
+
 /** Answers whether a connection to the path is accepted, or the error code. */
 async function connectOutcome(socketPath: string): Promise<string> {
   const client = connect(socketPath);
@@ -108,9 +116,18 @@ describe("E2E lanes runner", function () {
     await rm(directory, { recursive: true, force: true });
   });
 
-  /** Runs the lanes runner on the files in the environment of an e2e run. */
-  function runLanes(files: string[], timeoutMs: number): SpawnSyncReturns<string> {
-    return spawnSync("just", ["_e2e-run", process.execPath, "--import", "tsx", RUNNER, ...files], {
+  /**
+   * Runs the lanes runner on the files in the environment of an e2e run. A
+   * file has `fileLimitSeconds`; the run itself has `timeoutMs`.
+   */
+  function runLanes(
+    files: string[],
+    fileLimitSeconds: number,
+    timeoutMs: number,
+  ): SpawnSyncReturns<string> {
+    const runner = [process.execPath, "--import", "tsx", RUNNER];
+    const limit = ["--file-limit-seconds", String(fileLimitSeconds)];
+    return spawnSync("just", ["_e2e-run", ...runner, ...limit, ...files], {
       cwd: REPOSITORY,
       encoding: "utf8",
       env: { ...process.env, RUN_LANES_PROOF_DIRECTORY: directory },
@@ -124,7 +141,7 @@ describe("E2E lanes runner", function () {
     await writeFile(first, PORT_SPEC_SOURCE, "utf8");
     await writeFile(second, PORT_SPEC_SOURCE, "utf8");
 
-    const run = runLanes([first, second], 60_000);
+    const run = runLanes([first, second], 60, 60_000);
 
     assert.equal(
       run.status,
@@ -137,7 +154,7 @@ describe("E2E lanes runner", function () {
     const file = path.join(directory, "leaves-a-process.cjs");
     await writeFile(file, LEFT_PROCESS_SPEC_SOURCE, "utf8");
 
-    const run = runLanes([file], 20_000);
+    const run = runLanes([file], 60, 20_000);
 
     assert.equal(
       run.status,
@@ -149,5 +166,19 @@ describe("E2E lanes runner", function () {
       "ECONNREFUSED",
       "the process that the file left does not run after the file",
     );
+  });
+
+  it("ends a file at its time limit and reports it as failed", async function () {
+    const file = path.join(directory, "does-not-end.cjs");
+    await writeFile(file, ENDLESS_SPEC_SOURCE, "utf8");
+
+    const run = runLanes([file], 2, 30_000);
+
+    assert.equal(
+      run.status,
+      1,
+      `the run ends and fails when a file passed its limit (${String(run.error)}): ${run.stdout}${run.stderr}`,
+    );
+    assert.match(run.stdout, /does-not-end\.cjs \(no end in 2 s\)/);
   });
 });
