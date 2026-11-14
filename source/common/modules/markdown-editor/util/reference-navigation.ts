@@ -117,21 +117,14 @@ export function captureDocumentLocation(view: EditorView, documentPath: string):
     iterator.next();
   }
 
-  let sourceGeneration = 0;
-  try {
-    sourceGeneration = getSyncedVersion(view.state);
-  } catch (err) {
-    // The state carries no collab field: this editor has no document
-    // authority, and its source generation is defined as 0.
-    sourceGeneration = 0;
-  }
-
   return {
     documentPath,
     selection: { anchor: main.anchor, head: main.head },
     scrollTop: view.scrollDOM.scrollTop,
     folds,
-    sourceGeneration,
+    // Each editor of a document has the collab field of its document
+    // authority (`hookDocumentAuthority`).
+    sourceGeneration: getSyncedVersion(view.state),
   };
 }
 

@@ -25,6 +25,7 @@
  *   deliberately NOT faked here.
  */
 
+import { collab } from "@codemirror/collab";
 import { codeFolding, foldEffect, foldedRanges } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
@@ -160,6 +161,9 @@ window.refNavProbeMount = async (documents: ProbeDocument[], scenePath: string) 
         // Fold substrate so the DocumentLocation capture scene can collapse
         // a real range (foldEffect needs the fold state field active).
         codeFolding(),
+        // The collab field that the document authority gives each editor of
+        // the application; the location capture reads its version.
+        collab({ startVersion: 0 }),
         EditorView.lineWrapping,
         editorTheme,
         defaultLight,
