@@ -14,7 +14,9 @@
  *                  (#57). The keys are keys of the X display of the run
  *                  (xdotool): a key event of the page does not run a menu
  *                  accelerator. The spec runs on the display of the run
- *                  only (AGENTS.md §13).
+ *                  only (AGENTS.md §13). A move through the history from
+ *                  another window keeps the place of the caret, as the keys
+ *                  in the editor do.
  *
  * END HEADER
  */
@@ -24,6 +26,7 @@ import type { ChildProcess } from "node:child_process";
 import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { EditorView } from "@codemirror/view";
 import type { Browser, Page } from "playwright";
 import {
   assertCleanExit,
@@ -43,6 +46,19 @@ const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-menu-navigation-auxiliary
 /** The keys of the registered commands (`command-registry.ts`) on Linux. */
 const PREVIOUS_FILE = "ctrl+alt+minus";
 const NEXT_FILE = "ctrl+shift+minus";
+
+type EditorContentElement = HTMLElement & { cmTile?: { root: { view: EditorView } } };
+
+/** The caret of the editor that the main window shows. */
+async function caret(page: Page): Promise<number> {
+  return await page.evaluate(() => {
+    const view = Array.from(document.querySelectorAll<EditorContentElement>(".cm-content")).find(
+      (content) => content.offsetParent !== null,
+    )?.cmTile?.root.view;
+    if (view === undefined) throw new Error("No CodeMirror view is shown");
+    return view.state.selection.main.head;
+  });
+}
 
 /** The Preferences window, when it is open. */
 function preferencesPage(browser: Browser): Page | undefined {
@@ -161,5 +177,41 @@ describe("assembled app: Previous file and Next file from the Preferences window
     screenshots.set("main-after-previous.png", await editorPage.screenshot());
     await pressKey(preferencesWindow, NEXT_FILE);
     await waitForActive(editorPage, second, "Next file in the Preferences window");
+  });
+
+  it("keeps the place of the caret when another window moves the history", async function () {
+    const editorPage = requireInitialized(page, "The editor page must be initialized");
+    const running = requireInitialized(browser, "The application must be running");
+    const preferences = preferencesPage(running);
+    assert.ok(preferences !== undefined, "the Preferences window stays open");
+    const preferencesWindow = await windowOfPage(preferences);
+
+    // In the editor the keys go back and forward with the place of the caret:
+    // the caret at the end of spinor.md comes back with the document.
+    await editorPage.locator(".cm-content:visible").first().click();
+    await editorPage.keyboard.press("Control+End");
+    const end = await caret(editorPage);
+    await editorPage.keyboard.press("Control+Alt+Minus");
+    await waitForActive(editorPage, first, "Previous file in the editor");
+    await editorPage.keyboard.press("Control+Shift+Minus");
+    await waitForActive(editorPage, second, "Next file in the editor");
+    await delay(500);
+    assert.equal(await caret(editorPage), end, "Next file in the editor restores the caret");
+
+    // The author moves the caret, and goes back and forward from the
+    // Preferences window. The caret comes back where the author left it.
+    await editorPage.keyboard.press("Control+Home");
+    assert.equal(await caret(editorPage), 0, "the caret is at the start of spinor.md");
+    await pressKey(preferencesWindow, PREVIOUS_FILE);
+    await waitForActive(editorPage, first, "Previous file in the Preferences window");
+    await pressKey(preferencesWindow, NEXT_FILE);
+    await waitForActive(editorPage, second, "Next file in the Preferences window");
+    await delay(500);
+    screenshots.set("main-after-window-next.png", await editorPage.screenshot());
+    assert.equal(
+      await caret(editorPage),
+      0,
+      "Next file from another window shows spinor.md with the caret where the author left it",
+    );
   });
 });
