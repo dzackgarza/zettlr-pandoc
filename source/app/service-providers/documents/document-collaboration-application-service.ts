@@ -366,6 +366,11 @@ function persistenceFailure(action: string, error: unknown): ReviewFailure {
   };
 }
 
+/** A sidecar whose document has a review, open or frozen. */
+function holdsReview(sidecar: CollaborationSidecarData): sidecar is ReviewBearingSidecar {
+  return sidecar.review !== null;
+}
+
 export class CollaborationApplicationService {
   /**
    * One lock per document, shared by every writer: the agent's mutations, the
@@ -525,7 +530,7 @@ export class CollaborationApplicationService {
   private async detachedReviewQueries(): Promise<DetachedReviewQuery[]> {
     const sidecars = await this.sidecars.list();
     return sidecars
-      .filter((sidecar): sidecar is ReviewBearingSidecar => sidecar.review !== null)
+      .filter(holdsReview)
       .filter((sidecar) => !this.deps.authority.isDocumentOpen(sidecar.documentPath))
       .map((sidecar) => ({ attached: false as const, sidecar }));
   }
@@ -539,9 +544,17 @@ export class CollaborationApplicationService {
       }
       return attached;
     }
-    return (await this.detachedReviewQueries()).find(
-      (query) => query.sidecar.review.reviewId === reviewId,
-    );
+    // The review of an open document is active, so a sidecar of an open
+    // document holds no review that a caller can ask for.
+    const sidecar = await this.sidecars.findReview(reviewId);
+    if (
+      sidecar === undefined ||
+      !holdsReview(sidecar) ||
+      this.deps.authority.isDocumentOpen(sidecar.documentPath)
+    ) {
+      return undefined;
+    }
+    return { attached: false, sidecar };
   }
 
   public async listReviewQueries(): Promise<ReviewQuery[]> {

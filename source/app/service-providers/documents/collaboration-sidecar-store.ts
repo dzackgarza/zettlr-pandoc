@@ -401,6 +401,13 @@ export class CollaborationSidecarStore {
    */
   private readonly locks = new Map<string, Mutex>();
 
+  /**
+   * The file of each review that a read or a write of this session saw. A
+   * sidecar file is named by its document, not by its review, so a lookup
+   * by review id reads this file first; the read confirms the id.
+   */
+  private readonly reviewFiles = new Map<string, string>();
+
   constructor(private readonly directory: string) {}
 
   private exclusive<T>(target: string, run: () => Promise<T>): Promise<T> {
@@ -441,6 +448,9 @@ export class CollaborationSidecarStore {
       encoding: "utf8",
       fsync: true,
     });
+    if (sidecar.review !== null) {
+      this.reviewFiles.set(sidecar.review.reviewId, target);
+    }
   }
 
   /**
@@ -487,7 +497,36 @@ export class CollaborationSidecarStore {
       await this.store(decoded.sidecar, target);
     }
     this.examined.add(target);
+    if (decoded.sidecar.review !== null) {
+      this.reviewFiles.set(decoded.sidecar.review.reviewId, target);
+    }
     return decoded.sidecar;
+  }
+
+  /**
+   * The sidecar that holds the review `reviewId`, or undefined. A lookup of
+   * a review that this session read or wrote reads its one file. Any other
+   * lookup reads each file; a file that cannot be read refuses the lookup
+   * only when no readable file holds the review, as the review can be in it.
+   */
+  async findReview(reviewId: string): Promise<CollaborationSidecarData | undefined> {
+    const known = this.reviewFiles.get(reviewId);
+    if (known !== undefined) {
+      const sidecar = await this.exclusive(known, () => this.readFile(known));
+      if (sidecar !== undefined && sidecar.review?.reviewId === reviewId) {
+        return sidecar;
+      }
+      this.reviewFiles.delete(reviewId);
+    }
+    const { sidecars, unreadable } = await this.inventory();
+    const holder = sidecars.find((sidecar) => sidecar.review?.reviewId === reviewId);
+    if (holder !== undefined) {
+      return holder;
+    }
+    if (unreadable.length > 0) {
+      throw new CollaborationSidecarUnreadableError(unreadable);
+    }
+    return undefined;
   }
 
   /** Remove a document's sidecar. Absent is fine — deletion is idempotent. */
