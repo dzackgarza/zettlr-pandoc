@@ -1132,6 +1132,9 @@ of an isolated instance are in the first comment of #132.
   read) is a refused close with the same action. `closeWithoutReview` then
   closes the tabs of the document and unloads it: its buffer is the text
   that the author threw away.
+  A discard goes back to the file; when another program removed the file,
+  it goes back to the text that the app last read from it or wrote to it,
+  and the close goes on. Proof: `test/documents-removed-file.spec.ts`.
 - **A discard changes only the state in memory.** `discardCollaboration`
   does nothing for a document with no review and no annotations in memory.
   The sidecar of such a document is the state of another time (the author

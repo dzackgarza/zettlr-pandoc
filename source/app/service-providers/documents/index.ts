@@ -22,7 +22,7 @@ import PersistentDataContainer from "@common/modules/persistent-data-container";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import { countAll } from "@common/util/counter";
 import errorToString from "@common/util/error-to-string";
-import isErrnoException from "@common/util/is-errno-exception";
+import isErrnoException, { hasErrnoCode } from "@common/util/is-errno-exception";
 import isFile from "@common/util/is-file";
 import serializeChangeSet from "@common/util/serialize-change-set";
 import { sha256Text } from "@common/util/sha256";
@@ -4496,11 +4496,27 @@ current contents from the editor somewhere else, and restart the application.`,
       // document's prompt.
       return;
     }
-    const diskContents = await this._app.fsal.loadAnySupportedFile(doc.filePath);
+    const diskContents = await this._savedTextForDiscard(doc);
     await this._reviewApplication.discardCollaboration(doc.documentId, doc.filePath, diskContents);
     this._applyWorkingTextToDocument(doc.filePath, diskContents);
     doc.lastSavedContent = diskContents;
     doc.lastSavedVersion = doc.currentVersion;
+  }
+
+  /**
+   * The text that a discard gives back: the file. When another program
+   * removed the file, the text that the application last read from it or
+   * wrote to it. The fence of the sidecar is of that text, so a file that
+   * comes back with it attaches the state of the discard (#210). Each other
+   * read error refuses the discard.
+   */
+  private async _savedTextForDiscard(doc: Document): Promise<string> {
+    return await this._app.fsal.loadAnySupportedFile(doc.filePath).catch((err: unknown) => {
+      if (!hasErrnoCode(err, "ENOENT", "ENOTDIR")) {
+        throw err;
+      }
+      return doc.lastSavedContent;
+    });
   }
 
   /**
