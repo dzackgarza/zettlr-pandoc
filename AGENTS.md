@@ -1050,13 +1050,24 @@ of an isolated instance are in the first comment of #132.
   over the lock of a running server; in the folder of the host its exit
   removed the socket of the X server of the desktop, and no new X11 client
   connected to `:0`. Proof: `test/e2e-run-displays.spec.ts`.
-- **The run owns its session bus.** The recipe starts the Mocha process
-  under `dbus-run-session` with `scripts/e2e-session-bus.conf`, a bus without
-  services. A desktop notification of the app of a run goes to that bus and
-  not to the desktop of the author. The stock session configuration starts a
-  notification daemon on request, and that daemon draws on the compositor of
-  the author. A spec that needs a session service starts it on the bus of
-  the run.
+- **The run owns its session bus.** The lanes runner starts one
+  `dbus-daemon` with `scripts/e2e-session-bus.conf`, a bus without services,
+  and gives its address to each spec file (`startSessionBus`,
+  `e2e/support/run-lanes.ts`). A desktop notification of the app of a run
+  goes to that bus and not to the desktop of the author. The stock session
+  configuration starts a notification daemon on request, and that daemon
+  draws on the compositor of the author. A spec that needs a session service
+  starts it on the bus of the run. Proof: `test/e2e-run-lanes.spec.ts`.
+- **No process of a run outlives its just process.** The runner is the one
+  process of the recipe `_e2e-run`: the SIGTERM that just passes on (the
+  stop of `timeout` and of a supervisor) is a signal of the runner, which
+  ends its files. The kernel ends the runner with its just process, also
+  after SIGKILL (`setpriv --pdeathsig KILL` in the recipe and in
+  `e2e_lanes`), and each child of the runner with the runner. A program
+  between just and the runner must pass each signal on and end its children
+  with itself. `dbus-run-session` does neither: with it, a stopped run left
+  its bus daemon, and its runner went on with the files. Proof:
+  `test/e2e-run-lanes.spec.ts`.
 - **The run owns its loopback.** The recipe (`_e2e-run`) starts the run in
   a network namespace with `lo` and no other interface. An app of the run
   binds the Agent API port, the Forge ports of a build start and each other
@@ -1080,7 +1091,7 @@ of an isolated instance are in the first comment of #132.
   the run ends each file and its processes with SIGKILL. A runner that
   SIGKILL ends runs no handler, and the time limit of a file is a timer of
   the runner: the runner starts each child (the file, the Xvfb server of a
-  lane) through `setpriv --pdeathsig KILL` (`ENDS_WITH_RUNNER`), so the
+  lane, the session bus) through `setpriv --pdeathsig KILL` (`ENDS_WITH_RUNNER`), so the
   kernel ends the child with the runner. A new child of the runner starts
   the same way. Proof: `test/e2e-run-lanes.spec.ts`.
 - **Each wait of a run has a limit.** A test or a hook has its Mocha limit.

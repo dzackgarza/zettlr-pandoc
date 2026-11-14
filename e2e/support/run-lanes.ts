@@ -99,6 +99,43 @@ interface FileResult {
   failed: boolean;
 }
 
+/**
+ * The line that a server writes to its descriptor 3 when it accepts
+ * connections. A server that ends before the line rejects with its error
+ * output.
+ */
+async function readyLine(server: ChildProcess, name: string): Promise<string> {
+  let errors = "";
+  server.stderr?.on("data", (chunk: Buffer) => {
+    errors += chunk.toString();
+  });
+  const lines = server.stdio[3] as Readable;
+  let written = "";
+  return await new Promise<string>((resolve, reject) => {
+    lines.on("data", (chunk: Buffer) => {
+      written += chunk.toString();
+      if (written.includes("\n")) {
+        resolve(written.trim());
+      }
+    });
+    server.once("error", reject);
+    server.once("exit", (code, signal) => {
+      const ended = signal === null ? `exit ${code}` : signal;
+      reject(new Error(`${name} ended before it accepted connections (${ended}): ${errors}`));
+    });
+  });
+}
+
+/** Ends a server of the run and waits for its end. */
+async function stopServer(server: ChildProcess): Promise<void> {
+  if (server.exitCode !== null || server.signalCode !== null) {
+    return;
+  }
+  const exited = once(server, "exit");
+  server.kill("SIGTERM");
+  await exited;
+}
+
 interface Display {
   name: string;
   server: ChildProcess;
@@ -125,34 +162,38 @@ async function startDisplay(): Promise<Display> {
     ],
     { stdio: ["ignore", "ignore", "pipe", "pipe"] },
   );
-  let errors = "";
-  server.stderr?.on("data", (chunk: Buffer) => {
-    errors += chunk.toString();
-  });
-  const numbers = server.stdio[3] as Readable;
-  let written = "";
-  const number = await new Promise<string>((resolve, reject) => {
-    numbers.on("data", (chunk: Buffer) => {
-      written += chunk.toString();
-      if (written.includes("\n")) {
-        resolve(written.trim());
-      }
-    });
-    server.once("error", reject);
-    server.once("exit", (code, signal) => {
-      reject(new Error(`Xvfb ended before it had a display (${code ?? signal}): ${errors}`));
-    });
-  });
-  return { name: `:${number}`, server };
+  return { name: `:${await readyLine(server, "Xvfb")}`, server };
 }
 
-async function stopDisplay(display: Display): Promise<void> {
-  if (display.server.exitCode !== null || display.server.signalCode !== null) {
-    return;
-  }
-  const exited = once(display.server, "exit");
-  display.server.kill("SIGTERM");
-  await exited;
+interface SessionBus {
+  address: string;
+  server: ChildProcess;
+}
+
+/**
+ * Starts the session bus of the run: a bus without services
+ * (`scripts/e2e-session-bus.conf`), so a desktop notification of an app of
+ * the run does not reach the desktop of the author. `--print-address` makes
+ * the daemon write its address to the descriptor when it accepts
+ * connections (dbus-daemon(1)).
+ *
+ * The daemon is a child of the runner, as the Xvfb server of a lane is.
+ * dbus-run-session(1) cannot hold the run: it gives no signal to the
+ * program that it started, and its daemon does not end with it.
+ */
+async function startSessionBus(): Promise<SessionBus> {
+  const server = spawn(
+    "setpriv",
+    [
+      ...ENDS_WITH_RUNNER,
+      "dbus-daemon",
+      `--config-file=${path.join(process.cwd(), "scripts", "e2e-session-bus.conf")}`,
+      "--nofork",
+      "--print-address=3",
+    ],
+    { stdio: ["ignore", "ignore", "pipe", "pipe"] },
+  );
+  return { address: await readyLine(server, "dbus-daemon"), server };
 }
 
 const running = new Set<ChildProcess>();
@@ -172,6 +213,7 @@ async function runFile(
   file: string,
   lane: number,
   display: Display,
+  bus: SessionBus,
   fileLimitSeconds: number,
 ): Promise<FileResult> {
   const mocha = path.join(process.cwd(), "node_modules", ".bin", "mocha");
@@ -183,6 +225,7 @@ async function runFile(
     env: {
       ...process.env,
       DISPLAY: display.name,
+      DBUS_SESSION_BUS_ADDRESS: bus.address,
       E2E_LANE: String(lane),
       E2E_SOURCE_FINGERPRINT: sourceFingerprint,
     },
@@ -212,15 +255,16 @@ async function runFile(
 async function runLane(
   lane: number,
   results: FileResult[],
+  bus: SessionBus,
   fileLimitSeconds: number,
 ): Promise<void> {
   const display = await startDisplay();
   try {
     for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
-      results.push(await runFile(file, lane, display, fileLimitSeconds));
+      results.push(await runFile(file, lane, display, bus, fileLimitSeconds));
     }
   } finally {
-    await stopDisplay(display);
+    await stopServer(display.server);
   }
 }
 
@@ -281,9 +325,16 @@ async function main(): Promise<number> {
   const results: FileResult[] = [];
   const startedAt = Date.now();
   const lanes = Math.min(LANES, files.length);
-  await Promise.all(
-    Array.from({ length: lanes }, (_, index) => runLane(index + 1, results, fileLimitSeconds)),
-  );
+  const bus = await startSessionBus();
+  try {
+    await Promise.all(
+      Array.from({ length: lanes }, (_, index) =>
+        runLane(index + 1, results, bus, fileLimitSeconds),
+      ),
+    );
+  } finally {
+    await stopServer(bus.server);
+  }
   printTable(results, (Date.now() - startedAt) / 1000);
   if (stoppedBy !== undefined) {
     return 128 + (stoppedBy === "SIGINT" ? 2 : 15);

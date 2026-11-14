@@ -131,12 +131,18 @@ test-file file: sync-dependencies
 # Run one assembled-app spec against the packaged build of the source.
 test-e2e-file file: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _e2e-run node --import tsx "{{justfile_directory()}}/e2e/support/run-lanes.ts" --file-limit-seconds {{e2e_file_limit_seconds}} "{{file}}"
+    @{{e2e_lanes}} "{{file}}"
 
 # The time limit of one assembled-app spec file. The slowest file compiles a
 # build of its own and takes 69 s in a full run on the workstation; each
 # other file takes less than 50 s.
 e2e_file_limit_seconds := "180"
+
+# The start of the lanes runner in a recipe line. The just process of
+# `_e2e-run` takes the place of the shell of the line, so the just process of
+# the recipe passes its SIGTERM on to it, and the kernel ends it with the
+# just process of the recipe (`--pdeathsig`).
+e2e_lanes := 'exec setpriv --pdeathsig KILL just _e2e-run node --import tsx "' + justfile_directory() + '/e2e/support/run-lanes.ts" --file-limit-seconds ' + e2e_file_limit_seconds
 
 # An assembled-app spec starts the packaged build (`attach`), so a run
 # compiles the app one time. The build runs when the stamp of the package is
@@ -145,12 +151,17 @@ e2e_file_limit_seconds := "180"
 _current-package: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/verify-build.py" --if-stale
 
-# Run a command in the environment of an e2e run. The run owns its session
-# bus and its loopback; the lanes of `e2e/support/run-lanes.ts` own the X
-# displays (one Xvfb server for each lane, #70).
+# Run a command in the environment of an e2e run. The run owns its
+# loopback; the runner of `e2e/support/run-lanes.ts` owns the session bus and
+# the X displays (one Xvfb server for each lane, #70).
 #
-# The session bus has no services (`scripts/e2e-session-bus.conf`): a desktop
+# The runner starts a session bus without services
+# (`scripts/e2e-session-bus.conf`) and gives it to each spec file: a desktop
 # notification of the app of a run does not reach the desktop of the author.
+#
+# The command is the one process of the recipe, so a signal that just passes
+# on (SIGTERM) is a signal of the command. The kernel ends the command when
+# its just process ends (`--pdeathsig`), also when SIGKILL ended it.
 #
 # The loopback is a network namespace with `lo` and no other interface. An
 # app of the run binds its ports there: a process of the host, such as the
@@ -173,11 +184,10 @@ _current-package: sync-dependencies
 _e2e-run +command:
     #!/usr/bin/env bash
     set -euo pipefail
-    run=(dbus-run-session --config-file="{{justfile_directory()}}/scripts/e2e-session-bus.conf" --)
     setup='ip link set lo up && mount -t tmpfs -o mode=1777 e2e-x11 /tmp/.X11-unix'
     setup="$setup"' && exec unshare --map-user="$0" --map-group="$1" -- "${@:2}"'
-    exec unshare --user --map-root-user --net --mount -- \
-      bash -c "$setup" "$(id -u)" "$(id -g)" "${run[@]}" "$@"
+    exec setpriv --pdeathsig KILL unshare --user --map-root-user --net --mount -- \
+      bash -c "$setup" "$(id -u)" "$(id -g)" "$@"
 
 # Install or upgrade the flowmark and flowmark-lint commands from Flowmark's main branch.
 install-flowmark:
@@ -229,7 +239,7 @@ test: sync-dependencies
 # four parts); a job of the hosted run takes one part.
 test-e2e shard="1/1": _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _e2e-run node --import tsx "{{justfile_directory()}}/e2e/support/run-lanes.ts" --file-limit-seconds {{e2e_file_limit_seconds}} --shard {{shard}} e2e/*.spec.ts
+    @{{e2e_lanes}} --shard {{shard}} e2e/*.spec.ts
 
 # Run the workstation-owned desktop-launcher proofs (e2e/desktop/). These
 # drive the installed desktop entry through a live Hyprland compositor and

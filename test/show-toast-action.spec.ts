@@ -35,11 +35,17 @@ import showToast, {
 const CONTAINER_ID = "zettlr-toast-container";
 
 describe("Toast action affordance (review A5)", function () {
-  afterEach(function () {
+  // The log and the toasts are state of the module, which each spec file of
+  // one worker process shares: a file that ran before this one can leave a
+  // message. A test starts and ends with no message.
+  function noMessages(): void {
     setNotificationCenterOpen(false);
     dismissAllNotifications();
     document.getElementById(CONTAINER_ID)?.remove();
-  });
+  }
+
+  beforeEach(noMessages);
+  afterEach(noMessages);
 
   function toasts(): HTMLElement[] {
     return Array.from(document.querySelectorAll(`#${CONTAINER_ID} .zettlr-toast`));
