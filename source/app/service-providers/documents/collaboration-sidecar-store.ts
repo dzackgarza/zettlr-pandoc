@@ -402,13 +402,45 @@ export class CollaborationSidecarStore {
   private readonly locks = new Map<string, Mutex>();
 
   /**
-   * The file of each review that a read or a write of this session saw. A
-   * sidecar file is named by its document, not by its review, so a lookup
-   * by review id reads this file first; the read confirms the id.
+   * The review of each sidecar file, and the file of each review. A sidecar
+   * file is named by its document, not by its review. The store is the one
+   * writer of its directory: the directory is in userData, and one instance
+   * of the app holds userData (`requestSingleInstanceLock`). So after one
+   * inventory the maps name the review of each readable file, and each
+   * read, write, removal and move aside keeps them so.
    */
-  private readonly reviewFiles = new Map<string, string>();
+  private readonly reviewOfFile = new Map<string, string>();
+  private readonly fileOfReview = new Map<string, string>();
+  /** Whether an inventory read the directory in this session. */
+  private indexed = false;
+  /** The files whose last read failed; a review can be in each of them. */
+  private readonly unreadableFiles = new Set<string>();
 
   constructor(private readonly directory: string) {}
+
+  /** The file holds `sidecar` now, or no sidecar for undefined. */
+  private recordContent(file: string, sidecar: CollaborationSidecarData | undefined): void {
+    this.forgetFile(file);
+    this.unreadableFiles.delete(file);
+    if (sidecar === undefined || sidecar.review === null) {
+      return;
+    }
+    this.reviewOfFile.set(file, sidecar.review.reviewId);
+    this.fileOfReview.set(sidecar.review.reviewId, file);
+  }
+
+  private recordUnreadable(file: string): void {
+    this.forgetFile(file);
+    this.unreadableFiles.add(file);
+  }
+
+  private forgetFile(file: string): void {
+    const review = this.reviewOfFile.get(file);
+    if (review !== undefined) {
+      this.fileOfReview.delete(review);
+      this.reviewOfFile.delete(file);
+    }
+  }
 
   private exclusive<T>(target: string, run: () => Promise<T>): Promise<T> {
     let lock = this.locks.get(target);
@@ -440,6 +472,7 @@ export class CollaborationSidecarStore {
   private async store(sidecar: CollaborationSidecarData, target: string): Promise<void> {
     if (sidecar.review === null && sidecar.annotations.items.length === 0) {
       await fs.rm(target, { force: true });
+      this.recordContent(target, undefined);
       return;
     }
     assertCollaborationSidecarSemantics(sidecar, target);
@@ -448,9 +481,7 @@ export class CollaborationSidecarStore {
       encoding: "utf8",
       fsync: true,
     });
-    if (sidecar.review !== null) {
-      this.reviewFiles.set(sidecar.review.reviewId, target);
-    }
+    this.recordContent(target, sidecar);
   }
 
   /**
@@ -485,8 +516,10 @@ export class CollaborationSidecarStore {
     } catch (error) {
       if (isMissingFile(error)) {
         this.examined.add(target);
+        this.recordContent(target, undefined);
         return undefined;
       }
+      this.recordUnreadable(target);
       throw new CollaborationSidecarUnreadableError(
         [{ file: target, cause: error instanceof Error ? error.message : String(error) }],
         { cause: error },
@@ -497,26 +530,27 @@ export class CollaborationSidecarStore {
       await this.store(decoded.sidecar, target);
     }
     this.examined.add(target);
-    if (decoded.sidecar.review !== null) {
-      this.reviewFiles.set(decoded.sidecar.review.reviewId, target);
-    }
+    this.recordContent(target, decoded.sidecar);
     return decoded.sidecar;
   }
 
   /**
-   * The sidecar that holds the review `reviewId`, or undefined. A lookup of
-   * a review that this session read or wrote reads its one file. Any other
-   * lookup reads each file; a file that cannot be read refuses the lookup
+   * The sidecar that holds the review `reviewId`, or undefined. A lookup
+   * reads the one file of the review, and the read confirms the id. Only
+   * the first lookup of a session, and a lookup while a file cannot be
+   * read, reads each file. A file that cannot be read refuses the lookup
    * only when no readable file holds the review, as the review can be in it.
    */
   async findReview(reviewId: string): Promise<CollaborationSidecarData | undefined> {
-    const known = this.reviewFiles.get(reviewId);
+    const known = this.fileOfReview.get(reviewId);
     if (known !== undefined) {
       const sidecar = await this.exclusive(known, () => this.readFile(known));
       if (sidecar !== undefined && sidecar.review?.reviewId === reviewId) {
         return sidecar;
       }
-      this.reviewFiles.delete(reviewId);
+    }
+    if (this.indexed && this.unreadableFiles.size === 0) {
+      return undefined;
     }
     const { sidecars, unreadable } = await this.inventory();
     const holder = sidecars.find((sidecar) => sidecar.review?.reviewId === reviewId);
@@ -539,6 +573,7 @@ export class CollaborationSidecarStore {
   private async remove(target: string): Promise<void> {
     await this.examine(target);
     await fs.rm(target, { force: true });
+    this.recordContent(target, undefined);
   }
 
   /**
@@ -605,6 +640,7 @@ export class CollaborationSidecarStore {
       names = await fs.readdir(this.directory);
     } catch (error) {
       if (isMissingFile(error)) {
+        this.indexed = true;
         return { sidecars: [], unreadable: [] };
       }
       throw error;
@@ -627,6 +663,7 @@ export class CollaborationSidecarStore {
         inventory.sidecars.push(reading.value);
       }
     });
+    this.indexed = true;
     return inventory;
   }
 
@@ -647,6 +684,7 @@ export class CollaborationSidecarStore {
   private async moveAside(file: string): Promise<string> {
     const aside = `${file}.set-aside-${Date.now()}`;
     await fs.rename(file, aside);
+    this.recordContent(file, undefined);
     return aside;
   }
 }
