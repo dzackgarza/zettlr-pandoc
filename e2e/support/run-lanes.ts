@@ -11,8 +11,10 @@
  * another file binds (a first start of the app binds the default Agent API
  * port), and a process tree, so no process of a file runs after the file.
  * Mocha ends when the tests and the hooks of the file ended (`--exit`), so a
- * handle or a process that a file left holds no lane; each test and each hook
- * has a time limit, so each file ends. The process gets the number of its lane
+ * handle or a process that a file left holds no lane. A file has a time
+ * limit (`--file-limit-seconds`): at the limit the runner ends the file with
+ * each of its processes and reports it as failed. The process gets the number
+ * of its lane
  * in `E2E_LANE`; a start that compiles the app takes its Forge ports from it
  * (`forgePortsOfLane`, `electron-app.ts`). Each file gets the source
  * fingerprint of the start of the run in `E2E_SOURCE_FINGERPRINT`.
@@ -22,7 +24,8 @@
  * slowest first, with its result, and the wall time of the run. The runner
  * exits 1 when a file failed.
  *
- * Usage: node --import tsx e2e/support/run-lanes.ts <spec file>...
+ * Usage: node --import tsx e2e/support/run-lanes.ts
+ *          --file-limit-seconds <seconds> <spec file>...
  */
 
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
@@ -30,6 +33,7 @@ import { once } from "node:events";
 import { userInfo } from "node:os";
 import path from "node:path";
 import type { Readable } from "node:stream";
+import { parseArgs } from "node:util";
 
 /**
  * Three apps at a time: the hosted runner has 4 processors and 16 GB, and
@@ -138,7 +142,12 @@ const sourceFingerprint = execFileSync(
   { encoding: "utf8" },
 ).trim();
 
-async function runFile(file: string, lane: number, display: Display): Promise<FileResult> {
+async function runFile(
+  file: string,
+  lane: number,
+  display: Display,
+  fileLimitSeconds: number,
+): Promise<FileResult> {
   const mocha = path.join(process.cwd(), "node_modules", ".bin", "mocha");
   const startedAt = Date.now();
   const { uid, gid } = userInfo();
@@ -153,24 +162,35 @@ async function runFile(file: string, lane: number, display: Display): Promise<Fi
     stdio: ["ignore", "pipe", "pipe"],
   });
   running.add(child);
+  let passedLimit = false;
+  const limit = setTimeout(() => {
+    passedLimit = true;
+    child.kill("SIGKILL");
+  }, fileLimitSeconds * 1000);
   const output: Buffer[] = [];
   child.stdout?.on("data", (chunk: Buffer) => output.push(chunk));
   child.stderr?.on("data", (chunk: Buffer) => output.push(chunk));
   const [code, signal] = (await once(child, "close")) as [number | null, NodeJS.Signals | null];
+  clearTimeout(limit);
   running.delete(child);
   const seconds = (Date.now() - startedAt) / 1000;
-  const outcome = signal === null ? `exit ${code}` : signal;
+  const ended = signal === null ? `exit ${code}` : signal;
+  const outcome = passedLimit ? `no end in ${fileLimitSeconds} s` : ended;
   process.stdout.write(
     `\n== ${file} (lane ${lane}, ${seconds.toFixed(1)} s, ${outcome})\n${Buffer.concat(output).toString()}`,
   );
   return { file, lane, seconds, outcome, failed: code !== 0 };
 }
 
-async function runLane(lane: number, results: FileResult[]): Promise<void> {
+async function runLane(
+  lane: number,
+  results: FileResult[],
+  fileLimitSeconds: number,
+): Promise<void> {
   const display = await startDisplay();
   try {
     for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
-      results.push(await runFile(file, lane, display));
+      results.push(await runFile(file, lane, display, fileLimitSeconds));
     }
   } finally {
     await stopDisplay(display);
@@ -200,7 +220,15 @@ const queue: string[] = [];
 /** The signal that stopped the run. */
 let stoppedBy: NodeJS.Signals | undefined;
 
-async function main(files: string[]): Promise<number> {
+async function main(): Promise<number> {
+  const { values, positionals: files } = parseArgs({
+    options: { "file-limit-seconds": { type: "string" } },
+    allowPositionals: true,
+  });
+  const fileLimitSeconds = Number(values["file-limit-seconds"]);
+  if (!(fileLimitSeconds > 0)) {
+    throw new Error("run-lanes: give the time limit of a file (--file-limit-seconds <seconds>)");
+  }
   if (files.length === 0) {
     throw new Error("run-lanes: name at least one spec file");
   }
@@ -208,7 +236,9 @@ async function main(files: string[]): Promise<number> {
   const results: FileResult[] = [];
   const startedAt = Date.now();
   const lanes = Math.min(LANES, files.length);
-  await Promise.all(Array.from({ length: lanes }, (_, index) => runLane(index + 1, results)));
+  await Promise.all(
+    Array.from({ length: lanes }, (_, index) => runLane(index + 1, results, fileLimitSeconds)),
+  );
   printTable(results, (Date.now() - startedAt) / 1000);
   if (stoppedBy !== undefined) {
     return 128 + (stoppedBy === "SIGINT" ? 2 : 15);
@@ -231,6 +261,6 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 // A rejection of the run ends the process with the error and exit code 1.
-void main(process.argv.slice(2)).then((code) => {
+void main().then((code) => {
   process.exitCode = code;
 });

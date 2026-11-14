@@ -22,9 +22,9 @@ jobs:
   check:
     name: Unit Tests / Lint
     runs-on: ubuntu-latest
-    # A run of the job takes 25 minutes; the limit is two times that. Without
-    # a limit, a step that does not end holds the runner for 6 hours.
-    timeout-minutes: 50
+    # A run of the job takes 25 minutes. Without a limit, a step that does
+    # not end holds the runner for 6 hours.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -97,7 +97,9 @@ jobs:
       # launch-delivery cases start that binary itself.
       - name: Configure the SUID sandbox of the packaged app
         run: bash scripts/configure-electron-sandbox-ci.sh out/Zettlr-Pandoc-linux-x64
+      # The step takes 16 minutes (931 s in run 43494293902).
       - name: Run assembled-app E2E
+        timeout-minutes: 20
         run: just test-e2e
       - name: Upload assembled-app E2E logs
         if: always()

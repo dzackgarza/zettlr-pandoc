@@ -131,7 +131,11 @@ test-file file: sync-dependencies
 # Run one assembled-app spec against the packaged build of the source.
 test-e2e-file file: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _e2e-run node --import tsx "{{justfile_directory()}}/e2e/support/run-lanes.ts" "{{file}}"
+    @just _e2e-run node --import tsx "{{justfile_directory()}}/e2e/support/run-lanes.ts" --file-limit-seconds {{e2e_file_limit_seconds}} "{{file}}"
+
+# The time limit of one assembled-app spec file. The slowest file takes 52 s
+# on the workstation and 46 s on the hosted runner.
+e2e_file_limit_seconds := "120"
 
 # An assembled-app spec starts the packaged build (`attach`), so a run
 # compiles the app one time. The build runs when the stamp of the package is
@@ -222,7 +226,7 @@ test: sync-dependencies
 # Portable: runs on hosted CI and locally alike.
 test-e2e: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _e2e-run node --import tsx "{{justfile_directory()}}/e2e/support/run-lanes.ts" e2e/*.spec.ts
+    @just _e2e-run node --import tsx "{{justfile_directory()}}/e2e/support/run-lanes.ts" --file-limit-seconds {{e2e_file_limit_seconds}} e2e/*.spec.ts
 
 # Run the workstation-owned desktop-launcher proofs (e2e/desktop/). These
 # drive the installed desktop entry through a live Hyprland compositor and

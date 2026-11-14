@@ -1079,11 +1079,15 @@ of an isolated instance are in the first comment of #132.
   ended (`--exit`), so a handle that a file left holds no lane. A stop of
   the run ends each file and its processes with SIGKILL. Proof:
   `test/e2e-run-lanes.spec.ts`.
-- **Each wait of a run has a limit.** A test or a hook has its Mocha limit,
-  a Mocha process ends with its last hook (`--exit` of the lanes runner,
-  `exit` of `.mocharc.js` for the unit suite), and the hosted job has 50 minutes
-  (`timeout-minutes`, `check.yml`): two times a run of 25 minutes. A new
-  step or runner that waits for a process states the limit of that wait.
+- **Each wait of a run has a limit.** A test or a hook has its Mocha limit.
+  A Mocha process ends with its last hook (`--exit` of the lanes runner,
+  `exit` of `.mocharc.js` for the unit suite). A spec file of the lanes has
+  120 s (`e2e_file_limit_seconds` of the justfile; the slowest file takes
+  52 s): at the limit the runner ends the file with each of its processes
+  and reports it as failed. The hosted job has 30 minutes and its
+  assembled-app step 20 (`timeout-minutes`, `check.yml`); a run of the job
+  takes 25 minutes, the step 16. A new step or runner that waits for a
+  process states the limit of that wait.
 - **A provider that cannot start is in the log before its error box.** The
   native box of `_informativeBoot` stops the main process, and the app exits
   after it; the log has the cause first (`LogProvider.flush`). Proof:
