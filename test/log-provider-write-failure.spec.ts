@@ -165,11 +165,14 @@ describe("LogProvider (details of any value, #57)", function () {
     await provider.shutdown();
 
     const lines = (await readFile(logfile, "utf8")).split("\n");
-    const lineOf = (message: string): string | undefined =>
-      lines.find((line) => line.includes(message));
-    assert.match(lineOf("an entry with a cycle") ?? "", /a cycle.*Circular/);
-    assert.match(lineOf("an entry with a bigint") ?? "", /count: 12n/);
-    assert.ok(lineOf("an entry after them") !== undefined, "the entry after them is written");
+    const lineOf = (message: string): string => {
+      const line = lines.find((candidate) => candidate.includes(message));
+      assert.ok(line !== undefined, `the log has the entry "${message}"`);
+      return line;
+    };
+    assert.match(lineOf("an entry with a cycle"), /a cycle.*Circular/);
+    assert.match(lineOf("an entry with a bigint"), /count: 12n/);
+    assert.match(lineOf("an entry after them"), /an entry after them/);
   });
 
   it("gives the log viewer each entry as a value that IPC can clone", async function () {
@@ -182,10 +185,13 @@ describe("LogProvider (details of any value, #57)", function () {
     });
     // Electron sends the answer of a handler as a structured clone.
     const sent = structuredClone(chunk);
-    const detailOf = (message: string): string | null | undefined =>
-      sent.find((entry) => entry.message === message)?.details;
-    assert.match(detailOf("an entry with a function") ?? "", /namedCallback/);
-    assert.match(detailOf("an entry with a symbol") ?? "", /a symbol/);
+    const detailOf = (message: string): string => {
+      const details = sent.find((entry) => entry.message === message)?.details;
+      assert.ok(typeof details === "string", `the entry "${message}" has its details`);
+      return details;
+    };
+    assert.match(detailOf("an entry with a function"), /namedCallback/);
+    assert.match(detailOf("an entry with a symbol"), /a symbol/);
     await provider.shutdown();
   });
 });
