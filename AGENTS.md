@@ -1846,6 +1846,13 @@ of an isolated instance are in the first comment of #132.
   - "Rescan directory" runs `rescan-dir` (§24); Window → New directory…
     opens the name field of the selected folder only
     (`newDirectoryRequest`).
+  - Previous file and Next file go through `navigatePaneHistory`
+    (`markdown-editor/util/reference-navigation.ts`) from each entry
+    point: the keys in the editor, the application menu, the mouse
+    buttons and the swipe (`navigateHistory` in `App.vue`). The request
+    carries the place of the caret in the editor that the pane shows, so
+    the opposite move restores it, and a refusal shows one message. Proof:
+    `e2e/menu-navigation-auxiliary-window.spec.ts`.
 - **The contract types each command.** `ApplicationIPCContract`
   (`commands/index.ts`) names each command of the `application` channel
   with its payload and its answer. The invoke of a window and

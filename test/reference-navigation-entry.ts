@@ -94,7 +94,7 @@ declare global {
     refNavProbeFold: (from: number, to: number) => void;
     refNavProbeSetScrollTop: (px: number) => number;
     refNavProbeExpectedLocation: () => ExpectedLocation;
-    refNavProbeCaptureLocation: () => DocumentLocation | null;
+    refNavProbeCaptureLocation: () => DocumentLocation;
     refNavProbeResolveIntentAt: (pos: number) => ReferenceNavigationIntent | null;
     refNavProbeFollowIntent: (intent: ReferenceNavigationIntent) => boolean;
     refNavProbeInvocations: () => Array<{ channel: string; args: unknown[] }>;
@@ -276,7 +276,7 @@ window.refNavProbeExpectedLocation = (): ExpectedLocation => {
   };
 };
 
-window.refNavProbeCaptureLocation = (): DocumentLocation | null => {
+window.refNavProbeCaptureLocation = (): DocumentLocation => {
   return captureDocumentLocation(requireView(), currentPath);
 };
 

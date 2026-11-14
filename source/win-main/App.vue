@@ -203,6 +203,7 @@
  * END HEADER
  */
 
+import { EditorView } from "@codemirror/view";
 import type { CommandId } from "@common/commands/command-registry";
 import { emptyPipeTable } from "@common/commands/editing-menu-items";
 import { trans } from "@common/i18n-renderer";
@@ -211,6 +212,7 @@ import type {
   CreateReferenceLabelIntent,
 } from "@common/modules/markdown-editor/plugins/create-reference-label";
 import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
+import { navigatePaneHistory } from "@common/modules/markdown-editor/util/reference-navigation";
 import { reportError } from "@common/util/error-reporting";
 import generateId from "@common/util/generate-id";
 import { loadFromDiskAction } from "@common/util/load-document-from-disk";
@@ -967,61 +969,32 @@ const navigationSidebar = ref<NavigationSidebarHandle | null>(null);
 const paneConfiguration = computed(() => documentTreeStore.paneStructure);
 const lastLeafId = computed(() => documentTreeStore.lastLeafId);
 
-// Per-pane session history position (issue #1 Phase 5): feeds the toolbar
-// Back/Forward controls' enabled state. Refreshed from the documents
-// provider whenever the focused leaf or its documents change.
-const canGoBack = ref(false);
-const canGoForward = ref(false);
-
 /**
- * Asks the documents provider to move the focused pane one step through its
- * session history. Without a focused pane there is no history to move in.
+ * Moves the pane that the author used last one step through its session
+ * history, with the place of the caret in the editor that the pane shows
+ * (the visible editor of the pane: the editors of the other tabs are
+ * hidden). Without such a pane there is no history to move in.
  *
  * @param   {'navigate-back'|'navigate-forward'}  command  The direction
  */
 function navigateHistory(command: "navigate-back" | "navigate-forward"): void {
   const leafId = lastLeafId.value;
   if (leafId === undefined) {
-    return; // No pane has been focused yet; there is no history to navigate
-  }
-
-  ipcRenderer
-    .invoke("documents-provider", {
-      command,
-      payload: { windowId, leafId },
-    })
-    .catch((err) => reportError(err));
-}
-
-function refreshNavigationState(): void {
-  const leafId = lastLeafId.value;
-  if (leafId === undefined) {
-    canGoBack.value = false;
-    canGoForward.value = false;
     return;
   }
 
-  ipcRenderer
-    .invoke("documents-provider", {
-      command: "get-navigation-state",
-      payload: { windowId, leafId },
-    })
-    .then((state) => {
-      canGoBack.value = state.canGoBack;
-      canGoForward.value = state.canGoForward;
-    })
-    .catch((err) => reportError(err));
+  const shownEditor = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      `.main-editor-wrapper[data-leaf-id="${CSS.escape(leafId)}"] .cm-editor`,
+    ),
+  ).find((editor) => editor.offsetParent !== null);
+  const view = shownEditor === undefined ? null : EditorView.findFromDOM(shownEditor);
+  navigatePaneHistory(windowId, leafId, command, view);
 }
-
-watch(lastLeafId, refreshNavigationState);
-ipcRenderer.on("documents-update", () => {
-  refreshNavigationState();
-});
 // A wikilink to `[[file#heading]]` opens the file at that heading.
 ipcRenderer.on("jump-to-line", (event, target: { filePath: string; line: number }) => {
   jtl(target.filePath, target.line, false);
 });
-refreshNavigationState();
 
 onMounted(() => {
   showCitationProblems();

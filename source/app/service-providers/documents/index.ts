@@ -77,7 +77,7 @@ import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
 import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions } from "electron";
 import EventEmitter from "events";
-import { constants as FSConstants, existsSync } from "fs";
+import { existsSync, constants as FSConstants } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
 import { bibliographyFiles, documentBibliography } from "source/app/util/document-bibliographies";
@@ -555,10 +555,6 @@ export type DocumentManagerIPCContract = {
   };
   // Additive (issue #1 Phase 5): whether the leaf's session history has
   // entries before/after the pointer (Back/Forward enabled state).
-  "get-navigation-state": {
-    request: { payload: LeafLoc };
-    response: { canGoBack: boolean; canGoForward: boolean };
-  };
 };
 
 export type DocumentManagerIPCAPI = IPCMessage<DocumentManagerIPCContract>;
@@ -1282,9 +1278,6 @@ export default class DocumentManager
         }
         case "navigate-back": {
           return await this.navigateBack(payload.windowId, payload.leafId, payload.location);
-        }
-        case "get-navigation-state": {
-          return this.getNavigationState(payload.windowId, payload.leafId);
         }
       }
     });
@@ -3598,31 +3591,6 @@ current contents from the editor somewhere else, and restart the application.`,
     if (location !== undefined && tabMan.activeFile?.path === location.documentPath) {
       tabMan.updateCurrentHistoryLocation(location);
     }
-  }
-
-  /**
-   * Returns whether the given leaf can navigate back/forward through its
-   * session history (issue #1 Phase 5; feeds the toolbar Back/Forward
-   * enabled state).
-   *
-   * @param   {string}  windowId  The window ID
-   * @param   {string}  leafId    The leaf ID
-   *
-   * @return  {{ canGoBack: boolean, canGoForward: boolean }}  The state
-   */
-  public getNavigationState(
-    windowId: string,
-    leafId: string,
-  ): { canGoBack: boolean; canGoForward: boolean } {
-    const leaf = windowId in this._windows ? this._windows[windowId].findLeaf(leafId) : undefined;
-    if (leaf === undefined) {
-      return { canGoBack: false, canGoForward: false };
-    }
-
-    return {
-      canGoBack: leaf.tabMan.canGoBack,
-      canGoForward: leaf.tabMan.canGoForward,
-    };
   }
 
   /**

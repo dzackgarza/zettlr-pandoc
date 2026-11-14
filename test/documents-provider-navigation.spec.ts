@@ -38,11 +38,11 @@ import type { DocumentLocation } from "@dts/common/references";
 import { strict as assert } from "assert";
 import { mkdirSync, readFileSync, rmSync } from "fs";
 import path from "path";
-import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import DocumentManager, {
   type DocumentsUpdateContext,
 } from "source/app/service-providers/documents";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import LogProvider from "source/app/service-providers/log";
 import { userData } from "./headless-electron-harness.cjs";
 import { invokeMain } from "./main-ipc";
@@ -178,16 +178,6 @@ describe("Documents-provider navigation join (review C6)", function () {
       activation.targetRange,
       targetRange,
       "the ACTIVE_FILE context must echo the definition targetRange",
-    );
-
-    const navState = await invokeMain("documents-provider", {
-      command: "get-navigation-state",
-      payload: { windowId, leafId },
-    });
-    assert.deepEqual(
-      navState,
-      { canGoBack: true, canGoForward: false },
-      "the jump must widen the pane history backwards",
     );
   });
 
