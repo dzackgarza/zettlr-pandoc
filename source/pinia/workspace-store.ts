@@ -35,21 +35,17 @@ async function readPathRecursively(absPath: string): Promise<string[]> {
 }
 
 /**
- * Returns a single or multiple descriptors from main for the provided path.
+ * Returns the descriptors of the paths that are on disk.
  *
- * @param   {string}                  absPath  The absolute path
+ * @param   {string[]}                  absPaths  The absolute paths
  *
- * @return  {Promise<AnyDescriptor>}           The descriptor for path.
+ * @return  {Promise<AnyDescriptor[]>}            Their descriptors.
  */
-async function getDescriptorFor(absPath: string): Promise<AnyDescriptor>;
-async function getDescriptorFor(absPath: string[]): Promise<AnyDescriptor[]>;
-async function getDescriptorFor(
-  absPath: string | string[],
-): Promise<AnyDescriptor | AnyDescriptor[]> {
+async function getDescriptorsFor(absPaths: string[]): Promise<AnyDescriptor[]> {
   return await ipcRenderer.invoke("fsal", {
-    command: "get-descriptor",
+    command: "get-descriptors",
     // De-proxy as necessary
-    payload: Array.isArray(absPath) ? absPath.map((p) => p) : absPath,
+    payload: absPaths.map((p) => p),
   });
 }
 
@@ -72,7 +68,7 @@ async function retrieveInitialUpdate(
   start = Date.now();
 
   // Now do one huge roundtrip to main to fetch every descriptor at once.
-  const descriptors = await getDescriptorFor(flatMap);
+  const descriptors = await getDescriptorsFor(flatMap);
   console.log(`Fetched all descriptors in ${Date.now() - start}ms`);
 
   // Now we can set the stuff immediately
@@ -299,7 +295,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
       // First, start loading new descriptors
       if (descriptorsToFetch.length > 0) {
-        getDescriptorFor(descriptorsToFetch)
+        getDescriptorsFor(descriptorsToFetch)
           .then((descriptors) => {
             setDescriptors(descriptors);
           })

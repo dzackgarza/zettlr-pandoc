@@ -208,6 +208,8 @@ export interface MDFileDescriptor extends FSMetaInfo {
   type: "file";
   tags: string[];
   links: string[]; // Any outlinks declared in the file
+  /** The URL, as written, of each Markdown link and image that can name a file. */
+  fileLinks: string[];
   citekeys: string[]; // Any citation keys declared in the file
   bom: string; // An optional BOM
   wordCount: number;

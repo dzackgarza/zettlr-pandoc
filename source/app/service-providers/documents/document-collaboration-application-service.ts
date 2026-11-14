@@ -43,7 +43,7 @@
  * END HEADER
  */
 
-import type { ChangeSet, Text } from "@codemirror/state";
+import { type ChangeSet, Text } from "@codemirror/state";
 import { sha256Text } from "@common/util/sha256";
 import type {
   AgentErrorCode,
@@ -76,6 +76,7 @@ import {
   prepareAnnotationReopen,
   prepareAnnotationResolution,
   prepareAnnotationResolvedCleanup,
+  settleProposalActions,
 } from "./annotation-transitions";
 import type { CollaborationSidecarData } from "./collaboration-sidecar-schema";
 import {
@@ -105,6 +106,7 @@ import {
   freezeReview,
   INVALIDATED_REVIEW_MESSAGE,
   isTransitionError,
+  type ProposalNotFound,
   type ProposalRefusal,
   prepareAcceptAll,
   prepareChunkComment,
@@ -296,12 +298,16 @@ type RecoverableReview =
  * What a document got back when it opened. `workingText` is present only
  * when a review was restored: only a review gives the persisted text a claim
  * on the buffer, and an annotation-bearing document without one opens on
- * its file.
+ * its file. `keptOverDisk` is true when that text is text that the author
+ * accepted and did not save, and another program changed the file after the
+ * sidecar was written: the buffer keeps the text, and the file is not the
+ * text of the document.
  */
 export interface ReattachedCollaboration {
   review: ActiveReviewState | undefined;
   annotations: AnnotationSet;
   workingText: string | undefined;
+  keptOverDisk: boolean;
 }
 
 export type AgentEventPayload = Partial<Omit<AgentEvent, "event" | "timestamp">> & {
@@ -361,6 +367,11 @@ function persistenceFailure(action: string, error: unknown): ReviewFailure {
   };
 }
 
+/** A sidecar whose document has a review, open or frozen. */
+function holdsReview(sidecar: CollaborationSidecarData): sidecar is ReviewBearingSidecar {
+  return sidecar.review !== null;
+}
+
 export class CollaborationApplicationService {
   /**
    * One lock per document, shared by every writer: the agent's mutations, the
@@ -390,9 +401,31 @@ export class CollaborationApplicationService {
   // The annotation half of a document's collaboration state
   // ==========================================================================
 
-  /** The committed annotations of a document. Empty is a real answer. */
+  /**
+   * The committed annotations of a document, each proposal action with the
+   * outcome that the review of the document decided. Empty is a real answer.
+   */
   public getAnnotations(documentId: string): AnnotationSet {
-    return this.annotationStates.get(documentId)?.annotations ?? emptyAnnotationSet();
+    const annotations = this.annotationStates.get(documentId)?.annotations ?? emptyAnnotationSet();
+    const review = this.reviews.getReview(documentId);
+    return review === undefined ? annotations : settleProposalActions(annotations, review, false);
+  }
+
+  /**
+   * End the review of a document whose sidecar no longer holds it. The
+   * annotations in memory take the final outcomes of its proposal actions,
+   * which the write that ended the review put on disk
+   * (`collaborationSidecar`).
+   */
+  private endReview(documentId: string, review: ActiveReviewState): void {
+    const state = this.annotationStates.get(documentId);
+    if (state !== undefined) {
+      this.annotationStates.set(documentId, {
+        ...state,
+        annotations: settleProposalActions(state.annotations, review, true),
+      });
+    }
+    this.reviews.removeReview(documentId);
   }
 
   /**
@@ -413,6 +446,7 @@ export class CollaborationApplicationService {
     },
   ): CollaborationSidecarData {
     const committed = this.annotationStates.get(documentId);
+    const current = this.reviews.getReview(documentId);
     return collaborationSidecar({
       documentPath: next.documentPath,
       workingText: next.workingText,
@@ -426,6 +460,8 @@ export class CollaborationApplicationService {
         committed?.diskFenceSha256 ??
         sha256Text(next.workingText),
       review: next.review,
+      endedReview:
+        current !== undefined && current.reviewId !== next.review?.reviewId ? current : undefined,
       annotations: next.annotations ?? committed?.annotations ?? emptyAnnotationSet(),
       pendingSave: next.pendingSave,
     });
@@ -495,7 +531,7 @@ export class CollaborationApplicationService {
   private async detachedReviewQueries(): Promise<DetachedReviewQuery[]> {
     const sidecars = await this.sidecars.list();
     return sidecars
-      .filter((sidecar): sidecar is ReviewBearingSidecar => sidecar.review !== null)
+      .filter(holdsReview)
       .filter((sidecar) => !this.deps.authority.isDocumentOpen(sidecar.documentPath))
       .map((sidecar) => ({ attached: false as const, sidecar }));
   }
@@ -509,9 +545,17 @@ export class CollaborationApplicationService {
       }
       return attached;
     }
-    return (await this.detachedReviewQueries()).find(
-      (query) => query.sidecar.review.reviewId === reviewId,
-    );
+    // The review of an open document is active, so a sidecar of an open
+    // document holds no review that a caller can ask for.
+    const sidecar = await this.sidecars.findReview(reviewId);
+    if (
+      sidecar === undefined ||
+      !holdsReview(sidecar) ||
+      this.deps.authority.isDocumentOpen(sidecar.documentPath)
+    ) {
+      return undefined;
+    }
+    return { attached: false, sidecar };
   }
 
   public async listReviewQueries(): Promise<ReviewQuery[]> {
@@ -585,14 +629,14 @@ export class CollaborationApplicationService {
       this.sidecarFor(documentId, {
         documentPath,
         workingText: nextWorkingText,
-        review: reviewPlan?.nextReview ?? review,
+        review: reviewPlan === undefined ? review : reviewPlan.nextReview,
         annotations: annotationPlan?.nextAnnotations,
       }),
     );
 
     commitDocument();
     if (reviewPlan !== undefined) {
-      this.reviews.replaceReview(documentId, reviewPlan.nextReview!);
+      this.reviews.replaceReview(documentId, reviewPlan.nextReview);
     }
     if (annotationPlan !== undefined) {
       this.commitAnnotations(documentId, {
@@ -600,10 +644,69 @@ export class CollaborationApplicationService {
         annotations: annotationPlan.nextAnnotations,
       });
     }
-    for (const draft of [...(reviewPlan?.events ?? []), ...(annotationPlan?.events ?? [])]) {
-      this.deps.emit(draft.event, draft.payload);
+    for (const plan of [reviewPlan, annotationPlan]) {
+      if (plan === undefined) {
+        continue;
+      }
+      for (const draft of plan.events) {
+        this.deps.emit(draft.event, draft.payload);
+      }
     }
     this.deps.authority.broadcastCollaborationState(documentId);
+  }
+
+  /**
+   * Change the working text in the sidecar of a document that is not loaded
+   * by the changes that `restore` gives for that text, and map the anchors
+   * of its review and its annotations through the same changes, as an edit
+   * of a loaded document maps them. The fence and a pending save stay: the
+   * file did not change. Answers whether the sidecar changed.
+   */
+  public async restoreStoredWorkingText(
+    documentId: string,
+    documentPath: string,
+    restore: (workingText: string) => ChangeSet,
+  ): Promise<boolean> {
+    return await this.withDocumentLock(documentId, async () => {
+      if (this.deps.authority.readWorkingText(documentId) !== undefined) {
+        throw new Error(`Document ${documentPath} is loaded: its sidecar is not the stored state`);
+      }
+      const sidecar = await this.sidecars.read(documentPath);
+      if (sidecar === undefined) {
+        return false;
+      }
+      const changes = restore(sidecar.workingText);
+      if (changes.empty) {
+        return false;
+      }
+      const workingText = normalizeText(
+        changes.apply(Text.of(sidecar.workingText.split("\n"))).toString(),
+      );
+      const review = sidecar.review === null ? undefined : reviewFromSidecar(documentId, sidecar);
+      const reviewPlan =
+        review === undefined ? undefined : prepareWorkingTextEdit({ review, workingText, changes });
+      const annotationPlan = prepareAnnotationMappingThroughOwnerEdit(sidecar.annotations, changes);
+      await this.sidecars.write(
+        collaborationSidecar({
+          documentPath,
+          workingText,
+          diskFenceSha256: sidecar.diskFenceSha256,
+          review: reviewPlan === undefined ? review : reviewPlan.nextReview,
+          endedReview: undefined,
+          annotations: annotationPlan?.nextAnnotations ?? sidecar.annotations,
+          pendingSave: sidecar.pendingSave,
+        }),
+      );
+      for (const plan of [reviewPlan, annotationPlan]) {
+        if (plan === undefined) {
+          continue;
+        }
+        for (const draft of plan.events) {
+          this.deps.emit(draft.event, draft.payload);
+        }
+      }
+      return true;
+    });
   }
 
   /**
@@ -707,7 +810,7 @@ export class CollaborationApplicationService {
       return;
     }
 
-    this.reviews.removeReview(preparation.documentId);
+    this.endReview(preparation.documentId, review);
     this.deps.authority.broadcastReviewCleared(preparation.documentId, review.reviewId);
     this.deps.emit("review.completed", {
       reviewId: review.reviewId,
@@ -820,20 +923,50 @@ export class CollaborationApplicationService {
       persisted.review.suggestions.some((suggestion) => suggestion.state === "proposed");
 
     if (preserveSavedReview) {
-      // The held review's sidecar is left exactly as it is — that is what
-      // this branch exists for — but the buffer still reverts underneath the
-      // annotations, so their anchors go with it. The persisted object is
-      // written back with only its annotation half replaced.
-      const plan = prepareAnnotationOrphaning(
+      // The review stays, and the buffer goes back to the file. Each edit
+      // after the save mapped the review through itself, so the review
+      // follows the change back to the file as it follows an edit: its
+      // anchors then index the text that the buffer is about to hold. The
+      // annotations are orphaned, as for each discard.
+      const revert = this.deps.authority.prepareWorkingTextReplacement(documentId, normalizedDisk);
+      const reviewPlan =
+        revert.change === undefined
+          ? undefined
+          : prepareWorkingTextEdit({
+              review,
+              workingText: normalizedDisk,
+              changes: revert.change.changes,
+            });
+      const annotationPlan = prepareAnnotationOrphaning(
         this.getAnnotations(documentId),
         "unmapped-document-change",
       );
-      if (plan !== undefined) {
-        await this.sidecars.write({ ...persisted!, annotations: plan.nextAnnotations });
+      if (reviewPlan === undefined && annotationPlan === undefined) {
+        return;
+      }
+      await this.sidecars.write(
+        this.sidecarFor(documentId, {
+          documentPath,
+          workingText: normalizedDisk,
+          review: reviewPlan === undefined ? review : reviewPlan.nextReview,
+          annotations: annotationPlan?.nextAnnotations,
+          diskFenceSha256: persisted.diskFenceSha256,
+          pendingSave: persisted.pendingSave,
+        }),
+      );
+      if (reviewPlan !== undefined) {
+        this.reviews.replaceReview(documentId, reviewPlan.nextReview);
+      }
+      if (annotationPlan !== undefined) {
         this.commitAnnotations(documentId, {
           ...this.annotationStates.get(documentId)!,
-          annotations: plan.nextAnnotations,
+          annotations: annotationPlan.nextAnnotations,
         });
+      }
+      for (const plan of [reviewPlan, annotationPlan]) {
+        if (plan === undefined) {
+          continue;
+        }
         for (const draft of plan.events) {
           this.deps.emit(draft.event, draft.payload);
         }
@@ -843,7 +976,13 @@ export class CollaborationApplicationService {
     // A frozen review's anchors index its frozen text, so the buffer
     // reverting underneath it changes nothing it points at.
     const frozen = review?.invalidated === true ? review : undefined;
-    await this.orphanAnnotationsThroughDiscard(documentId, documentPath, normalizedDisk, frozen);
+    await this.orphanAnnotationsThroughDiscard(
+      documentId,
+      documentPath,
+      normalizedDisk,
+      frozen,
+      frozen === undefined ? review : undefined,
+    );
     if (review === undefined || frozen !== undefined) {
       return;
     }
@@ -865,10 +1004,13 @@ export class CollaborationApplicationService {
     documentPath: string,
     diskText: string,
     frozenReview: ActiveReviewState | undefined,
+    endedReview: ActiveReviewState | undefined,
   ): Promise<void> {
     const annotations = this.getAnnotations(documentId);
     const plan = prepareAnnotationOrphaning(annotations, "unmapped-document-change");
-    const next = plan?.nextAnnotations ?? annotations;
+    const orphaned = plan?.nextAnnotations ?? annotations;
+    const next =
+      endedReview === undefined ? orphaned : settleProposalActions(orphaned, endedReview, true);
     const diskFenceSha256 = sha256Text(diskText);
     await this.sidecars.write(
       collaborationSidecar({
@@ -876,6 +1018,7 @@ export class CollaborationApplicationService {
         workingText: diskText,
         diskFenceSha256,
         review: frozenReview,
+        endedReview,
         annotations: next,
       }),
     );
@@ -944,13 +1087,17 @@ export class CollaborationApplicationService {
     // on the buffer: the buffer is the file. If the two disagree, the
     // anchors were measured against text nobody is looking at, and there is
     // no change set to carry them across the difference.
-    const annotations =
+    const stored = sidecar.review === null ? undefined : reviewFromSidecar(documentId, sidecar);
+    const endedReview = restoresReview ? undefined : stored;
+    const mapped =
       restoresReview || sidecar.workingText === normalizedDisk
         ? sidecar.annotations
         : (prepareAnnotationOrphaning(sidecar.annotations, "unmapped-document-change")
             ?.nextAnnotations ?? sidecar.annotations);
+    const annotations =
+      endedReview === undefined ? mapped : settleProposalActions(mapped, endedReview, true);
 
-    const review = restoresReview ? reviewFromSidecar(documentId, sidecar) : undefined;
+    const review = restoresReview ? stored : undefined;
     const workingText = restoresReview ? sidecar.workingText : normalizedDisk;
 
     // A file that already says exactly this is left alone; the orphaning
@@ -963,6 +1110,7 @@ export class CollaborationApplicationService {
           workingText,
           diskFenceSha256: sidecar.diskFenceSha256,
           review,
+          endedReview,
           annotations,
         }),
       );
@@ -980,15 +1128,27 @@ export class CollaborationApplicationService {
     if (review === undefined && annotations.items.length === 0) {
       return undefined;
     }
-    return { review, annotations, workingText: review === undefined ? undefined : workingText };
+    return {
+      review,
+      annotations,
+      workingText: review === undefined ? undefined : workingText,
+      keptOverDisk: false,
+    };
   }
 
   /**
    * The file moved under a sidecar that was not open to see it. The review
    * is frozen against the working text its anchors index and announced
    * invalidated; it waits for the owner or the agent to reapply or discard
-   * it. The annotations are orphaned, the sidecar is re-fenced to the bytes
-   * that are actually there, and the document opens on those bytes.
+   * it. The sidecar is re-fenced to the bytes that are actually there.
+   *
+   * A review with a proposal opens on those bytes, and the annotations are
+   * orphaned. A review whose working text is text that the author accepted
+   * and did not save keeps that text in the buffer, as an open document
+   * keeps its text when its file changes (`invalidateOnDiskDrift`): the
+   * anchors of the annotations index that text and stay, and the frozen
+   * review refuses a save over the file until the author loads the file or
+   * reapplies or discards the review.
    */
   private async driftedCollaboration(
     documentId: string,
@@ -997,21 +1157,35 @@ export class CollaborationApplicationService {
     diskText: string,
   ): Promise<ReattachedCollaboration | undefined> {
     const diskSha256 = sha256Text(diskText);
-    const annotations =
-      prepareAnnotationOrphaning(sidecar.annotations, "external-drift")?.nextAnnotations ??
-      sidecar.annotations;
-    // A review with nothing proposed has no suggestion to reapply to the
-    // new text of the file, and ends here.
+    const proposes =
+      sidecar.review?.suggestions.some((suggestion) => suggestion.state === "proposed") === true;
+    const keptOverDisk =
+      sidecar.review !== null &&
+      !proposes &&
+      sha256Text(sidecar.workingText) !== sidecar.diskFenceSha256;
+    const mapped = keptOverDisk
+      ? sidecar.annotations
+      : (prepareAnnotationOrphaning(sidecar.annotations, "external-drift")?.nextAnnotations ??
+        sidecar.annotations);
+    // A review with nothing proposed and no accepted text has no text that
+    // is in no file, and ends here.
     const review =
-      sidecar.review?.suggestions.some((suggestion) => suggestion.state === "proposed") === true
+      proposes || keptOverDisk
         ? freezeReview(reviewFromSidecar(documentId, sidecar), sidecar.workingText)
         : undefined;
+    const endedReview =
+      review === undefined && sidecar.review !== null
+        ? reviewFromSidecar(documentId, sidecar)
+        : undefined;
+    const annotations =
+      endedReview === undefined ? mapped : settleProposalActions(mapped, endedReview, true);
     await this.sidecars.write(
       collaborationSidecar({
         documentPath,
-        workingText: diskText,
+        workingText: keptOverDisk ? sidecar.workingText : diskText,
         diskFenceSha256: diskSha256,
         review,
+        endedReview,
         annotations,
       }),
     );
@@ -1031,7 +1205,12 @@ export class CollaborationApplicationService {
     if (review === undefined && annotations.items.length === 0) {
       return undefined;
     }
-    return { review, annotations, workingText: undefined };
+    return {
+      review,
+      annotations,
+      workingText: keptOverDisk ? sidecar.workingText : undefined,
+      keptOverDisk,
+    };
   }
 
   public readSidecar(documentPath: string): Promise<CollaborationSidecarData | undefined> {
@@ -1143,11 +1322,7 @@ export class CollaborationApplicationService {
       return persistenceFailure("the mutation", error);
     }
 
-    if (plan.nextReview === undefined) {
-      this.reviews.removeReview(context.documentId);
-    } else {
-      this.reviews.replaceReview(context.documentId, plan.nextReview);
-    }
+    this.reviews.replaceReview(context.documentId, plan.nextReview);
     if (annotationPlan !== undefined) {
       this.commitAnnotations(context.documentId, {
         ...annotationState!,
@@ -1161,7 +1336,7 @@ export class CollaborationApplicationService {
     }
     if (broadcast === "cleared") {
       this.deps.authority.broadcastReviewCleared(context.documentId, context.review.reviewId);
-    } else if (plan.nextReview !== undefined) {
+    } else {
       this.deps.authority.broadcastCollaborationState(context.documentId);
     }
     return plan.response;
@@ -1466,7 +1641,7 @@ export class CollaborationApplicationService {
           );
     const linkage = prepareAnnotationProposalLinkage({
       annotations: mapped?.nextAnnotations ?? annotationState?.annotations ?? emptyAnnotationSet(),
-      reviewId: plan.nextReview!.reviewId,
+      reviewId: plan.nextReview.reviewId,
       links: plan.response.packetIds.map((packetId, index) => ({
         packetId,
         annotationIds: input.claims[index]?.addressesAnnotationIds ?? [],
@@ -1489,7 +1664,7 @@ export class CollaborationApplicationService {
     } catch (error) {
       return persistenceFailure("the proposal", error);
     }
-    this.reviews.replaceReview(input.documentId, plan.nextReview!);
+    this.reviews.replaceReview(input.documentId, plan.nextReview);
     if (nextAnnotations !== undefined && annotationState !== undefined) {
       this.commitAnnotations(input.documentId, {
         ...annotationState,
@@ -1674,6 +1849,7 @@ export class CollaborationApplicationService {
               workingText: sidecar.workingText,
               diskFenceSha256: sidecar.diskFenceSha256,
               review: freezeReview(review, sidecar.workingText),
+              endedReview: undefined,
               annotations: sidecar.annotations,
               pendingSave: sidecar.pendingSave,
             }),
@@ -1704,6 +1880,7 @@ export class CollaborationApplicationService {
             workingText: plan.nextWorkingText,
             diskFenceSha256: sidecar.diskFenceSha256,
             review: plan.nextReview,
+            endedReview: undefined,
             annotations: sidecar.annotations,
             pendingSave: sidecar.pendingSave,
           }),
@@ -1738,7 +1915,7 @@ export class CollaborationApplicationService {
       if (isTransitionError(plan)) {
         return plan;
       }
-      const nextReview = plan.nextReview!;
+      const nextReview = plan.nextReview;
 
       if (attached) {
         const annotationState = this.annotationStates.get(input.documentId);
@@ -1783,6 +1960,7 @@ export class CollaborationApplicationService {
             workingText: diskText,
             diskFenceSha256: diskSha256,
             review: nextReview,
+            endedReview: undefined,
             annotations: annotationPlan?.nextAnnotations ?? sidecar.annotations,
           }),
         );
@@ -1830,6 +2008,7 @@ export class CollaborationApplicationService {
                 workingText: located.sidecar.workingText,
                 diskFenceSha256: located.sidecar.diskFenceSha256,
                 review: undefined,
+                endedReview: review,
                 annotations: located.sidecar.annotations,
                 pendingSave: located.sidecar.pendingSave,
               }),
@@ -1842,7 +2021,7 @@ export class CollaborationApplicationService {
         documentId: input.documentId,
       });
       if (located.attached) {
-        this.reviews.removeReview(input.documentId);
+        this.endReview(input.documentId, review);
         this.deps.authority.broadcastReviewCleared(input.documentId, review.reviewId);
       }
       return { ok: true, reviewId: review.reviewId, documentId: input.documentId };
@@ -1875,7 +2054,7 @@ export class CollaborationApplicationService {
         workingText,
         text: RETURNED_REVIEW_COMMENT,
       });
-      const nextReview = plan.nextReview!;
+      const nextReview = plan.nextReview;
       try {
         await this.sidecars.write(
           located.attached
@@ -1890,6 +2069,7 @@ export class CollaborationApplicationService {
                 workingText,
                 diskFenceSha256: located.sidecar.diskFenceSha256,
                 review: nextReview,
+                endedReview: undefined,
                 annotations: located.sidecar.annotations,
                 pendingSave: located.sidecar.pendingSave,
               }),
@@ -2014,35 +2194,27 @@ export class CollaborationApplicationService {
   public async retractProposal(
     packetId: string,
     precondition: ReviewMutationPrecondition,
-  ): Promise<
-    RetractProposalResponse | (ReviewFailure & { reviewId: string; canClearUnresolved: boolean })
-  > {
-    // Reviews and their packets are few; a scan is cheaper to keep correct
-    // than an index every mutation must remember to maintain.
+  ): Promise<RetractProposalResponse | (ReviewFailure & { reviewId: string }) | ProposalNotFound> {
+    // The reviews of open documents and their packets are few; a scan is
+    // cheaper to keep correct than an index every mutation must maintain.
     const owner = this.reviews
       .listReviews()
       .find((candidate) => candidate.packets.some((packet) => packet.packetId === packetId));
     if (owner === undefined) {
-      return {
-        ok: false,
-        code: "PACKET_NOT_RETRACTABLE",
-        message: "Proposal not found.",
-        reviewId: "",
-        canClearUnresolved: true,
-      };
+      return await this.refuseRetractionWithoutLiveReview(packetId);
     }
     return await this.withDocumentLock(owner.documentId, async () => {
       const context = this.contextForReview(owner.reviewId);
       if ("ok" in context) {
-        return { ...context, reviewId: owner.reviewId, canClearUnresolved: false };
+        return { ...context, reviewId: owner.reviewId };
       }
       const fence = await this.checkDiskFence(context);
       if (!fence.ok) {
-        return { ...fence, reviewId: owner.reviewId, canClearUnresolved: false };
+        return { ...fence, reviewId: owner.reviewId };
       }
       const stale = this.checkPrecondition(context, precondition);
       if (stale !== undefined) {
-        return { ...stale, reviewId: owner.reviewId, canClearUnresolved: true };
+        return { ...stale, reviewId: owner.reviewId };
       }
       const result = await this.commitReviewMutation(context, () => {
         const plan = prepareRetraction({
@@ -2051,14 +2223,42 @@ export class CollaborationApplicationService {
           packetId,
         });
         return isTransitionError(plan)
-          ? { ok: false, code: plan.code as AgentErrorCode, message: plan.message }
+          ? { ok: false, code: plan.code, message: plan.message }
           : plan;
       });
-      if ("ok" in result && !result.ok) {
-        return { ...result, reviewId: context.review.reviewId, canClearUnresolved: true };
+      if (!("ok" in result) || result.ok) {
+        return result;
       }
-      return result;
+      // Another call retracted the packet after the lookup above.
+      if (result.code === "PROPOSAL_NOT_FOUND") {
+        return { ok: false, code: result.code, message: result.message };
+      }
+      return { ...result, reviewId: context.review.reviewId };
     });
+  }
+
+  /**
+   * GET /v1/reviews/{id}/packets gives the packet ids of a review of a
+   * closed document, so a retraction of such a packet names that review
+   * and the closed file. A packet that no review holds is not found.
+   */
+  private async refuseRetractionWithoutLiveReview(
+    packetId: string,
+  ): Promise<(ReviewFailure & { reviewId: string }) | ProposalNotFound> {
+    const sidecar = await this.sidecars.findReviewOfPacket(packetId);
+    if (
+      sidecar === undefined ||
+      !holdsReview(sidecar) ||
+      this.deps.authority.isDocumentOpen(sidecar.documentPath)
+    ) {
+      return { ok: false, code: "PROPOSAL_NOT_FOUND", message: "Proposal not found." };
+    }
+    return {
+      ok: false,
+      code: "DOCUMENT_CLOSED",
+      message: `The reviewed document ${sidecar.documentPath} is closed. Open it before retracting this proposal.`,
+      reviewId: sidecar.review.reviewId,
+    };
   }
 
   // ==========================================================================

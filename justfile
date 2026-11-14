@@ -128,20 +128,21 @@ test-file file: sync-dependencies
 
 # The unit-test launcher removes its temp directory at exit; an assembled-app
 # spec keeps its artifacts in the system temp directory, as under `test-e2e`.
-# Run one assembled-app spec with enough time for Electron to boot.
-test-e2e-file file: sync-dependencies
+# Run one assembled-app spec against the packaged build of the source.
+test-e2e-file file: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _e2e-run "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --timeout 180000 "{{file}}"
+    @just _e2e-run node --import tsx "{{justfile_directory()}}/e2e/support/run-lanes.ts" "{{file}}"
 
-# Run a command in the environment of an e2e run. The run owns its X
-# display, its session bus and its loopback.
-#
-# The display is the one of the environment, or one virtual display for the
-# whole command when the environment has none. An assembled-app spec starts
-# the app with `--ozone-platform=x11`, through Forge or as the packaged
-# binary itself, and each start finds the display in `DISPLAY`. The default
-# screen of xvfb-run is 640x480; a new window sizes itself from the screen,
-# and the three panes need more than that.
+# An assembled-app spec starts the packaged build (`attach`), so a run
+# compiles the app one time. The build runs when the stamp of the package is
+# not the fingerprint of the source.
+[private]
+_current-package: sync-dependencies
+    python3 "{{justfile_directory()}}/scripts/verify-build.py" --if-stale
+
+# Run a command in the environment of an e2e run. The run owns its session
+# bus and its loopback; the lanes of `e2e/support/run-lanes.ts` own the X
+# displays (one Xvfb server for each lane, #70).
 #
 # The session bus has no services (`scripts/e2e-session-bus.conf`): a desktop
 # notification of the app of a run does not reach the desktop of the author.
@@ -150,20 +151,28 @@ test-e2e-file file: sync-dependencies
 # app of the run binds its ports there: a process of the host, such as the
 # desktop app of the author on the default Agent API port, takes no port
 # from the run, and the run reaches no service of the host and no network
-# (#215). The hosted runner permits the namespace after `just setup-ci`.
-# The namespace has the user of the run; the command starts without the
-# capabilities that set up `lo`.
+# (#215).
+#
+# The X socket folder is a mount of its own: /tmp/.X11-unix of the run is an
+# empty tmpfs. Xvfb removes the socket path of its display before it binds,
+# and with -displayfd it takes display 0 over the lock of a running server;
+# in the folder of the host that removes the socket of the X server of the
+# desktop.
+#
+# The outer namespace has root, which sets up `lo` and the mount. The command
+# runs in an inner user namespace with the user and the group of the run and
+# no capabilities. The hosted runner permits the namespaces after
+# `just setup-ci`.
 [private]
 [positional-arguments]
 _e2e-run +command:
     #!/usr/bin/env bash
     set -euo pipefail
     run=(dbus-run-session --config-file="{{justfile_directory()}}/scripts/e2e-session-bus.conf" --)
-    if [[ -z "${DISPLAY:-}" ]]; then
-      run+=(xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24')
-    fi
-    exec unshare --user --map-current-user --net --keep-caps -- \
-      bash -c 'ip link set lo up && exec setpriv --inh-caps=-all --ambient-caps=-all -- "$@"' e2e-run "${run[@]}" "$@"
+    setup='ip link set lo up && mount -t tmpfs -o mode=1777 e2e-x11 /tmp/.X11-unix'
+    setup="$setup"' && exec unshare --map-user="$0" --map-group="$1" -- "${@:2}"'
+    exec unshare --user --map-root-user --net --mount -- \
+      bash -c "$setup" "$(id -u)" "$(id -g)" "${run[@]}" "$@"
 
 # Install or upgrade the flowmark and flowmark-lint commands from Flowmark's main branch.
 install-flowmark:
@@ -172,7 +181,7 @@ install-flowmark:
 # Run the focused workspace-reference test suite.
 test-references: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/rename-preview-summary.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/export-quoted-inputs.spec.ts" "test/documents-provider-navigation.spec.ts" "test/preflight-crossref.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-search.spec.ts"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/export-quoted-inputs.spec.ts" "test/documents-provider-navigation.spec.ts" "test/preflight-crossref.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-search.spec.ts"
 
 # Run the reference UI suite: the references-provider Electron shell spec
 # (Phase 3b) plus the Chromium probe specs (Mod-P search overlay incl. the
@@ -181,7 +190,7 @@ test-references: sync-dependencies
 # Mirrors test-file's invocation with the longer timeout the xvfb probes need.
 test-reference-ui: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/reference-provider-shell.spec.ts" "test/reference-search-overlay.spec.ts" "test/reference-navigation.spec.ts" "test/reference-create-label.spec.ts" "test/reference-rename-preview.spec.ts" "test/reference-error-surface.spec.ts"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/reference-provider-shell.spec.ts" "test/reference-search-overlay.spec.ts" "test/reference-navigation.spec.ts" "test/reference-create-label.spec.ts" "test/reference-error-surface.spec.ts"
 
 # Run the annotations panel animation performance and layout isolation spec.
 test-annotations-animation: sync-dependencies
@@ -211,17 +220,15 @@ test: sync-dependencies
 
 # Run the assembled Electron app against its isolated document workspace.
 # Portable: runs on hosted CI and locally alike.
-test-e2e:
-    {{bun}} x {{package_manager}} install --frozen-lockfile
+test-e2e: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _e2e-run {{bun}} run test:e2e
+    @just _e2e-run node --import tsx "{{justfile_directory()}}/e2e/support/run-lanes.ts" e2e/*.spec.ts
 
 # Run the workstation-owned desktop-launcher proofs (e2e/desktop/). These
 # drive the installed desktop entry through a live Hyprland compositor and
 # the packaged binary from `just package`; they assert those preconditions
 # loudly instead of skipping, so they run in the local push gate, not CI.
-test-e2e-desktop:
-    {{bun}} x {{package_manager}} install --frozen-lockfile
+test-e2e-desktop: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     {{bun}} run test:e2e:desktop
 
@@ -294,7 +301,7 @@ capture-tikz output: sync-dependencies
 # Capture and assemble the README demo GIFs (math typing, theorem envs,
 # review workflow): scripted scenes replayed frame by frame in isolated
 # offscreen Electron, then assembled with ffmpeg. Writes <scene>.gif files
-# into the output directory. Requires ffmpeg.
+# into the output directory. Requires ffmpeg and ImageMagick (`magick`).
 # This never starts Forge, a dev server, xdg-open, or the system browser.
 readme-demos output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" readme-demos "{{output}}"
@@ -354,15 +361,6 @@ capture-reference-hover output: sync-dependencies
 capture-reference-navigation output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-navigation "{{output}}"
 
-# Capture the rename-preview dialog scenes (issue #1, review A4: the
-# contract's "rename preview" capture) in isolated offscreen Electron:
-# bundles the probe entry with the production renderer webpack config,
-# mounts the dialog over the previewed fixture rename, and writes the
-# preview/cancel/apply screenshots plus the probe result JSON. This never
-# starts Forge, a dev server, xdg-open, or the system browser.
-capture-rename-preview output: sync-dependencies
-    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" rename-preview "{{output}}"
-
 # Capture the issue #34 review-diff accept/reject interface in isolated
 # offscreen Electron at desktop and narrow widths, light and dark.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
@@ -421,7 +419,7 @@ capture-annotations output="/tmp/zettlr-pandoc-annotations-captures": sync-depen
 # sidebar and the annotation panel visible, in light and dark at 1500 and
 # 1100 px wide. The proof surface for the chrome convergence milestones.
 # Runs under xvfb; never starts a dev server or the system browser.
-capture-chrome output="/tmp/zettlr-pandoc-chrome-captures" launch_timeout_ms="180000": sync-dependencies
+capture-chrome output="/tmp/zettlr-pandoc-chrome-captures" launch_timeout_ms="180000": _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     xvfb-run -a --server-args="-screen 0 1920x1080x24" node --import tsx "{{justfile_directory()}}/scripts/chrome-capture.ts" "{{output}}" "{{launch_timeout_ms}}"
 

@@ -28,7 +28,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -46,8 +45,6 @@ async function namesOnceHolding(directory: string, name: string): Promise<string
 }
 
 describe("Rename from the key and from the menu of a row (#202)", function () {
-  this.timeout(120_000);
-
   let browser: Browser | undefined;
   let appProcess: ChildProcess | undefined;
   let getOutput: () => string = () => "";
@@ -66,13 +63,8 @@ describe("Rename from the key and from the menu of a row (#202)", function () {
     lattices = path.join(workspace, "lattices");
     await mkdir(lattices);
     await writeFile(path.join(lattices, "form.md"), "# Form\n");
-    ({ browser, appProcess, getOutput } = await attach(
-      fixture.configDirectory,
-      [],
-      this.timeout(),
-    ));
+    ({ browser, appProcess, getOutput } = await attach(fixture.configDirectory, []));
     page = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

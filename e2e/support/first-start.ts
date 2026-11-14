@@ -20,7 +20,13 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Browser, chromium, type Page } from "playwright";
-import { delay, launchElectron, observeRenderer, waitForDevTools } from "./electron-app";
+import {
+  delay,
+  launchElectron,
+  observeRenderer,
+  startDeadline,
+  waitForDevTools,
+} from "./electron-app";
 
 export interface FirstStart {
   appProcess: ChildProcess;
@@ -32,14 +38,15 @@ export interface FirstStart {
 }
 
 /**
- * Starts the app on an empty data directory. `environment` goes to the
- * development build too: a variable that webpack reads decides that build.
+ * Starts the app on an empty data directory. A start with
+ * `buildEnvironment` compiles a build of its own with those variables
+ * (`LaunchOptions.buildEnvironment`); a start without it runs the packaged
+ * build of the run.
  */
 export async function startFirstRun(
   prefix: string,
   rendererEvents: string[],
-  timeoutMs: number,
-  environment: NodeJS.ProcessEnv = {},
+  buildEnvironment?: NodeJS.ProcessEnv,
 ): Promise<FirstStart> {
   const fixtureRoot = await mkdtemp(path.join(tmpdir(), prefix));
   const configDirectory = path.join(fixtureRoot, "config");
@@ -54,16 +61,15 @@ export async function startFirstRun(
     "utf8",
   );
 
-  const appProcess = await launchElectron(configDirectory, {
-    environment: { XDG_CONFIG_HOME: xdgConfigHome, ...environment },
-  });
+  const options = { environment: { XDG_CONFIG_HOME: xdgConfigHome }, buildEnvironment };
+  const appProcess = await launchElectron(configDirectory, options);
   let output = "";
   const appendOutput = (chunk: Buffer): void => {
     output = `${output}${chunk.toString()}`.slice(-200_000);
   };
   appProcess.stdout?.on("data", appendOutput);
   appProcess.stderr?.on("data", appendOutput);
-  const devToolsUrl = await waitForDevTools(appProcess, () => output, timeoutMs);
+  const devToolsUrl = await waitForDevTools(appProcess, () => output, startDeadline(options));
   const browser = await chromium.connectOverCDP(devToolsUrl);
   for (const context of browser.contexts()) {
     context.pages().forEach((page) => observeRenderer(page, rendererEvents));

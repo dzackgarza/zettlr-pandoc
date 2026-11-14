@@ -35,7 +35,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
   shutdown,
@@ -112,12 +111,12 @@ describe("assembled app: a save of a reviewed document that changed on disk", fu
     fixtureRoot = fixture.root;
     configDirectory = fixture.configDirectory;
     documentPath = fixture.documentPath;
-    const app = await attach(configDirectory, rendererEvents, this.timeout());
+    const app = await attach(configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
   });
 

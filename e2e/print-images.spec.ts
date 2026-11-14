@@ -87,7 +87,7 @@ describe("print window images", function () {
 
     const rendererEvents: string[] = [];
     const screenshots = new Map<string, Buffer>();
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     try {
       const page = await findEditorPage(app.browser, this.timeout());
       await page.evaluate(async (documentPath) => {

@@ -42,12 +42,10 @@
     "build:pandoc-parser": "node vendor/lezer-markdown-pandoc/build.js",
     "generate:pandoc-reference-data": "node scripts/generate-pandoc-parser-reference-data.mjs",
     "check:pandoc-reference-data": "node scripts/generate-pandoc-parser-reference-data.mjs --check",
-    "generate:agent-api-types": "openapi-typescript source/app/service-providers/agent-api/openapi.yaml -o source/types/generated/agent-api.ts",
-    "generate:texstudio-command-index": "node scripts/generate-texstudio-command-index.mjs",
+    "generate:agent-api-types": "openapi-typescript source/app/service-providers/agent-api/openapi.yaml -o source/types/generated/agent-api.ts && bun x --package @biomejs/biome biome check --config-path $HOME/ai-review-ci/tool-configs/biome.json --write source/types/generated/agent-api.ts",
     "check:agent-api-types": "bun run generate:agent-api-types && git diff --exit-code -- source/types/generated/agent-api.ts",
-    "test:e2e": "mocha --no-config --node-option import=tsx --timeout 180000 \"e2e/*.spec.ts\"",
     "test:push": "bun run test && just test-e2e",
-    "test:e2e:desktop": "mocha --no-config --node-option import=tsx --timeout 600000 \"e2e/desktop/*.spec.ts\""
+    "test:e2e:desktop": "mocha --no-config --node-option import=tsx --timeout 90000 \"e2e/desktop/*.spec.ts\""
   },
   "config": {
     "forge": "./forge.config.js"
@@ -172,6 +170,7 @@
     "dompurify": "^3.4.16"
   },
   "devDependencies": {
+    "@apidevtools/json-schema-ref-parser": "16.0.3",
     "@electron-forge/cli": "^8.0.1",
     "@electron-forge/maker-deb": "^8.0.1",
     "@electron-forge/maker-rpm": "^8.0.1",

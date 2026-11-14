@@ -148,6 +148,9 @@ export default class LongRunningTaskProvider extends ProviderContract {
       } else if (args.command === "delete-task") {
         return this.deleteTask(args.payload.id);
       }
+      // abort-task and interact-task are sent, not invoked (ipcMain.on above).
+      const unhandled: { command: unknown } = args satisfies never;
+      throw new Error(`lrt-provider has no invoke command "${String(unhandled.command)}"`);
     });
   }
 

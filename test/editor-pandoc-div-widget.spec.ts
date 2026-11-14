@@ -207,6 +207,25 @@ outside`;
     assert.doesNotMatch(title?.textContent ?? "", /\$B\(\\lambda\)\$/);
   });
 
+  it("renders the inline delimiters of the shared list in a title and keeps a display delimiter as text", function () {
+    const doc = String.raw`::: {.theorem title="\\((K+D)\\)-trivial pairs over $\QQ$ and $$x$$"}
+Body.
+:::
+
+outside`;
+    const view = createEditor(doc);
+
+    const title = view.dom.querySelector(".pandoc-div-header-title");
+    assert.ok(title !== null, "the theorem opener must carry a rendered title");
+    const formulas = [...title.querySelectorAll(".pandoc-div-header-math")];
+    assert.equal(formulas.length, 2, "\\(...\\) and $...$ are the inline math of a title");
+    assert.equal(
+      title.textContent?.includes("$$x$$"),
+      true,
+      "a display delimiter in a title is no inline math and stays its source text",
+    );
+  });
+
   it("renders the symmetric bilinear form definition syntax accepted by Pandoc", function () {
     const doc = `:::{.definition title="{Symmetric Bilinear Form}" #def:symmetric-bilinear-form}
 

@@ -23,7 +23,7 @@ import { trans } from "@common/i18n-main";
 import type { FormatResult } from "@common/modules/markdown-editor/commands/format-document";
 import type {
   CommitRenameOutcome,
-  ReferenceRenamePreview,
+  IssuedReferenceRenamePreview,
   UndoRenameOutcome,
 } from "@common/pandoc-util/compute-reference-edits";
 import enumDictFiles from "@common/util/enum-dict-files";
@@ -41,7 +41,12 @@ import type {
   ListProblemsRequest,
   WorkspaceProblems,
 } from "@dts/common/problems";
-import type { CrossReferenceSystem, WorkspaceReferenceEdit } from "@dts/common/references";
+import type { CrossReferenceSystem } from "@dts/common/references";
+import type { TexCommandVocabulary } from "@dts/common/tex-vocabulary";
+import {
+  WORKSPACE_EDIT_PROPOSAL_CHANNEL,
+  type WorkspaceEditProposal,
+} from "@dts/common/workspace-edit";
 import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tikz-render";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { clipboard, ipcMain, nativeImage, type WebContents } from "electron";
@@ -108,6 +113,7 @@ import TikzRender from "./tikz-render";
 import TutorialOpen from "./tutorial-open";
 import UpdateProjectProperties from "./update-project-properties";
 import UpdateUserDictionary from "./update-user-dictionary";
+import WorkspaceEditCommand from "./workspace-edit";
 import WorkspaceSort from "./ws-sort";
 import type { CommandWireValue, DispatchedCommand } from "./zettlr-command";
 
@@ -151,6 +157,7 @@ export const commands = [
   TutorialOpen,
   UpdateProjectProperties,
   UpdateUserDictionary,
+  WorkspaceEditCommand,
   WorkspaceSort,
 ];
 
@@ -177,12 +184,24 @@ export type ApplicationIPCContract = {
     request: { payload: ApplyProblemFixRequest };
     response: FixAllOutcome;
   };
+  // Applies the proposal that the main process sent to the window
+  // (`CommandProvider.propose`), and answers true when each document has
+  // the edit on disk. A conflict, a failed write and a refused save reject.
+  "apply-workspace-edit": {
+    request: { payload: { id: string } };
+    response: boolean;
+  };
+  // Drops a proposal that the author did not apply.
+  "discard-workspace-edit": {
+    request: { payload: { id: string } };
+    response: undefined;
+  };
   "add-language-tool-ignore-rule": {
     request: { payload: LanguageToolIgnoredRuleEntry };
     response: unknown;
   };
   "commit-reference-rename": {
-    request: { payload: { edit: WorkspaceReferenceEdit } };
+    request: { payload: { id: string } };
     response: CommitRenameOutcome;
   };
   "commit-fix-all": {
@@ -203,7 +222,7 @@ export type ApplicationIPCContract = {
   };
   "dir-new": {
     request: { payload: { path: string; name?: string } };
-    response: unknown;
+    response: boolean;
   };
   "dir-new-project": {
     request: { payload: { path: string } };
@@ -243,10 +262,18 @@ export type ApplicationIPCContract = {
   };
   "file-duplicate": {
     request: { payload: { path: string; windowId: string; leafId?: string; name?: string } };
-    response: unknown;
+    response: undefined;
   };
   "file-new": {
-    request: { payload: { path?: string; name?: string; type?: DocumentType } };
+    request: {
+      payload: {
+        path?: string;
+        name?: string;
+        type?: DocumentType;
+        windowId?: string;
+        leafId?: string;
+      };
+    };
     response: string | undefined;
   };
   "file-rename": {
@@ -288,6 +315,12 @@ export type ApplicationIPCContract = {
   "get-cross-reference-system": {
     request: { payload: string };
     response: CrossReferenceSystem;
+  };
+  // Answered inline by run(): Flowmark's TeXstudio command index and the
+  // packages that the `tex` lint context loads (`readTexCommandVocabulary`).
+  "tex-command-vocabulary": {
+    request: { payload?: undefined };
+    response: TexCommandVocabulary;
   };
   "open-attachment": {
     request: { payload: { citekey: string; filePath: string } };
@@ -366,13 +399,25 @@ export type ApplicationIPCContract = {
     request: { payload?: undefined };
     response: undefined;
   };
+  "tutorial-open": {
+    request: { payload?: undefined };
+    response: undefined;
+  };
+  "import-files": {
+    request: { payload?: undefined };
+    response: boolean;
+  };
+  "import-lang-file": {
+    request: { payload?: undefined };
+    response: boolean;
+  };
   "preview-fix-all": {
     request: { payload: FixAllRequest };
     response: FixAllPlan;
   };
   "preview-reference-rename": {
     request: { payload: { oldKey: string; newKey: string } };
-    response: ReferenceRenamePreview;
+    response: IssuedReferenceRenamePreview;
   };
   print: {
     request: { payload?: string };
@@ -382,9 +427,10 @@ export type ApplicationIPCContract = {
     request: { payload: QuartoBookEditRequest };
     response: ProjectSettings;
   };
+  // True when a file has the tag; the window then shows the edit.
   "rename-tag": {
     request: { payload: { oldName: string; newName: string } };
-    response: unknown;
+    response: boolean;
   };
   "request-move": {
     request: { payload: { from: string; to: string } };
@@ -450,6 +496,17 @@ export type ApplicationIPCContract = {
 
 export type ApplicationIPCAPI = IPCMessage<ApplicationIPCContract>;
 
+/** A command that a caller runs through `CommandProvider.run`. */
+export type ApplicationCommand = keyof ApplicationIPCContract;
+
+/**
+ * The payload of a command, as the contract states it. The handler of the
+ * command takes this type, so the contract, the callers and the handler
+ * cannot name different fields.
+ */
+export type ApplicationPayload<K extends ApplicationCommand> =
+  ApplicationIPCContract[K]["request"]["payload"];
+
 /**
  * Commands that a window runs on its own, not on an action of the author: a
  * lint pass, a figure render, a hover preview, a refresh of the Problems view.
@@ -476,6 +533,8 @@ export default class CommandProvider extends ProviderContract {
    * a command runs has the window of the first one.
    */
   private readonly _startedBy = new AsyncLocalStorage<WebContents>();
+  /** The proposals that wait for the author, by id. */
+  private readonly _proposals = new Map<string, WorkspaceEditProposal>();
 
   // TODO: Right now this just injects the full service container into the
   // commands, but it mayt be better to only provide those which are actually
@@ -488,7 +547,7 @@ export default class CommandProvider extends ProviderContract {
     // Set up the command listener
     ipcMain.handle("application", async (event, { command, payload }) => {
       if (typeof command === "string") {
-        return await this._startedBy.run(event.sender, () => this.run(command, payload));
+        return await this._startedBy.run(event.sender, () => this._runWire(command, payload));
       } else {
         throw new Error(`[Commands] Could not run command "${String(command)}": Not a string`);
       }
@@ -502,11 +561,23 @@ export default class CommandProvider extends ProviderContract {
    * cause of each failure once.
    *
    * @param   {string}  command  The command to run
-   * @param   {CommandWireValue}  payload  The payload the command requires
+   * @param   {ApplicationPayload}  payload  The payload of the contract
    *
    * @return  {Promise<CommandWireValue>}  The return from running the command
    */
-  async run(command: string, payload: CommandWireValue): Promise<CommandWireValue> {
+  async run<K extends ApplicationCommand>(
+    command: K,
+    payload: ApplicationPayload<K>,
+  ): Promise<CommandWireValue> {
+    return await this._runWire(command, payload);
+  }
+
+  /**
+   * Runs a command whose name and payload came over the `application`
+   * channel. The type of the renderer call site checks them against the
+   * contract; the wire carries no type.
+   */
+  private async _runWire(command: string, payload: CommandWireValue): Promise<CommandWireValue> {
     try {
       return await this._dispatch(command, payload);
     } catch (err: unknown) {
@@ -529,17 +600,48 @@ export default class CommandProvider extends ProviderContract {
    * whose window is gone.
    */
   private _showFailure(failure: CommandFailedBroadcast): void {
+    this._startingWindow()?.send(COMMAND_FAILED_CHANNEL, failure);
+  }
+
+  /**
+   * The window that answers for the command that runs: the window that
+   * started it, or the main window for a command that the application
+   * started and for a command whose window is gone.
+   */
+  private _startingWindow(): WebContents | undefined {
     const candidates = [
       this._startedBy.getStore(),
       this._app.windows.getFirstMainWindow()?.webContents,
     ];
-    const window = candidates.find(
+    return candidates.find(
       (candidate) => candidate !== undefined && !candidate.isDestroyed() && !candidate.isCrashed(),
     );
+  }
+
+  /**
+   * Shows a proposal in the window that started the command that runs (see
+   * `_startingWindow`). The proposal waits there until the author applies
+   * or discards it (`takeProposal`); it goes away with its window. Nothing
+   * changes before that.
+   */
+  propose(proposal: WorkspaceEditProposal): void {
+    const window = this._startingWindow();
     if (window === undefined) {
-      return;
+      throw new Error(trans("No window can show the edit: %s", proposal.description));
     }
-    window.send(COMMAND_FAILED_CHANNEL, failure);
+    this._proposals.set(proposal.id, proposal);
+    window.once("destroyed", () => this._proposals.delete(proposal.id));
+    window.send(WORKSPACE_EDIT_PROPOSAL_CHANNEL, proposal);
+  }
+
+  /** The proposal with the id, which no other call can take after this one. */
+  takeProposal(id: string): WorkspaceEditProposal {
+    const proposal = this._proposals.get(id);
+    if (proposal === undefined) {
+      throw new Error(trans("The edit is no longer available. No file changed."));
+    }
+    this._proposals.delete(id);
+    return proposal;
   }
 
   private async _dispatch(command: string, payload: CommandWireValue): Promise<CommandWireValue> {
@@ -566,6 +668,8 @@ export default class CommandProvider extends ProviderContract {
       return database;
     } else if (command === "get-cross-reference-system" && typeof payload === "string") {
       return await documentCrossReferenceSystem(this._app.fsal, payload);
+    } else if (command === "tex-command-vocabulary") {
+      return await this._app.documentLint.texCommandVocabulary();
     } else if (command === "edit-ignore-rules") {
       const mainWindow = this._app.windows.getFirstMainWindow();
       if (mainWindow === undefined) {

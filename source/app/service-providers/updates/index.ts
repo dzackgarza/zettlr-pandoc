@@ -15,7 +15,6 @@
 import { trans } from "@common/i18n-main";
 import { md2html } from "@common/modules/markdown-utils";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
-import isFile from "@common/util/is-file";
 import { initializeMathJax } from "@common/util/mathtex-to-html";
 import { showNativeNotification } from "@common/util/show-notification";
 import type ConfigProvider from "@providers/config";
@@ -26,9 +25,7 @@ import got, { RequestError, type Response } from "got";
 import path from "path";
 import semver from "semver";
 import { openPath } from "source/app/util/open-path";
-import PACKAGE_JSON from "../../../../package.json";
 import { loadCanonicalMathJaxMacros } from "../../util/load-mathjax-macros";
-import type CommandProvider from "../commands";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
 import type WindowProvider from "../windows";
@@ -251,12 +248,18 @@ function parseReleases(value: JsonValue): ServerAPIResponse[] {
 
 const CUR_VER = app.getVersion();
 
+/** Where the releases of the app are: the page for a person, the list for the provider. */
+export interface ReleaseLocations {
+  releasePage: string;
+  releasesApi: string;
+}
+
 /**
  * The releases of the GitHub repository that package.json names as the
  * homepage are this app's updates. The GitHub REST API serves them under
  * /repos/{owner}/{repo}/releases.
  */
-function releaseLocations(homepage: string): { releasePage: string; releasesApi: string } {
+export function releaseLocations(homepage: string): ReleaseLocations {
   const repository = new URL(homepage);
   if (repository.hostname !== "github.com") {
     throw new Error(`package.json homepage ${homepage} is not a GitHub repository.`);
@@ -267,7 +270,6 @@ function releaseLocations(homepage: string): { releasePage: string; releasesApi:
   };
 }
 
-const { releasePage, releasesApi } = releaseLocations(PACKAGE_JSON.homepage);
 const UPDATE_CHECK_INTERVAL = 1000 * 60 * 60; // 1 hour
 
 /**
@@ -275,7 +277,7 @@ const UPDATE_CHECK_INTERVAL = 1000 * 60 * 60; // 1 hour
  *
  * @return  {UpdateState}  The clean state
  */
-function getUpdateState(): UpdateState {
+function getUpdateState(releasePage: string): UpdateState {
   return {
     lastErrorMessage: undefined,
     lastErrorCode: undefined,
@@ -299,12 +301,13 @@ export default class UpdateProvider extends ProviderContract {
   private _updateState: UpdateState;
   private _downloadReadStream: undefined | ReturnType<typeof got.stream>;
   private _downloadWriteStream: undefined | WriteStream;
+  private _checkInterval: undefined | ReturnType<typeof setInterval>;
 
   constructor(
     private readonly _logger: LogProvider,
     private readonly _config: ConfigProvider,
-    private readonly _commands: CommandProvider,
-    private readonly _windows: WindowProvider,
+    private readonly _windows: Pick<WindowProvider, "showUpdateWindow">,
+    private readonly _releases: ReleaseLocations,
   ) {
     super();
     this._logger.verbose("Update provider booting up ...");
@@ -312,7 +315,7 @@ export default class UpdateProvider extends ProviderContract {
     this._sha256Data = new Map();
 
     // Initialize the update state
-    this._updateState = getUpdateState();
+    this._updateState = getUpdateState(this._releases.releasePage);
 
     // Initialize the write/read streams used during downloads
     this._downloadReadStream = undefined;
@@ -334,11 +337,8 @@ export default class UpdateProvider extends ProviderContract {
         this._downloadAppUpdate(payload as string);
       } else if (command === "begin-update") {
         // Begin the actual update process NOTE We're not blocking the handler
-        this._beginUpdate().catch((e) => {
-          this._logger.error(
-            `[Update Provider] Unexpected error during update process: ${e.message as string}`,
-            e,
-          );
+        this._beginUpdate().catch((e: Error) => {
+          this._reportError("EUPDATE", trans("Could not start the update: %s", e.message), true);
         });
         return true;
       }
@@ -357,7 +357,7 @@ export default class UpdateProvider extends ProviderContract {
    * Resets the update state, and emits an update message.
    */
   private _resetState(): void {
-    this._updateState = getUpdateState();
+    this._updateState = getUpdateState(this._releases.releasePage);
     broadcastIpcMessage("update-provider", "state-changed", this._updateState);
   }
 
@@ -375,10 +375,10 @@ export default class UpdateProvider extends ProviderContract {
     this._updateState.lastErrorMessage = message;
     broadcastIpcMessage("update-provider", "state-changed", this._updateState);
     if (notify) {
-      showNativeNotification(
-        trans("There was an error while checking for updates. %s: %s", code, message),
-        trans("Cannot check for update"),
-        () => this._windows.showUpdateWindow(),
+      // The message names the step that failed: the check, the download,
+      // the verify or the start of the update.
+      showNativeNotification(message, trans("Update failed"), () =>
+        this._windows.showUpdateWindow(),
       );
     }
   }
@@ -389,10 +389,22 @@ export default class UpdateProvider extends ProviderContract {
    * @return {Promise} Resolves only when there is an update available.
    */
   async check(): Promise<void> {
-    if (!net.online || __UPDATES_DISABLED__ === "1") {
-      // Don't check if we don't have an internet connection; preserve the last
-      // state so that the user sees what the most recent result was. We also
-      // never check if updates have been disabled at build time.
+    // A check that does not run keeps the result of the last check and says
+    // why it did not run.
+    if (__UPDATES_DISABLED__ === "1") {
+      this._reportError(
+        "EDISABLED",
+        trans("This build of the app does not check for updates."),
+        false,
+      );
+      return;
+    }
+    if (!net.online) {
+      this._reportError(
+        "EOFFLINE",
+        trans("Could not check for updates: The computer has no network connection."),
+        false,
+      );
       return;
     }
 
@@ -400,7 +412,9 @@ export default class UpdateProvider extends ProviderContract {
     this._resetState();
 
     try {
-      this._logger.info(`[Update Provider] Checking ${releasesApi} for application updates ...`);
+      this._logger.info(
+        `[Update Provider] Checking ${this._releases.releasesApi} for application updates ...`,
+      );
       let platformString = "";
       if (process.platform === "win32") {
         platformString = `Windows NT 10.0; ${process.arch}`;
@@ -414,7 +428,7 @@ export default class UpdateProvider extends ProviderContract {
 
       // got parses the body; a body that is not JSON is a ParseError
       // (a RequestError), which the handler below reports with its message.
-      const response: Response<JsonValue> = await got(releasesApi, {
+      const response: Response<JsonValue> = await got(this._releases.releasesApi, {
         timeout: { request: 5000 },
         method: "GET",
         responseType: "json",
@@ -458,8 +472,11 @@ export default class UpdateProvider extends ProviderContract {
       if (!(err instanceof RequestError)) {
         // Report this error
         this._reportError(
-          "Unexpected error",
-          "An unexpected error occurred while checking for updates",
+          "EUNEXPECTED",
+          trans(
+            "Could not check for updates: %s",
+            err instanceof Error ? err.message : String(err),
+          ),
           true,
         );
         return;
@@ -524,11 +541,13 @@ export default class UpdateProvider extends ProviderContract {
   private async _parseResponse(response: Response<JsonValue>): Promise<UpdateState> {
     // got returns an empty string for an empty body, which parseReleases refuses.
     const releases = parseReleases(response.body);
-    const state = getUpdateState();
+    const state = getUpdateState(this._releases.releasePage);
     state.lastCheck = Date.now();
     const parsedResponse = newestRelease(releases, this._config.get("checkForBeta"));
     if (parsedResponse === undefined) {
-      this._logger.info(`[Update Provider] ${releasePage} has no published release.`);
+      this._logger.info(
+        `[Update Provider] ${this._releases.releasePage} has no published release.`,
+      );
       return state;
     }
 
@@ -536,7 +555,7 @@ export default class UpdateProvider extends ProviderContract {
     const remoteVersion = semver.parse(parsedResponse.tag_name); // remoteVersion
 
     if (localVersion === null || remoteVersion === null) {
-      this._cleanup();
+      this._stopDownload();
       const error = new Error(
         "Cannot complete check for new version: Either the local or remote version could not be parsed!",
       );
@@ -651,7 +670,7 @@ export default class UpdateProvider extends ProviderContract {
     if (updateToPull === undefined) {
       this._reportError(
         "ENOTFOUND",
-        trans(`Refused to download file ${url}: URL is not in the list of server-provided assets`),
+        trans("Refused to download file %s: URL is not in the list of server-provided assets", url),
         true,
       );
       return;
@@ -677,11 +696,9 @@ export default class UpdateProvider extends ProviderContract {
 
     this._downloadReadStream.on("data", (chunk) => {
       if (this._downloadWriteStream === undefined) {
-        this._cleanup(true);
-        this._reportError(
+        this._abandonDownload(
           "EWRITESTREAM",
-          trans("Could not accept data for application update: Write stream is gone."),
-          true,
+          trans("Could not download the update: The file of the download is closed."),
         );
         return;
       }
@@ -700,27 +717,31 @@ export default class UpdateProvider extends ProviderContract {
       // Close the write stream. This will free the file handle, which is
       // important on Windows for the next step, because if this is not done,
       // Windows will refuse to open the file and emit an error that the file is
-      // still in use.
-      this._downloadWriteStream?.end();
-      this._logger.info(
-        `Successfully downloaded ${this._updateState.name}. Transferred ${this._updateState.size_downloaded} bytes overall.`,
-      );
-      showNativeNotification(`Download of ${this._updateState.name} successful!`, "Update", () => {
-        // The user has clicked the notification, so we can show the update window here
-        this._commands
-          .run("open-update-window", undefined)
-          .catch((e) => this._logger.error(String(e.message), e));
+      // still in use. The download is complete when the file has each byte.
+      this._downloadWriteStream?.end(() => {
+        this._logger.info(
+          `Successfully downloaded ${this._updateState.name}. Transferred ${this._updateState.size_downloaded} bytes overall.`,
+        );
+        showNativeNotification(
+          `Download of ${this._updateState.name} successful!`,
+          "Update",
+          () => {
+            // The user has clicked the notification, so we can show the update window here
+            this._windows.showUpdateWindow();
+          },
+        );
       });
     });
 
     this._downloadReadStream.on("error", (err) => {
-      this._cleanup(true);
-      this._reportError("EREADSTREAM", `Download Read Stream Error: ${err.message}`, true);
+      this._abandonDownload("EREADSTREAM", trans("Could not download the update: %s", err.message));
     });
 
     this._downloadWriteStream.on("error", (err) => {
-      this._cleanup(true);
-      this._reportError("EWRITESTREAM", `Download Write Stream Error: ${err.message}`, true);
+      this._abandonDownload(
+        "EWRITESTREAM",
+        trans("Could not save the update to %s: %s", destination, err.message),
+      );
     });
   }
 
@@ -739,52 +760,57 @@ export default class UpdateProvider extends ProviderContract {
     const correctSHA = this._sha256Data.get(this._updateState.name);
 
     if (correctSHA === undefined) {
-      this._cleanup(true);
-      this._reportError(
+      await this._abandonDownload(
         "EVERIFY",
         trans(
           "Could not verify the integrity of the downloaded update. Please retry or update manually.",
         ),
-        true,
       );
       return;
     }
 
-    const sha256sum = crypto.createHash("sha256");
-    const fileContents = await fs.readFile(this._updateState.full_path);
-    sha256sum.update(fileContents);
-    const downloadSHA = sha256sum.digest("hex");
+    const download = this._updateState.full_path;
+    let fileContents: Buffer;
+    try {
+      fileContents = await fs.readFile(download);
+    } catch (err: unknown) {
+      this._stopDownload();
+      const message = err instanceof Error ? err.message : String(err);
+      this._reportError(
+        "EREADFILE",
+        trans("Could not read the downloaded update %s: %s", download, message),
+        true,
+      );
+      return;
+    }
+    const downloadSHA = crypto.createHash("sha256").update(fileContents).digest("hex");
 
     if (downloadSHA !== correctSHA) {
-      showNativeNotification("Could not verify update. Please retry or download manually.");
-      this._cleanup(true);
-      this._reportError(
+      await this._abandonDownload(
         "EVERIFY",
         trans(
           "The downloaded file has a different checksum than the server reported. Please retry or update manually.",
         ),
-        true,
       );
       return;
-    } else {
-      this._logger.info(
-        `[Update Provider] Successfully verified the checksum of ${this._updateState.name} (${downloadSHA})!`,
-      );
     }
+    this._logger.info(
+      `[Update Provider] Successfully verified the checksum of ${this._updateState.name} (${downloadSHA})!`,
+    );
 
     // Then launch the file and immediately quit the app.
     try {
-      if (this._updateState.full_path.endsWith(".AppImage")) {
+      if (download.endsWith(".AppImage")) {
         // AppImages need to be manually moved by the user
-        await openPath(path.dirname(this._updateState.full_path));
+        await openPath(path.dirname(download));
       } else {
         // Everything else can be opened as is
-        await openPath(this._updateState.full_path);
+        await openPath(download);
       }
       app.quit();
     } catch (err: unknown) {
-      this._cleanup(false);
-      const message = err instanceof Error ? err.message : "Unknown error";
+      this._stopDownload();
+      const message = err instanceof Error ? err.message : String(err);
       this._reportError(
         "EOPEN",
         trans("Could not start update. Please retry or update manually. Error was: %s", message),
@@ -794,55 +820,59 @@ export default class UpdateProvider extends ProviderContract {
   }
 
   /**
-   * Cleans up after a completed or partial download, setting the provider state
-   * to begin another download.
+   * Stops the streams of the download and resets the provider state, so
+   * that another download can begin.
    *
-   * @param   {boolean}  unlinkFile  Whether to also remove the (partial) files
+   * @return  {string}  The path of the download; empty when none was started
    */
-  private _cleanup(unlinkFile: boolean = false): void {
+  private _stopDownload(): string {
     // First, clean out the download write stream
     if (this._downloadWriteStream !== undefined) {
-      try {
-        this._downloadWriteStream.close();
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        this._logger.warning(`[Update Provider] Could not close write stream: ${message}`, err);
-      }
+      this._downloadWriteStream.close();
       this._downloadWriteStream = undefined;
     }
     // Second the read stream
     if (this._downloadReadStream !== undefined) {
-      try {
-        this._downloadReadStream.destroy();
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        this._logger.warning(`[Update Provider] Could not close read stream: ${message}`, err);
-      }
+      this._downloadReadStream.destroy();
       this._downloadReadStream = undefined;
     }
-
-    // Also reset the state
+    const download = this._updateState.full_path;
     this._resetState();
+    return download;
+  }
 
-    if (!unlinkFile || !isFile(this._updateState.full_path)) {
-      return;
-    }
-
-    // We shall also unlink the file
-    fs.unlink(this._updateState.full_path).catch((e) => {
-      this._logger.error(
-        `[Update Provider] Could not remove partial download file ${this._updateState.full_path}.`,
-        e,
-      );
-    });
+  /**
+   * Gives up the download: stops it, removes its file and reports the cause.
+   * A file that cannot be removed is named in the report.
+   *
+   * @param   {string}  code     The error code
+   * @param   {string}  message  The cause, which names the step that failed
+   */
+  private async _abandonDownload(code: string, message: string): Promise<void> {
+    const download = this._stopDownload();
+    const removal =
+      download === ""
+        ? undefined
+        : await fs.rm(download, { force: true }).then(
+            () => undefined,
+            (err: Error) => err,
+          );
+    this._reportError(
+      code,
+      removal === undefined
+        ? message
+        : `${message} ${trans("The download %s stays on disk: %s", download, removal.message)}`,
+      true,
+    );
   }
 
   async boot(): Promise<void> {
     await initializeMathJax(await loadCanonicalMathJaxMacros(app.getPath("home")));
+    // A check renders the changelog through md2html, which needs MathJax.
     this._registerIpcHandler();
 
     // Initiate the update check
-    setInterval(() => {
+    this._checkInterval = setInterval(() => {
       // Only check if the user wants to, and if there is not yet a new version.
       const { checkForUpdates } = this._config.get().system;
       if (!checkForUpdates || this.applicationUpdateAvailable()) {
@@ -870,10 +900,14 @@ export default class UpdateProvider extends ProviderContract {
    */
   async shutdown(): Promise<void> {
     this._logger.verbose("Update provider shutting down ...");
+    clearInterval(this._checkInterval);
     // We'll be removing the file IF and only IF the download was not finished.
     const downloadUnfinished =
       this._updateState.size_downloaded > 0 &&
       this._updateState.size_downloaded !== this._updateState.size_total;
-    this._cleanup(downloadUnfinished);
+    const download = this._stopDownload();
+    if (downloadUnfinished) {
+      await fs.rm(download, { force: true });
+    }
   }
 }

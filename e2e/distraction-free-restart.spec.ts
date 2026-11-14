@@ -28,7 +28,6 @@ import {
   attach,
   createWorkspaceFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   REPO_ROOT,
   requireInitialized,
@@ -98,13 +97,12 @@ describe("assembled app: distraction-free mode across a restart", function () {
     const app = await attach(
       requireInitialized(configDirectory, "config directory"),
       rendererEvents,
-      timeoutMs,
     );
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     const page = await findEditorPage(browser, timeoutMs);
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: timeoutMs });
     await page.setViewportSize({ width: 1400, height: 900 });
     return page;

@@ -316,11 +316,16 @@ export default class CiteprocProvider extends ProviderContract {
     /**
      * Listen to renderer requests
      */
-    ipcMain.handle("citeproc-provider", async (event, message: CiteprocProviderIPCAPI) => {
+    ipcMain.handle("citeproc-provider", async (event, message: IPCMessage<CiteprocIPCContract>) => {
       if (message.command === "get-problems") {
         return this.problems();
       }
       const { command, payload } = message;
+      // get-citation-sync and each other name of no invoke command reach
+      // this handler only from a call outside the contract.
+      if (command !== "get-items" && command !== "get-citation" && command !== "get-bibliography") {
+        throw new Error(`citeproc-provider has no invoke command "${String(command satisfies never)}"`);
+      }
       const { database } = payload;
       // A database that does not load is a problem that the windows show.
       if (!(await this.databasesAvailable(database))) {

@@ -32,7 +32,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
   requireInitialized,
@@ -118,8 +117,6 @@ function markedFields(preferences: Page): Promise<string[]> {
 }
 
 describe("assembled app: a citation style that cannot be loaded", function () {
-  this.timeout(300_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
@@ -152,12 +149,12 @@ describe("assembled app: a citation style that cannot be loaded", function () {
       },
     });
     fixtureRoot = fixture.root;
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     agent = agentClient(await readAgentApiPort(fixture.configDirectory, 60_000));
   });

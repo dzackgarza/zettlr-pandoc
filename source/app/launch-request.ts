@@ -100,6 +100,11 @@ export async function acquireLaunch(
   files: string[],
   mode: LaunchRequest["mode"],
 ): Promise<"primary" | "delivered"> {
+  // A hand-off exists to open files in the running app. Without one, the
+  // running app would answer "ready" for an open that did not happen.
+  if (mode === "existing" && files.length === 0) {
+    throw new Error("The request names no file to open");
+  }
   for (;;) {
     const channel = await replyChannel();
     try {

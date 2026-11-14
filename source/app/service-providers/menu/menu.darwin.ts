@@ -199,7 +199,9 @@ export default function getMenu(
           id: "menu.open",
           label: trans("Open file…"),
           click: function (_menuitem, _focusedWindow) {
-            commands.run("root-open-files", []).catch((e: Error) => logger.error(e.message, e));
+            commands
+              .run("root-open-files", undefined)
+              .catch((e: Error) => logger.error(e.message, e));
           },
         },
         {
@@ -207,7 +209,7 @@ export default function getMenu(
           label: trans("Open workspace…"),
           click: function (_menuitem, _focusedWindow) {
             commands
-              .run("root-open-workspaces", [])
+              .run("root-open-workspaces", undefined)
               .catch((e: Error) => logger.error(e.message, e));
           },
         },
@@ -243,23 +245,21 @@ export default function getMenu(
         {
           id: "menu.previous_file",
           label: trans("Previous file"),
-          click: function (_menuitem, focusedWindow) {
+          click: function () {
             // Session history is per-pane, and the renderer owns which pane is
             // focused, so the navigation request goes out on the same
             // 'shortcut' channel the swipe and browser back/forward gestures
-            // use (create-main-window.ts).
-            if (focusedWindow instanceof BrowserWindow) {
-              focusedWindow.webContents.send("shortcut", "navigate-back");
-            }
+            // use (create-main-window.ts). It goes to the main window that the
+            // author used last: with the focus in Preferences or another
+            // window without panes, that main window goes back (#57).
+            windows.getFirstMainWindow()?.webContents.send("shortcut", "navigate-back");
           },
         },
         {
           id: "menu.next_file",
           label: trans("Next file"),
-          click: function (_menuitem, focusedWindow) {
-            if (focusedWindow instanceof BrowserWindow) {
-              focusedWindow.webContents.send("shortcut", "navigate-forward");
-            }
+          click: function () {
+            windows.getFirstMainWindow()?.webContents.send("shortcut", "navigate-forward");
           },
         },
         {
@@ -483,18 +483,18 @@ export default function getMenu(
           id: "menu.toggle_theme",
           label: trans("Dark mode"),
           type: "checkbox",
-          checked: config.get("darkMode") === true,
+          checked: config.get("darkMode"),
           click: function (_menuitem, _focusedWindow) {
-            config.set("darkMode", config.get("darkMode") === false);
+            config.set("darkMode", !config.get("darkMode"));
           },
         },
         {
           id: "menu.toggle_file_meta",
           label: trans("Additional information"),
           type: "checkbox",
-          checked: config.get("fileMeta") === true,
+          checked: config.get("fileMeta"),
           click: function (_menuitem, _focusedWindow) {
-            config.set("fileMeta", config.get("fileMeta") === false);
+            config.set("fileMeta", !config.get("fileMeta"));
           },
         },
         {
@@ -797,7 +797,7 @@ export default function getMenu(
   ];
 
   // Finally, before returning, make sure to remove the debug menu if applicable
-  if (config.get("debug") === false) {
+  if (!config.get("debug")) {
     const debugMenuIndex = menu.findIndex((item) => item.id === "debug-menu");
     if (debugMenuIndex >= 0) {
       menu.splice(debugMenuIndex, 1);

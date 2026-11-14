@@ -10,7 +10,6 @@ import {
   attach,
   createFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   shutdown,
 } from "./support/electron-app";
@@ -50,7 +49,6 @@ async function inspectWorkspaceLintProgress(
 }
 
 describe("assembled app: Problems view", function () {
-  this.timeout(180_000);
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page;
@@ -79,12 +77,12 @@ describe("assembled app: Problems view", function () {
     const config = JSON.parse(await readFile(configPath, "utf8"));
     config.app.openWorkspaces.push(secondWorkspace);
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
   });
 

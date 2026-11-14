@@ -185,6 +185,7 @@
   />
   <FixAllDialog ref="fixAllDialog" />
   <IgnoreRulesDialog />
+  <WorkspaceEditProposals />
 </template>
 
 <script setup lang="ts">
@@ -216,8 +217,13 @@ import { loadFromDiskAction } from "@common/util/load-document-from-disk";
 import localiseNumber from "@common/util/localise-number";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import { recordRendererError } from "@common/util/run-recoverably";
-import { saveCopyAction, saveRefusalActions } from "@common/util/save-refusal-action";
+import {
+  saveCopyAction,
+  saveRefusalActions,
+  showReviewAction,
+} from "@common/util/save-refusal-action";
 import showToast from "@common/util/show-toast";
+import WorkspaceEditProposals from "@common/vue/WorkspaceEditProposals.vue";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import {
   COLLABORATION_FILE_UNREADABLE_CHANNEL,
@@ -262,7 +268,6 @@ import {
   useWorkspaceStore,
 } from "source/pinia";
 import type { PaneSetting } from "source/pinia/window-state-store";
-import { type AnyDescriptor } from "source/types/common/fsal";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import chimeFile from "./assets/chime.mp3";
 import alarmFile from "./assets/digital_alarm.mp3";
@@ -523,7 +528,7 @@ const createLabelSeparator = ref<":" | "-">(":");
  */
 function openCreateReferenceLabel(prompt: CreateReferenceLabelDialogPrompt): void {
   Promise.all([
-    invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+    invokeReferenceProviderRecoverably(
       async (channel, message) => await ipcRenderer.invoke(channel, message),
       { command: "get-snapshot" },
       trans("Loading workspace references"),
@@ -1112,6 +1117,23 @@ onMounted(() => {
   // decides, when they choose, whether the disk version replaces them.
   ipcRenderer.on(REMOTE_CHANGE_KEPT_CHANNEL, (event, payload: RemoteChangeKeptBroadcast) => {
     const name = pathBasename(payload.filePath);
+    if (payload.frozenReview) {
+      // The review of the document refuses a save over the new file, so the
+      // text of the editor reaches a file only through a copy or a decision
+      // on the review.
+      showToast(
+        trans(
+          "%s changed on disk. The editor keeps your unsaved changes, and the review of the document is frozen: a save is refused until you reapply or discard the review.",
+          name,
+        ),
+        "info",
+        12000,
+        loadFromDiskAction(payload.filePath),
+        showReviewAction(),
+        saveCopyAction(payload.filePath),
+      );
+      return;
+    }
     const message = payload.unsavedChanges
       ? trans("%s changed on disk. The editor keeps your unsaved changes.", name)
       : trans("%s changed on disk. The editor keeps its contents.", name);
@@ -1195,13 +1217,8 @@ onMounted(() => {
           command: "get-descriptor",
           payload: documentTreeStore.lastLeafActiveFile.path,
         })
-        .then((descriptor: AnyDescriptor | AnyDescriptor[] | undefined) => {
-          if (
-            descriptor !== undefined &&
-            !Array.isArray(descriptor) &&
-            descriptor.type === "file" &&
-            descriptor.id !== ""
-          ) {
+        .then((descriptor) => {
+          if (descriptor.type === "file" && descriptor.id !== "") {
             navigator.clipboard.writeText(descriptor.id).catch((err) => reportError(err));
           }
         })

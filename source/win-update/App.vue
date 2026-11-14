@@ -101,7 +101,7 @@ import { DateTime } from "luxon";
 import { type UpdateState } from "source/app/service-providers/updates";
 import { sanitizeHTML } from "source/common/util/sanitize-html";
 import { useConfigStore } from "source/pinia";
-import { computed, onUnmounted, ref } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import PACKAGE_JSON from "../../package.json";
 
 const ipcRenderer = window.ipc;
@@ -164,6 +164,14 @@ const hasError = computed(() => {
     updateState.value.lastErrorMessage !== undefined &&
     updateState.value.lastErrorCode !== undefined
   );
+});
+
+// A failed update ends the start: the button offers the next start again.
+watch(hasError, (failed) => {
+  if (failed) {
+    disableStartButton.value = false;
+    startButtonLabel.value = trans("Click to start update");
+  }
 });
 
 const isDownloading = computed(() => {

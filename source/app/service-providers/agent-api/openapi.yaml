@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Zettlr-Pandoc Editor Agent API
-  version: 1.0.0
+  version: 3.0.0
   description: >-
     REST API for reading editor documents, submitting proposed edits, and
     inspecting reviews. Read the current document before submitting a proposal
@@ -23,6 +23,46 @@ components:
     bearerToken:
       type: http
       scheme: bearer
+  responses:
+    InvalidRequest:
+      description: The request target, the JSON body or a parameter is malformed
+        (INVALID_PARAMS)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AgentErrorResponse'
+    Unauthorized:
+      description: The request carries no valid bearer token (UNAUTHORIZED)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AgentErrorResponse'
+    RequestBodyTimeout:
+      description: The request body did not arrive within the server deadline
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AgentErrorResponse'
+    RequestTooLarge:
+      description: The request body exceeds maxRequestSize of getCapabilities
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AgentErrorResponse'
+    UnreadableState:
+      description: A file of a document or of its collaboration state cannot be 
+        read (DOCUMENT_UNREADABLE, COLLABORATION_STATE_UNREADABLE)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AgentErrorResponse'
+    InternalError:
+      description: The server failed; the message names the cause 
+        (INTERNAL_ERROR)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AgentErrorResponse'
   schemas:
     DocumentRevision:
       type: object
@@ -94,8 +134,10 @@ components:
           type: string
         focused:
           type: boolean
+          description: The view is the pane of the editor that the author used last.
         active:
           type: boolean
+          description: The document is the active tab of the view.
     DocumentSummary:
       type: object
       required:
@@ -347,6 +389,7 @@ components:
             - PATCH_NOT_APPLICABLE
             - CLAIM_NOT_ATOMIC
             - PACKET_NOT_RETRACTABLE
+            - PROPOSAL_NOT_FOUND
             - CHUNK_NOT_FOUND
             - ANNOTATION_NOT_FOUND
             - ANNOTATION_GENERATION_MISMATCH
@@ -507,7 +550,8 @@ components:
             $ref: "#/components/schemas/AgentEvent"
         timedOut:
           type: boolean
-          description: True if the request reached its timeout before a status change.
+          description: True if the request reached its timeout before a status 
+            change.
     FocusedViewSummary:
       type: object
       required:
@@ -531,7 +575,6 @@ components:
         - windowId
         - leafId
         - focused
-        - active
       properties:
         viewId:
           type: string
@@ -541,10 +584,10 @@ components:
           type: string
         documentId:
           type: string
+          description: The document of the active tab of the view; absent for a view without tabs.
         focused:
           type: boolean
-        active:
-          type: boolean
+          description: The view is the pane of the editor that the author used last.
         documents:
           type: array
           items:
@@ -720,7 +763,8 @@ components:
           description: Absolute path of the folder.
         cause:
           type: string
-          description: The error of the filesystem, or why the workspace is missing.
+          description: The error of the filesystem, or why the workspace is 
+            missing.
     WorkspaceFilesResponse:
       type: object
       required:
@@ -850,8 +894,8 @@ components:
           description: One-based line of the match start.
         preview:
           type: object
-          description: "The line of the match: text before it (trimmed), the match, and
-            text after it."
+          description: "The line of the match: text before it (trimmed), the match,
+            and text after it."
           required:
             - before
             - inside
@@ -880,8 +924,8 @@ components:
           type: string
         workspaceId:
           type: string
-          description: The workspace that holds the file; absent for an open file outside
-            every workspace.
+          description: The workspace that holds the file; absent for an open 
+            file outside every workspace.
         open:
           type: boolean
           description: Whether the file is currently loaded in the editor.
@@ -904,8 +948,8 @@ components:
         kind:
           type: string
           enum: [file, folder]
-          description: A file that the search could not read, or a folder that it could
-            not list; the search read no file of such a folder.
+          description: A file that the search could not read, or a folder that 
+            it could not list; the search read no file of such a folder.
         cause:
           type: string
           description: The error of the read.
@@ -923,18 +967,18 @@ components:
             $ref: "#/components/schemas/WorkspaceSearchFile"
         notSearched:
           type: array
-          description: The files that the search could not read and the folders that it
-            could not list. The search read each other file; a file in this list, or in
-            a folder of this list, has no entry in files, and the answer says nothing
-            about its text.
+          description: The files that the search could not read and the folders 
+            that it could not list. The search read each other file; a file in 
+            this list, or in a folder of this list, has no entry in files, and 
+            the answer says nothing about its text.
           items:
             $ref: "#/components/schemas/WorkspaceSearchUnreadFile"
         matchCount:
           type: integer
         truncated:
           type: boolean
-          description: True when the search stopped at maxMatches; narrow the query or the
-            globs.
+          description: True when the search stopped at maxMatches; narrow the 
+            query or the globs.
     SearchDocumentResponse:
       type: object
       required:
@@ -1393,13 +1437,16 @@ components:
           description: Text selected when the annotation was created.
         from:
           type: integer
-          description: UTF-16 offset where the target starts. Present when state is range.
+          description: UTF-16 offset where the target starts. Present when state
+            is range.
         to:
           type: integer
-          description: UTF-16 offset where the target ends. Present when state is range.
+          description: UTF-16 offset where the target ends. Present when state 
+            is range.
         at:
           type: integer
-          description: UTF-16 offset of the collapsed seam. Present when state is point.
+          description: UTF-16 offset of the collapsed seam. Present when state 
+            is point.
         line:
           type: integer
           description: >-
@@ -1415,7 +1462,8 @@ components:
           description: 1-based line of to. Present only when state is range.
         endColumn:
           type: integer
-          description: 1-based UTF-16 column of to. Present only when state is range.
+          description: 1-based UTF-16 column of to. Present only when state is 
+            range.
         reason:
           type: string
           enum:
@@ -1447,7 +1495,8 @@ components:
           type: string
         clientRequestId:
           type: string
-          description: Client request ID for an agent-authored message, when present.
+          description: Client request ID for an agent-authored message, when 
+            present.
     AnnotationProposalAction:
       type: object
       additionalProperties: false
@@ -1497,7 +1546,8 @@ components:
                 - acted
             messageId:
               type: string
-              description: Agent-authored disposition message that claims the remediation.
+              description: Agent-authored disposition message that claims the 
+                remediation.
             actedAt:
               type: string
     AnnotationResponse:
@@ -1633,7 +1683,8 @@ components:
             uri:
               type: string
               pattern: ^(file://|/)
-              description: Absolute file path or file URI within a configured workspace.
+              description: Absolute file path or file URI within a configured 
+                workspace.
         baseline:
           type: object
           additionalProperties: false
@@ -1643,11 +1694,13 @@ components:
             sha256:
               type: string
               pattern: ^[0-9a-f]{64}$
-              description: SHA-256 of the document text this submission was built against.
+              description: SHA-256 of the document text this submission was 
+                built against.
         clientRequestId:
           type: string
           minLength: 1
-          description: Client-chosen request ID. Use a new ID after rebuilding a submission.
+          description: Client-chosen request ID. Use a new ID after rebuilding a
+            submission.
         claims:
           type: array
           minItems: 1
@@ -1702,7 +1755,8 @@ components:
       properties:
         packetId:
           type: string
-          description: ID of the newest proposal in this submission; the last element of packetIds.
+          description: ID of the newest proposal in this submission; the last 
+            element of packetIds.
         packetIds:
           type: array
           items:
@@ -2024,7 +2078,8 @@ components:
       properties:
         root:
           type: string
-          description: Canonical absolute path of the configured skills directory.
+          description: Canonical absolute path of the configured skills 
+            directory.
         count:
           type: integer
           minimum: 0
@@ -2052,10 +2107,12 @@ components:
       properties:
         root:
           type: string
-          description: Canonical absolute path of the configured skills directory.
+          description: Canonical absolute path of the configured skills 
+            directory.
         path:
           type: string
-          description: Markdown file path relative to the configured skills directory.
+          description: Markdown file path relative to the configured skills 
+            directory.
         size:
           type: integer
           minimum: 0
@@ -2200,7 +2257,8 @@ components:
           type: string
           minLength: 1
           maxLength: 4096
-          description: Relative destination under the configured figures directory.
+          description: Relative destination under the configured figures 
+            directory.
         content:
           type: string
           description: File content as UTF-8 or base64.
@@ -2210,7 +2268,8 @@ components:
             - create
             - write
           default: create
-          description: create fails with 409 if file exists; write replaces existing files.
+          description: create fails with 409 if file exists; write replaces 
+            existing files.
         encoding:
           type: string
           enum:
@@ -2329,7 +2388,8 @@ components:
           type: string
         suggestions:
           type: array
-          description: Candidate fixes. Each replaces the whole from-to range with its replacement.
+          description: Candidate fixes. Each replaces the whole from-to range 
+            with its replacement.
           items:
             type: object
             additionalProperties: false
@@ -2343,7 +2403,8 @@ components:
                 type: string
         fix:
           type: object
-          description: The one edit a batch fix applies without asking; it needs no choice and keeps the meaning. Absent when no such edit exists.
+          description: The one edit a batch fix applies without asking; it needs
+            no choice and keeps the meaning. Absent when no such edit exists.
           additionalProperties: false
           required:
             - title
@@ -2357,7 +2418,8 @@ components:
           type: object
           properties: {}
           additionalProperties: true
-          description: Structured rule-specific facts. Human-facing message text is not an API identifier.
+          description: Structured rule-specific facts. Human-facing message text
+            is not an API identifier.
     DocumentLintResult:
       type: object
       additionalProperties: false
@@ -2820,7 +2882,8 @@ paths:
               - help
               - skills
             default: help
-          description: Read built-in authoring help or the configured skills subtree.
+          description: Read built-in authoring help or the configured skills 
+            subtree.
         - name: format
           in: query
           required: false
@@ -2839,7 +2902,8 @@ paths:
               - list
               - read
             default: list
-          description: For resource=skills, list the subtree or read one Markdown file.
+          description: For resource=skills, list the subtree or read one 
+            Markdown file.
         - name: path
           in: query
           required: false
@@ -2849,7 +2913,8 @@ paths:
             maxLength: 4096
       responses:
         "200":
-          description: Authoring help, skills subtree listing, or Markdown file contents.
+          description: Authoring help, skills subtree listing, or Markdown file 
+            contents.
           content:
             text/markdown:
               schema:
@@ -2869,12 +2934,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Skill Markdown file not found.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: >-
             The filesystem refuses to read the skill file or a folder on its
@@ -2883,6 +2952,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
         "503":
           description: No usable skills directory is configured.
           content:
@@ -2901,6 +2974,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PingResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/capabilities:
     get:
       operationId: getCapabilities
@@ -2913,6 +2996,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CapabilitiesResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/context:
     get:
       operationId: getContext
@@ -2925,6 +3018,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EditorContext"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          $ref: '#/components/responses/UnreadableState'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/views:
     get:
       operationId: listViews
@@ -2937,6 +3042,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ViewsResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          $ref: '#/components/responses/UnreadableState'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/workspace/search:
     get:
       operationId: searchWorkspace
@@ -2979,15 +3096,16 @@ paths:
           schema:
             type: string
             default: ""
-          description: Comma-separated globs relative to the workspace root; a file must
-            match one. A glob without a slash matches at any depth, for example
-            `*.md`.
+          description: Comma-separated globs relative to the workspace root; a 
+            file must match one. A glob without a slash matches at any depth, 
+            for example `*.md`.
         - name: exclude
           in: query
           schema:
             type: string
             default: ""
-          description: Comma-separated globs; a file that matches one is skipped.
+          description: Comma-separated globs; a file that matches one is 
+            skipped.
         - name: maxMatches
           in: query
           schema:
@@ -2995,7 +3113,8 @@ paths:
             default: 200
             minimum: 1
             maximum: 1000
-          description: The search stops after this many matches and sets truncated.
+          description: The search stops after this many matches and sets 
+            truncated.
       responses:
         "200":
           description: The matching files, in workspace order.
@@ -3009,17 +3128,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          $ref: '#/components/responses/UnreadableState'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
         "422":
-          description: Matching one file did not finish within the server deadline
+          description: Matching one file did not finish within the server 
+            deadline
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/workspaces:
     get:
       operationId: listWorkspaces
       x-openai-isConsequential: false
-      summary: List configured workspaces, or a workspace's documents, directories, or files
+      summary: List configured workspaces, or a workspace's documents, 
+        directories, or files
       parameters:
         - name: workspaceId
           in: query
@@ -3050,7 +3181,8 @@ paths:
           description: Optional search term when listing workspace documents.
       responses:
         "200":
-          description: Workspace listing, document list, directory list, or file list.
+          description: Workspace listing, document list, directory list, or file
+            list.
           content:
             application/json:
               schema:
@@ -3059,6 +3191,24 @@ paths:
                   - $ref: "#/components/schemas/WorkspaceDocumentsResponse"
                   - $ref: "#/components/schemas/WorkspaceDirectoriesResponse"
                   - $ref: "#/components/schemas/WorkspaceFilesResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No workspace has the workspaceId (WORKSPACE_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          $ref: '#/components/responses/UnreadableState'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/workspace/entries:
     post: # nosemgrep: yaml.openapi.security.openai-consequential-action-false.openai-consequential-action-false -- exception: https://github.com/dzackgarza/zettlr-pandoc/pull/175#issuecomment-6039509818
       operationId: createWorkspaceEntry
@@ -3083,6 +3233,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "403":
           description: Destination is outside every configured workspace
           content:
@@ -3095,14 +3247,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: An entry already exists at the destination
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
         "500":
-          description: The filesystem refused the creation (PERSISTENCE_FAILED); the message names the path and the cause
+          description: The filesystem refused the creation (PERSISTENCE_FAILED);
+            the message names the path and the cause
           content:
             application/json:
               schema:
@@ -3129,6 +3286,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DocumentListResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          $ref: '#/components/responses/UnreadableState'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/documents/{documentId}:
     get:
       operationId: getDocument
@@ -3160,7 +3329,8 @@ paths:
               - working
               - reference
             default: working
-          description: working is the current text; reference is the text before proposed changes.
+          description: working is the current text; reference is the text before
+            proposed changes.
         - name: startLine
           in: query
           schema:
@@ -3182,18 +3352,28 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/DocumentSummary"
                   - $ref: "#/components/schemas/ReadDocumentResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Document not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: The file of the closed document cannot be read
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/documents/{documentId}/search:
     post:
       operationId: searchDocument
@@ -3239,24 +3419,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Document not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        "408":
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: The file of the closed document cannot be read
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
-        "408":
-          description: Search timed out
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '422':
+          description: Search timed out (SEARCH_TIMEOUT)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AgentErrorResponse"
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/documents/{documentId}/proposals:
     post:
       operationId: submitProposal
@@ -3291,14 +3479,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Document not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
-          description: Revision mismatch, document closed, or a file of the document that cannot be read (DOCUMENT_UNREADABLE)
+          description: Revision mismatch, document closed, or a file of the 
+            document that cannot be read (DOCUMENT_UNREADABLE)
           content:
             application/json:
               schema:
@@ -3313,6 +3506,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
         "422":
           description: Patch does not apply
           content:
@@ -3355,12 +3550,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: File not found in workspace
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: Conflict or mismatch
           content:
@@ -3373,12 +3572,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
         "422":
           description: Patch does not apply
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/annotations:
     get:
       operationId: listAnnotations
@@ -3413,12 +3616,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnnotationListResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Document not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          $ref: '#/components/responses/UnreadableState'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/annotations/{annotationId}:
     get:
       operationId: getAnnotation
@@ -3437,12 +3652,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnnotationResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Annotation not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          $ref: '#/components/responses/UnreadableState'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/annotations/{annotationId}/messages:
     post:
       operationId: addAnnotationMessage
@@ -3471,12 +3698,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AddAnnotationMessageResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Annotation not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: >-
             The annotation is resolved or its generation changed before the
@@ -3485,6 +3718,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/reviews:
     get:
       operationId: listReviews
@@ -3497,6 +3734,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReviewListResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          $ref: '#/components/responses/UnreadableState'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/reviews/{reviewId}:
     get:
       operationId: getReview
@@ -3531,18 +3780,28 @@ paths:
                   - $ref: "#/components/schemas/ReviewDiffResponse"
                   - $ref: "#/components/schemas/ReviewChunksResponse"
                   - $ref: "#/components/schemas/ReviewPacketsResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Review not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: Document closed
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/reviews/{reviewId}/comments:
     post:
       operationId: addReviewComment
@@ -3567,18 +3826,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReviewDetailResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Review not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: Document closed
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/reviews/{reviewId}/reapply:
     post:
       operationId: reapplyReview
@@ -3608,18 +3877,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReapplyReviewResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Review not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: The review is still current, or its generation moved.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/reviews/{reviewId}/discard:
     post:
       operationId: discardReview
@@ -3648,18 +3927,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DiscardReviewResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Review not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: The review is still current, or its generation moved.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/proposals/{packetId}/retract:
     post:
       operationId: retractProposal
@@ -3688,18 +3977,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RetractProposalResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Proposal not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: Proposal cannot be retracted or document is closed
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/reviews/{reviewId}/events:
     get:
       operationId: waitForReviewEvents
@@ -3739,12 +4038,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReviewEventsResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Review not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          $ref: '#/components/responses/UnreadableState'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/citations:
     get:
       operationId: queryCitations
@@ -3783,12 +4094,24 @@ paths:
                   - $ref: "#/components/schemas/CitationItemsResponse"
                   - $ref: "#/components/schemas/CitationDatabasesResponse"
                   - $ref: "#/components/schemas/CitationItem"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: The database does not hold the cite key.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          $ref: '#/components/responses/UnreadableState'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
         "503":
           description: >-
             The database is not loaded. error.database names the file and the
@@ -3823,6 +4146,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: >-
             The database does not hold a cite key of the request.
@@ -3831,6 +4156,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          $ref: '#/components/responses/UnreadableState'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
         "503":
           description: >-
             The database is not loaded (CITATION_DATABASE_NOT_LOADED,
@@ -3860,17 +4193,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MacroInventoryResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        "500":
+          description: Macro inspection failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
         "503":
           description: >-
             The TeX macro directory cannot be read, or the generated MathJax
             projection cannot be read or is not a macro projection
             (MACROS_UNAVAILABLE); the message names the cause.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AgentErrorResponse"
-        "500":
-          description: Macro inspection failed
           content:
             application/json:
               schema:
@@ -3921,6 +4262,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: >-
             The figure file does not exist (FIGURE_NOT_FOUND), or the configured
@@ -3929,6 +4272,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: >-
             The filesystem refuses to read the figure file or a folder on its
@@ -3937,6 +4282,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
         "500":
           description: Figure operation failed
           content:
@@ -3972,12 +4319,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
         "409":
           description: Figure already exists
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
         "500":
           description: Figure persistence failed
           content:
@@ -4036,12 +4389,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: Document or workspace not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          $ref: '#/components/responses/UnreadableState'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
         "500":
           description: Lint failed
           content:
@@ -4084,6 +4445,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ZoteroSearchResponse"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
         "502":
           description: Zotero answered with an error
           content:
@@ -4116,6 +4487,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ZoteroExtractionsResponse"
+        '400':
+          description: The request is not valid (INVALID_PARAMS), or the add-on 
+            refuses the item key (ZOTERO_REQUEST_FAILED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No item has the item key (ZOTERO_REQUEST_FAILED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          description: 'The item has no children: it is a note or an attachment (ZOTERO_REQUEST_FAILED)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
         "502":
           description: Zotero or an attachment file could not be read.
           content:
@@ -4123,7 +4521,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "503":
-          description: Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available
+          description: Zotero does not answer, Zotero answers without the 
+            local-write-api add-on, or the citation database is not available
           content:
             application/json:
               schema:
@@ -4158,12 +4557,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
-          description: No registry has the identifier, or a collection key does not exist
+          description: No registry has the identifier, or a collection key does 
+            not exist
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          description: The add-on refuses the import in the state of the library
+            (ZOTERO_REQUEST_FAILED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
         "502":
           description: Zotero answered with an error
           content:
@@ -4171,7 +4586,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "503":
-          description: Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available
+          description: Zotero does not answer, Zotero answers without the 
+            local-write-api add-on, or the citation database is not available
           content:
             application/json:
               schema:
@@ -4211,26 +4627,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         "404":
           description: A collection key does not exist
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '408':
+          $ref: '#/components/responses/RequestBodyTimeout'
+        '409':
+          description: The add-on refuses the import in the state of the library
+            (ZOTERO_REQUEST_FAILED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
         "422":
           description: ZOTERO_SOURCE_NOT_IDENTIFIED, with error.remediation
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        '500':
+          $ref: '#/components/responses/InternalError'
         "502":
-          description: Zotero could not fetch the source, or answered with an error
+          description: Zotero could not fetch the source, or answered with an 
+            error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "503":
-          description: Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available
+          description: Zotero does not answer, Zotero answers without the 
+            local-write-api add-on, or the citation database is not available
           content:
             application/json:
               schema:

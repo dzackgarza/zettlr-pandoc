@@ -43,10 +43,7 @@ import type {
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import { app } from "electron";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import {
-  runWorkspaceEditTransaction,
-  saveUpdatedBuffers,
-} from "../references/workspace-edit-transaction";
+import { applyWorkspaceEdit } from "../../util/workspace-edit-proposal";
 import ZettlrCommand from "./zettlr-command";
 
 export default class FixAll extends ZettlrCommand {
@@ -160,23 +157,10 @@ export default class FixAll extends ZettlrCommand {
     const expectedSourceHashes = Object.fromEntries(
       plan.documents.map((document) => [document.documentPath, document.sourceHash]),
     );
-    const documents = this._app.documents;
-    const result = await runWorkspaceEditTransaction(documents, app.getPath("userData"), {
+    const outcome = await applyWorkspaceEdit(this._app.documents, app.getPath("userData"), {
       edits,
       expectedSourceHashes,
     });
-    if (result.status === "conflict") {
-      return { status: "conflict", documentPath: result.documentPath };
-    }
-    const unsaved = await saveUpdatedBuffers(
-      async (documentPath) => await documents.saveFile(documentPath),
-      result.openBuffersUpdated,
-    );
-    return {
-      status: "applied",
-      fixesApplied: edits.length,
-      documentsChanged: [...result.openBuffersUpdated, ...result.closedFilesWritten],
-      unsaved,
-    };
+    return outcome.status === "conflict" ? outcome : { ...outcome, fixesApplied: edits.length };
   }
 }

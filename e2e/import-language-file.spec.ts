@@ -34,7 +34,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -54,8 +53,6 @@ const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
 const TRANSLATION = path.join(process.cwd(), "static", "lang", "fr-FR.po");
 
 describe("The language file import", function () {
-  this.timeout(180_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
@@ -141,12 +138,12 @@ describe("The language file import", function () {
     languageFolder = path.join(fixture.configDirectory, "lang");
     await mkdir(languageFolder);
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     const refusal: unknown = await page.evaluate(
       (askFileDialog) =>

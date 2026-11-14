@@ -75,6 +75,7 @@
  * END HEADER
  */
 
+import { trans } from "@common/i18n-main";
 import {
   type CommitRenameOutcome,
   previewReferenceRename,
@@ -83,14 +84,17 @@ import {
 } from "@common/pandoc-util/compute-reference-edits";
 import { extractReferences, hashDocumentSource } from "@common/pandoc-util/extract-references";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
+import { editedText, previewOf } from "@common/util/workspace-edit-preview";
 import type { WorkspaceReferenceEdit, WorkspaceTextEdit } from "@dts/common/references";
 import type LogProvider from "@providers/log";
 import { ipcMain } from "electron";
+import { readFile } from "fs/promises";
 import type { FSALEventPayload } from "../fsal";
 import ProviderContract, { type IPCMessage } from "../provider-contract";
 import { extractPandocCitations, knownPandocCitations } from "./pandoc-citations";
 import { ReferenceIndex, type WorkspaceReferenceState } from "./reference-index";
 import {
+  type JournalRecoveryAuthority,
   recoverWorkspaceEditJournal,
   runWorkspaceEditTransaction,
   type WorkspaceEditAuthority,
@@ -132,9 +136,11 @@ export type ReferenceProviderIPCAPI = IPCMessage<ReferenceProviderIPCContract>;
  * The slice of the document authority (the documents provider) this provider
  * reads live buffers through (issue #53). The authority owns every open
  * buffer's text; this seam returns the CURRENT text of an open markdown
- * document, or undefined when the path is not an open markdown buffer.
+ * document, or undefined when the path is not an open markdown buffer. The
+ * startup recovery of the journal restores the sidecars of the documents
+ * through it.
  */
-export type ReferenceDocumentAuthority = WorkspaceEditAuthority;
+export type ReferenceDocumentAuthority = WorkspaceEditAuthority & JournalRecoveryAuthority;
 
 /**
  * The slice of FSAL this provider actually consumes: the 'fsal-events'
@@ -216,7 +222,8 @@ export default class ReferenceProvider extends ProviderContract {
     private readonly _logger: LogProvider,
     private readonly _fsal: ReferenceFSALEvents,
     private readonly _authority: ReferenceDocumentAuthority,
-    private readonly _authorityReportDebounceMs: number,
+    /** Reads the report delay that the author set, at each report (#57) */
+    private readonly _authorityReportDebounceMs: () => number,
     /** Application data directory holding the workspace-edit journal */
     private readonly _journalDirectory: string,
     private readonly _scheduler: AuthorityReportScheduler = setTimeoutScheduler,
@@ -257,55 +264,87 @@ export default class ReferenceProvider extends ProviderContract {
     this._pendingReports.set(
       filePath,
       this._scheduler.schedule(
-        () => {
-          this._pendingReports.delete(filePath);
-
-          const content = this._authority.readMarkdownBufferContent(filePath);
-          if (content === undefined) {
-            // The buffer closed between the change and the debounce firing:
-            // the overlay follows the authority's open set.
-            this.dropAuthorityBuffer(filePath);
-            return;
-          }
-
-          const snapshot = extractReferences(filePath, content);
-          if (this._citationSources.get(filePath) === snapshot.sourceHash) return;
-          this._citationSources.set(filePath, snapshot.sourceHash);
-          const request = Symbol(filePath);
-          this._citationRequests.set(filePath, request);
-          const citations = knownPandocCitations(content);
-          if (citations !== undefined) {
-            this._index.reportLiveBuffer({ ...snapshot, citations });
-            broadcastIpcMessage("references");
-            return;
-          }
-          this._index.reportLiveBuffer(snapshot);
-          broadcastIpcMessage("references");
-          const isCurrent = (): boolean => {
-            const current = this._authority.readMarkdownBufferContent(filePath);
-            return (
-              this._citationRequests.get(filePath) === request &&
-              current !== undefined &&
-              hashDocumentSource(current) === snapshot.sourceHash
-            );
-          };
-          void extractPandocCitations(content).then(
-            (citations) => {
-              if (!isCurrent()) return;
-              this._index.reportLiveBuffer({ ...snapshot, citations });
-              broadcastIpcMessage("references");
-            },
-            (error: Error) => {
-              this._logger.error("[Reference Provider] Pandoc citation extraction failed", error);
-              if (!isCurrent()) return;
-              this._index.reportLiveBuffer({ ...snapshot, citationError: error.message });
-              broadcastIpcMessage("references");
-            },
-          );
-        },
-        immediate ? 0 : this._authorityReportDebounceMs,
+        () => this._reportBufferNow(filePath),
+        immediate ? 0 : this._authorityReportDebounceMs(),
       ),
     );
+  }
+
+  /** Extracts the current authority text of a buffer into the overlay. */
+  private _reportBufferNow(filePath: string): void {
+    this._pendingReports.delete(filePath);
+
+    const content = this._authority.readMarkdownBufferContent(filePath);
+    if (content === undefined) {
+      // The buffer closed between the change and the debounce firing:
+      // the overlay follows the authority's open set.
+      this.dropAuthorityBuffer(filePath);
+      return;
+    }
+
+    const snapshot = extractReferences(filePath, content);
+    if (this._citationSources.get(filePath) === snapshot.sourceHash) return;
+    this._citationSources.set(filePath, snapshot.sourceHash);
+    const request = Symbol(filePath);
+    this._citationRequests.set(filePath, request);
+    const citations = knownPandocCitations(content);
+    if (citations !== undefined) {
+      this._index.reportLiveBuffer({ ...snapshot, citations });
+      broadcastIpcMessage("references");
+      return;
+    }
+    this._index.reportLiveBuffer(snapshot);
+    broadcastIpcMessage("references");
+    const isCurrent = (): boolean => {
+      const current = this._authority.readMarkdownBufferContent(filePath);
+      return (
+        this._citationRequests.get(filePath) === request &&
+        current !== undefined &&
+        hashDocumentSource(current) === snapshot.sourceHash
+      );
+    };
+    void extractPandocCitations(content).then(
+      (citations) => {
+        if (!isCurrent()) return;
+        this._index.reportLiveBuffer({ ...snapshot, citations });
+        broadcastIpcMessage("references");
+      },
+      (error: Error) => {
+        this._logger.error("[Reference Provider] Pandoc citation extraction failed", error);
+        if (!isCurrent()) return;
+        this._index.reportLiveBuffer({ ...snapshot, citationError: error.message });
+        broadcastIpcMessage("references");
+      },
+    );
+  }
+
+  /**
+   * Runs each pending extraction now, so the overlay holds the current
+   * text of each open buffer.
+   */
+  private _flushAuthorityReports(): void {
+    for (const [filePath, task] of [...this._pendingReports]) {
+      task.cancel();
+      this._reportBufferNow(filePath);
+    }
+  }
+
+  /**
+   * Brings the index to the text that an applied transaction left, before a
+   * broadcast announces the transaction (#57). The authority reports an
+   * edited buffer with the debounce of typing, so each pending extraction
+   * runs now. The FSAL gives the saved snapshot of a written file when its
+   * watcher reports the write; the index takes the snapshot of the text that
+   * the transaction wrote, which is the snapshot that the FSAL parser
+   * extracts from the same text.
+   *
+   * @param   {Record<string, string>}  closedFileTexts  The text of each written file
+   */
+  private _indexAppliedTransaction(closedFileTexts: Record<string, string>): void {
+    this._flushAuthorityReports();
+    for (const [filePath, content] of Object.entries(closedFileTexts)) {
+      this._index.applySavedSnapshot(extractReferences(filePath, content));
+    }
   }
 
   /**
@@ -349,10 +388,10 @@ export default class ReferenceProvider extends ProviderContract {
         );
       }
     }
-    const restored = await recoverWorkspaceEditJournal(this._journalDirectory);
+    const restored = await recoverWorkspaceEditJournal(this._journalDirectory, this._authority);
     if (restored.length > 0) {
       this._logger.warning(
-        `[Reference Provider] Restored ${restored.length} file(s) from an interrupted workspace edit`,
+        `[Reference Provider] Restored ${restored.length} document(s) from an interrupted workspace edit`,
         restored,
       );
     }
@@ -369,18 +408,44 @@ export default class ReferenceProvider extends ProviderContract {
   }
 
   /**
-   * Previews the workspace rename of oldKey to newKey over the CURRENT
-   * merged workspace state (live overlays already substituted), delegating
-   * to the pure previewReferenceRename(). The preview never partitions
-   * open-buffer vs closed-file documents and never touches disk.
+   * Previews the workspace rename of oldKey to newKey over the current
+   * merged workspace state: each pending extraction of an open buffer runs
+   * first, then the pure previewReferenceRename() gives the edit. The
+   * preview reads the text of each document that the edit changes (the
+   * buffer of an open document, the file of a closed one) and gives each
+   * changed line before and after (#6). A text whose hash is not the one
+   * the edit was computed from rejects: the edit would not be the one the
+   * author sees.
    *
    * @param   {string}                  oldKey  The full key being renamed
    * @param   {string}                  newKey  The full replacement key
    *
-   * @return  {ReferenceRenamePreview}          The previewed edit or a typed rejection
+   * @return  {Promise<ReferenceRenamePreview>}  The previewed edit or a typed rejection
    */
-  public previewRename(oldKey: string, newKey: string): ReferenceRenamePreview {
-    return previewReferenceRename(this._index.getSnapshot().snapshots, oldKey, newKey);
+  public async previewRename(oldKey: string, newKey: string): Promise<ReferenceRenamePreview> {
+    this._flushAuthorityReports();
+    const result = previewReferenceRename(this._index.getSnapshot().snapshots, oldKey, newKey);
+    if (result.status === "rejected") {
+      return result;
+    }
+    const { edit } = result;
+    const documents = await Promise.all(
+      Object.entries(edit.expectedSourceHashes).map(async ([documentPath, expectedHash]) => {
+        const source =
+          this._authority.readMarkdownBufferContent(documentPath) ??
+          (await readFile(documentPath, "utf-8").catch((cause: Error) => {
+            throw new Error(`Could not read ${documentPath}: ${cause.message}`, { cause });
+          }));
+        if (hashDocumentSource(source) !== expectedHash) {
+          throw new Error(
+            trans("%s changed while the references were read. Do the rename again.", documentPath),
+          );
+        }
+        const edits = edit.edits.filter((change) => change.documentPath === documentPath);
+        return { documentPath, source, target: editedText(source, edits) };
+      }),
+    );
+    return { status: "ok", edit, documents: previewOf(documents) };
   }
 
   /**
@@ -424,6 +489,7 @@ export default class ReferenceProvider extends ProviderContract {
       expectedSourceHashes: result.resultingHashes,
     };
 
+    this._indexAppliedTransaction(result.closedFileTexts);
     broadcastIpcMessage("references");
 
     return {
@@ -471,6 +537,7 @@ export default class ReferenceProvider extends ProviderContract {
     // One-shot: the applied undo consumes the record.
     this._pendingUndo = undefined;
 
+    this._indexAppliedTransaction(result.closedFileTexts);
     broadcastIpcMessage("references");
 
     return {

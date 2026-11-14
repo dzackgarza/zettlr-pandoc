@@ -20,15 +20,11 @@
 // the named import below for the harness-owned userData path.
 import "./headless-electron-harness.cjs";
 
-import type {
-  AgentApiComponents,
-  ReapplyReviewRequest,
-  ReviewMutationPrecondition,
-} from "@dts/common/agent-api";
+import $RefParser, { type JSONSchema } from "@apidevtools/json-schema-ref-parser";
+import type { ReapplyReviewRequest, ReviewMutationPrecondition } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import Ajv2020 from "ajv/dist/2020";
 import { strict as assert } from "assert";
 import { spawn } from "child_process";
 import { randomUUID } from "crypto";
@@ -52,15 +48,22 @@ import net from "net";
 import type { Document as OpenApiDefinition } from "openapi-backend";
 import os from "os";
 import path from "path";
+import {
+  AGENT_API_DISCOVERY_FILE,
+  parseAgentApiDiscovery,
+} from "source/app/service-providers/agent-api/discovery-file";
 import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
 import AgentHTTPProvider, {
   type AgentApiHost,
   AgentApiTokenRequiredError,
+  MAX_SEARCH_HITS,
 } from "source/app/service-providers/agent-api/http-server";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
+import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
 import type FSAL from "source/app/service-providers/fsal";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import {
   type DirectoryListing,
@@ -72,56 +75,18 @@ import { createIgnoreFilter, EVERY_FILE_TYPE } from "source/common/util/ignore-r
 import { sha256Text } from "source/common/util/sha256";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { parse as parseYaml } from "yaml";
+import { AGENT_API_ENVIRONMENT, readAgentApiPort } from "../e2e/support/electron-app";
+import {
+  type AgentApiSchemas,
+  assertDeclaredRawResponse,
+  assertDeclaredResponse,
+  type JsonValue,
+  openApiDocument,
+  parseAs,
+} from "./agent-api-contract";
 import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { bootFsal } from "./fsal-seam";
 import { userData } from "./headless-electron-harness.cjs";
-
-// ============================================================================
-// Contract conformance
-// ============================================================================
-
-/**
- * The specification as this file reads it. An operation keeps an index
- * signature so the structural audits below can walk any field generically,
- * and `requestBody` is spelled out because tests read published request
- * bounds out of it: a value reached through a declared path needs no cast to
- * be used, and a cast is what would let this shape drift from the document
- * without anything noticing.
- */
-interface PublishedNumericBounds {
-  maxLength?: number;
-  minimum?: number;
-  maximum?: number;
-  default?: number;
-}
-
-interface PublishedOperation {
-  [field: string]: unknown;
-  operationId: string;
-  tags?: string[];
-  requestBody?: {
-    content: Record<string, { schema: { properties: Record<string, PublishedNumericBounds> } }>;
-  };
-}
-
-/**
- * Validates a response body against the schema the server itself publishes.
- * Field-by-field assertions cannot catch drift in a field nobody thought to
- * assert — `type` shipped as the internal enum ordinal (1) instead of the
- * declared "markdown" | "code" through a fully green suite. Every response
- * asserted here is checked against openapi.yaml as a whole.
- */
-const openApiDocument = parseYaml(
-  readFileSync(
-    path.join(__dirname, "../source/app/service-providers/agent-api/openapi.yaml"),
-    "utf8",
-  ),
-) as {
-  components: { schemas: Record<string, unknown> };
-  paths: Record<string, Record<string, PublishedOperation>>;
-};
-
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 /** The token that each provider of this spec is started with. */
 const API_TOKEN = randomUUID();
@@ -240,25 +205,6 @@ function auditAsGptAction(document: JsonValue): string[] {
   return findings;
 }
 
-const ajv = new Ajv2020({ strict: false, allErrors: true });
-for (const [name, schema] of Object.entries(openApiDocument.components.schemas)) {
-  ajv.addSchema(schema as object, `#/components/schemas/${name}`);
-}
-
-type AgentApiSchemas = AgentApiComponents["schemas"];
-
-/** Parse a response body and prove that it conforms to the named OpenAPI schema. */
-function parseAs<N extends keyof AgentApiSchemas & string>(
-  body: string,
-  schemaName: N,
-): AgentApiSchemas[N] {
-  const value: JsonValue = JSON.parse(body);
-  if (ajv.validate<AgentApiSchemas[N]>(`#/components/schemas/${schemaName}`, value)) {
-    return value;
-  }
-  assert.fail(`Response does not conform to ${schemaName}: ${ajv.errorsText()}\n${body}`);
-}
-
 describe("Agent HTTP API (OpenAPI / REST)", function () {
   let scratch: string;
   let provider: DocumentManager;
@@ -275,6 +221,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   let configuredSkillsDirectory: string | null;
   let saveDialogResponse = 2;
   let peerServers: http.Server[] = [];
+  /** The sidecar files that a case wrote itself; afterEach removes them. */
+  let caseSidecars: string[] = [];
   // The configured workspace set, read live by the config seam so a test can
   // exercise the no-workspace-open profile the app ships with.
   let openWorkspaces: string[] = [];
@@ -308,8 +256,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   }
 
   async function createProvider(): Promise<DocumentManager> {
-    const userData = path.join(os.tmpdir(), "zettlr-pandoc-http-api-test");
-    mkdirSync(userData, { recursive: true });
+    // The provider stores its tabs in the userData of the harness, which
+    // each spec file of the run shares: a boot starts with no tab.
     mkdirSync(path.join(userData, "logs"), { recursive: true });
     rmSync(path.join(userData, "documents.yaml"), { force: true });
 
@@ -351,6 +299,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       },
       fsal: {
         getWatchdog: () => watcherSeam,
+        // This spec drives no FSAL event: the provider subscribes and hears nothing.
+        on: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
+        off: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
         testAccess: async () => true,
         getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
         loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),
@@ -480,7 +431,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     headers: http.IncomingHttpHeaders;
     body: string;
   }> {
-    return new Promise((resolve, reject) => {
+    const response = await new Promise<{
+      status: number | undefined;
+      headers: http.IncomingHttpHeaders;
+      body: string;
+    }>((resolve, reject) => {
       const req = http.request(
         {
           hostname: "127.0.0.1",
@@ -498,11 +453,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             data += chunk.toString("utf8");
           });
           res.on("end", () => {
-            resolve({
-              status: res.statusCode ?? 0,
-              headers: res.headers,
-              body: data,
-            });
+            resolve({ status: res.statusCode, headers: res.headers, body: data });
           });
         },
       );
@@ -512,6 +463,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }
       req.end();
     });
+    const { status, headers, body } = response;
+    assert.ok(status !== undefined, `${method} ${pathname} answered without a status`);
+    assertDeclaredResponse(method, pathname, status, headers["content-type"], body);
+    return { status, headers, body };
   }
 
   function runReviewDiffCli(
@@ -667,10 +622,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       env: TOKEN_ENVIRONMENT,
     });
     await httpProvider.boot();
-    httpPort = Number.parseInt(
-      readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),
-      10,
-    );
+    httpPort = parseAgentApiDiscovery(
+      readFileSync(path.join(userData, AGENT_API_DISCOVERY_FILE), "utf8"),
+    ).port;
     assert.ok(Number.isInteger(httpPort) && httpPort > 0);
   });
 
@@ -689,6 +643,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
     peerServers = [];
     saveDialogResponse = 2;
+    for (const file of caseSidecars) {
+      rmSync(file, { force: true });
+    }
+    caseSidecars = [];
     await fsal?.shutdown();
     fsal = undefined;
     walk = walkWorkspace;
@@ -932,6 +890,84 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(parseAs(changed.body, "ReadDocumentResponse").content, elsewhere);
   });
 
+  it("takes only a patch that changes the text of the reviewed document (#57)", async function () {
+    const before = "alpha\nbeta\n";
+    const after = "alpha\nBETA\n";
+    const hunk = "@@ -1,2 +1,2 @@\n alpha\n-beta\n+BETA\n";
+    const filePath = path.join(scratch, "patch-gate.md");
+    const otherPath = path.join(scratch, "patch-gate-other.md");
+    const documentId = await openFile(filePath, before);
+    const relative = filePath.slice(1);
+
+    let reviewGeneration = 0;
+    async function propose(patch: string): Promise<{ status: number; body: string }> {
+      return await httpRequest("POST", `/v1/documents/${documentId}/proposals`, {
+        body: JSON.stringify({
+          baselineSha256: sha256Text(before),
+          expectedReviewGeneration: reviewGeneration,
+          claims: [{ description: "Capitalize the second word.", patch }],
+          clientRequestId: randomUUID(),
+        }),
+      });
+    }
+
+    // Each patch below has hunks that apply to the document; only what the
+    // patch says about files makes it no change of this document's text.
+    const refused: Record<string, string> = {
+      binary: `diff --git a/${relative} b/${relative}\nindex 1111111..2222222 100644\nGIT binary patch\nliteral 4\nLcmZ?d00001\n\n`,
+      rename: `diff --git a/${relative} b/${otherPath.slice(1)}\nrename from ${relative}\nrename to ${otherPath.slice(1)}\n--- document\n+++ document\n${hunk}`,
+      copy: `diff --git a/${relative} b/${otherPath.slice(1)}\ncopy from ${relative}\ncopy to ${otherPath.slice(1)}\n--- document\n+++ document\n${hunk}`,
+      create: `diff --git a/${relative} b/${relative}\nnew file mode 100644\n--- document\n+++ document\n${hunk}`,
+      delete: `diff --git a/${relative} b/${relative}\ndeleted file mode 100644\n--- document\n+++ document\n${hunk}`,
+      mode: `diff --git a/${relative} b/${relative}\nold mode 100644\nnew mode 100755\n--- document\n+++ document\n${hunk}`,
+      "/dev/null": `--- /dev/null\n+++ ${otherPath}\n${hunk}`,
+      basename: `--- patch-gate.md\n+++ patch-gate.md\n${hunk}`,
+      "relative path": `--- ${relative}\n+++ ${relative}\n${hunk}`,
+      "other file": `--- ${otherPath}\n+++ ${otherPath}\n${hunk}`,
+      "other file, git prefix": `--- a/${otherPath.slice(1)}\n+++ b/${otherPath.slice(1)}\n${hunk}`,
+      "new header of another file": `--- ${filePath}\n+++ ${otherPath}\n${hunk}`,
+      "old header of another file": `--- ${otherPath}\n+++ ${filePath}\n${hunk}`,
+    };
+    for (const [kind, patch] of Object.entries(refused)) {
+      const answer = await propose(patch);
+      assert.equal(answer.status, 400, `${kind}: ${answer.body}`);
+      assert.equal(parseAs(answer.body, "AgentErrorResponse").error.code, "PATCH_INVALID", kind);
+    }
+    assert.equal(existsSync(otherPath), false);
+    assert.equal(readFileSync(filePath, "utf8"), before);
+    const unchanged = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
+    assert.equal(parseAs(unchanged.body, "ReadDocumentResponse").content, before);
+
+    // The headers that name this document: `document`, its path, and its
+    // path behind the git prefix that drops the leading slash. No refusal
+    // above opened a review, so the first proposal names generation 0.
+    const accepted: Record<string, string> = {
+      document: `--- document\n+++ document\n${hunk}`,
+      path: `--- ${filePath}\n+++ ${filePath}\n${hunk}`,
+      "git prefix": `--- a/${relative}\n+++ b/${relative}\n${hunk}`,
+    };
+    for (const [kind, patch] of Object.entries(accepted)) {
+      const answer = await propose(patch);
+      assert.equal(answer.status, 200, `${kind}: ${answer.body}`);
+      const shown = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
+      assert.equal(parseAs(shown.body, "ReadDocumentResponse").content, after, kind);
+      const proposal = parseAs(answer.body, "SubmitProposalResponse");
+      const retracted = await httpRequest(
+        "POST",
+        `/v1/proposals/${encodeURIComponent(proposal.packetIds[0])}/retract`,
+        {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            expectedReviewGeneration: proposal.reviewGeneration,
+            expectedWorkingSha256: sha256Text(after),
+          }),
+        },
+      );
+      assert.equal(retracted.status, 200, `${kind}: ${retracted.body}`);
+      reviewGeneration = parseAs(retracted.body, "RetractProposalResponse").reviewGeneration;
+    }
+  });
+
   it("fails enabled startup when the configured port is taken", async function () {
     // An enabled API without its configured listener is a broken application
     // state. Startup must report the bind failure instead of claiming success.
@@ -984,14 +1020,50 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // kernel chooses, so the file is the only place a client can learn the
     // endpoint. It must name the port that actually answers, and a clean
     // shutdown must not leave a stale endpoint behind.
-    const portFile = path.join(userData, "agent-api.port");
-    const published = Number.parseInt(readFileSync(portFile, "utf8").trim(), 10);
-    assert.equal(published, httpPort);
+    const portFile = path.join(userData, AGENT_API_DISCOVERY_FILE);
+    const published = parseAgentApiDiscovery(readFileSync(portFile, "utf8"));
+    assert.equal(published.port, httpPort);
     const response = await httpRequest("GET", "/v1/ping");
     assert.equal(response.status, 200);
+    assert.equal(parseAs(response.body, "PingResponse").instanceId, published.instanceId);
 
     await httpProvider.shutdown();
     assert.equal(existsSync(portFile), false, "shutdown must remove the port file");
+  });
+
+  it("a stale discovery file does not name the instance that took its port (#57)", async function () {
+    // A killed instance leaves its discovery file. Another instance can then
+    // bind that port. A client that reads the stale file must not take that
+    // other instance for the one the file describes: the e2e harness would
+    // then drive an app that the spec did not start.
+    const killedProfile = path.join(scratch, "killed-profile");
+    mkdirSync(killedProfile);
+    writeFileSync(
+      path.join(killedProfile, AGENT_API_DISCOVERY_FILE),
+      readFileSync(path.join(userData, AGENT_API_DISCOVERY_FILE), "utf8"),
+    );
+    await httpProvider.shutdown();
+
+    httpProvider = new AgentHTTPProvider(
+      new LogProvider(),
+      provider,
+      {
+        config: {
+          get: () => ({
+            ...agentHost.config.get(),
+            agentApi: { enabled: true, port: httpPort, skillsDirectory: null },
+          }),
+        },
+        search: agentHost.search,
+        documentLint: agentHost.documentLint,
+        links: agentHost.links,
+      },
+      { homeDirectory: authoringHome, env: AGENT_API_ENVIRONMENT },
+    );
+    await httpProvider.boot();
+
+    assert.equal(await readAgentApiPort(userData, 5_000), httpPort);
+    await assert.rejects(readAgentApiPort(killedProfile, 1_500), Error);
   });
 
   it("GET /openapi.yaml serves the OpenAPI specification without auth", async function () {
@@ -999,6 +1071,23 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(response.status, 200);
     assert.ok(response.body.includes("openapi:"));
     assert.ok(response.body.includes("Zettlr-Pandoc Editor Agent API"));
+  });
+
+  it("serves documents in which each reference resolves", async function () {
+    // Each `$ref` of the served documents: the schemas, the shared
+    // responses of the operations and the parameters. The JSON leaves out
+    // the Zotero routes, so a component that only they used must still be
+    // there or its reference must be gone with them.
+    for (const served of ["/openapi.yaml", "/openapi.json"]) {
+      const response = await httpRequest("GET", served);
+      const document = (
+        served.endsWith(".json") ? JSON.parse(response.body) : parseYaml(response.body)
+      ) as JSONSchema;
+      await $RefParser.dereference(structuredClone(document), {
+        continueOnError: true,
+        resolve: { external: false },
+      });
+    }
   });
 
   it("GET /help and /v1/help serve Markdown and JSON help documentation", async function () {
@@ -1225,7 +1314,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
   });
 
-  it("answers a request target that is not a URL instead of dying on it", async function () {
+  it("answers a request target that is not a URL as a refused request", async function () {
     // Absolute-form request targets are legal HTTP/1.1 and Node hands them to
     // the handler verbatim, so `new URL(req.url, ...)` refuses input that the
     // wire is entitled to send. A throw anywhere in the request callback is an
@@ -1241,13 +1330,29 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       socket.on("error", reject);
       socket.on("close", () => resolve(received));
     });
-    assert.match(raw.split("\r\n")[0], /^HTTP\/1\.1 500 /);
+    assert.match(raw.split("\r\n")[0], /^HTTP\/1\.1 400 /);
     assert.equal(
       parseAs(raw.split("\r\n\r\n")[1], "AgentErrorResponse").error.code,
-      "INTERNAL_ERROR",
+      "INVALID_PARAMS",
     );
 
     assert.equal((await httpRequest("GET", "/v1/ping")).status, 200);
+  });
+
+  it("answers a path whose percent-encoding is not UTF-8 as a refused request (#57)", async function () {
+    // decodeURIComponent refuses each of these paths: a `%` without two hex
+    // digits, a truncated three-byte sequence, and a lead byte that a byte
+    // outside 0x80-0xBF follows. The fault is in the request, so the caller
+    // gets 400.
+    for (const target of [
+      "/v1/documents/%E0%A4%A",
+      "/v1/documents/%E0%A4",
+      "/v1/documents/%C3%28",
+    ]) {
+      const response = await httpRequest("GET", target);
+      assert.equal(response.status, 400, `${target}: ${response.body}`);
+      assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
+    }
   });
 
   it("GET /v1/ping returns protocol version", async function () {
@@ -1507,6 +1612,46 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
   });
 
+  it("POST /v1/documents/{id}/search gives each hit up to the limit and says when it stopped (#57)", async function () {
+    const search = async (docId: string) =>
+      parseAs(
+        (
+          await httpRequest("POST", `/v1/documents/${docId}/search`, {
+            body: JSON.stringify({ literal: "alpha", context: 0 }),
+          })
+        ).body,
+        "SearchDocumentResponse",
+      );
+
+    // Two hits on one line: the search goes on after the first.
+    const repeated = await search(
+      await openFile(path.join(scratch, "repeated-hits.md"), "alpha beta alpha gamma\n"),
+    );
+    assert.deepEqual(
+      repeated.hits.map((hit) => [hit.line, hit.column, hit.length]),
+      [
+        [1, 1, 5],
+        [1, 12, 5],
+      ],
+    );
+    assert.equal(repeated.truncated, false);
+
+    // Exactly the limit is every hit; one more is a truncated answer.
+    const lines = (count: number) => Array.from({ length: count }, () => "alpha").join("\n");
+    const full = await search(
+      await openFile(path.join(scratch, "full-hits.md"), lines(MAX_SEARCH_HITS)),
+    );
+    assert.equal(full.hits.length, MAX_SEARCH_HITS);
+    assert.equal(full.truncated, false);
+    const over = await search(
+      await openFile(path.join(scratch, "truncated-hits.md"), lines(MAX_SEARCH_HITS + 1)),
+    );
+    assert.deepEqual(
+      [over.hits.length, over.hits.at(-1)?.line, over.truncated],
+      [MAX_SEARCH_HITS, MAX_SEARCH_HITS, true],
+    );
+  });
+
   it("GET /v1/workspace/search finds text across closed files and live buffers", async function () {
     const openPath = path.join(scratch, "open.md");
     const openId = await openFile(openPath, "saved text\n");
@@ -1579,6 +1724,25 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
     assert.equal(capped.matchCount, 2);
     assert.equal(capped.truncated, true);
+    // The limit can end at the last match of one file, before a file that
+    // holds more matches. Each listed file holds a match, whichever file
+    // comes first (#57).
+    for (const limit of [1, 2]) {
+      const limited = parseAs(
+        (await httpRequest("GET", `/v1/workspace/search?text=lattice&maxMatches=${limit}`)).body,
+        "WorkspaceSearchResponse",
+      );
+      assert.deepEqual(
+        limited.files.filter((file) => file.matches.length === 0).map((file) => file.path),
+        [],
+        `maxMatches=${limit} lists a file without a match`,
+      );
+      assert.equal(
+        limited.files.reduce((sum, file) => sum + file.matches.length, 0),
+        limit,
+      );
+      assert.equal(limited.truncated, true);
+    }
 
     // A workspace inside another workspace: its files belong to it, so an
     // include pattern is relative to it and it is the workspace of each hit.
@@ -1767,6 +1931,24 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(refusal.message.includes(filePath), refusal.message);
   });
 
+  it("answers a lint of a closed document whose file cannot be read as unreadable (#57)", async function () {
+    const filePath = path.join(scratch, "lint-closed-unreadable.md");
+    writeFileSync(filePath, "alpha\n", "utf8");
+    const docId = provider.ensureDocumentId(filePath);
+    chmodSync(filePath, 0o000);
+
+    const response = await httpRequest(
+      "GET",
+      `/v1/lint?scope=document&documentId=${encodeURIComponent(docId)}`,
+    );
+    chmodSync(filePath, 0o600);
+
+    assert.equal(response.status, 409, response.body);
+    const refusal = parseAs(response.body, "AgentErrorResponse").error;
+    assert.equal(refusal.code, "DOCUMENT_UNREADABLE");
+    assert.ok(refusal.message.includes(filePath), refusal.message);
+  });
+
   describe("citation libraries that did not load (#210)", function () {
     const LIBRARY = `@article{AW71,
   title = {Degenerate {{Fibers}} and {{Stable Reduction}} of {{Curves}}},
@@ -1820,10 +2002,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         started,
       );
       await httpProvider.boot();
-      httpPort = Number.parseInt(
-        readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),
-        10,
-      );
+      httpPort = parseAgentApiDiscovery(
+        readFileSync(path.join(userData, AGENT_API_DISCOVERY_FILE), "utf8"),
+      ).port;
       return started;
     }
 
@@ -2062,7 +2243,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const peer = http.createServer((_request, response) => {
       requestCount += 1;
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ protocolVersion: "1.0.0" }));
+      response.end(JSON.stringify({ protocolVersion: openApiDocument.info.version }));
     });
     peerServers.push(peer);
     await new Promise<void>((resolve) => {
@@ -2209,6 +2390,93 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.deepEqual(requestPaths, ["/v1/ping"]);
   });
 
+  it("names each transport failure of the external CLI once, with its own code (#57)", async function () {
+    // A script reads the code of the one refusal line on stderr. A lost
+    // connection, a body that stops, and a body that is no JSON are three
+    // different failures, at any request of the CLI.
+    const servedVersion = openApiDocument.info.version;
+    const filePath = path.join(scratch, "transport.md");
+    const patchPath = path.join(scratch, "transport.diff");
+    writeFileSync(filePath, "before\n", "utf8");
+    writeFileSync(patchPath, "a non-empty proposition\n", "utf8");
+
+    async function listen(handler: http.RequestListener): Promise<number> {
+      const peer = http.createServer(handler);
+      peerServers.push(peer);
+      await new Promise<void>((resolve) => {
+        peer.listen(0, "127.0.0.1", resolve);
+      });
+      const address = peer.address();
+      assert.ok(address !== null && typeof address !== "string");
+      return address.port;
+    }
+    async function closedPort(): Promise<number> {
+      const probe = net.createServer();
+      await new Promise<void>((resolve) => {
+        probe.listen(0, "127.0.0.1", resolve);
+      });
+      const address = probe.address() as net.AddressInfo;
+      await new Promise<void>((resolve) => probe.close(() => resolve()));
+      return address.port;
+    }
+    function answerPing(response: http.ServerResponse): void {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ protocolVersion: servedVersion }));
+    }
+
+    const ports = {
+      "no listener": await closedPort(),
+      "connection lost after the ping": await listen((request, response) => {
+        if (request.url === "/v1/ping") {
+          answerPing(response);
+          return;
+        }
+        request.socket.destroy();
+      }),
+      "body stops after its headers": await listen((_request, response) => {
+        response.writeHead(200, { "Content-Type": "application/json", "Content-Length": "200" });
+        response.write('{"protocolVersion":');
+        setTimeout(() => response.socket?.destroy(), 50);
+      }),
+      "body is no JSON": await listen((_request, response) => {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end("<html>proxy error</html>");
+      }),
+    };
+
+    const outcomes: Record<string, { exit: number | null; refusals: string[] }> = {};
+    for (const [failure, port] of Object.entries(ports)) {
+      const result = await runReviewDiffCli([
+        "--document",
+        filePath,
+        "--patch",
+        patchPath,
+        "--description",
+        failure,
+        "--port",
+        String(port),
+      ]);
+      assert.equal(result.stdout, "", failure);
+      outcomes[failure] = {
+        exit: result.code,
+        refusals: result.stderr
+          .split("\n")
+          .filter((line) => line.length > 0)
+          .map((line) =>
+            line.startsWith('{"ok":false')
+              ? (JSON.parse(line) as { error: { code: string } }).error.code
+              : `no refusal: ${line}`,
+          ),
+      };
+    }
+    assert.deepEqual(outcomes, {
+      "no listener": { exit: 1, refusals: ["INSTANCE_UNREACHABLE"] },
+      "connection lost after the ping": { exit: 1, refusals: ["INSTANCE_UNREACHABLE"] },
+      "body stops after its headers": { exit: 1, refusals: ["RESPONSE_INCOMPLETE"] },
+      "body is no JSON": { exit: 1, refusals: ["PROTOCOL_ERROR"] },
+    });
+  });
+
   it("detaches a saved pending review before closing its final pane", async function () {
     const filePath = path.join(scratch, "save-close-review.md");
     writeFileSync(filePath, "before\n", "utf8");
@@ -2249,6 +2517,114 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(await provider.openFile(windowId, reopenedLeafId, filePath), true);
     assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 1);
     assert.equal(provider.reviewQueries.getReview(documentId)?.reviewId, submitted.reviewId);
+  });
+
+  it("reads the review of a closed document while the sidecar of another document cannot be read", async function () {
+    const windowId = provider.windowKeys()[0];
+    const leafId = provider.leafIds(windowId)[0];
+    assert.ok(leafId !== undefined);
+
+    const reviewedPath = path.join(scratch, "closed-review.md");
+    const documentId = await openInPane(reviewedPath, "before\n");
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text("before\n"),
+      [
+        {
+          description: "closed review",
+          patch: createPatch("document", "before\n", "after\n", "", "", { context: 0 }),
+        },
+      ],
+      "closed-review",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The review proposal was refused: ${submitted.code}`);
+    }
+    saveDialogResponse = 0;
+    assert.equal(await provider.closeFile(windowId, leafId, reviewedPath), true);
+
+    // Another document's sidecar, as a later version of the app writes it.
+    const laterPath = path.join(scratch, "later.md");
+    const laterId = await openInPane(laterPath, "Written by a later version.\n");
+    const annotated = await provider.createAnnotation(laterId, "owner", 0, 7, "Later.", 0);
+    assert.ok("annotationId" in annotated);
+    assert.equal(
+      await provider.closeFile(windowId, provider.leafIds(windowId)[0], laterPath),
+      true,
+    );
+    const laterSidecar = collaborationSidecarFilePath(
+      path.join(userData, "review-sidecars"),
+      laterPath,
+    );
+    const written: { version: number } = JSON.parse(readFileSync(laterSidecar, "utf8"));
+    writeFileSync(
+      laterSidecar,
+      JSON.stringify({ ...written, version: written.version + 1 }),
+      "utf8",
+    );
+    caseSidecars.push(laterSidecar);
+
+    // The review lives in its own file; a file of another document does not
+    // decide whether it can be read.
+    const chunks = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}?view=chunks`);
+    assert.equal(chunks.status, 200, chunks.body);
+    assert.equal(parseAs(chunks.body, "ReviewChunksResponse").chunks.length, 1);
+
+    // A review that no readable file holds can be in the unreadable one.
+    const unknown = await httpRequest("GET", `/v1/reviews/${randomUUID()}`);
+    assert.equal(unknown.status, 409, unknown.body);
+    assert.equal(
+      parseAs(unknown.body, "AgentErrorResponse").error.code,
+      "COLLABORATION_STATE_UNREADABLE",
+    );
+  });
+
+  it("answers a lookup of an unknown review without a read of each sidecar", async function () {
+    const windowId = provider.windowKeys()[0];
+    const annotatedPath = path.join(scratch, "annotated.md");
+    const annotatedId = await openInPane(annotatedPath, "An annotated note.\n");
+    const annotated = await provider.createAnnotation(annotatedId, "owner", 0, 2, "Note.", 0);
+    assert.ok("annotationId" in annotated);
+    assert.equal(
+      await provider.closeFile(windowId, provider.leafIds(windowId)[0], annotatedPath),
+      true,
+    );
+
+    // The sidecars of 3000 closed documents, as an earlier session left them.
+    const sidecarDirectory = path.join(userData, "review-sidecars");
+    const template: { documentPath: string } = JSON.parse(
+      readFileSync(collaborationSidecarFilePath(sidecarDirectory, annotatedPath), "utf8"),
+    );
+    for (let index = 0; index < 3000; index++) {
+      const documentPath = path.join(scratch, `closed-${index}.md`);
+      const file = collaborationSidecarFilePath(sidecarDirectory, documentPath);
+      writeFileSync(file, JSON.stringify({ ...template, documentPath }), "utf8");
+      caseSidecars.push(file);
+    }
+
+    async function unknownLookupMs(): Promise<number> {
+      const started = performance.now();
+      const answer = await httpRequest("GET", `/v1/reviews/${randomUUID()}`);
+      const elapsed = performance.now() - started;
+      assert.equal(answer.status, 404, answer.body);
+      assert.equal(parseAs(answer.body, "AgentErrorResponse").error.code, "REVIEW_NOT_FOUND");
+      return elapsed;
+    }
+
+    // The first lookup of the session reads the directory. A later lookup
+    // costs the request, not the number of sidecars.
+    const first = await unknownLookupMs();
+    const later: number[] = [];
+    for (let index = 0; index < 5; index++) {
+      later.push(await unknownLookupMs());
+    }
+    later.sort((a, b) => a - b);
+    const median = later[2];
+    assert.ok(
+      median * 10 < first,
+      `A later lookup took ${median.toFixed(1)} ms; the first, which read 3000 sidecars, took ${first.toFixed(1)} ms`,
+    );
   });
 
   it("reads a review frozen by disk drift, and reapplies it onto the current file", async function () {
@@ -2485,6 +2861,219 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     } finally {
       await client.close();
     }
+  });
+
+  it("answers a retraction of an unknown proposal with 404, and of a closed review with its review (#57)", async function () {
+    const windowId = provider.windowKeys()[0];
+    const reviewedPath = path.join(scratch, "closed-retraction.md");
+    const documentId = await openInPane(reviewedPath, "before\n");
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text("before\n"),
+      [
+        {
+          description: "closed review",
+          patch: createPatch("document", "before\n", "after\n", "", "", { context: 0 }),
+        },
+      ],
+      "closed-retraction",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The review proposal was refused: ${submitted.code}`);
+    }
+    saveDialogResponse = 0;
+    assert.equal(
+      await provider.closeFile(windowId, provider.leafIds(windowId)[0], reviewedPath),
+      true,
+    );
+
+    // Another document's sidecar, as a later version of the app writes it.
+    const laterPath = path.join(scratch, "later-retraction.md");
+    const laterId = await openInPane(laterPath, "Written by a later version.\n");
+    const annotated = await provider.createAnnotation(laterId, "owner", 0, 7, "Later.", 0);
+    assert.ok("annotationId" in annotated);
+    assert.equal(
+      await provider.closeFile(windowId, provider.leafIds(windowId)[0], laterPath),
+      true,
+    );
+    const laterSidecar = collaborationSidecarFilePath(
+      path.join(userData, "review-sidecars"),
+      laterPath,
+    );
+    const written: { version: number } = JSON.parse(readFileSync(laterSidecar, "utf8"));
+    writeFileSync(
+      laterSidecar,
+      JSON.stringify({ ...written, version: written.version + 1 }),
+      "utf8",
+    );
+    caseSidecars.push(laterSidecar);
+
+    const expectedReviewGeneration = submitted.reviewGeneration;
+    async function retract(packetId: string): Promise<{ status: number; body: string }> {
+      return await httpRequest("POST", `/v1/proposals/${encodeURIComponent(packetId)}/retract`, {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expectedReviewGeneration,
+          expectedWorkingSha256: sha256Text("after\n"),
+        }),
+      });
+    }
+
+    // The packet of the closed review names its review and the cause.
+    const closed = await retract(submitted.packetIds[0]);
+    assert.equal(closed.status, 409, closed.body);
+    const closedError = parseAs(closed.body, "AgentErrorResponse").error;
+    assert.equal(closedError.code, "DOCUMENT_CLOSED");
+    assert.equal(closedError.reviewId, submitted.reviewId);
+
+    // The file that cannot be read can hold an unknown packet.
+    const unknownPacket = randomUUID();
+    const undecided = await retract(unknownPacket);
+    assert.equal(undecided.status, 409, undecided.body);
+    assert.equal(
+      parseAs(undecided.body, "AgentErrorResponse").error.code,
+      "COLLABORATION_STATE_UNREADABLE",
+    );
+
+    // When each file can be read, no review holds it, and the refusal names none.
+    writeFileSync(laterSidecar, JSON.stringify(written), "utf8");
+    const unknown = await retract(unknownPacket);
+    assert.equal(unknown.status, 404, unknown.body);
+    const unknownError = parseAs(unknown.body, "AgentErrorResponse").error;
+    assert.equal(unknownError.code, "PROPOSAL_NOT_FOUND");
+    assert.equal("reviewId" in unknownError, false, unknown.body);
+  });
+
+  it("answers PERSISTENCE_FAILED for a retraction and a review comment that the sidecar refuses (#57)", async function () {
+    const filePath = path.join(scratch, "unwritable-review.md");
+    const documentId = await openInPane(filePath, "alpha\nbeta\n");
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text("alpha\nbeta\n"),
+      [
+        {
+          description: "capitalize beta",
+          patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", {
+            context: 0,
+          }),
+        },
+      ],
+      "unwritable-review",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The proposal was refused: ${submitted.code}`);
+    }
+    const sidecars = path.join(userData, "review-sidecars");
+    const reviewPath = `/v1/reviews/${encodeURIComponent(submitted.reviewId)}`;
+    const before = parseAs((await httpRequest("GET", reviewPath)).body, "ReviewDetailResponse");
+
+    chmodSync(sidecars, 0o555);
+    const [retraction, comment] = [
+      await httpRequest(
+        "POST",
+        `/v1/proposals/${encodeURIComponent(submitted.packetIds[0])}/retract`,
+        {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            expectedReviewGeneration: submitted.reviewGeneration,
+            expectedWorkingSha256: sha256Text("alpha\nBETA\n"),
+          }),
+        },
+      ),
+      await httpRequest("POST", `${reviewPath}/comments`, {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expectedReviewGeneration: submitted.reviewGeneration,
+          text: "a note the disk refuses",
+        }),
+      }),
+    ];
+    chmodSync(sidecars, 0o755);
+
+    for (const response of [retraction, comment]) {
+      assert.equal(response.status, 500, response.body);
+      assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "PERSISTENCE_FAILED");
+    }
+    const after = parseAs((await httpRequest("GET", reviewPath)).body, "ReviewDetailResponse");
+    // The review and the working text are as they were: no packet retracted,
+    // no comment, no new generation.
+    assert.deepEqual(after, before);
+    assert.equal(after.packetCount, 1);
+  });
+
+  it("answers a review wait at once, at the next generation, at its time limit, and forgets a caller that left", async function () {
+    const filePath = path.join(scratch, "review-wait.md");
+    const documentId = await openInPane(filePath, "alpha\nbeta\n");
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text("alpha\nbeta\n"),
+      [
+        {
+          description: "capitalize beta",
+          patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", {
+            context: 0,
+          }),
+        },
+      ],
+      "review-wait",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The proposal was refused: ${submitted.code}`);
+    }
+    const generation = submitted.reviewGeneration;
+    const events = (after: number, waitSeconds: number): string =>
+      `/v1/reviews/${encodeURIComponent(submitted.reviewId)}/events?afterGeneration=${after}&waitSeconds=${waitSeconds}`;
+
+    // A generation that the caller has not seen answers without a wait.
+    const behind = parseAs(
+      (await httpRequest("GET", events(generation - 1, 30))).body,
+      "ReviewEventsResponse",
+    );
+    assert.equal(behind.status?.generation, generation);
+    assert.deepEqual(behind.events, []);
+
+    // A wait at the current generation answers with the event of the next one.
+    const waiting = httpRequest("GET", events(generation, 30));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const comment = await provider.addReviewComment(submitted.reviewId, "a note", generation);
+    if (!comment.ok) {
+      assert.fail(`The comment was refused: ${comment.code}`);
+    }
+    const woken = parseAs((await waiting).body, "ReviewEventsResponse");
+    assert.equal(woken.timedOut, undefined);
+    assert.equal(woken.events?.length, 1);
+    assert.equal(woken.events?.[0].reviewGeneration, comment.reviewGeneration);
+    assert.equal(woken.status?.generation, comment.reviewGeneration);
+
+    // A wait with no change answers at its limit.
+    const quiet = parseAs(
+      (await httpRequest("GET", events(comment.reviewGeneration, 1))).body,
+      "ReviewEventsResponse",
+    );
+    assert.equal(quiet.timedOut, true);
+    assert.equal(quiet.status?.generation, comment.reviewGeneration);
+
+    // A caller that closes its connection leaves no listener behind.
+    const listeners = provider.agentEvents.listenerCount("*");
+    const left = http.request({
+      hostname: "127.0.0.1",
+      port: httpPort,
+      path: events(comment.reviewGeneration, 30),
+      method: "GET",
+      headers: AUTHORIZED,
+    });
+    const hungUp = new Promise<NodeJS.ErrnoException>((resolve) => left.on("error", resolve));
+    left.end();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(provider.agentEvents.listenerCount("*"), listeners + 1);
+    left.destroy();
+    // The client ends a request that has no answer: Node reports the hang-up.
+    assert.equal((await hungUp).code, "ECONNRESET");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(provider.agentEvents.listenerCount("*"), listeners);
   });
 
   it("returns a patch refusal without opening an unopened document", async function () {
@@ -3359,6 +3948,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       socket.write(STALLED_REQUEST);
       const response = await readUntilClose(socket);
       assert.match(response, /^HTTP\/1\.1 408 /);
+      assertDeclaredRawResponse("POST", "/v1/documents/doc-lifecycle/proposals", response);
       const body = parseAs(response.slice(response.indexOf("\r\n\r\n") + 4), "AgentErrorResponse");
       assert.equal(body.error.code, "REQUEST_BODY_TIMEOUT");
     });
@@ -3370,6 +3960,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       });
       const response = await new Promise<{
         status: number;
+        contentType: string | undefined;
         body: string;
       }>((resolve, reject) => {
         const request = http.request(
@@ -3394,7 +3985,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
                 reject(new Error("Oversized-body HTTP response carried no status code."));
                 return;
               }
-              resolve({ status: incoming.statusCode, body: responseBody });
+              resolve({
+                status: incoming.statusCode,
+                contentType: incoming.headers["content-type"],
+                body: responseBody,
+              });
             });
           },
         );
@@ -3403,6 +3998,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       });
 
       assert.equal(response.status, 413, response.body);
+      assertDeclaredResponse(
+        "POST",
+        "/v1/documents/doc-lifecycle/proposals",
+        response.status,
+        response.contentType,
+        response.body,
+      );
       assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "REQUEST_TOO_LARGE");
 
       await lifecycleLog.shutdown();
@@ -3434,12 +4036,25 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       // wrote a 500 into the dead socket.
       await new Promise((resolve) => setTimeout(resolve, DEADLINE_MS + 100));
       await lifecycleLog.shutdown();
+      const lines = readLogAfter(logBoundary).split("\n");
       assert.equal(
-        readLogAfter(logBoundary)
-          .split("\n")
-          .some((line) => line.includes("[Error]")),
+        lines.some((line) => line.includes("[Error]")),
         false,
         "An abandoned request must not emit an error record into the production logfile.",
+      );
+      // The operator sees the request that lost its body and the cause that
+      // the transport gave: Node reports a client that hangs up mid-body as
+      // the stream error "aborted" (ECONNRESET).
+      const abandoned = lines.filter(
+        (line) =>
+          line.includes("[Warning]") &&
+          line.includes("POST /v1/documents/doc-lifecycle/proposals") &&
+          line.includes("ECONNRESET"),
+      );
+      assert.equal(
+        abandoned.length,
+        1,
+        `One warning names the abandoned request and its cause. Log:\n${lines.join("\n")}`,
       );
 
       // And the server is still answering.
@@ -3454,6 +4069,49 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
   // ==========================================================================
   // ==========================================================================
+
+  it("gives a view the same focus and the same active document in both view listings (#57)", async function () {
+    // A view of the document listing says whether the document is the active
+    // tab of the view. The view listing names that tab in documentId; no
+    // field of it says "active" with another meaning.
+    const backgroundId = await openInPane(path.join(scratch, "views-background.md"), "Behind.\n");
+    const activeId = await openInPane(path.join(scratch, "views-active.md"), "In front.\n");
+    const windowId = provider.windowKeys()[0];
+    const leafId = provider.leafIds(windowId)[0];
+    assert.ok(leafId !== undefined);
+    const viewId = `view-${windowId}-${leafId}`;
+
+    const listing = parseAs((await httpRequest("GET", "/v1/views")).body, "ViewsResponse");
+    const view = listing.views.find((candidate) => candidate.viewId === viewId);
+    assert.ok(view !== undefined, JSON.stringify(listing));
+    const background = parseAs(
+      (await httpRequest("GET", `/v1/documents/${backgroundId}`)).body,
+      "DocumentSummary",
+    ).views.find((candidate) => candidate.viewId === viewId);
+    const active = parseAs(
+      (await httpRequest("GET", `/v1/documents/${activeId}`)).body,
+      "DocumentSummary",
+    ).views.find((candidate) => candidate.viewId === viewId);
+
+    assert.deepEqual(
+      { background, active },
+      {
+        background: { viewId, windowId, leafId, focused: view.focused, active: false },
+        active: { viewId, windowId, leafId, focused: view.focused, active: true },
+      },
+    );
+    assert.deepEqual(view, {
+      viewId,
+      windowId,
+      leafId,
+      documentId: activeId,
+      focused: view.focused,
+      documents: [
+        { documentId: backgroundId, path: path.join(scratch, "views-background.md") },
+        { documentId: activeId, path: path.join(scratch, "views-active.md") },
+      ],
+    });
+  });
 
   describe("live OpenAPI response conformance", function () {
     it("serves the remaining declared bodies matching their schemas", async function () {

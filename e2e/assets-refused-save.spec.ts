@@ -32,7 +32,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requestWindowClose,
   requireInitialized,
@@ -235,12 +234,12 @@ describe("a refused operation in the Assets window", function () {
       configFile,
       `${JSON.stringify({ ...stored, editor: { snippetsFile: snippets } }, null, 2)}\n`,
     );
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     await page.evaluate(() => {
       window.ipc.send("menu-provider", {
@@ -249,7 +248,7 @@ describe("a refused operation in the Assets window", function () {
       });
     });
     assetsPage = await findAssetsPage(app.browser, 30_000);
-    await hideDevServerOverlay(assetsPage);
+
     await assetsPage.setViewportSize({ width: 1100, height: 760 });
   });
 

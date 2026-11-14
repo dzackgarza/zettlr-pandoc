@@ -29,7 +29,6 @@ const proposed = "# Review target\n\nThe form is symmetric and nondegenerate.\n"
 const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
 
 describe("retained integration in packaged Electron", function () {
-  this.timeout(180_000);
   let fixture: Fixture;
   let app: Browser | undefined;
   let appProcess: ChildProcess | undefined;

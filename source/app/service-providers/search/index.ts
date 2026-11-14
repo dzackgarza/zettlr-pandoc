@@ -22,8 +22,10 @@
  */
 
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
+import { editedText, type ProposedDocument, previewOf } from "@common/util/workspace-edit-preview";
 import type { UnsavedDocument } from "@dts/common/documents";
 import type { WorkspaceTextEdit } from "@dts/common/references";
+import type { WorkspaceEditDocumentPreview } from "@dts/common/workspace-edit";
 import { ipcMain } from "electron";
 import path from "path";
 import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
@@ -120,6 +122,22 @@ export type ReplaceOutcome =
 
 export type UndoReplaceOutcome = ReplaceOutcome | { status: "nothing-to-undo" };
 
+/** What a replace would do: each document that it changes, with each changed line. */
+export type ReplacePreview =
+  | { status: "preview"; documents: WorkspaceEditDocumentPreview[] }
+  | { status: "conflict"; documentPath: string };
+
+/** The edits of a replace, their inverse, and each document before and after. */
+type ReplacePlan =
+  | {
+      status: "plan";
+      edits: WorkspaceTextEdit[];
+      inverse: WorkspaceTextEdit[];
+      expectedSourceHashes: Record<string, string>;
+      documents: ProposedDocument[];
+    }
+  | { status: "conflict"; documentPath: string };
+
 export type SearchProviderIPCContract = {
   "start-full-text-search": {
     request: { payload: { query: SearchQuery } };
@@ -128,6 +146,10 @@ export type SearchProviderIPCContract = {
   "cancel-search": {
     request: { payload?: undefined };
     response: undefined;
+  };
+  "preview-replace": {
+    request: { payload: { targets: ReplaceTarget[]; replacement: string; preserveCase: boolean } };
+    response: ReplacePreview;
   };
   "replace-in-files": {
     request: { payload: { targets: ReplaceTarget[]; replacement: string; preserveCase: boolean } };
@@ -163,13 +185,19 @@ export type SearchProviderBroadcast =
   | { type: "search-unread"; generation: number; file: UnsearchedFile; progress: number }
   | { type: "search-failed"; generation: number; failure: SearchFailure };
 
-export class SearchProvider implements ProviderContract {
-  /** How many files this search will read, for the progress it reports. */
-  private sumFilesToSearch: number;
+/** A search that reads files. Its queue belongs to it alone. */
+interface RunningSearch {
+  pattern: RegExp;
+  generation: number;
   /** The absolute paths still to read. */
-  private fileSearchQueue: string[];
+  queue: string[];
+  /** How many files this search reads, for the progress it reports. */
+  total: number;
+}
+
+export class SearchProvider implements ProviderContract {
   /** The search running now, or undefined between searches. */
-  private currentSearch: { pattern: RegExp; generation: number } | undefined;
+  private currentSearch: RunningSearch | undefined;
   /**
    * Every search gets a number, and a result carrying a stale one is
    * dropped: a query typed one character at a time starts a search per
@@ -205,8 +233,6 @@ export class SearchProvider implements ProviderContract {
     private readonly _journalDirectory: string,
   ) {
     this.currentSearch = undefined;
-    this.fileSearchQueue = [];
-    this.sumFilesToSearch = 0;
     this.searchGeneration = 0;
     this.lastPattern = undefined;
     this.pendingUndo = undefined;
@@ -223,6 +249,12 @@ export class SearchProvider implements ProviderContract {
           type: "search-end",
           generation: this.searchGeneration,
         } satisfies SearchProviderBroadcast);
+      } else if (command === "preview-replace") {
+        return await this.previewReplace(
+          payload.targets,
+          payload.replacement,
+          payload.preserveCase,
+        );
       } else if (command === "replace-in-files") {
         return await this.replaceInFiles(
           payload.targets,
@@ -285,11 +317,9 @@ export class SearchProvider implements ProviderContract {
   }
 
   private cancelSearch(): void {
-    // Letting the running read finish and dropping the queue is enough: the
-    // generation on the next start is what silences anything still in flight.
+    // The read that runs goes to its end; the next step of the search sees
+    // that the search is not current and stops (searchNextFile).
     this.currentSearch = undefined;
-    this.fileSearchQueue = [];
-    this.sumFilesToSearch = 0;
   }
 
   /**
@@ -333,13 +363,17 @@ export class SearchProvider implements ProviderContract {
         progress: 0,
       } satisfies SearchProviderBroadcast);
     }
-    this.fileSearchQueue = files.queue;
-    this.currentSearch = { pattern: compiled.pattern, generation };
+    const search: RunningSearch = {
+      pattern: compiled.pattern,
+      generation,
+      queue: files.queue,
+      total: files.queue.length,
+    };
+    this.currentSearch = search;
     this.lastPattern = compiled.pattern;
-    this.sumFilesToSearch = this.fileSearchQueue.length;
 
-    this.searchNextFile();
-    return this.sumFilesToSearch;
+    this.searchNextFile(search);
+    return search.total;
   }
 
   /**
@@ -400,6 +434,11 @@ export class SearchProvider implements ProviderContract {
       }
       if (matches.length === 0) {
         continue;
+      }
+      // The limit ended at the last match of an earlier file: this file holds
+      // a match that the answer does not list.
+      if (matchCount === maxMatches) {
+        return { status: "ok", results, matchCount, truncated: true, notSearched };
       }
       const kept = matches.slice(0, maxMatches - matchCount);
       results.push({
@@ -474,18 +513,16 @@ export class SearchProvider implements ProviderContract {
     return relative.split(path.sep).join("/");
   }
 
-  /** Reads the next file in the queue, reports it, and moves on. */
-  private searchNextFile(): void {
-    const search = this.currentSearch;
-    const nextFile = this.fileSearchQueue.shift();
-    if (search === undefined) {
-      // Nothing is running: the queue was cancelled between two files.
-      broadcastIPCMessage("search-provider", {
-        type: "search-end",
-        generation: this.searchGeneration,
-      } satisfies SearchProviderBroadcast);
+  /**
+   * Reads the next file of a search, reports it, and moves on. A search that
+   * a newer search replaced, or that was cancelled, stops here: it sends
+   * nothing more, and it reads nothing of the queue of another search.
+   */
+  private searchNextFile(search: RunningSearch): void {
+    if (this.currentSearch !== search) {
       return;
     }
+    const nextFile = search.queue.shift();
     if (nextFile === undefined) {
       this.currentSearch = undefined;
       broadcastIPCMessage("search-provider", {
@@ -497,11 +534,10 @@ export class SearchProvider implements ProviderContract {
 
     this.searchFile(nextFile, search.pattern)
       .then((outcome) => {
-        if (this.currentSearch?.generation !== search.generation) {
+        if (this.currentSearch !== search) {
           return; // A newer search started; this belongs to the old query.
         }
-        const progress =
-          (this.sumFilesToSearch - this.fileSearchQueue.length) / this.sumFilesToSearch;
+        const progress = (search.total - search.queue.length) / search.total;
         if (outcome.kind === "no-matches") {
           broadcastIPCMessage("search-provider", {
             type: "search-progress",
@@ -525,7 +561,7 @@ export class SearchProvider implements ProviderContract {
         }
       })
       .catch((err) => {
-        if (this.currentSearch?.generation !== search.generation) {
+        if (this.currentSearch !== search) {
           return; // A newer search started; this belongs to the old query.
         }
         // No filesystem error: the search of this file failed in the app.
@@ -542,7 +578,7 @@ export class SearchProvider implements ProviderContract {
         } satisfies SearchProviderBroadcast);
       })
       .finally(() => {
-        this.searchNextFile();
+        this.searchNextFile(search);
       });
   }
 
@@ -574,17 +610,18 @@ export class SearchProvider implements ProviderContract {
   }
 
   /**
-   * Replaces the given spans through the journaled workspace-edit
-   * transaction: every document is re-read and hash-checked before anything
-   * changes, open buffers change through the authority, closed files on disk,
-   * and the inverse is kept for one undo. Only Markdown documents are
-   * replaced in: an open code document is outside the authority's contract.
+   * The edits that replace the given spans, and their inverse. Every
+   * document is read again and checked against the hash of the search: a
+   * document that changed since the search is a conflict, not a guess. Only
+   * Markdown documents are replaced in: an open code document is outside the
+   * contract of the document authority. The preview and the replace both
+   * make their edits here, so the author applies what the preview showed.
    */
-  private async replaceInFiles(
+  private async replacePlan(
     targets: ReplaceTarget[],
     replacement: string,
     preserveCase: boolean,
-  ): Promise<ReplaceOutcome> {
+  ): Promise<ReplacePlan> {
     const pattern = this.lastPattern;
     if (pattern === undefined) {
       throw new Error("[Search Provider] Cannot replace before a search has run");
@@ -593,6 +630,7 @@ export class SearchProvider implements ProviderContract {
     const edits: WorkspaceTextEdit[] = [];
     const inverse: WorkspaceTextEdit[] = [];
     const expectedSourceHashes: Record<string, string> = {};
+    const documents: ProposedDocument[] = [];
     for (const target of targets) {
       const descriptor = await this._fsal.getDescriptorForAnySupportedFile(target.documentPath);
       if (descriptor.type !== "file") {
@@ -608,11 +646,12 @@ export class SearchProvider implements ProviderContract {
       // Each edit is expressed in the source's own offsets; the inverse has
       // to be expressed in the offsets the replace produces, so it carries
       // the length the replacements ahead of it added or took away.
+      const documentEdits: WorkspaceTextEdit[] = [];
       let shift = 0;
       for (const range of [...target.ranges].sort((a, b) => a.from - b.from)) {
         const matched = source.slice(range.from, range.to);
         const insert = expandReplacement(matched, pattern, replacement, preserveCase);
-        edits.push({ documentPath: target.documentPath, range, insert });
+        documentEdits.push({ documentPath: target.documentPath, range, insert });
         inverse.push({
           documentPath: target.documentPath,
           range: { from: range.from + shift, to: range.from + shift + insert.length },
@@ -620,9 +659,45 @@ export class SearchProvider implements ProviderContract {
         });
         shift += insert.length - (range.to - range.from);
       }
+      edits.push(...documentEdits);
       expectedSourceHashes[target.documentPath] = target.sourceHash;
+      documents.push({
+        documentPath: target.documentPath,
+        source,
+        target: editedText(source, documentEdits),
+      });
     }
+    return { status: "plan", edits, inverse, expectedSourceHashes, documents };
+  }
 
+  /** What the replace of the given spans would change, and nothing changed (#6). */
+  private async previewReplace(
+    targets: ReplaceTarget[],
+    replacement: string,
+    preserveCase: boolean,
+  ): Promise<ReplacePreview> {
+    const plan = await this.replacePlan(targets, replacement, preserveCase);
+    if (plan.status === "conflict") {
+      return plan;
+    }
+    return { status: "preview", documents: previewOf(plan.documents) };
+  }
+
+  /**
+   * Replaces the given spans through the journaled workspace-edit
+   * transaction: open buffers change through the authority, closed files on
+   * disk, and the inverse is kept for one undo.
+   */
+  private async replaceInFiles(
+    targets: ReplaceTarget[],
+    replacement: string,
+    preserveCase: boolean,
+  ): Promise<ReplaceOutcome> {
+    const plan = await this.replacePlan(targets, replacement, preserveCase);
+    if (plan.status === "conflict") {
+      return plan;
+    }
+    const { edits, inverse, expectedSourceHashes } = plan;
     const result = await runWorkspaceEditTransaction(this._documents, this._journalDirectory, {
       edits,
       expectedSourceHashes,

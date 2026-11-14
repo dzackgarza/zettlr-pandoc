@@ -616,7 +616,9 @@ export interface components {
       viewId: string;
       windowId: string;
       leafId: string;
+      /** @description The view is the pane of the editor that the author used last. */
       focused: boolean;
+      /** @description The document is the active tab of the view. */
       active: boolean;
     };
     DocumentSummary: {
@@ -710,6 +712,7 @@ export interface components {
         | "PATCH_NOT_APPLICABLE"
         | "CLAIM_NOT_ATOMIC"
         | "PACKET_NOT_RETRACTABLE"
+        | "PROPOSAL_NOT_FOUND"
         | "CHUNK_NOT_FOUND"
         | "ANNOTATION_NOT_FOUND"
         | "ANNOTATION_GENERATION_MISMATCH"
@@ -820,9 +823,10 @@ export interface components {
       viewId: string;
       windowId: string;
       leafId: string;
+      /** @description The document of the active tab of the view; absent for a view without tabs. */
       documentId?: string;
+      /** @description The view is the pane of the editor that the author used last. */
       focused: boolean;
-      active: boolean;
       documents?: {
         documentId?: string;
         path: string;
@@ -1678,7 +1682,62 @@ export interface components {
       }[];
     };
   };
-  responses: never;
+  responses: {
+    /** @description The request target, the JSON body or a parameter is malformed (INVALID_PARAMS) */
+    InvalidRequest: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["AgentErrorResponse"];
+      };
+    };
+    /** @description The request carries no valid bearer token (UNAUTHORIZED) */
+    Unauthorized: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["AgentErrorResponse"];
+      };
+    };
+    /** @description The request body did not arrive within the server deadline */
+    RequestBodyTimeout: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["AgentErrorResponse"];
+      };
+    };
+    /** @description The request body exceeds maxRequestSize of getCapabilities */
+    RequestTooLarge: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["AgentErrorResponse"];
+      };
+    };
+    /** @description A file of a document or of its collaboration state cannot be read (DOCUMENT_UNREADABLE, COLLABORATION_STATE_UNREADABLE) */
+    UnreadableState: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["AgentErrorResponse"];
+      };
+    };
+    /** @description The server failed; the message names the cause (INTERNAL_ERROR) */
+    InternalError: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["AgentErrorResponse"];
+      };
+    };
+  };
   parameters: never;
   requestBodies: never;
   headers: never;
@@ -1727,6 +1786,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      401: components["responses"]["Unauthorized"];
       /** @description Skill Markdown file not found. */
       404: {
         headers: {
@@ -1736,6 +1796,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description The filesystem refuses to read the skill file or a folder on its path (FILE_UNREADABLE); the message names the cause. */
       409: {
         headers: {
@@ -1745,6 +1806,8 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
       /** @description No usable skills directory is configured. */
       503: {
         headers: {
@@ -1774,6 +1837,11 @@ export interface operations {
           "application/json": components["schemas"]["PingResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestBodyTimeout"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   getCapabilities: {
@@ -1794,6 +1862,11 @@ export interface operations {
           "application/json": components["schemas"]["CapabilitiesResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestBodyTimeout"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   getContext: {
@@ -1814,6 +1887,12 @@ export interface operations {
           "application/json": components["schemas"]["EditorContext"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestBodyTimeout"];
+      409: components["responses"]["UnreadableState"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   listViews: {
@@ -1834,6 +1913,12 @@ export interface operations {
           "application/json": components["schemas"]["ViewsResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestBodyTimeout"];
+      409: components["responses"]["UnreadableState"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   searchWorkspace: {
@@ -1878,6 +1963,10 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestBodyTimeout"];
+      409: components["responses"]["UnreadableState"];
+      413: components["responses"]["RequestTooLarge"];
       /** @description Matching one file did not finish within the server deadline */
       422: {
         headers: {
@@ -1887,6 +1976,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      500: components["responses"]["InternalError"];
     };
   };
   listWorkspaces: {
@@ -1918,6 +2008,21 @@ export interface operations {
             | components["schemas"]["WorkspaceFilesResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
+      /** @description No workspace has the workspaceId (WORKSPACE_NOT_FOUND) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      408: components["responses"]["RequestBodyTimeout"];
+      409: components["responses"]["UnreadableState"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   createWorkspaceEntry: {
@@ -1951,6 +2056,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      401: components["responses"]["Unauthorized"];
       /** @description Destination is outside every configured workspace */
       403: {
         headers: {
@@ -1969,6 +2075,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description An entry already exists at the destination */
       409: {
         headers: {
@@ -1978,6 +2085,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
       /** @description The filesystem refused the creation (PERSISTENCE_FAILED); the message names the path and the cause */
       500: {
         headers: {
@@ -2010,6 +2118,12 @@ export interface operations {
           "application/json": components["schemas"]["DocumentListResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestBodyTimeout"];
+      409: components["responses"]["UnreadableState"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   getDocument: {
@@ -2042,6 +2156,8 @@ export interface operations {
             | components["schemas"]["ReadDocumentResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
       /** @description Document not found */
       404: {
         headers: {
@@ -2051,6 +2167,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description The file of the closed document cannot be read */
       409: {
         headers: {
@@ -2060,6 +2177,8 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   searchDocument: {
@@ -2099,6 +2218,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      401: components["responses"]["Unauthorized"];
       /** @description Document not found */
       404: {
         headers: {
@@ -2108,15 +2228,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Search timed out */
-      408: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description The file of the closed document cannot be read */
       409: {
         headers: {
@@ -2126,6 +2238,17 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
+      /** @description Search timed out (SEARCH_TIMEOUT) */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      500: components["responses"]["InternalError"];
     };
   };
   submitProposal: {
@@ -2162,6 +2285,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      401: components["responses"]["Unauthorized"];
       /** @description Document not found */
       404: {
         headers: {
@@ -2171,6 +2295,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description Revision mismatch, document closed, or a file of the document that cannot be read (DOCUMENT_UNREADABLE) */
       409: {
         headers: {
@@ -2190,6 +2315,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
       /** @description Patch does not apply */
       422: {
         headers: {
@@ -2241,6 +2367,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      401: components["responses"]["Unauthorized"];
       /** @description File not found in workspace */
       404: {
         headers: {
@@ -2250,6 +2377,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description Conflict or mismatch */
       409: {
         headers: {
@@ -2268,6 +2396,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
       /** @description Patch does not apply */
       422: {
         headers: {
@@ -2277,6 +2406,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      500: components["responses"]["InternalError"];
     };
   };
   listAnnotations: {
@@ -2302,6 +2432,8 @@ export interface operations {
           "application/json": components["schemas"]["AnnotationListResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
       /** @description Document not found */
       404: {
         headers: {
@@ -2311,6 +2443,10 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
+      409: components["responses"]["UnreadableState"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   getAnnotation: {
@@ -2333,6 +2469,8 @@ export interface operations {
           "application/json": components["schemas"]["AnnotationResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
       /** @description Annotation not found */
       404: {
         headers: {
@@ -2342,6 +2480,10 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
+      409: components["responses"]["UnreadableState"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   addAnnotationMessage: {
@@ -2368,6 +2510,8 @@ export interface operations {
           "application/json": components["schemas"]["AddAnnotationMessageResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
       /** @description Annotation not found */
       404: {
         headers: {
@@ -2377,6 +2521,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description The annotation is resolved or its generation changed before the message was committed. */
       409: {
         headers: {
@@ -2386,6 +2531,8 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   listReviews: {
@@ -2406,6 +2553,12 @@ export interface operations {
           "application/json": components["schemas"]["ReviewListResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestBodyTimeout"];
+      409: components["responses"]["UnreadableState"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   getReview: {
@@ -2435,6 +2588,8 @@ export interface operations {
             | components["schemas"]["ReviewPacketsResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
       /** @description Review not found */
       404: {
         headers: {
@@ -2444,6 +2599,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description Document closed */
       409: {
         headers: {
@@ -2453,6 +2609,8 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   addReviewComment: {
@@ -2479,6 +2637,8 @@ export interface operations {
           "application/json": components["schemas"]["ReviewDetailResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
       /** @description Review not found */
       404: {
         headers: {
@@ -2488,6 +2648,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description Document closed */
       409: {
         headers: {
@@ -2497,6 +2658,8 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   reapplyReview: {
@@ -2523,6 +2686,8 @@ export interface operations {
           "application/json": components["schemas"]["ReapplyReviewResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
       /** @description Review not found */
       404: {
         headers: {
@@ -2532,6 +2697,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description The review is still current, or its generation moved. */
       409: {
         headers: {
@@ -2541,6 +2707,8 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   discardReview: {
@@ -2567,6 +2735,8 @@ export interface operations {
           "application/json": components["schemas"]["DiscardReviewResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
       /** @description Review not found */
       404: {
         headers: {
@@ -2576,6 +2746,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description The review is still current, or its generation moved. */
       409: {
         headers: {
@@ -2585,6 +2756,8 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   retractProposal: {
@@ -2612,6 +2785,8 @@ export interface operations {
           "application/json": components["schemas"]["RetractProposalResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
       /** @description Proposal not found */
       404: {
         headers: {
@@ -2621,6 +2796,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description Proposal cannot be retracted or document is closed */
       409: {
         headers: {
@@ -2630,6 +2806,8 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   waitForReviewEvents: {
@@ -2657,6 +2835,8 @@ export interface operations {
           "application/json": components["schemas"]["ReviewEventsResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
       /** @description Review not found */
       404: {
         headers: {
@@ -2666,6 +2846,10 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
+      409: components["responses"]["UnreadableState"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
     };
   };
   queryCitations: {
@@ -2695,6 +2879,8 @@ export interface operations {
             | components["schemas"]["CitationItem"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
       /** @description The database does not hold the cite key. */
       404: {
         headers: {
@@ -2704,6 +2890,10 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
+      409: components["responses"]["UnreadableState"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
       /** @description The database is not loaded. error.database names the file and the cause; without it, the settings name no main library. */
       503: {
         headers: {
@@ -2748,6 +2938,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      401: components["responses"]["Unauthorized"];
       /** @description The database does not hold a cite key of the request. error.missingCitekeys names each one. */
       404: {
         headers: {
@@ -2757,6 +2948,10 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
+      409: components["responses"]["UnreadableState"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
       /** @description The database is not loaded (CITATION_DATABASE_NOT_LOADED, error.database names the file and the cause), or the citation style of the settings did not load (CITATION_STYLE_NOT_LOADED). No citation is rendered in another style. */
       503: {
         headers: {
@@ -2788,6 +2983,10 @@ export interface operations {
           "application/json": components["schemas"]["MacroInventoryResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestBodyTimeout"];
+      413: components["responses"]["RequestTooLarge"];
       /** @description Macro inspection failed */
       500: {
         headers: {
@@ -2844,6 +3043,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      401: components["responses"]["Unauthorized"];
       /** @description The figure file does not exist (FIGURE_NOT_FOUND), or the configured figures directory does not exist (FIGURES_DIRECTORY_NOT_FOUND). */
       404: {
         headers: {
@@ -2853,6 +3053,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description The filesystem refuses to read the figure file or a folder on its path (FILE_UNREADABLE); the message names the cause. */
       409: {
         headers: {
@@ -2862,6 +3063,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
       /** @description Figure operation failed */
       500: {
         headers: {
@@ -2913,6 +3115,8 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestBodyTimeout"];
       /** @description Figure already exists */
       409: {
         headers: {
@@ -2922,6 +3126,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      413: components["responses"]["RequestTooLarge"];
       /** @description Figure persistence failed */
       500: {
         headers: {
@@ -2965,6 +3170,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      401: components["responses"]["Unauthorized"];
       /** @description Document or workspace not found */
       404: {
         headers: {
@@ -2974,6 +3180,9 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
+      409: components["responses"]["UnreadableState"];
+      413: components["responses"]["RequestTooLarge"];
       /** @description Lint failed */
       500: {
         headers: {
@@ -3007,6 +3216,11 @@ export interface operations {
           "application/json": components["schemas"]["ZoteroSearchResponse"];
         };
       };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["Unauthorized"];
+      408: components["responses"]["RequestBodyTimeout"];
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
       /** @description Zotero answered with an error */
       502: {
         headers: {
@@ -3047,6 +3261,37 @@ export interface operations {
           "application/json": components["schemas"]["ZoteroExtractionsResponse"];
         };
       };
+      /** @description The request is not valid (INVALID_PARAMS), or the add-on refuses the item key (ZOTERO_REQUEST_FAILED) */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description No item has the item key (ZOTERO_REQUEST_FAILED) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      408: components["responses"]["RequestBodyTimeout"];
+      /** @description The item has no children: it is a note or an attachment (ZOTERO_REQUEST_FAILED) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
       /** @description Zotero or an attachment file could not be read. */
       502: {
         headers: {
@@ -3098,6 +3343,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      401: components["responses"]["Unauthorized"];
       /** @description No registry has the identifier, or a collection key does not exist */
       404: {
         headers: {
@@ -3107,6 +3353,18 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
+      /** @description The add-on refuses the import in the state of the library (ZOTERO_REQUEST_FAILED) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      413: components["responses"]["RequestTooLarge"];
+      500: components["responses"]["InternalError"];
       /** @description Zotero answered with an error */
       502: {
         headers: {
@@ -3158,6 +3416,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      401: components["responses"]["Unauthorized"];
       /** @description A collection key does not exist */
       404: {
         headers: {
@@ -3167,6 +3426,17 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      408: components["responses"]["RequestBodyTimeout"];
+      /** @description The add-on refuses the import in the state of the library (ZOTERO_REQUEST_FAILED) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      413: components["responses"]["RequestTooLarge"];
       /** @description ZOTERO_SOURCE_NOT_IDENTIFIED, with error.remediation */
       422: {
         headers: {
@@ -3176,6 +3446,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      500: components["responses"]["InternalError"];
       /** @description Zotero could not fetch the source, or answered with an error */
       502: {
         headers: {

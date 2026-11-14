@@ -31,7 +31,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -74,12 +73,11 @@ describe("a word that the disk refuses for the user dictionary", function () {
     fixtureRoot = fixture.root;
     dictionaryFile = path.join(fixture.configDirectory, "user.dic");
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

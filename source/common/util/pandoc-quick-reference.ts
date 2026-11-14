@@ -228,17 +228,10 @@ export function referenceTopicSyntax(
 }
 
 /**
- * The reference-authoring capabilities the quick help documents.
- *
- * CONTRACT (locked red by test/pandoc-quick-help-references.spec.ts): the
- * editor now SHIPS combined @ completion, hover target previews, the
- * definition search of the command launcher, Mod-Click navigation with per-pane Back/Forward
- * history, workspace rename, and Project-membership warnings — so the help
- * must document each of them, and the footer claim that cross-reference
- * autocomplete and target previews "are not currently available" (plus the
- * fig/tbl/eq/sec-only convention note) is FALSE and must disappear from
- * PandocQuickHelp.vue.
- *
+ * The reference-authoring capabilities the quick help documents: combined
+ * @ completion, hover target previews, the definition search of the command
+ * launcher, Mod-Click navigation with per-pane Back/Forward history,
+ * workspace rename, and Project-membership warnings.
  */
 export const PANDOC_REFERENCE_AUTHORING_TOPICS: readonly ReferenceAuthoringTopic[] = [
   {
@@ -289,6 +282,8 @@ export interface TheoremDivExample {
   prefix: string;
   /** The fenced-div class the prefix labels */
   divClass: string;
+  /** The name of the family, as the metadata registry gives it */
+  displayName: string;
   /** The exact authored definition example */
   label: string;
   /** The exact authored reference example */
@@ -296,19 +291,16 @@ export interface TheoremDivExample {
 }
 
 /**
- * The exact fenced-div prefix examples the quick help shows — one per
- * theorem-family metadata entry (all 15; proof-like divs stay absent because
- * they are unreferenceable).
- *
- * CONTRACT (locked red by test/pandoc-quick-help-references.spec.ts): each
- * example is derived from the registry above so the help can never drift
- * from the extractor's supported set: label
- * `::: {.<divClass> #<prefix>:key}` and reference `@<prefix>:key`.
+ * The exact fenced-div prefix examples the quick help shows: one for each
+ * entry of `THEOREM_FAMILY_METADATA`, with its name, label
+ * `::: {.<divClass> #<prefix>:key}` and reference `@<prefix>:key`. Proof-like
+ * divs are absent: no ID cites them.
  */
 export const THEOREM_DIV_EXAMPLES: readonly TheoremDivExample[] = THEOREM_FAMILY_METADATA.map(
   (metadata) => ({
     prefix: metadata.prefix,
     divClass: metadata.divClass,
+    displayName: metadata.displayName,
     label: `::: {.${metadata.divClass} #${metadata.prefix}:key}`,
     reference: `@${metadata.prefix}:key`,
   }),

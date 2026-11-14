@@ -208,7 +208,7 @@ async function runAppendAndContinue(plan: AppendAndContinuePlan): Promise<void> 
     payload: plan.rootPath,
   });
 
-  if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== "directory") {
+  if (descriptor.type !== "directory") {
     throw new Error(`Can't update Project ${plan.rootPath}: that path is not an open folder`);
   }
 

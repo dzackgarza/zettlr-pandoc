@@ -71,6 +71,7 @@ import {
   type WorkspaceReferenceEdit,
   type WorkspaceTextEdit,
 } from "../../types/common/references";
+import type { WorkspaceEditDocumentPreview } from "../../types/common/workspace-edit";
 
 /**
  * A typed reason for refusing to compute a rename. Rejections are values,
@@ -84,12 +85,31 @@ export type ReferenceRenameRejection =
   | { kind: "unknown-key"; oldKey: string };
 
 /**
- * The outcome of a rename preview: either the complete previewed
- * WorkspaceReferenceEdit or a typed rejection.
+ * The outcome of a rename computation: either the complete WorkspaceReferenceEdit
+ * or a typed rejection.
  */
-export type ReferenceRenamePreview =
+export type ReferenceRenameResult =
   | { status: "ok"; edit: WorkspaceReferenceEdit }
   | { status: "rejected"; reason: ReferenceRenameRejection };
+
+/**
+ * The outcome of a rename preview: the edit with each changed line of each
+ * document before and after (the window shows them before the commit), or
+ * a typed rejection.
+ */
+export type ReferenceRenamePreview =
+  | { status: "ok"; edit: WorkspaceReferenceEdit; documents: WorkspaceEditDocumentPreview[] }
+  | { status: "rejected"; reason: ReferenceRenameRejection };
+
+/**
+ * The preview that the command 'preview-reference-rename' gives a window.
+ * The main process keeps the edit of an accepted preview under `id`, and
+ * 'commit-reference-rename' commits that edit for that `id` only: a window
+ * commits the rename that the author saw, never an edit of its own.
+ */
+export type IssuedReferenceRenamePreview =
+  | (Extract<ReferenceRenamePreview, { status: "ok" }> & { id: string })
+  | Extract<ReferenceRenamePreview, { status: "rejected" }>;
 
 /**
  * The wire outcome of ReferenceProvider's 'commit-rename' command.
@@ -170,13 +190,13 @@ const TOKEN_TERMINATORS = /[\s}\];,@]/;
  * @param   {string}                       oldKey     The full key being renamed
  * @param   {string}                       newKey     The full replacement key
  *
- * @return  {ReferenceRenamePreview}                  The previewed edit or a typed rejection
+ * @return  {ReferenceRenameResult}                   The edit or a typed rejection
  */
 export function previewReferenceRename(
   snapshots: DocumentReferenceSnapshot[],
   oldKey: string,
   newKey: string,
-): ReferenceRenamePreview {
+): ReferenceRenameResult {
   // 1. Structural validation of the replacement key
   const newFamily = referenceFamilyOf(newKey);
   if (newFamily === undefined || TOKEN_TERMINATORS.test(newKey)) {
@@ -283,87 +303,4 @@ export function previewReferenceRename(
       undo,
     },
   };
-}
-
-/**
- * One affected document of a previewed rename, as the rename preview UI
- * presents it (issue #1, review A4 / US-17): the document, its exact edit
- * count, and the authored context snippet of every affected range in
- * document order.
- */
-export interface RenamePreviewFileSummary {
-  documentPath: string;
-  /** The number of previewed text edits in this document */
-  editCount: number;
-  /** One authored context snippet per affected range, in document order */
-  snippets: string[];
-}
-
-/**
- * Builds the per-file summary the rename preview dialog renders, from a
- * previewed WorkspaceReferenceEdit and the workspace snapshots it was
- * computed over. Documents appear in the edit's own document order; each
- * affected range contributes its authored context — the definition's
- * preview-source head line for definition tokens, the authored citation
- * cluster for occurrence tokens.
- *
- * @param   {WorkspaceReferenceEdit}       edit       The previewed edit
- * @param   {DocumentReferenceSnapshot[]}  snapshots  The snapshots previewed over
- * @param   {string}                       oldKey     The key being renamed
- *
- * @return  {RenamePreviewFileSummary[]}              The per-file summary
- */
-export function buildRenamePreviewSummary(
-  edit: WorkspaceReferenceEdit,
-  snapshots: DocumentReferenceSnapshot[],
-  oldKey: string,
-): RenamePreviewFileSummary[] {
-  const summaries: RenamePreviewFileSummary[] = [];
-  const byPath = new Map(snapshots.map((snapshot) => [snapshot.documentPath, snapshot]));
-
-  for (const textEdit of edit.edits) {
-    let summary = summaries.find((candidate) => candidate.documentPath === textEdit.documentPath);
-    if (summary === undefined) {
-      summary = { documentPath: textEdit.documentPath, editCount: 0, snippets: [] };
-      summaries.push(summary);
-    }
-    summary.editCount++;
-
-    const snapshot = byPath.get(textEdit.documentPath);
-    if (snapshot === undefined) {
-      throw new Error(
-        `Rename preview summary: no snapshot for previewed document ${textEdit.documentPath}`,
-      );
-    }
-
-    // The affected range is either a definition id token or an occurrence
-    // key token of oldKey; surface its authored context.
-    const definition = snapshot.definitions.find((candidate) => {
-      return (
-        candidate.key === oldKey &&
-        textEdit.range.from >= candidate.range.from &&
-        textEdit.range.to <= candidate.range.to
-      );
-    });
-    if (definition !== undefined) {
-      summary.snippets.push(definition.previewSource.split("\n", 1)[0]);
-      continue;
-    }
-
-    const occurrence = snapshot.occurrences.find((candidate) => {
-      return (
-        candidate.key === oldKey &&
-        textEdit.range.from >= candidate.range.from &&
-        textEdit.range.to <= candidate.range.to
-      );
-    });
-    if (occurrence === undefined) {
-      throw new Error(
-        `Rename preview summary: previewed range [${textEdit.range.from},${textEdit.range.to}] in ${textEdit.documentPath} matches no authored ${oldKey} token`,
-      );
-    }
-    summary.snippets.push(occurrence.clusterRaw);
-  }
-
-  return summaries;
 }

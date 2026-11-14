@@ -193,9 +193,16 @@ export const SAVE_REFUSED_CHANNEL = "save-refused";
 /**
  * Broadcast on REMOTE_CHANGE_KEPT_CHANNEL when a loaded file changed on disk
  * and the editor kept its own contents. The renderer offers to load the disk
- * version; the provider never asks with a modal dialog.
+ * version; the provider never asks with a modal dialog. `frozenReview` is
+ * true when the document has a review, which the change froze: a save is
+ * refused until the author decides on the review, so the renderer also
+ * offers the review and a copy of the text.
  */
-export type RemoteChangeKeptBroadcast = { filePath: string; unsavedChanges: boolean };
+export type RemoteChangeKeptBroadcast = {
+  filePath: string;
+  unsavedChanges: boolean;
+  frozenReview: boolean;
+};
 
 export const REMOTE_CHANGE_KEPT_CHANNEL = "remote-change-kept";
 

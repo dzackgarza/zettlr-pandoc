@@ -95,15 +95,16 @@ export default class DirRename extends ZettlrCommand {
     await runEachStep([
       // Notify the documents provider so it can exchange any files if necessary
       async () => await this._app.documents.hasMovedDir(sourcePath, newPath),
-      // Keep every wikilink pointing at the document it named before the rename
+      // Offer the edit that keeps each link naming the file it named before the rename
       async () => {
-        const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
-        await this._app.links.retargetAfterMove(
+        const proposal = await this._app.links.retargetProposal(
           linksBefore,
           move,
-          changedFiles,
           this._app.documents,
         );
+        if (proposal !== undefined) {
+          this._app.commands.propose(proposal);
+        }
       },
     ]);
   }

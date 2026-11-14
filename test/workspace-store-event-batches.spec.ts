@@ -35,7 +35,7 @@ const ROOT = "/workspace";
 const BURST = 100;
 
 interface FsalRequest {
-  command: "read-path-recursively" | "get-descriptor";
+  command: "read-path-recursively" | "get-descriptors";
   payload: string | string[];
 }
 
@@ -135,6 +135,7 @@ describe("The workspace store applies a batch of filesystem events", function ()
       if (request.command === "read-path-recursively") {
         return [...onDisk.keys()];
       }
+      assert.equal(request.command, "get-descriptors");
       assert.ok(Array.isArray(request.payload));
       return request.payload.map((absPath) => onDisk.get(absPath));
     });

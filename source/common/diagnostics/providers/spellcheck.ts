@@ -14,13 +14,9 @@ const anyLetterRE = /[\p{L}'’‘]+/gu;
 const noneLetterRE = /^['’‘]+$/;
 const nonLetters = "'’‘";
 const spellcheckCache = new Map<string, boolean>();
-let dictionaryListenerRegistered = false;
-
-function ensureDictionaryListener(): void {
-  if (dictionaryListenerRegistered || window.ipc === undefined) {
-    return;
-  }
-  dictionaryListenerRegistered = true;
+// The window has the listener from the load of the module, so the set of its
+// IPC listeners does not change when the first check runs (#70).
+if (window.ipc !== undefined) {
   window.ipc.on("dictionary-provider", (_event, message: DictionaryProviderBroadcast) => {
     if (message.command === "invalidate-dict") {
       spellcheckCache.clear();
@@ -74,7 +70,6 @@ async function check(term: string, autocorrectValues: string[]): Promise<boolean
 export const spellcheckDiagnosticProvider: ExternalLinter<SpellcheckDiagnosticContext> = {
   id: "spellcheck",
   async run({ text, context }) {
-    ensureDictionaryListener();
     const ast = markdownToAST(text, context.tree);
     const textNodes = extractTextnodes(ast);
     const wordsToCheck: Array<{ word: string; index: number; nodeStart: number }> =

@@ -13,11 +13,11 @@
  */
 
 import { trans } from "@common/i18n-main";
-import { hashDocumentSource } from "@common/pandoc-util/extract-references";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import {
   movedPath,
   type PathMove,
+  retargetedFileLink,
   retargetedLink,
   retargetLinks,
 } from "@common/util/replace-links";
@@ -27,11 +27,12 @@ import {
   type WikilinkResolution,
 } from "@common/util/wikilink-resolution";
 import { splitWikilinkTarget } from "@common/util/wikilink-target";
-import type { SaveFileResult } from "@dts/common/documents";
-import type { WorkspaceTextEdit } from "@dts/common/references";
+import type { WorkspaceEditProposal } from "@dts/common/workspace-edit";
 import type LogProvider from "@providers/log";
-import { app, ipcMain } from "electron";
+import { ipcMain } from "electron";
+import { existsSync } from "fs";
 import path from "path";
+import { proposalOf, type WorkspaceEditDocuments } from "source/app/util/workspace-edit-proposal";
 import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import type { MDFileDescriptor } from "source/types/common/fsal";
 import _ from "underscore";
@@ -39,22 +40,21 @@ import type ConfigProvider from "../config";
 import type FSAL from "../fsal";
 import type { FSALEventPayload } from "../fsal";
 import ProviderContract from "../provider-contract";
-import {
-  runWorkspaceEditTransaction,
-  saveUpdatedBuffers,
-  type WorkspaceEditAuthority,
-} from "../references/workspace-edit-transaction";
 import type { WikilinkEdge } from "./ipc-contract";
 
-/** The document authority a retarget edits through: open buffers and their save. */
-export interface LinkRetargetAuthority extends WorkspaceEditAuthority {
-  saveFile: (filePath: string) => Promise<SaveFileResult>;
-}
-
-/** The wikilinks of every file and the index they resolve against. */
+/**
+ * The links of every file and the index they resolve against: the wikilinks
+ * and the URLs of the Markdown links and images that can name a file.
+ */
 export interface WikilinkSnapshot {
   index: WikilinkIndex;
-  links: Map<string, string[]>;
+  documents: Map<string, DocumentLinks>;
+}
+
+/** The wikilink targets and the Markdown link URLs of one document. */
+interface DocumentLinks {
+  links: string[];
+  fileLinks: string[];
 }
 
 /**
@@ -64,6 +64,8 @@ export interface WikilinkSnapshot {
  */
 export default class LinkProvider extends ProviderContract {
   private _fileLinkDatabase: Map<string, string[]>;
+  /** The URLs of the Markdown links and images of every file. */
+  private _documentLinks: Map<string, DocumentLinks>;
   private _index: WikilinkIndex;
   /** What the index was built from: the comparison value of a reindex */
   private _indexEntries: WikilinkDocument[];
@@ -76,6 +78,7 @@ export default class LinkProvider extends ProviderContract {
     super();
 
     this._fileLinkDatabase = new Map();
+    this._documentLinks = new Map();
     this._index = new WikilinkIndex([]);
     this._indexEntries = [];
 
@@ -152,6 +155,14 @@ export default class LinkProvider extends ProviderContract {
     };
 
     const links = new Map(descriptors.map((descriptor) => [descriptor.path, descriptor.links]));
+    // The windows do not read the Markdown links: a change of them alone
+    // broadcasts nothing.
+    this._documentLinks = new Map(
+      descriptors.map((descriptor) => [
+        descriptor.path,
+        { links: descriptor.links, fileLinks: descriptor.fileLinks },
+      ]),
+    );
     const entries: WikilinkDocument[] = descriptors.map((descriptor) => ({
       path: descriptor.path,
       root: rootFor(descriptor.path),
@@ -196,101 +207,78 @@ export default class LinkProvider extends ProviderContract {
 
   /** The links and the index as they stand now, to retarget after a move. */
   snapshot(): WikilinkSnapshot {
-    return { index: this._index, links: this._fileLinkDatabase };
+    return {
+      index: this._index,
+      documents: this._documentLinks,
+    };
   }
 
   /**
    * Reindexes after `move`, and returns the files, at their paths before the
-   * move, that hold a wikilink whose document the move changed.
+   * move, that hold a link whose document the move changed: a wikilink, or a
+   * Markdown link or image whose relative path no longer reaches its file.
    */
   async filesChangedByMove(before: WikilinkSnapshot, move: PathMove): Promise<string[]> {
     await this.reindex();
-    return [...before.links]
-      .filter(([sourcePath, links]) =>
-        links.some((link) => {
-          const { target } = splitWikilinkTarget(link);
-          return retargetedLink(target, sourcePath, move, before.index, this._index) !== undefined;
-        }),
+    return [...before.documents]
+      .filter(
+        ([sourcePath, { links, fileLinks }]) =>
+          links.some((link) => {
+            const { target } = splitWikilinkTarget(link);
+            return (
+              retargetedLink(target, sourcePath, move, before.index, this._index) !== undefined
+            );
+          }) ||
+          fileLinks.some(
+            (url) => retargetedFileLink(url, sourcePath, move, existsSync) !== undefined,
+          ),
       )
       .map(([sourcePath]) => sourcePath);
   }
 
   /**
-   * Rewrites the wikilinks of `files` (see `filesChangedByMove`) so that each
-   * names the document it named before `move`. The rewrite is one workspace
-   * edit: an open document changes in its buffer, which is then saved, and a
-   * closed one on disk. An open document never depends on the file watcher,
-   * which drops a second change of one file within 50 ms.
+   * Reindexes after `move`, and returns the proposal that retargets the
+   * links of the files that `filesChangedByMove` names, so that each names
+   * the document it named before `move`; undefined when no link changes. It reads the text of an open
+   * document from its buffer. Nothing changes until the author applies the
+   * proposal.
    */
-  async retargetAfterMove(
+  async retargetProposal(
     before: WikilinkSnapshot,
     move: PathMove,
-    files: string[],
-    documents: LinkRetargetAuthority,
-  ): Promise<void> {
-    const edits: WorkspaceTextEdit[] = [];
-    const expectedSourceHashes: Record<string, string> = {};
-    for (const sourcePath of files) {
-      const filePath = movedPath(sourcePath, move);
-      const buffer = documents.readMarkdownBufferContent(filePath);
-      const content = buffer !== undefined ? buffer : await this._fsal.readTextFile(filePath);
+    documents: WorkspaceEditDocuments,
+  ): Promise<WorkspaceEditProposal | undefined> {
+    const proposed = [];
+    for (const sourcePath of await this.filesChangedByMove(before, move)) {
+      const documentPath = movedPath(sourcePath, move);
+      const source =
+        documents.readMarkdownBufferContent(documentPath) ??
+        (await this._fsal.readTextFile(documentPath));
+      let target = source;
       const replacements = retargetLinks(
-        content,
+        source,
         sourcePath,
         move,
         before.index,
         this._index,
         this._config.get().zkn.linkFormat,
+        existsSync,
       );
-      if (replacements.length === 0) {
-        continue;
+      // From the end, so that each range is a range of the source.
+      for (const { from, to, text } of replacements.reverse()) {
+        target = target.slice(0, from) + text + target.slice(to);
       }
-      expectedSourceHashes[filePath] = hashDocumentSource(content);
-      edits.push(
-        ...replacements.map(({ from, to, text }) => ({
-          documentPath: filePath,
-          range: { from, to },
-          insert: text,
-        })),
-      );
+      proposed.push({ documentPath, source, target });
     }
-    if (edits.length === 0) {
-      return;
-    }
-
-    const result = await runWorkspaceEditTransaction(documents, app.getPath("userData"), {
-      edits,
-      expectedSourceHashes,
-    });
-    if (result.status === "conflict") {
-      throw new Error(
-        `[LinkProvider] ${result.documentPath} changed while its wikilinks were retargeted after ${move.from} moved to ${move.to}`,
-      );
-    }
-    const unsaved = await saveUpdatedBuffers(
-      async (filePath) => await documents.saveFile(filePath),
-      result.openBuffersUpdated,
+    return proposalOf(
+      trans("Update links"),
+      trans(
+        "%s moved to %s. These links follow it. No file changes until you apply.",
+        move.from,
+        move.to,
+      ),
+      proposed,
     );
-    for (const filePath of [...result.openBuffersUpdated, ...result.closedFilesWritten]) {
-      this._logger.info(
-        `[LinkProvider] Retargeted the wikilinks in ${filePath} after ${move.from} moved to ${move.to}`,
-      );
-    }
-    if (unsaved.length > 0) {
-      // The documents hold the new links; the author saves them when the
-      // files take a save again. The dispatcher shows this message.
-      throw new Error(
-        unsaved
-          .map(({ documentPath, refusal }) =>
-            trans(
-              "The links in %s follow the move, but the document is not saved: %s",
-              documentPath,
-              refusal.message,
-            ),
-          )
-          .join("\n"),
-      );
-    }
   }
 
   /** The written form of a wikilink to `filePath`. */

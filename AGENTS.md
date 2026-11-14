@@ -35,7 +35,7 @@ agent-memory phase show <PHASE-ID>
 `agent-memory retrieve` reads memory notes and takes a vault-relative key, not a card id.
 Use `plan show`, `phase show`, or `card show` for cards; they take the id.
 
-The vault card is authoritative. Repository files that restate a plan — `.pr/PR_BODY.md`,
+The vault card is authoritative. Repository files that restate a plan — a PR body,
 design transcripts, mockup directories — are derived copies that go stale. Read the card,
 and when the two disagree, the card wins.
 
@@ -110,7 +110,8 @@ recipe exists. Key recipes (see the `justfile` for the exact commands):
   (browser/renderer), assembled by `forge.config.js`. The wrapper fails if the build
   does not create a fresh `app.asar` from the current source fingerprint.
 - **Build observability** — `scripts/verify-build.py` (`just verify-build`). Proves the
-  asar was built from the current commit via the `__GIT_COMMIT_HASH__` string that
+  asar was built from the commit at the start of the build (a commit during the
+  build moves `HEAD`, not the bundle) via the `__GIT_COMMIT_HASH__` string that
   `DefinePlugin` bakes into the bundle (`webpack.{main,renderer}.config.js`, sourced
   from `scripts/get-git-hash.js`, referenced by `source/win-about/Debug-Tab.vue`).
   Run `just verify-build-only` to instantly answer "is my installed app actually
@@ -159,7 +160,10 @@ A click on a rendered widget selects its source through
 Shift-click keeps the anchor of the selection and moves the head over the
 source of the widget, as in text; a Shift-click on a task checkbox does not
 toggle the task. A new widget that handles a click calls one of the two
-functions. Proof: `e2e/shift-click-widgets.spec.ts`.
+functions on the `mousedown` of the primary button, not on `click`: the
+default mousedown puts the caret at the edge of the widget, the renderer then
+shows the source, and the click of a button that a person holds arrives at
+that source text (#131). Proof: `e2e/shift-click-widgets.spec.ts`.
 
 ## System-specific integrations
 
@@ -359,6 +363,39 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 - The agent API listens on `127.0.0.1:27412` only. It serves the OpenAPI
   routes and, at `/mcp`, the same operations as an MCP server
   (`source/app/service-providers/agent-api/mcp-endpoint.ts`).
+- **A client finds its instance through the discovery file.** When the
+  listener is bound, the app writes `agent-api.port` into `userData`: the
+  bound port and the id of the instance that `/v1/ping` answers
+  (`agent-api/discovery-file.ts`). A killed instance leaves its file, and
+  another instance can bind its port, so a client takes the listener on that
+  port only when its ping names the same id (`readAgentApiPort` in
+  `e2e/support/electron-app.ts`). Proof: `test/agent-http-api.spec.ts`
+  ("a stale discovery file").
+- **A change that an older client cannot use raises the major version.**
+  `info.version` of `openapi.yaml` is the protocol version that `/v1/ping`
+  answers, and `zettlr-pandoc-review-diff` refuses each other version
+  (`PROTOCOL_VERSION_UNSUPPORTED`) before it sends a request that changes
+  state. A new required field of a request, a removed operation or a removed
+  field of an answer raises the major version; another change of the
+  contract (a new error code, a new operation) raises the minor version. The
+  CLI accepts one version, so its constant follows each change. Version 2.0.0
+  made `clientRequestId` of a proposal required; version 2.1.0 added
+  `PROPOSAL_NOT_FOUND`; version 3.0.0 removed `active` of a view of
+  `/v1/views`, which was a copy of `focused` (`documentId` names the
+  active tab).
+  `bun run check:agent-api-types` proves that the generated types are those
+  of the document; the hosted `check.yml` runs it.
+- **Each status on the wire is one that the document declares.** A handler
+  answers through `Reply<Op>` (`http-server.ts`): `sendJson` and `sendError`
+  take only a status that `openapi.yaml` declares for the operation, and
+  `STATUS_BY_CODE` gives the status of each error code. A refusal whose
+  status the operation does not declare goes through `sendRefusal`, which
+  logs the gap and answers 500. A route answers only the errors that it
+  classifies; each other error reaches the dispatcher, which answers a
+  document that cannot be read with 409 `DOCUMENT_UNREADABLE` and logs the
+  rest with its stack. Proof: `test/agent-http-api.spec.ts` (each answer is
+  checked against the declared response; each `$ref` of the served
+  documents resolves).
 - **Each request carries the token.** A caller sends
   `Authorization: Bearer <token>`, where the token is the value of
   `ZETTLR_AGENT_API_TOKEN` in the environment of the app. `dispatch`
@@ -522,7 +559,8 @@ Zettlr starts it on one diagram.
   Every consumer resolves through it: force-open (with `#heading` → `jump-to-line`),
   hover preview, backlinks, graph, autocomplete (`get-link-targets`), and
   file rename, move and directory rename (`LinkProvider.filesChangedByMove` and
-  `retargetAfterMove` rewrite only the links whose document the move changed).
+  `retargetProposal` change only the links whose document the move changed;
+  the author sees the edit before it is made, §28).
   `[[#heading]]` (empty target) resolves to the linking document; backlinks and
   the graph leave that self link out.
 - **One reading of a link.** A wikilink is a `ZettelkastenLink` of the Markdown
@@ -637,6 +675,20 @@ of an isolated instance are in the first comment of #132.
   its list of paths has a new member or lost one (#126). Proof:
   `test/annotations-sidebar.spec.ts`,
   `test/annotations-panel-animation.spec.ts`.
+- **A review with many chunks costs work for the chunks that change.**
+  The review field (`plugins/review-chunks.ts`) keeps each chunk in a
+  range set by its extent with its decorations. A typed character maps the
+  chunks that it touches and moves the others; a broadcast of the
+  installed review is the effect `reviewChunksBroadcast`, not a
+  reconfigure, and a suggestion that it does not change keeps its
+  decorations and its control. The field states what a transaction changed
+  (`delta`, and `changed` of `PreviewSuppression`); the chunk controls and
+  `incrementalNodeDecorations` (`changedReach`) compute only that again. A
+  new consumer of the review state reads the delta; it does not walk
+  `getReviewChunks` for each transaction. The provider still maps each
+  suggestion for each pushed update, and a broadcast still compares the
+  text of the document with the working text. Proof:
+  `test/editor-review-chunk-cost.spec.ts`.
 - **The editor takes one new width for one slide of a side pane.** A side
   pane of the main window slides for 180 ms. `paneSlide`
   (`win-main/util/pane-slide.ts`) gives the panes their final sizes in one
@@ -663,6 +715,14 @@ of an isolated instance are in the first comment of #132.
   50 ms in one array, to the main-process listeners and to the windows. A
   consumer does its work once for each batch and broadcasts only a changed
   value.
+- **A file that the watcher reported as changed is read again.** chokidar
+  reports one `change` of a path in 50 ms and drops the others
+  (`FSWatcher._emit`), so a second write of a file in that time has no event
+  of its own. The FSAL reads the modification time of each changed file
+  100 ms after the change (`recheckAfterChangeWindow`) and handles a file
+  that has another modification time as a new change. A failed workspace
+  edit writes a file and writes its old text back at once. Proof:
+  `test/fsal-watcher-events.spec.ts`.
 - **One parse of one document version in the main process.** `markdownToAST`
   (`markdown-utils/index.ts`) keeps the ASTs of the texts it parsed last. The
   AST is shared: a reader must not change it. The cache key holds the link
@@ -766,7 +826,9 @@ of an isolated instance are in the first comment of #132.
   and marks matches (`is-ignored`).
 - **A filter hides; it does not close.** An open document that a rule or a
   file type hides stays open, and it saves to its path. The documents
-  provider has its own watcher and does not read `fsal-events`.
+  provider closes tabs through its own watcher; it reads `fsal-events`
+  only to end the document ids of removed files (§14), and a hidden file
+  is on disk and keeps its id.
 - **A filter does not remove a chapter.** A Project export takes each
   chapter of its settings that is a file on disk (`exportProject`), also a
   chapter that a rule or a file type hides; the message of the export names
@@ -796,6 +858,18 @@ of an isolated instance are in the first comment of #132.
   Problems view, the reference numbering) gives a path to the innermost one.
 - **Root list.** `consolidateRootPaths` (`config/root-paths.ts`) moves an open
   file that a workspace holds out of `openFiles`; a file beside a workspace stays.
+- **A path that enters the application is its real path.** A root
+  (`rootPathsOnDisk` at start, `addPath`, `root-open`), a document that opens
+  (`DocumentManager.openFile`), a tab of the stored state (boot) and a
+  document of the Agent API are named with each symbolic link resolved
+  (`canonicalPath`, `app/util/real-path.ts`). The FSAL lists no symbolic
+  link, so its paths are real too. A file that two names reach is one
+  document with one sidecar: an annotation or a review made under one name
+  is there under the other (#57). Code that takes a path from outside (a
+  dialog, the command line, IPC from a window, an HTTP request) resolves it
+  through one of these entries; it does not key a document by the path as
+  given. Proof: `test/documents-move-identity.spec.ts`,
+  `test/config-root-paths.spec.ts`.
 - **Proof:** `test/renderer-path-polyfill.spec.ts` (Node's `path.relative` is the
   oracle), `test/config-root-paths.spec.ts`, `test/explorer-ordering.spec.ts`,
   `e2e/nested-roots.spec.ts`.
@@ -910,16 +984,53 @@ of an isolated instance are in the first comment of #132.
 
 ### 13. Assembled-app E2E runs
 
-- `just test-e2e` and `just test-e2e-file <spec>` run the specs of `e2e/`. A spec
-  that starts the app through `attach` (`e2e/support/electron-app.ts`) runs
-  `electron-forge start`: a development build of the working tree for each start.
-  `e2e/application-lifecycle.spec.ts` and `e2e/citation-library-thread.spec.ts`
-  start the packaged binary. `currentPackagedBinary` refuses a build whose
-  source fingerprint is not that of the tree: run `just package` before such a
-  spec. The packaged app writes its log to a file; such a spec reads the
-  shutdown line through `readAppLog`.
-- **The run owns the display.** With `DISPLAY` unset the recipe starts the whole
-  Mocha process under one `xvfb-run`; a spec starts no X server of its own.
+- `just test-e2e` and `just test-e2e-file <spec>` run the specs of `e2e/`.
+  The recipes first make the packaged build of the tree when it is not
+  current (`_current-package`: `verify-build.py --if-stale`), one build for
+  the run. A spec that starts the app through `attach`
+  (`e2e/support/electron-app.ts`) runs the archive of that build
+  (`currentPackagedArchive`) with the Electron of `node_modules`: the start
+  compiles nothing, and it has 60 s (`startDeadline`). A start with
+  `buildEnvironment` (variables that webpack reads, such as
+  `ZETTLR_DISABLE_UPDATE_CHECK`) compiles a development build of its own
+  through `electron-forge start` and has 240 s. A webpack cache does not
+  make that faster: a build from the cache lost the nodehun asset (#70).
+  `e2e/application-lifecycle.spec.ts` and
+  `e2e/citation-library-thread.spec.ts` start the packaged binary itself,
+  which writes its log to a file; such a spec reads the shutdown line through
+  `readAppLog`. Each path refuses a build whose source fingerprint is not
+  that of the tree at the start of the run: the lanes runner reads it and
+  gives it to each file (`E2E_SOURCE_FINGERPRINT`). A source edit or a
+  commit during the run does not stop its later files.
+- **Spec files run in lanes.** `e2e/support/run-lanes.ts` runs three spec
+  files at the same time, each in a Mocha process of its own. A lane takes
+  the next file when its file ends. The runner prints the output of a file
+  whole when the file ends, then each file by time, the slowest first, and
+  the wall time of the run (#70). A spec file holds no state that another
+  file reads: its fixture is a temporary directory of its own, and the app
+  binds port 0 (`readAgentApiPort`). A start that compiles the app
+  (`buildEnvironment`) gives Forge the two ports of its lane
+  (`forgePortsOfLane`, below the ephemeral range): Forge cannot bind port 0.
+- **A test or a hook has 90 s** (`--timeout 90000` of `run-lanes.ts` and
+  `test:e2e:desktop`): two times the slowest spec file
+  of a hosted run (46 s), and more than one start of the packaged app. A
+  suite whose test or hook starts the app more than one time sets its limit
+  from those starts (`2 * startDeadline({}) + 60_000`); no suite sets a
+  larger number without that reason (#70). `test-e2e-desktop` builds the
+  package before the run too, so the boot script of the installed launcher
+  starts the current build and does not package it in a test
+  (`e2e/desktop/installed-launcher-delivery.spec.ts`).
+- **A lane owns its display.** Each lane starts one Xvfb server
+  (`-displayfd`) and runs its files with that `DISPLAY`, also when the
+  environment has a display. A native message box, a key that `xdotool`
+  presses and the focus of a window are therefore not shared between the
+  files of two lanes. A spec starts no X server of its own.
+- **The run owns its X socket folder.** The recipe (`_e2e-run`) mounts an
+  empty tmpfs at `/tmp/.X11-unix` for the run. Xvfb removes the socket path
+  of its display before it binds, and with `-displayfd` it takes display 0
+  over the lock of a running server; in the folder of the host its exit
+  removed the socket of the X server of the desktop, and no new X11 client
+  connected to `:0`. Proof: `test/e2e-run-displays.spec.ts`.
 - **The run owns its session bus.** The recipe starts the Mocha process
   under `dbus-run-session` with `scripts/e2e-session-bus.conf`, a bus without
   services. A desktop notification of the app of a run goes to that bus and
@@ -929,7 +1040,8 @@ of an isolated instance are in the first comment of #132.
   the run.
 - **The run owns its loopback.** The recipe (`_e2e-run`) starts the run in
   a network namespace with `lo` and no other interface. An app of the run
-  binds the Agent API port, the Forge ports and each other port there, so
+  binds the Agent API port, the Forge ports of a build start and each other
+  port there, so
   the desktop app of the author on port 27412 takes no port from a first
   start of the run (#215). The run reaches no service of the host (Zotero)
   and no network: a spec that needs a service starts it in the run. On the
@@ -944,9 +1056,10 @@ of an isolated instance are in the first comment of #132.
   output and the X server errors when it fails (`test/visual/display-probe.ts`).
 - An e2e run and a `just package` build each need most of the memory of this
   workstation. Run one at a time. A start from the desktop launcher runs
-  `just package` when the source changed, and the build replaces `.webpack`
-  under a running e2e start: that run stops with "Cannot find module
-  '.webpack/main/index.cjs'" or a closed page. Run it again after the build.
+  `just package` when the source changed, and the build replaces the package
+  under a running e2e run: the next start of that run refuses the build of
+  another fingerprint, or a running app stops with a closed page. Run it
+  again after the build.
 - **A click that closes its page goes through `clickToClose`.** Playwright
   stops each action of a page that closes before the action ends, so a click
   whose handler closes the window races the close. `clickToClose` and
@@ -961,8 +1074,8 @@ of an isolated instance are in the first comment of #132.
   finds the box by its title with `xdotool`, captures it with ImageMagick
   `import`, and presses a key in it (`e2e/quit-with-open-review.spec.ts`). The
   CI toolchain installs both tools (`scripts/setup-ci-toolchain.sh`). Such a
-  spec runs on the display of the run only: with `DISPLAY` set, the keys go
-  to the desktop of the author.
+  spec runs through the lanes only: a Mocha run on the display of the
+  environment presses its keys on the desktop of the author.
 - **A file dialog is drawn on the display of the run.** `attach` starts the
   app with `--xdg-portal-required-version` at a version that no portal has
   (`NO_PORTAL_FILE_CHOOSER_VERSION`). Without the option the desktop portal
@@ -985,6 +1098,13 @@ of an isolated instance are in the first comment of #132.
   collaboration state under the document lock (`_movePathOfDocument`, then
   `renameCollaboration`). A new transition that changes the path of a
   document goes through them; it must not assign a new id to the new path.
+- **An id lasts while the app can name its path.** A listing of the Agent
+  API gives an id to each file of a workspace (`ensureDocumentId`). The id
+  goes when the FSAL reports the removal of a file that no loaded document
+  and no tab holds, when the last holder of a removed file closes
+  (`syncWatchedFilePaths`), and when its workspace closes
+  (`closeDocumentsInside`). The maps of ids follow the files that exist.
+  Proof: `test/document-id-lifetime.spec.ts`.
 - **The sidecar follows the file.** The sidecar of a closed document moves
   with the file too: `hasMovedDir` reads `listCollaborationSidecars()` for the
   documents that are not loaded. A document whose file a move replaced is
@@ -1035,6 +1155,9 @@ of an isolated instance are in the first comment of #132.
   read) is a refused close with the same action. `closeWithoutReview` then
   closes the tabs of the document and unloads it: its buffer is the text
   that the author threw away.
+  A discard goes back to the file; when another program removed the file,
+  it goes back to the text that the app last read from it or wrote to it,
+  and the close goes on. Proof: `test/documents-removed-file.spec.ts`.
 - **A discard changes only the state in memory.** `discardCollaboration`
   does nothing for a document with no review and no annotations in memory.
   The sidecar of such a document is the state of another time (the author
@@ -1123,11 +1246,33 @@ of an isolated instance are in the first comment of #132.
   edit transaction applies the inverse of its edits (`inverseEdits`), so an
   annotation and a review return to their places; it does not replace the
   buffer with the old text.
+- **A stopped workspace edit is undone in the sidecars too.** A workspace
+  edit writes a journal before it changes a file or a buffer
+  (`workspace-edit-transaction.ts`). The removal of the journal is the
+  commit: an edit that cannot remove its journal is rolled back and
+  rejects. When the app stops before the journal is removed, the next start
+  (`ReferenceProvider.boot`) gives the original back to each closed file of
+  the journal that holds the text of the edit; a file with other text is
+  text of the author and stays. It gives the document authority the inverse
+  of the edits of each open document (`restoreStoredWorkingText`). The
+  authority applies it to the working text of the sidecar and maps the
+  review and the annotations through it, so the document loads with the
+  text, the proposals and the anchors that it had before the edit. Proof:
+  `test/documents-edit-collaboration.spec.ts`,
+  `test/reference-rename-atomicity.spec.ts`.
 - **A restored session goes out after the buffer has its text.**
   `reattachCollaboration` broadcasts nothing. `_reattachCollaborationSidecar`
   applies the working text of the sidecar and then broadcasts the state. The
   window keeps the session that it gets for a document, and an editor shows a
   review only while its text is the working text of that session.
+- **A late removal closes no other document.** A rename over a file moves
+  that file to the trash and then renames; when more than 100 ms pass
+  between the two, the watcher reports `unlink` for the replaced path
+  before the rename, and `hasMovedFile` can put the renamed document at the
+  path while the close of the replaced one writes its sidecar.
+  `closeFileEverywhere` closes the tabs and the buffer under the lock of the
+  document that it closes, and only while the path still names that
+  document. Proof: `test/documents-removed-file.spec.ts`.
 - **A removed file closes only a document whose text is on disk.** The
   watcher reports the removal of the file of a tab (`unlink`). A document
   without unsaved text closes with its tabs. A document with unsaved text
@@ -1137,6 +1282,27 @@ of an isolated instance are in the first comment of #132.
   "Save a copy…". The watcher follows the path through the removal: a
   file that is written again arrives as `add`, which the provider handles
   as a change (the `add` of its own save is not a change).
+- **Accepted text of a closed document stays when its file changes.** The
+  sidecar of a closed document holds the text that the author accepted from
+  a review and did not save. When another program changed the file before
+  the next load (`driftedCollaboration`), the document loads with that text,
+  as an open document keeps its text (`REMOTE_CHANGE_KEPT_CHANNEL`):
+  the review is frozen, the annotations keep their anchors, the window gets
+  the message of a kept change, and a save is refused with `disk-changed`
+  until the author loads the file or reapplies or discards the review. A
+  review with a proposal opens on the file. A kept change of a document with
+  a review (`RemoteChangeKeptBroadcast.frozenReview`) offers "Load from
+  disk", "Show the review" and "Save a copy…". While the document is closed,
+  the Annotations view names it (`WorkspaceCollaborationListing.unsaved`: a
+  sidecar with a review whose working text is not the text of its fence) and
+  offers to open it. Proof: `test/documents-quit-with-review.spec.ts`,
+  `e2e/accepted-text-of-closed-document.spec.ts`.
+- **The provider watches the file of each loaded document.** The watcher of
+  the documents provider follows the paths of the tabs and of each loaded
+  document (`syncWatchedFilePaths`, called at each load and unload). A
+  review loads a document that no tab shows, and a change of its file
+  freezes the review and sends the message of a kept change as for a
+  document in a tab. Proof: `e2e/accepted-text-of-closed-document.spec.ts`.
 - **"Close anyway" at a window close offers no proposal for a save.** The
   buffer of a document with an undecided proposal takes the text of the
   file; the review and its working text stay in the sidecar. `pullUpdates`
@@ -1164,6 +1330,13 @@ of an isolated instance are in the first comment of #132.
   When no editor of the window holds it (the focus is on a message, in the
   file manager or in a sidebar), the save is for the active document of the
   pane that the author used last (`savesThisDocument` in `MainEditor.vue`).
+- **A save writes only text that the document holds.** `saveBuffer` waits
+  until the document authority took each change of the editor
+  (`whenAuthoritySynced`). The wait follows the collab session of its start
+  (the client id): when the editor loads the document again before the
+  authority took the changes, the changes are gone with the old state, and
+  the save is refused with that cause. Proof:
+  `test/editor-authority-sync-guard.spec.ts`.
 - **A refused action of the Annotations view is shown.** An action of the
   view on one document ("Resolve all", "Clear resolved", "Accept all", the
   recovery of a review) that the main process rejects shows the cause with
@@ -1235,7 +1408,7 @@ of an isolated instance are in the first comment of #132.
 
 - **One writer.** `writeTextFile` (`fsal/util/write-text-file.ts`) writes each
   text file that the author owns: a document (`FSAL.writeTextFile`: a save,
-  `save-copy`, a tag rename, a duplicate; the closed files of a workspace edit,
+  `save-copy`, a duplicate; the closed files of a workspace edit (§28),
   its rollback and its startup recovery in `workspace-edit-transaction.ts`), a
   Quarto manifest, `.zettlrignore`, `.ztr-directory`, the custom CSS, a
   defaults file, a Lua filter, the snippets, the user dictionary, the prose completion file and a figure
@@ -1304,7 +1477,7 @@ of an isolated instance are in the first comment of #132.
   main windows have the prompt.
 - **Proof:** `e2e/renderer-recovery.spec.ts` (a killed renderer, a renderer
   in an endless loop, and a close of a stopped window). It answers native
-  message boxes, so it runs on the display of the run only (§13).
+  message boxes, so it runs through the lanes only (§13).
 
 ### 18. Controls that a surface paints itself
 
@@ -1318,8 +1491,8 @@ of an isolated instance are in the first comment of #132.
   subtree with that class, so the rules of the surface decide with any
   weight. The collaboration surfaces carry it: the Annotations view, the
   inline thread, the review bar, the review chunk, the create-annotation
-  dialog and the two delete confirmations. The Replace All and the Fix All
-  confirmations carry it too.
+  dialog and the two delete confirmations. The preview of an edit of several
+  documents (§28) and the Fix All confirmation carry it too.
 - **A portal is not in the subtree of its component.** A dialog that reka-ui
   puts on `body` carries the class on its own content element, and no rule
   for it is nested in the rule of the view that opens it.
@@ -1329,8 +1502,7 @@ of an isolated instance are in the first comment of #132.
 - **Proof:** `e2e/annotation-button-colours.spec.ts` (each control of each
   collaboration surface, in dark and in light mode, has the colour of its
   token and the same painting with and without the platform class),
-  `e2e/search-replace.spec.ts` and `e2e/fix-all.spec.ts` (the two
-  confirmations).
+  `e2e/fix-all.spec.ts` (the Fix All confirmation).
 
 ### 19. A file that cannot be read
 
@@ -1372,7 +1544,7 @@ of an isolated instance are in the first comment of #132.
   or at a folder that it cannot list. It names each such file and folder
   (`kind`) with the cause: the broadcast `search-unread` for the Search
   view, which lists them above the results, and the list `notSearched` of
-  `GET /v1/workspace/search`. The Replace All confirmation
+  `GET /v1/workspace/search`. The preview of Replace All
   says that those files keep their text. An error that is no filesystem
   error ends the search with the failure `stopped`, which names the file.
 - **A walk names the folders that it could not read.**
@@ -1674,6 +1846,17 @@ of an isolated instance are in the first comment of #132.
   - "Rescan directory" runs `rescan-dir` (§24); Window → New directory…
     opens the name field of the selected folder only
     (`newDirectoryRequest`).
+- **The contract types each command.** `ApplicationIPCContract`
+  (`commands/index.ts`) names each command of the `application` channel
+  with its payload and its answer. The invoke of a window and
+  `CommandProvider.run` in the main process check a call against it. A
+  handler takes `ApplicationPayload<K>` (`file-duplicate`, `file-new`,
+  `dir-new`), so the contract, the callers and the handler name one set of
+  fields; a new handler does the same. A command that a provider channel
+  receives through `ipcMain.on` (`get-citation-sync`, `abort-task`) is no
+  invoke command, and the invoke handler of that channel throws for it.
+  Proof: `test/ipc-invoke-channels.contract.ts` (the typecheck),
+  `e2e/file-duplicate.spec.ts`.
 - **A context menu has the width of its labels.** `.application-menu` has
   `width: max-content`; `positionMenu` reads that width to put the menu
   where it fits, also at the right edge of the window.
@@ -1681,6 +1864,71 @@ of an isolated instance are in the first comment of #132.
   `e2e/editor-context-menu.spec.ts`, `e2e/tab-close-all.spec.ts`,
   `e2e/tab-close-others.spec.ts`, `e2e/file-list-create.spec.ts`,
   `e2e/rename-one-field.spec.ts`, `e2e/reveal-in-file-browser.spec.ts`.
+
+### 27. Application updates
+
+- **The releases of the fork are the updates.** `releaseLocations`
+  (`service-providers/updates`) takes the GitHub repository of the
+  `homepage` of `package.json`; the service container gives the
+  `UpdateProvider` those locations. A spec gives it a release server on
+  loopback.
+- **A step that fails sets the error of the state.** A check that does not
+  run (no network: `EOFFLINE`; a build without updates: `EDISABLED`) keeps
+  the result of the last check and says why. A download, a verify and the
+  start of the update each report their own cause; the notification shows
+  that message. The update window offers the start again after a failure.
+- **A download that the provider gives up is removed.** A failed verify, a
+  failed stream and a quit before the end of the download remove the file
+  from the downloads folder (`_abandonDownload`, `shutdown`). A file that
+  cannot be removed is named in the message. A download is complete when
+  its file has each byte (the `end` of the write stream).
+- **Proof:** `test/updater-failures.spec.ts`.
+
+### 28. Edits of several documents
+
+- **The author sees each edit first.** A command that changes the text of
+  documents that the author did not open for the change (a move or a rename
+  of a file or a folder with links to it, a tag rename) makes a proposal and
+  changes nothing. `proposalOf` (`app/util/workspace-edit-proposal.ts`) gives
+  the edits that make each document its new text and the hash of the text it
+  read. `CommandProvider.propose` sends the proposal to the window that
+  started the command, which shows `WorkspaceEditPreviewDialog.vue`
+  (`common/vue`, through `WorkspaceEditProposals.vue`): each document, in the
+  order of a file tree, and each changed run of lines before and after. A new
+  command of that kind proposes too; it does not write a file.
+- **Apply is one transaction.** `apply-workspace-edit`
+  (`commands/workspace-edit.ts`) runs `applyWorkspaceEdit`: the journaled
+  transaction (`references/workspace-edit-transaction.ts`) refuses the whole
+  edit when a document changed after its hash was taken, rolls back each
+  document when a file cannot be written, and then saves each open document
+  that it changed. Cancel, Escape and a click outside the dialog drop the
+  proposal. A proposal goes away with its window.
+- **A move changes each link to the moved file.** `retargetProposal`
+  (`LinkProvider`, `common/util/replace-links.ts`) rewrites a wikilink and a
+  Markdown link to a file (`[text](./file.md)`, a link reference
+  definition) whose target is the moved file.
+- **The reference rename uses the same dialog.** `MainEditor.vue` shows the
+  rename of a reference key with the old and the new key. Its apply goes
+  through `ReferenceProvider`, leaves the open documents unsaved and offers
+  Undo; a rejected or failed rename gives back the key that the author typed.
+- **A value that a window sends over IPC is no deep reactive proxy.** The
+  structured clone of IPC refuses a Vue proxy ("An object could not be
+  cloned"). A window keeps an IPC payload in a `shallowRef` or sends
+  `toRaw` of it.
+- **Replace All of the Search view uses the same dialog.** The command
+  `preview-replace` of the search provider gives the changed lines, and
+  `replace-in-files` applies; both make their edits in `replacePlan`, from
+  the spans of the search and the hash of the text that the search read, so
+  a document that changed after the search is refused. The replace of one
+  file or one match from its row has no dialog: the row shows its
+  replacement before the click. A replace keeps one Undo in the view.
+- **Fix All shows its plan in its own dialog**, by rule and by document
+  (Debugging entry points), and applies through `applyWorkspaceEdit`.
+- **Proof:** `e2e/link-update-preview.spec.ts`, `e2e/rename-tag.spec.ts`,
+  `e2e/search-replace.spec.ts`,
+  `e2e/reference-rename-preview.spec.ts`, `e2e/wikilinks.spec.ts`,
+  `e2e/move-with-unwritable-review-state.spec.ts`,
+  `test/workspace-edit-proposal.spec.ts`, `test/replace-links.spec.ts`.
 
 ## Debugging entry points
 
@@ -1790,6 +2038,18 @@ of an isolated instance are in the first comment of #132.
   through `runWorkspaceEditTransaction`, which refuses the whole plan when a
   document changed after its hash was taken. One pass applies one round of
   fixes; a fix that exposes another needs a second run.
+- **TeX command completion offers what `tex/unknown-command` accepts.** The
+  command `tex-command-vocabulary` (`DocumentLintProvider.texCommandVocabulary`,
+  `util/flowmark-tex-vocabulary.ts`) runs `flowmark-lint --tex-vocabulary`
+  with the `tex` context of the lint. It answers Flowmark's TeXstudio index
+  and the packages that the context loads (the host packages and the packages
+  of the central macro tree). The completion (`autocomplete/tex.ts`) adds the
+  packages that the TeX of the document loads, by Flowmark's rule
+  (`collectTexContext`), and offers the commands of their closure. The app
+  holds no copy of the index. A window asks one time: a Flowmark update or a
+  change of the packages of the macro tree reaches the next window. Proof:
+  `test/texstudio-command-index.spec.ts` (the lint and the completion agree),
+  `e2e/autocomplete-language-sources.spec.ts` (the window asks the command).
 - The project's own source code is checked by the global ai-review-ci bun
   profile (`just test-commit`, `just test-ci`), not by a repo-local linter.
 

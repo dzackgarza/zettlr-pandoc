@@ -30,7 +30,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requestWindowClose,
   requireInitialized,
@@ -97,12 +96,11 @@ describe("a print window for a document that it cannot show", function () {
     await writeFile(genus, "# Genus\n\nTwo forms of one genus.\n", "utf8");
     await writeFile(locked, "# Locked\n\nA note that the filesystem refuses.\n", "utf8");
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

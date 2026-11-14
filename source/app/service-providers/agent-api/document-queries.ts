@@ -56,6 +56,7 @@ import type { DirectoryListing } from "@providers/fsal/util/read-directory";
 import type LogProvider from "@providers/log";
 import fs from "fs";
 import path from "path";
+import { canonicalPath } from "source/app/util/real-path";
 import makeSearchRegex from "source/common/util/make-search-regex";
 import vm from "vm";
 
@@ -591,7 +592,6 @@ export default class AgentDocumentQueries {
         leafId,
         documentId: activePath === undefined ? undefined : this.documents.getDocumentId(activePath),
         focused: isFocused,
-        active: isFocused,
         documents: tabMan.openFiles.map((openFile) => ({
           documentId: this.documents.getDocumentId(openFile.path),
           path: openFile.path,
@@ -1072,24 +1072,5 @@ export default class AgentDocumentQueries {
       return false;
     }
     return isAtOrInsideRoot(canonicalFilePath, canonicalWorkspacePath);
-  }
-}
-
-/**
- * The path of `filePath` with each symbolic link resolved. A path that does
- * not exist (a removed file that a document still holds, a new entry) is
- * the real path of its nearest existing folder joined with the rest of the
- * path. Each other failure of the filesystem rejects.
- */
-export async function canonicalPath(filePath: string): Promise<string> {
-  const absolute = path.resolve(filePath);
-  try {
-    return await fs.promises.realpath(absolute);
-  } catch (error) {
-    const parent = path.dirname(absolute);
-    if (!hasErrnoCode(error, "ENOENT", "ENOTDIR") || parent === absolute) {
-      throw error;
-    }
-    return path.join(await canonicalPath(parent), path.basename(absolute));
   }
 }

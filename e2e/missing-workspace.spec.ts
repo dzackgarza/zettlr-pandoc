@@ -31,7 +31,6 @@ import {
   attach,
   createFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -80,12 +79,11 @@ describe("a workspace that the filesystem cannot examine", function () {
     config.app.openWorkspaces = [path.dirname(fixture.documentPath), drive];
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

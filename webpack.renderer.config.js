@@ -6,7 +6,6 @@ const path = require("path");
 const { VueLoaderPlugin } = require("vue-loader");
 const { DefinePlugin } = require("webpack");
 const { gitCommitHash } = require("./scripts/get-git-hash.js");
-const isE2E = process.env.ZETTLR_E2E === "1";
 const isLocalPackage = process.env.ZETTLR_LOCAL_PACKAGE === "1";
 
 const plugins = [
@@ -65,9 +64,7 @@ module.exports = {
   // whopping 60MB large at the time of writing (July 2021), we disable these
   // in production (i.e. when we ship to users). NOTE, however, that these env-
   // variables must be set, which we're doing using cross-env in package.json.
-  // E2E runs inspect the real browser, not compiler source maps. Omitting
-  // those maps keeps repeated cold launches within the test machine's memory.
-  devtool: process.env.NODE_ENV === "production" || isE2E ? false : "source-map",
+  devtool: process.env.NODE_ENV === "production" ? false : "source-map",
   optimization: {
     // The installed desktop launcher needs a runnable packaged app, not a
     // release artifact. Minifying all 14 renderer entrypoints with Terser was

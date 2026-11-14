@@ -28,7 +28,8 @@ import path from "path";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
 import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
-import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
+import { userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
 
@@ -39,11 +40,6 @@ const LIBRARY = `@article{Nik80,
   journaltitle = {Mathematics of the USSR-Izvestiya},
 }
 `;
-
-type IpcHandler = (
-  event: undefined,
-  message: { command: "get-items"; payload: { database: string } },
-) => Promise<CSLItem[]>;
 
 describe("Concurrent requests for one citation database", function () {
   let directory: string;
@@ -74,13 +70,9 @@ describe("Concurrent requests for one citation database", function () {
   });
 
   it("gives each request the item objects of one load", async function () {
-    const handler = ipcMainHandlers.get("citeproc-provider") as IpcHandler;
-    const request = { command: "get-items" as const, payload: { database: libraryPath } };
-    const [first, second, third] = await Promise.all([
-      handler(undefined, request),
-      handler(undefined, request),
-      handler(undefined, request),
-    ]);
+    const request = () =>
+      invokeMain("citeproc-provider", { command: "get-items", payload: { database: libraryPath } });
+    const [first, second, third] = await Promise.all([request(), request(), request()]);
     assert.deepEqual(
       first.map((item) => item.id),
       ["Nik80"],

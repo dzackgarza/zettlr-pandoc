@@ -603,9 +603,6 @@ describe("CollaborationSidecarStore", function () {
   });
 
   it("leaves the previous complete sidecar behind when a write fails", async function () {
-    if (process.getuid?.() === 0) {
-      this.skip(); // root ignores the directory permission this injection needs
-    }
     const first = sidecar(documentPath);
     await store.write(first);
 
@@ -636,7 +633,7 @@ describe("CollaborationSidecarStore", function () {
     );
   });
 
-  it("ends concurrent writes with one complete valid payload", async function () {
+  it("ends concurrent writes with the payload of the last call (#57)", async function () {
     const first = sidecar(documentPath);
     const candidates = ["FIRST\n", "SECOND\n", "THIRD\n"].map((workingText) => ({
       ...first,
@@ -645,10 +642,10 @@ describe("CollaborationSidecarStore", function () {
     await Promise.all(candidates.map(async (candidate) => await store.write(candidate)));
 
     const persisted = await store.read(documentPath);
-    assert.ok(persisted !== undefined);
-    assert.ok(
-      candidates.some((candidate) => candidate.workingText === persisted.workingText),
-      "the surviving payload must be one of the writes, not a splice of several",
+    assert.equal(
+      persisted?.workingText,
+      "THIRD\n",
+      "the sidecar on disk is the state of the last write, not of a write that finished last",
     );
     // Read the bytes directly: a torn write parses as one payload only by
     // accident, and store.read would report that accident as success.
@@ -659,6 +656,25 @@ describe("CollaborationSidecarStore", function () {
       persisted,
     );
     assert.equal(readdirSync(sidecarDirectory).length, 1);
+  });
+
+  it("removes the sidecar when the last of concurrent writes has no state (#57)", async function () {
+    const annotated: CollaborationSidecarData = {
+      ...sidecar(documentPath),
+      review: null,
+      annotations: { generation: 1, items: [annotation("annotation-1")] },
+    };
+    const cleared: CollaborationSidecarData = {
+      ...annotated,
+      annotations: { generation: 2, items: [] },
+    };
+    await Promise.all([store.write(annotated), store.write(cleared)]);
+
+    assert.equal(
+      await store.read(documentPath),
+      undefined,
+      "the write that cleared the last annotation decides, so no sidecar is left",
+    );
   });
 
   describe("with a file that it cannot read", function () {

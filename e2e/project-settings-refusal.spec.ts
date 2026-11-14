@@ -29,12 +29,12 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requestWindowClose,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
+import { findProjectPropertiesPage } from "./support/project-properties";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-project-settings-refusal-e2e-latest");
 const NOTE = "# Lattices\n\nThe genus of a lattice: see @def\n";
@@ -95,21 +95,6 @@ async function dismissErrors(page: Page): Promise<void> {
   }
 }
 
-async function findProjectPropertiesPage(browser: Browser, timeoutMs: number): Promise<Page> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    for (const context of browser.contexts()) {
-      for (const page of context.pages()) {
-        if ((await page.locator("#formats-panel").count()) > 0) {
-          return page;
-        }
-      }
-    }
-    await delay(100);
-  }
-  throw new Error(`No project-properties window appeared within ${timeoutMs}ms`);
-}
-
 describe("a refused change of Project settings", function () {
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
@@ -135,12 +120,12 @@ describe("a refused change of Project settings", function () {
     settingsFile = path.join(workspace, ".ztr-directory");
     await writeFile(settingsFile, JSON.stringify(PROJECT_SETTINGS), "utf8");
     await writeFile(path.join(workspace, "genus.md"), GENUS, "utf8");
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     // From here the settings file of the Project takes no write.
     await chmod(settingsFile, 0o400);

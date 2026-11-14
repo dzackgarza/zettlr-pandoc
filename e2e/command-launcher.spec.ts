@@ -42,7 +42,6 @@ import {
   delay,
   findEditorPage,
   findMenuNode,
-  hideDevServerOverlay,
   preserveArtifacts,
   REPO_ROOT,
   readApplicationMenu,
@@ -236,12 +235,12 @@ describe("the Ctrl+P command launcher", function () {
         "",
       ].join("\n"),
     );
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     await page.locator(FILTER_INPUT).waitFor({ state: "visible", timeout: 60_000 });
   });

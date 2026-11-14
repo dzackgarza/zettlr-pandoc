@@ -76,6 +76,15 @@ import { createTextFile, writeTextFile } from "./util/write-text-file";
  */
 const EVENT_BATCH_MS = 50;
 
+/**
+ * The time after a `change` of a file at which the FSAL reads the file again.
+ * chokidar reports one `change` of a path in 50 ms and drops the others
+ * (`FSWatcher._emit`: `_throttle(EV.CHANGE, path, 50)`), so a second write
+ * of a file in that time has no event of its own. A failed workspace edit
+ * writes a file and then writes its old text back at once.
+ */
+const CHANGE_RECHECK_MS = 100;
+
 /** Reads the rules file of a workspace root. A root without one has no rules. */
 async function readRulesFile(root: string): Promise<string> {
   try {
@@ -146,6 +155,8 @@ export default class FSAL extends ProviderContract {
    * that the manifest describes.
    */
   private readonly boundManifests = new Map<string, string>();
+  /** The read of each changed file after the change window of the watcher */
+  private readonly changeRechecks = new Set<NodeJS.Timeout>();
   /** The events that wait for the next publication, in the order they happened */
   private readonly pendingEvents: FSALEventPayload[] = [];
   private readonly publishPendingEvents = _.throttle(
@@ -202,32 +213,30 @@ export default class FSAL extends ProviderContract {
         }
       } else if (command === "read-directory" && typeof payload === "string") {
         return await this.readDirectory(payload);
+      } else if (command === "get-descriptor" && typeof payload === "string") {
+        return await this.getDescriptorFor(payload);
       } else if (
-        command === "get-descriptor" &&
-        (typeof payload === "string" ||
-          (Array.isArray(payload) && payload.every((p) => typeof p === "string")))
+        command === "get-descriptors" &&
+        Array.isArray(payload) &&
+        payload.every((p) => typeof p === "string")
       ) {
-        if (Array.isArray(payload)) {
-          const descriptors: AnyDescriptor[] = [];
-          for (const absPath of payload) {
-            // Check every path for existence to ensure an array lookup does not
-            // fail.
-            if (
-              this.deadWorkspaces.has(absPath) ||
-              (await this.isFile(absPath)) ||
-              (await this.isDir(absPath))
-            ) {
-              descriptors.push(await this.getDescriptorFor(absPath));
-            } else {
-              this._logger.error(
-                `[FSAL] Could not provide descriptor for requested path ${absPath}: Neither file nor directory.`,
-              );
-            }
+        const descriptors: AnyDescriptor[] = [];
+        for (const absPath of payload) {
+          // Check every path for existence to ensure an array lookup does not
+          // fail.
+          if (
+            this.deadWorkspaces.has(absPath) ||
+            (await this.isFile(absPath)) ||
+            (await this.isDir(absPath))
+          ) {
+            descriptors.push(await this.getDescriptorFor(absPath));
+          } else {
+            this._logger.error(
+              `[FSAL] Could not provide descriptor for requested path ${absPath}: Neither file nor directory.`,
+            );
           }
-          return descriptors;
-        } else {
-          return await this.getDescriptorFor(payload);
         }
+        return descriptors;
       } else if (command === "get-ignore-rules") {
         return this.ignoreSources;
       } else if (
@@ -396,6 +405,9 @@ export default class FSAL extends ProviderContract {
         if (this.isListed(descriptor.path, descriptor.type === "directory")) {
           this.publishEvent({ event, descriptor });
         }
+        if (event === "change" && descriptor.type !== "directory") {
+          this.recheckAfterChangeWindow(absPath, descriptor.modtime);
+        }
       })
       .catch(async (err: Error) => {
         // A rename or a removal can take a file away before its `add` or
@@ -415,6 +427,35 @@ export default class FSAL extends ProviderContract {
           err,
         );
       });
+  }
+
+  /**
+   * Reads a changed file again after the change window of the watcher: a
+   * file whose modification time is not that of the published descriptor
+   * was written again in that window, and its change is handled as a change
+   * that the watcher reported.
+   */
+  private recheckAfterChangeWindow(absPath: string, publishedModtime: number): void {
+    const timer = setTimeout(() => {
+      this.changeRechecks.delete(timer);
+      fs.lstat(absPath).then(
+        (stats) => {
+          if (stats.mtimeMs !== publishedModtime) {
+            this.emitChokidarEvent("change", absPath);
+          }
+        },
+        (err: Error) => {
+          // A file that went away has its own `unlink` event.
+          if (!hasErrnoCode(err, "ENOENT", "ENOTDIR")) {
+            this._logger.error(
+              `[FSAL] Could not read "${absPath}" again after its change: ${err.message}`,
+              err,
+            );
+          }
+        },
+      );
+    }, CHANGE_RECHECK_MS);
+    this.changeRechecks.add(timer);
   }
 
   /**
@@ -1059,6 +1100,10 @@ export default class FSAL extends ProviderContract {
   public async shutdown(): Promise<void> {
     this._logger.verbose("FSAL shutting down ...");
     this.publishPendingEvents.cancel();
+    for (const timer of this.changeRechecks) {
+      clearTimeout(timer);
+    }
+    this.changeRechecks.clear();
     // Each watcher holds the process open until it is closed.
     await Promise.all([...this.watchers.values()].map((watcher) => watcher.shutdown()));
     this.watchers.clear();
@@ -1421,7 +1466,7 @@ export default class FSAL extends ProviderContract {
       throw new Error(`[FSAL] Cannot load file ${absPath} as it is a directory`);
     }
 
-    throw new Error(`[FSAL] Cannot load file ${absPath}: Not found`);
+    throw new Error(`There is no file or folder at ${absPath}.`);
   }
 
   /**

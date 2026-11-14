@@ -27,6 +27,7 @@ import isFile from "@common/util/is-file";
 import safeAssign from "@common/util/safe-assign";
 import { app, dialog, ipcMain } from "electron";
 import EventEmitter from "events";
+import { realpathSync } from "fs";
 import { DateTime } from "luxon";
 import path from "path";
 import type LogProvider from "../log";
@@ -436,11 +437,16 @@ export default class ConfigProvider extends ProviderContract {
   }
 
   /**
-   * Adds a path to be opened on startup
-   * @param {String} p The path to be added
+   * Adds a path to be opened on startup. The root is named by its real
+   * path, as at start (`rootPathsOnDisk`).
+   * @param {String} requestedPath The path to be added
    * @return {Boolean} True, if the path was successfully added, else false.
    */
-  addPath(p: string): boolean {
+  addPath(requestedPath: string): boolean {
+    if (!isFile(requestedPath) && !isDir(requestedPath)) {
+      return false;
+    }
+    const p = realpathSync(requestedPath);
     const { openFiles, openWorkspaces } = this.config.app;
     // Only add valid and unique paths
     if (openFiles.includes(p) || openWorkspaces.includes(p)) {

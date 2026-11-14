@@ -18,7 +18,9 @@ import chalk from "chalk";
 import { app, ipcMain } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
+import { inspect } from "util";
 import ProviderContract from "../provider-contract";
+import type { LogProviderIPCContract } from "./ipc-contract";
 
 /**
  * How many logfiles should the app keep at most?
@@ -40,21 +42,45 @@ export enum LogLevel {
 
 /**
  * Whatever a caller attaches to a log entry -- commonly a caught `unknown`, an
- * Error, or a plain object. `unknown` rather than `any`, so both the log viewer
- * and _toString below are forced to narrow by `instanceof`, `Array.isArray` and
- * `typeof` before touching it, instead of silently trusting a shape.
+ * Error, or a plain object. The entry holds it as text (`renderLogDetails`).
  */
 export type LogDetails = unknown;
 
 /**
- * A single log message
+ * A single log message. Its details are text, so the logfile and the IPC
+ * answer to the log viewer take each entry.
  */
 export interface LogMessage {
   time: string;
   level: LogLevel;
   message: string;
-  details?: LogDetails;
+  /** The details as text; null when the caller attached none */
+  details: string | null;
 }
+
+/**
+ * The text of the details of one entry. Node's `util.inspect` writes each
+ * value: an Error with its stack and its cause, a cycle as `[Circular]`, a
+ * bigint, a function, a symbol. A string is its own text.
+ *
+ * @param   {LogDetails}  details  What the caller attached
+ *
+ * @return  {string|null}          The text, or null for no details
+ */
+export function renderLogDetails(details: LogDetails): string | null {
+  if (details === null || details === undefined || details === "") {
+    return null;
+  }
+  if (typeof details === "string") {
+    return details;
+  }
+  return inspect(details, { depth: 6 });
+}
+
+/** One request of the log-provider channel, as its contract declares it. */
+type LogProviderRequest =
+  | ({ command: "retrieve-log-chunk" } & LogProviderIPCContract["retrieve-log-chunk"]["request"])
+  | ({ command: "record-error" } & LogProviderIPCContract["record-error"]["request"]);
 
 const debugConsole = {
   error: function (message: string) {
@@ -98,34 +124,15 @@ export default class LogProvider extends ProviderContract {
     this._activeWrite = null; // The write in flight, so callers can wait for it
 
     // Ensure message handling
-    ipcMain.handle(
-      "log-provider",
-      (
-        event,
-        payload: {
-          command: string;
-          nextIndex?: number | string;
-          payload?: { message?: unknown; details?: unknown };
-        },
-      ) => {
-        const { command } = payload;
-
-        if (command === "retrieve-log-chunk") {
-          const nextIndex = parseInt(String(payload.nextIndex), 10);
-          if (nextIndex >= this._log.length || nextIndex < 0) {
-            return [];
-          }
-
-          return this._log.slice(nextIndex);
-        } else if (command === "record-error" && typeof payload.payload?.message === "string") {
-          this.error(
-            payload.payload.message,
-            typeof payload.payload.details === "string" ? payload.payload.details : undefined,
-          );
+    ipcMain.handle("log-provider", (_event, request: LogProviderRequest) => {
+      switch (request.command) {
+        case "retrieve-log-chunk":
+          return this._log.slice(request.nextIndex);
+        case "record-error":
+          this.error(request.payload.message, request.payload.details);
           return true;
-        }
-      },
-    );
+      }
+    });
   }
 
   public verbose(msg: string, details: LogDetails = null): void {
@@ -180,15 +187,10 @@ export default class LogProvider extends ProviderContract {
    * @param {LogDetails} details Optional details (completely customisable)
    */
   log(logLevel: LogLevel, message: string, details: LogDetails): void {
-    if (details == null) {
-      details = {}; // No details -> empty object
-    }
-
-    // Simply append to log
-    const msg = {
+    const msg: LogMessage = {
       level: logLevel,
       message,
-      details,
+      details: renderLogDetails(details),
       time: this._getTimestamp(),
     };
 
@@ -200,8 +202,9 @@ export default class LogProvider extends ProviderContract {
       switch (msg.level) {
         case LogLevel.error:
           debugConsole.error(output);
-          // In case of an error, spit out anything that comes in
-          stderrError(msg.details);
+          if (msg.details !== null) {
+            stderrError(msg.details);
+          }
           break;
         case LogLevel.info:
           debugConsole.info(output);
@@ -242,7 +245,7 @@ export default class LogProvider extends ProviderContract {
     this._log.push({
       level: LogLevel.error,
       message,
-      details: err,
+      details: renderLogDetails(err),
       time: this._getTimestamp(),
     });
   }
@@ -389,34 +392,11 @@ export default class LogProvider extends ProviderContract {
       level = "Error";
     }
 
-    let details = "";
-    if (message.details instanceof Error) {
-      // There was an error object in the details, so stringify it
-      const name = message.details.name;
-      const msg = message.details.message;
-      const stack =
-        message.details.stack !== undefined
-          ? message.details.stack.replace(/\n+/g, " --> ")
-          : "No stack trace provided";
-      details = ` | Native Error: ${name}; ${msg} Stack Trace: ${stack}`;
-    } else if (Array.isArray(message.details)) {
-      details = ` | Details: ${message.details.join(", ")}`;
-    } else if (
-      typeof message.details === "string" ||
-      typeof message.details === "number" ||
-      typeof message.details === "boolean"
-    ) {
-      details = ` | Details: ${message.details}`;
-    } else if (
-      message.details != null &&
-      typeof message.details === "object" &&
-      Object.keys(message.details).length > 0
-    ) {
-      details = ` | Details: ${JSON.stringify(message.details)}`;
-    }
-    // Anything else -- null, undefined, a symbol, a function -- carries no
-    // detail worth a line, so it is left off rather than rendered as
-    // "undefined" or "[object Object]".
+    // One entry is one line of the logfile.
+    const details =
+      message.details === null
+        ? ""
+        : ` | Details: ${message.details.replace(/\s*\n\s*/g, " --> ")}`;
 
     let timestamp = "time" in message ? `[${message.time}] ` : "";
 
