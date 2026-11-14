@@ -29,7 +29,6 @@ import {
   delay,
   type Fixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   REPO_ROOT,
   requireInitialized,
@@ -119,9 +118,9 @@ describe("a book inside a book, and a file beside the workspace", function () {
     await writeFile(tables(), "# Appendix tables\n\nThe long tables.\n");
     await writeFile(beside(), "# Notes beside the book\n\nNo chapter.\n");
 
-    app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    app = await attach(fixture.configDirectory, rendererEvents);
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.setViewportSize({ width: 1500, height: 950 });
     await page.locator(".cm-content", { hasText: "Sage" }).waitFor({ timeout: this.timeout() });
     await page.locator(BOOK_SECTION).waitFor({ state: "visible", timeout: 20_000 });

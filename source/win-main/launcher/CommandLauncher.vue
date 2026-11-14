@@ -100,7 +100,7 @@ import type {
   ReferenceDefinition,
   ReferenceOccurrence,
 } from "@dts/common/references";
-import { menuProviderMessageSchema, type SerializedMenuItem } from "@dts/common/serialized-menu";
+import type { SerializedMenuItem } from "@dts/common/serialized-menu";
 import type { PandocProfileMetadata, ValidPandocProfile } from "@providers/assets";
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
 import type { RecentFiles } from "source/app/service-providers/recent-docs";
@@ -204,8 +204,7 @@ const registeredCommandRows = computed<LauncherRow[]>(() =>
 );
 
 onBeforeMount(() => {
-  ipcRenderer.on("menu-provider", (_event, payload: unknown) => {
-    const message = menuProviderMessageSchema.parse(payload);
+  ipcRenderer.on("menu-provider", (_event, message) => {
     if (message.command === "application-menu") {
       menu.value = message.payload;
     }
@@ -571,7 +570,7 @@ function collectProjectRoots(): ProjectRootSpec[] {
 
 /** Loads the workspace reference snapshot; a failed fetch surfaces its own toast and returns false. */
 async function loadReferences(): Promise<boolean> {
-  const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+  const outcome = await invokeReferenceProviderRecoverably(
     async (channel, message) => await ipcRenderer.invoke(channel, message),
     { command: "get-snapshot" },
     trans("Loading workspace references"),

@@ -57,16 +57,16 @@ export default class TikzEdit extends ZettlrCommand {
   });
 
   constructor(app: AppServiceContainer) {
-    super(app, ["tikz-edit-open", "tikz-edit-close"]);
+    super(app);
   }
 
-  /** `tikz-edit-open` takes the diagram; `tikz-edit-close` takes the session id. */
-  async run(_evt: string, arg: TikzEditOpenRequest | string): Promise<TikzEditOutcome | undefined> {
-    if (typeof arg === "string") {
-      this.sessions.close(arg);
-      return undefined;
-    }
+  /** Stops the editor of the session with the id. */
+  close(id: string): void {
+    this.sessions.close(id);
+  }
 
+  /** Starts the external editor on one diagram. */
+  async open(arg: TikzEditOpenRequest): Promise<TikzEditOutcome> {
     const context = {
       editorCommand: this._app.config.get().tikz.visualEditorCommand,
       macrosPath: canonicalMathJaxMacrosPath(app.getPath("home")),

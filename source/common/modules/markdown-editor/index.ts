@@ -36,7 +36,6 @@ import {
 // CodeMirror imports
 import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import type { PhraseDictionaryEntry } from "@common/util/phrase-dictionary";
-import type { TexMacroSource } from "@common/util/tex-context";
 import type { AnnotationSet } from "@dts/common/annotation-domain";
 import { DocumentType } from "@dts/common/documents";
 import type { QuickTexCatalogue } from "@dts/common/quicktex";
@@ -48,6 +47,7 @@ import {
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import type { EditorCommandName } from "@dts/common/shortcut-names";
 import type { UserSnippet } from "@dts/common/snippets";
+import type { TexCommandVocabulary } from "@dts/common/tex-vocabulary";
 import { darkModeEffect, useDarkModeEditor } from "@dzack/pandoc-editor/theme/dark-mode";
 import { type TagRecord } from "@providers/tags";
 // Keymaps/Input modes
@@ -65,7 +65,7 @@ import {
   referencesUpdate,
   snippetsUpdate,
   tagsUpdate,
-  texMacroSourcesUpdate,
+  texVocabularyUpdate,
 } from "./autocomplete";
 // Custom commands
 import { runEditorCommand } from "./commands/editor-commands";
@@ -109,7 +109,11 @@ import {
   type PushUpdateCallback,
   reloadStateEffect,
 } from "./plugins/remote-doc";
-import { markReviewChunksStale, reviewChunksExtension } from "./plugins/review-chunks";
+import {
+  markReviewChunksStale,
+  reviewChunksBroadcast,
+  reviewChunksExtension,
+} from "./plugins/review-chunks";
 import { countField, updateWordCountEffect } from "./plugins/statistics-fields";
 import {
   annotationChipClickedEffect,
@@ -294,7 +298,7 @@ export default class MarkdownEditor extends EventEmitter {
     citations: Array<{ citekey: string; displayText: string }>;
     snippets: UserSnippet[];
     phrases: PhraseDictionaryEntry[];
-    texMacroSources: TexMacroSource[];
+    texVocabulary: TexCommandVocabulary | null;
     quickTex: QuickTexCatalogue;
     files: Array<{ filename: string; displayName: string; id: string }>;
     references: ReferenceCompletionEntry[];
@@ -363,7 +367,7 @@ export default class MarkdownEditor extends EventEmitter {
       citations: [],
       snippets: [],
       phrases: [],
-      texMacroSources: [],
+      texVocabulary: null,
       quickTex: EMPTY_QUICKTEX,
       files: [],
       references: [],
@@ -644,7 +648,9 @@ export default class MarkdownEditor extends EventEmitter {
       citekeyUpdate.of(this.databaseCache.citations),
       snippetsUpdate.of(this.databaseCache.snippets),
       phraseCompletionsUpdate.of(this.databaseCache.phrases),
-      texMacroSourcesUpdate.of(this.databaseCache.texMacroSources),
+      ...(this.databaseCache.texVocabulary === null
+        ? []
+        : [texVocabularyUpdate.of(this.databaseCache.texVocabulary)]),
       quickTexUpdate.of(this.databaseCache.quickTex),
       filesUpdate.of(this.databaseCache.files),
       referencesUpdate.of(this.databaseCache.references),
@@ -1016,7 +1022,6 @@ export default class MarkdownEditor extends EventEmitter {
   ): void;
   setCompletionDatabase(type: "snippets", database: UserSnippet[]): void;
   setCompletionDatabase(type: "phrases", database: PhraseDictionaryEntry[]): void;
-  setCompletionDatabase(type: "tex-macro-sources", database: TexMacroSource[]): void;
   setCompletionDatabase(
     type: "files",
     database: Array<{ filename: string; displayName: string; id: string }>,
@@ -1056,14 +1061,6 @@ export default class MarkdownEditor extends EventEmitter {
           effects: phraseCompletionsUpdate.of(this.databaseCache.phrases),
         });
         break;
-      case "tex-macro-sources":
-        if (_.isEqual(database, this.databaseCache.texMacroSources)) return;
-        this.databaseCache.texMacroSources = database as TexMacroSource[];
-        this._instance.dispatch({
-          effects: texMacroSourcesUpdate.of(this.databaseCache.texMacroSources),
-        });
-        forceLinting(this._instance);
-        break;
       case "files":
         if (_.isEqual(database, this.databaseCache.files)) return;
         this.databaseCache.files = database as Array<{
@@ -1083,6 +1080,13 @@ export default class MarkdownEditor extends EventEmitter {
         });
         break;
     }
+  }
+
+  /** Gives the TeX command completion Flowmark's TeX vocabulary. */
+  setTexVocabulary(vocabulary: TexCommandVocabulary): void {
+    if (vocabulary === this.databaseCache.texVocabulary) return;
+    this.databaseCache.texVocabulary = vocabulary;
+    this._instance.dispatch({ effects: texVocabularyUpdate.of(vocabulary) });
   }
 
   setQuickTexCatalogue(catalogue: QuickTexCatalogue): void {
@@ -1166,9 +1170,14 @@ export default class MarkdownEditor extends EventEmitter {
     this.activeReviewDiffSession = session;
     // The review-diff-active styling scope rides in the extension itself
     // (an editorAttributes facet), so installing the compartment is what
-    // styles the pane — nothing here to keep in sync.
+    // styles the pane — nothing here to keep in sync. A later broadcast of
+    // the same review is an effect on the installed field: each chunk that
+    // the broadcast does not change keeps its decorations and its control,
+    // so a broadcast costs work for the chunks that it changed (#57).
     this._instance.dispatch({
-      effects: this.reviewDiffCompartment.reconfigure(this.buildReviewExtension(session)),
+      effects: arriving
+        ? this.reviewDiffCompartment.reconfigure(this.buildReviewExtension(session))
+        : reviewChunksBroadcast.of(session.suggestions),
     });
     // Focus follows a review's arrival only. Every later broadcast of the
     // same review (a note, a reply, a keystroke elsewhere) would otherwise

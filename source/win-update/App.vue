@@ -101,7 +101,7 @@ import { DateTime } from "luxon";
 import { type UpdateState } from "source/app/service-providers/updates";
 import { sanitizeHTML } from "source/common/util/sanitize-html";
 import { useConfigStore } from "source/pinia";
-import { computed, onUnmounted, ref } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import PACKAGE_JSON from "../../package.json";
 
 const ipcRenderer = window.ipc;
@@ -166,6 +166,14 @@ const hasError = computed(() => {
   );
 });
 
+// A failed update ends the start: the button offers the next start again.
+watch(hasError, (failed) => {
+  if (failed) {
+    disableStartButton.value = false;
+    startButtonLabel.value = trans("Click to start update");
+  }
+});
+
 const isDownloading = computed(() => {
   return (
     updateState.value.size_downloaded > 0 &&
@@ -200,13 +208,7 @@ ipcRenderer
 
 // Whenever the update state changes in the provider, we must update it here
 const offCallback = ipcRenderer.on("update-provider", (event, command, newUpdateState) => {
-  if (command === "state-changed") {
-    if (newUpdateState !== undefined) {
-      updateState.value = newUpdateState;
-    } else {
-      reportError("ERROR: Expected an update state, received undefined!");
-    }
-  }
+  updateState.value = newUpdateState;
 });
 
 onUnmounted(offCallback);

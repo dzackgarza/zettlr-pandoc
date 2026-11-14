@@ -316,19 +316,36 @@ assert.equal(
 await scene.capture("04-ai-reply-no-proposal");
 
 // Scene 06 (06-linked-proposal-partial): two linked proposals, one decided
-// and one pending — the proposal card's "pending" reading — with the
+// and one pending — the proposal card names the outcome and the pending
+// count — with the
 // review's remaining chunks in the same editor, each carrying its controls,
 // and the review bar below.
 await select(SCENE_PARTIAL_ID);
 diag = await diagnostics();
 assert.deepStrictEqual(diag.threadIds, [SCENE_PARTIAL_ID]);
 assert.ok(
-  diag.proposalCardText?.includes("pending"),
-  `06: expected a pending proposal summary, got ${JSON.stringify(diag.proposalCardText)}`,
+  diag.proposalCardText?.includes("1 accepted. 1 of 2 pending."),
+  `06: expected the decided outcome and the pending count, got ${JSON.stringify(diag.proposalCardText)}`,
 );
 assert.equal(diag.chunkControlCount, 2, "06: both remaining chunks carry their controls");
 assert.equal(diag.reviewBarLabel, "2 changes pending");
 await scene.capture("06-linked-proposal-partial");
+
+// Scene 06b (06b-linked-proposal-decided): the agent withdrew the pending
+// proposal of scene 06, so each proposal of the thread has an outcome and
+// the card names each one.
+await page.evaluate(() => window.annotationsSceneSetProposalsDecided());
+await select(SCENE_PARTIAL_ID);
+diag = await diagnostics();
+assert.equal(diag.proposalCountText, "Done");
+assert.ok(
+  diag.proposalCardText?.includes("1 accepted, 1 withdrawn by the agent."),
+  `06b: expected each outcome, got ${JSON.stringify(diag.proposalCardText)}`,
+);
+assert.ok(!diag.proposalCardText?.includes("pending"), "06b: no proposal is pending");
+assert.ok(!diag.proposalCardText?.includes("Show diff"), "06b: no change is left to show");
+await scene.capture("06b-linked-proposal-decided");
+await page.evaluate(() => window.annotationsSceneSetM10CapturesScenario(true));
 
 await page.evaluate(() => window.annotationsSceneSetM10CapturesScenario(false));
 

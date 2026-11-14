@@ -10,7 +10,9 @@
  * Description:     A click in the text puts the anchor of the selection there.
  *                  A Shift-click on a rendered widget (an equation, a wikilink
  *                  chip) extends the selection from that anchor over the whole
- *                  source of the widget, in either direction (#181).
+ *                  source of the widget, in either direction (#181). A click
+ *                  selects that source. Each click holds the button as a
+ *                  person does (#131).
  *
  * END HEADER
  */
@@ -27,7 +29,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   type RunningApp,
   requireInitialized,
@@ -35,6 +36,9 @@ import {
 } from "./support/electron-app";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-shift-click-widgets-e2e-latest");
+
+/** The time between the mousedown and the mouseup of a human click. */
+const HUMAN_BUTTON_HOLD_MS = 120;
 
 const EQUATION = "$x^2 + y^2$";
 const LINK = "[[curves]]";
@@ -89,7 +93,11 @@ async function widgetCentre(page: Page, from: number): Promise<{ x: number; y: n
       ).find((element) => view.posAtDOM(element) === start);
       if (widget === undefined) return null;
       const rect = widget.getBoundingClientRect();
-      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      // The click goes to this point: it must be on the widget now.
+      const hit = document.elementFromPoint(x, y);
+      return hit !== null && widget.contains(hit) ? { x, y } : null;
     }, from);
     if (centre !== null) {
       return centre;
@@ -100,8 +108,6 @@ async function widgetCentre(page: Page, from: number): Promise<{ x: number; y: n
 }
 
 describe("assembled editor: Shift-click on a rendered widget extends the selection", function () {
-  this.timeout(300_000);
-
   let app: RunningApp | undefined;
   let fixtureRoot: string | undefined;
   let page: Page | undefined;
@@ -116,10 +122,15 @@ describe("assembled editor: Shift-click on a rendered widget extends the selecti
     });
     fixtureRoot = fixture.root;
     await writeFile(path.join(path.dirname(fixture.documentPath), "curves.md"), "# Curves\n");
-    app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    app = await attach(fixture.configDirectory, rendererEvents);
     page = await findEditorPage(app.browser, 60_000);
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: 60_000 });
+    // A font that arrives after a measure moves the text and the widgets: the
+    // CI runner reports "Fallback font will be used while loading".
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
   });
 
   after(async function () {
@@ -148,7 +159,9 @@ describe("assembled editor: Shift-click on a rendered widget extends the selecti
     assert.deepEqual(placed, { anchor, head: anchor }, "the first click places the caret");
     const target = await widgetCentre(editor, widgetFrom);
     await editor.keyboard.down("Shift");
-    await editor.mouse.click(target.x, target.y);
+    // A human holds the button for some time: the editor handles the
+    // mousedown before the mouseup and the click arrive (#131).
+    await editor.mouse.click(target.x, target.y, { delay: HUMAN_BUTTON_HOLD_MS });
     await editor.keyboard.up("Shift");
     await delay(300);
     return await selection(editor);
@@ -190,5 +203,17 @@ describe("assembled editor: Shift-click on a rendered widget extends the selecti
     });
     assert.equal(text, DOCUMENT, "a Shift-click on the checkbox does not toggle the task");
     assert.deepEqual(extended, { anchor, head: from + TASK.length });
+  });
+
+  it("selects the whole source of a wikilink chip on a click with a human button hold", async function () {
+    const editor = requireInitialized(page, "page");
+    await editor.locator(".cm-line", { hasText: "Outside probe." }).click();
+    await delay(600);
+    const from = DOCUMENT.indexOf(LINK);
+    const target = await widgetCentre(editor, from);
+    await editor.mouse.click(target.x, target.y, { delay: HUMAN_BUTTON_HOLD_MS });
+    await delay(300);
+    screenshots.set("click-wikilink.png", await editor.screenshot());
+    assert.deepEqual(await selection(editor), { anchor: from, head: from + LINK.length });
   });
 });

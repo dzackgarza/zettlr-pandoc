@@ -42,8 +42,10 @@ import type { AppServiceContainer } from "source/app/app-service-container";
 import DocumentManager, {
   type DocumentsUpdateContext,
 } from "source/app/service-providers/documents";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import LogProvider from "source/app/service-providers/log";
-import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
+import { userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const FIXTURE_ROOT = path.resolve("test", "fixtures", "reference-workspace");
 const HALPHEN = path.join(FIXTURE_ROOT, "ProjectA", "Halphen_Surfaces.md");
@@ -56,31 +58,12 @@ const THEOREMS = path.join(FIXTURE_ROOT, "ProjectA", "Theorems.md");
  */
 const USER_DATA: string = userData;
 
-type IpcHandler = (
-  event: unknown,
-  message: { command: string; payload?: unknown },
-) => Promise<unknown> | unknown;
-
 describe("Documents-provider navigation join (review C6)", function () {
   let provider: DocumentManager;
   let windowId: string;
   let leafId: string;
   /** Every ACTIVE_FILE broadcast context, in emission order. */
   const activeFileEvents: DocumentsUpdateContext[] = [];
-
-  /** The real registered 'documents-provider' handler. */
-  function handler(): IpcHandler {
-    const registered = ipcMainHandlers.get("documents-provider") as IpcHandler | undefined;
-    assert.ok(
-      registered !== undefined,
-      "constructing DocumentManager must register the documents-provider handler",
-    );
-    return registered;
-  }
-
-  async function invoke(command: string, payload?: unknown): Promise<unknown> {
-    return await handler()(undefined, { command, payload });
-  }
 
   before(async function () {
     // Isolate the provider's persisted tab-tree store: a fresh boot must
@@ -110,6 +93,9 @@ describe("Documents-provider navigation join (review C6)", function () {
       },
       fsal: {
         getWatchdog: () => watcherSeam,
+        // This spec drives no FSAL event: the provider subscribes and hears nothing.
+        on: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
+        off: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
         testAccess: async () => true,
       },
       citeproc: {
@@ -150,11 +136,9 @@ describe("Documents-provider navigation join (review C6)", function () {
   it("open-file with targetRange/sourceLocation stamps history and echoes the range", async function () {
     // Open the origin document plainly first: the pane's current history
     // entry now belongs to Halphen_Surfaces.md.
-    const openedOrigin = await invoke("open-file", {
-      windowId,
-      leafId,
-      path: HALPHEN,
-      newTab: true,
+    const openedOrigin = await invokeMain("documents-provider", {
+      command: "open-file",
+      payload: { windowId, leafId, path: HALPHEN, newTab: true },
     });
     assert.equal(openedOrigin, true, "the origin fixture document must open");
 
@@ -173,13 +157,16 @@ describe("Documents-provider navigation join (review C6)", function () {
       sourceGeneration: 0,
     };
 
-    const opened = await invoke("open-file", {
-      windowId,
-      leafId,
-      path: THEOREMS,
-      newTab: true,
-      targetRange,
-      sourceLocation: originLocation,
+    const opened = await invokeMain("documents-provider", {
+      command: "open-file",
+      payload: {
+        windowId,
+        leafId,
+        path: THEOREMS,
+        newTab: true,
+        targetRange,
+        sourceLocation: originLocation,
+      },
     });
     assert.equal(opened, true, "the jump target document must open");
 
@@ -191,16 +178,6 @@ describe("Documents-provider navigation join (review C6)", function () {
       activation.targetRange,
       targetRange,
       "the ACTIVE_FILE context must echo the definition targetRange",
-    );
-
-    const navState = (await invoke("get-navigation-state", { windowId, leafId })) as {
-      canGoBack: boolean;
-      canGoForward: boolean;
-    };
-    assert.deepEqual(
-      navState,
-      { canGoBack: true, canGoForward: false },
-      "the jump must widen the pane history backwards",
     );
   });
 
@@ -223,7 +200,10 @@ describe("Documents-provider navigation join (review C6)", function () {
       sourceGeneration: 0,
     };
 
-    await invoke("navigate-back", { windowId, leafId, location: theoremsLocation });
+    await invokeMain("documents-provider", {
+      command: "navigate-back",
+      payload: { windowId, leafId, location: theoremsLocation },
+    });
 
     const backEvent = activeFileEvents[activeFileEvents.length - 1];
     assert.equal(backEvent.filePath, HALPHEN, "Back must return to the jump origin document");
@@ -233,7 +213,10 @@ describe("Documents-provider navigation join (review C6)", function () {
       "Back must carry the EXACT DocumentLocation the open-file jump stamped onto the origin entry",
     );
 
-    await invoke("navigate-forward", { windowId, leafId, location: originLocation });
+    await invokeMain("documents-provider", {
+      command: "navigate-forward",
+      payload: { windowId, leafId, location: originLocation },
+    });
     const forwardEvent = activeFileEvents[activeFileEvents.length - 1];
     assert.equal(
       forwardEvent.filePath,

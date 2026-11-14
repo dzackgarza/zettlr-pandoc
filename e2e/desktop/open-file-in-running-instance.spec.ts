@@ -52,8 +52,6 @@ async function runHandoff(args: string[]): Promise<HandoffResult> {
 }
 
 describe("opening a file while the app is already running", function () {
-  this.timeout(180_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
@@ -80,7 +78,7 @@ describe("opening a file while the app is already running", function () {
     deliveredDocumentPath = path.join(path.dirname(fixture.documentPath), "delivered.md");
     await writeFile(deliveredDocumentPath, DELIVERED_CONTENTS, "utf8");
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
@@ -151,13 +149,16 @@ describe("opening a file while the app is already running", function () {
     );
 
     // The tab is the affordance; being the active document with the bytes from
-    // disk in it is what "opens that document" means.
-    const editor = editorPage.locator(".cm-content");
+    // disk in it is what "opens that document" means. Each tab keeps its
+    // editor; the editor of the active tab is the visible one.
+    const editor = editorPage.locator(".cm-content:visible");
     const deliveredContents = await readFile(deliveredPath, "utf8");
     await editorPage.waitForFunction(
       (expected) => {
-        const content = document.querySelector(".cm-content");
-        if (content === null) {
+        const content = Array.from(document.querySelectorAll(".cm-content")).find((element) =>
+          element.checkVisibility(),
+        );
+        if (content === undefined) {
           return false;
         }
         const tile = (
@@ -198,6 +199,24 @@ describe("opening a file while the app is already running", function () {
     screenshots.set("delivered-tab.png", await editorPage.screenshot());
   });
 
+  it("refuses a hand-off that names no file to open (#57)", async function () {
+    const editorPage = requireInitialized(page, "The editor page must exist");
+    const dataDirectory = requireInitialized(configDirectory, "The config directory must exist");
+    const tabs = editorPage.locator('div[role="tab"]');
+    const tabsBefore = await tabs.count();
+    // The running instance holds the lock of this data directory, so a request
+    // reaches it. It names no file: the caller would read a success for an
+    // open that did not happen.
+    const handoff = await runHandoff([`--data-dir=${dataDirectory}`]);
+    assert.notEqual(
+      handoff.code,
+      0,
+      `A hand-off without a file must fail.\nsignal=${String(handoff.signal)}\n${handoff.output}`,
+    );
+    assert.match(handoff.output, /The request names no file to open/);
+    assert.equal(await tabs.count(), tabsBefore, "The running app opened no document.");
+  });
+
   it("reports a failure rather than opening a second app when no instance holds the lock", async function () {
     const deliveredPath = requireInitialized(
       deliveredDocumentPath,
@@ -215,6 +234,6 @@ describe("opening a file while the app is already running", function () {
       deliveredPath,
     ]);
     assert.notEqual(handoff.code, 0, `An undelivered file must fail loudly.\n${handoff.output}`);
-    assert.match(handoff.output, /No running Zettlr instance accepted the arguments/);
+    assert.match(handoff.output, /No running Zettlr instance accepted the request/);
   });
 });

@@ -74,6 +74,13 @@ export interface WorkspaceCollaborationListing {
    * workspaces. Their state is in no session.
    */
   ownerless: OwnerlessCollaborationFile[];
+  /**
+   * The closed documents of the sessions whose working text is in no file:
+   * text that the author accepted from a review and did not save. The
+   * document holds it until the author opens it and saves it or takes the
+   * file.
+   */
+  unsaved: string[];
 }
 
 /**

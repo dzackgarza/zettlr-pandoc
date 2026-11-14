@@ -15,12 +15,14 @@
  *                  ownership, read every source, verify EVERY hash before
  *                  mutating anything, compute every target, write the
  *                  journal, apply the open buffers, install the closed
- *                  files, and delete the journal only after full success.
- *                  Any failure after the journal exists rolls every mutated
- *                  buffer and every installed file back to its recorded
- *                  original, and the journal survives a rollback that itself
- *                  fails so recoverWorkspaceEditJournal() can finish the job
- *                  at the next startup.
+ *                  files, and remove the journal. The removal of the journal
+ *                  is the commit: a transaction that cannot remove its
+ *                  journal did not happen, and rolls every mutated buffer
+ *                  and every installed file back to its recorded original.
+ *                  A journal that stays (a rollback that failed, a stop of
+ *                  the app) is finished by recoverWorkspaceEditJournal() at
+ *                  the next startup, which restores only a file that holds
+ *                  the text that the transaction wrote.
  *
  *                  write-file-atomic owns the file-write mechanics (temp
  *                  file, fsync, rename) for both the journal and the
@@ -34,6 +36,7 @@
 import { ChangeSet, Text } from "@codemirror/state";
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
 import isErrnoException from "@common/util/is-errno-exception";
+import { editedText } from "@common/util/workspace-edit-preview";
 import type { SaveFileResult, UnsavedDocument } from "@dts/common/documents";
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import { randomUUID } from "crypto";
@@ -41,6 +44,7 @@ import { diffChars } from "diff";
 import { readFile, unlink } from "fs/promises";
 import path from "path";
 import writeFileAtomic from "write-file-atomic";
+import { systemErrorCause } from "../../util/system-error-cause";
 import { writeTextFile } from "../fsal/util/write-text-file";
 
 /** The one journal file; a workspace transaction is never concurrent. */
@@ -57,6 +61,8 @@ export type WorkspaceEditTransactionResult =
   | {
       status: "applied";
       closedFilesWritten: string[];
+      /** The text that the transaction wrote to each closed file */
+      closedFileTexts: Record<string, string>;
       openBuffersUpdated: string[];
       resultingHashes: Record<string, string>;
     }
@@ -77,40 +83,40 @@ export interface WorkspaceEditAuthority {
   applyWorkspaceTextEdits: (edits: WorkspaceTextEdit[]) => Promise<string[]>;
 }
 
-/** One document's pre- and post-transaction text. */
+/**
+ * The slice of the document authority that the startup recovery drives: the
+ * collaboration state that a document keeps while it is not loaded.
+ */
+export interface JournalRecoveryAuthority {
+  /**
+   * Changes the working text in the sidecar of a document that is not
+   * loaded by the changes that `restore` gives for that text, and maps the
+   * anchors of its review and its annotations through them. Answers whether
+   * the sidecar changed; a document without a sidecar answers false.
+   */
+  restoreStoredWorkingText: (
+    documentPath: string,
+    restore: (workingText: string) => ChangeSet,
+  ) => Promise<boolean>;
+}
+
+/** One document's pre- and post-transaction text, and the edits between them. */
 interface JournaledDocument {
   documentPath: string;
   original: string;
   target: string;
+  edits: WorkspaceTextEdit[];
 }
 
 /**
- * The on-disk journal. `phase` records how far the transaction got, so a
- * journal found at startup is unambiguous: 'installing' means files may hold
- * either text, 'rollback' means a rollback was interrupted. Recovery restores
- * the originals in both cases.
+ * The on-disk journal. It exists only while a transaction has not committed:
+ * each file it names holds its original, the target of the transaction, or
+ * text that the author wrote after a rollback.
  */
 interface WorkspaceEditJournal {
   transactionId: string;
-  phase: "installing" | "rollback";
   closedFiles: JournaledDocument[];
   openBuffers: JournaledDocument[];
-}
-
-/**
- * Applies one document's edits through a CodeMirror ChangeSet — the same
- * primitive the document authority applies to live buffers, so the closed-file
- * target and the open-buffer target are computed by one implementation.
- *
- * @param   {string}               source  The document source
- * @param   {WorkspaceTextEdit[]}  edits   That document's edits
- *
- * @return  {string}                       The target text
- */
-function computeTarget(source: string, edits: WorkspaceTextEdit[]): string {
-  return changeSetOf(source, edits)
-    .apply(Text.of(source.split("\n")))
-    .toString();
 }
 
 function changeSetOf(source: string, edits: WorkspaceTextEdit[]): ChangeSet {
@@ -141,6 +147,25 @@ function changesBetween(before: string, after: string): ChangeSet {
 }
 
 /**
+ * The edits of the document at `documentPath` that take its text from
+ * `source` to `target`: the changes of a character diff (`changesBetween`).
+ * An edit that a caller computed as a new text changes only the characters
+ * that differ, so the annotations and the review of an open document keep
+ * their places.
+ */
+export function editsBetween(
+  documentPath: string,
+  source: string,
+  target: string,
+): WorkspaceTextEdit[] {
+  const edits: WorkspaceTextEdit[] = [];
+  changesBetween(source, target).iterChanges((from, to, _fromTarget, _toTarget, inserted) => {
+    edits.push({ documentPath, range: { from, to }, insert: inserted.toString() });
+  });
+  return edits;
+}
+
+/**
  * The edits that take a live buffer from `current` back to `original`
  * without the text that the author typed after the transaction. The buffer
  * held the target of `edits`, and then the changes of its author: the
@@ -149,12 +174,10 @@ function changesBetween(before: string, after: string): ChangeSet {
  * transaction changed, so the typed text, the review and the annotations of
  * the document keep their places through a rollback.
  */
-function restoringEdits(
-  entry: JournaledDocument,
-  current: string,
-  edits: WorkspaceTextEdit[],
-): WorkspaceTextEdit[] {
-  const inverse = changeSetOf(entry.original, edits).invert(Text.of(entry.original.split("\n")));
+function restoringEdits(entry: JournaledDocument, current: string): WorkspaceTextEdit[] {
+  const inverse = changeSetOf(entry.original, entry.edits).invert(
+    Text.of(entry.original.split("\n")),
+  );
   const restoring: WorkspaceTextEdit[] = [];
   inverse
     .map(changesBetween(entry.target, current))
@@ -217,8 +240,9 @@ export async function runWorkspaceEditTransaction(
   const journaled: JournaledDocument[] = [];
   const resultingHashes: Record<string, string> = {};
   for (const { documentPath, source } of sources) {
-    const target = computeTarget(source, editsFor(documentPath));
-    journaled.push({ documentPath, original: source, target });
+    const edits = editsFor(documentPath);
+    const target = editedText(source, edits);
+    journaled.push({ documentPath, original: source, target, edits });
     resultingHashes[documentPath] = hashDocumentSource(target);
   }
 
@@ -227,7 +251,6 @@ export async function runWorkspaceEditTransaction(
   const journalFile = path.join(journalDirectory, JOURNAL_FILE);
   const journal: WorkspaceEditJournal = {
     transactionId: randomUUID(),
-    phase: "installing",
     closedFiles,
     openBuffers: journaled.filter((document) => openPaths.includes(document.documentPath)),
   };
@@ -267,19 +290,38 @@ export async function runWorkspaceEditTransaction(
     }
 
     for (const { documentPath, target } of closedFiles) {
-      await writeTextFile(documentPath, target);
+      await writeTextFile(documentPath, target).catch((failure: NodeJS.ErrnoException) => {
+        throw new Error(`Could not write ${documentPath}: ${systemErrorCause(failure)}.`, {
+          cause: failure,
+        });
+      });
       installed.push(documentPath);
     }
+
+    await unlink(journalFile).catch((failure: NodeJS.ErrnoException) => {
+      throw new Error(
+        `Could not remove the workspace edit journal ${journalFile}: ${systemErrorCause(failure)}.`,
+        { cause: failure },
+      );
+    });
   } catch (err) {
-    await rollback(authority, journalFile, journal, installed, verified, input.edits);
+    await rollback(authority, journalFile, journal, installed, verified).catch(
+      (rollbackFailure: Error) => {
+        throw new AggregateError(
+          [err, rollbackFailure],
+          `${String(err)} The rollback did not finish: ${rollbackFailure.message} The next start restores the documents.`,
+        );
+      },
+    );
     throw err;
   }
-
-  await unlink(journalFile);
 
   return {
     status: "applied",
     closedFilesWritten: closedPaths,
+    closedFileTexts: Object.fromEntries(
+      closedFiles.map((document) => [document.documentPath, document.target]),
+    ),
     openBuffersUpdated,
     resultingHashes,
   };
@@ -287,16 +329,15 @@ export async function runWorkspaceEditTransaction(
 
 /**
  * Restores every mutated buffer and every installed file to its journaled
- * original. The journal is marked 'rollback' first and deleted only once the
- * restoration completed: a rollback that itself fails leaves the journal for
- * startup recovery.
+ * original, and then removes the journal. A rollback that fails leaves the
+ * journal for the recovery at the next start; a restored file holds its
+ * original, which that recovery does not change.
  *
  * @param   {WorkspaceEditAuthority}  authority    The document authority
  * @param   {string}                  journalFile  The journal's path
  * @param   {WorkspaceEditJournal}    journal      The journal
  * @param   {string[]}                installed    Files already installed
  * @param   {Set<string>}             verified     Open buffers that held the target
- * @param   {WorkspaceTextEdit[]}     edits        The edits of the transaction
  */
 async function rollback(
   authority: WorkspaceEditAuthority,
@@ -304,10 +345,7 @@ async function rollback(
   journal: WorkspaceEditJournal,
   installed: string[],
   verified: Set<string>,
-  edits: WorkspaceTextEdit[],
 ): Promise<void> {
-  await writeFileAtomic(journalFile, JSON.stringify({ ...journal, phase: "rollback" }), "utf-8");
-
   const restoreBuffers: WorkspaceTextEdit[] = [];
   for (const entry of journal.openBuffers) {
     const current = authority.readMarkdownBufferContent(entry.documentPath);
@@ -324,13 +362,7 @@ async function rollback(
       });
       continue;
     }
-    restoreBuffers.push(
-      ...restoringEdits(
-        entry,
-        current,
-        edits.filter((edit) => edit.documentPath === entry.documentPath),
-      ),
-    );
+    restoreBuffers.push(...restoringEdits(entry, current));
   }
   if (restoreBuffers.length > 0) {
     await authority.applyWorkspaceTextEdits(restoreBuffers);
@@ -343,7 +375,14 @@ async function rollback(
     }
   }
 
-  await unlink(journalFile);
+  await unlink(journalFile).catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== "ENOENT") {
+      throw new Error(
+        `Could not remove the workspace edit journal ${journalFile}: ${systemErrorCause(err)}.`,
+        { cause: err },
+      );
+    }
+  });
 }
 
 /**
@@ -373,16 +412,27 @@ export async function saveUpdatedBuffers(
 }
 
 /**
- * Finishes an interrupted transaction at startup: every file the journal
- * names is restored to its pre-transaction content, and the journal is
- * removed. Open buffers need no restoration — a crash discards them, and the
- * transaction never wrote their files.
+ * Finishes an interrupted transaction at startup, before a document loads:
+ * each closed file that holds the target of the transaction gets its
+ * original again, and the journal is removed. A file with other text (its
+ * original, or text that the author wrote after a rollback that could not
+ * remove the journal) and a file that is gone stay as they are: the
+ * transaction writes a file in one rename, so it never removes one. A stop discards the open buffers, and
+ * the transaction never wrote their files; but the collaboration service
+ * wrote the edit of each buffer with a review or annotations to its sidecar,
+ * and the next load restores that working text. The recovery therefore
+ * takes the edit out of each such sidecar, as a rollback takes it out of a
+ * live buffer, and maps the anchors back with it.
  *
- * @param   {string}              journalDirectory  Application data directory
+ * @param   {string}                    journalDirectory  Application data directory
+ * @param   {JournalRecoveryAuthority}  authority         The document authority
  *
- * @return  {Promise<string[]>}                     The restored file paths
+ * @return  {Promise<string[]>}  The restored files and sidecars, by document path
  */
-export async function recoverWorkspaceEditJournal(journalDirectory: string): Promise<string[]> {
+export async function recoverWorkspaceEditJournal(
+  journalDirectory: string,
+  authority: JournalRecoveryAuthority,
+): Promise<string[]> {
   const journalFile = path.join(journalDirectory, JOURNAL_FILE);
   let journal: WorkspaceEditJournal;
   try {
@@ -397,15 +447,28 @@ export async function recoverWorkspaceEditJournal(journalDirectory: string): Pro
   const restored: string[] = [];
   for (const entry of journal.closedFiles) {
     const current = await readFile(entry.documentPath, "utf-8").catch((error: unknown) => {
-      // A file that is gone holds no text of the author: the original
-      // restores it. Each other failure stops the recovery.
+      // Each failure but a removed file stops the recovery.
       if (isErrnoException(error) && error.code === "ENOENT") {
         return undefined;
       }
       throw error;
     });
-    if (current !== entry.original) {
+    if (current === entry.target && current !== entry.original) {
       await writeTextFile(entry.documentPath, entry.original);
+      restored.push(entry.documentPath);
+    }
+  }
+
+  // A working text other than the original holds the edit of the
+  // transaction: the buffer held the original when the transaction checked
+  // it, and a buffer that changed before its edit refuses the edit.
+  for (const entry of journal.openBuffers) {
+    const changed = await authority.restoreStoredWorkingText(entry.documentPath, (workingText) =>
+      workingText === entry.original
+        ? ChangeSet.empty(workingText.length)
+        : changeSetOf(workingText, restoringEdits(entry, workingText)),
+    );
+    if (changed) {
       restored.push(entry.documentPath);
     }
   }

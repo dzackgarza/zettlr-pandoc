@@ -43,56 +43,21 @@ import type {
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import { app } from "electron";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import {
-  runWorkspaceEditTransaction,
-  saveUpdatedBuffers,
-} from "../references/workspace-edit-transaction";
+import { applyWorkspaceEdit } from "../../util/workspace-edit-proposal";
 import ZettlrCommand from "./zettlr-command";
 
 export default class FixAll extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, [
-      "preview-fix-all",
-      "commit-fix-all",
-      "list-workspace-lint",
-      "apply-lint-fix",
-      "retry-workspace-lint",
-    ]);
+    super(app);
   }
 
-  async run(
-    evt: string,
-    arg:
-      | FixAllRequest
-      | { plan: FixAllPlan }
-      | ListProblemsRequest
-      | ApplyProblemFixRequest
-      | undefined,
-  ): Promise<FixAllPlan | FixAllOutcome | WorkspaceProblems | undefined> {
-    if (evt === "retry-workspace-lint") {
-      await this._app.documentLint.retry();
-      broadcastIPCMessage("document-lint-retried");
-      return undefined;
-    }
-    if (arg === undefined) {
-      throw new Error(`${evt} requires a payload`);
-    }
-    if (evt === "list-workspace-lint") {
-      return await this.listProblems(arg);
-    }
-    if (evt === "apply-lint-fix") {
-      return await this.applyProblemFix(arg);
-    }
-    if (evt === "preview-fix-all") {
-      return await this.preview(arg);
-    }
-    if (!("plan" in arg)) {
-      throw new Error("commit-fix-all requires a plan");
-    }
-    return await this.commit(arg.plan);
+  /** Lints again each document whose last run gave no result. */
+  async retry(): Promise<void> {
+    await this._app.documentLint.retry();
+    broadcastIPCMessage("document-lint-retried");
   }
 
-  private async listProblems(
+  async listProblems(
     arg: FixAllRequest | { plan: FixAllPlan } | ListProblemsRequest | ApplyProblemFixRequest,
   ): Promise<WorkspaceProblems> {
     if (!("scope" in arg) || (arg.scope !== "workspace" && arg.scope !== "all")) {
@@ -101,7 +66,7 @@ export default class FixAll extends ZettlrCommand {
     return await this._app.documentLint.workspaceProblems(arg);
   }
 
-  private async applyProblemFix(
+  async applyProblemFix(
     arg: FixAllRequest | { plan: FixAllPlan } | ListProblemsRequest | ApplyProblemFixRequest,
   ): Promise<FixAllOutcome> {
     if (!("documentPath" in arg) || !("sourceHash" in arg)) {
@@ -123,7 +88,7 @@ export default class FixAll extends ZettlrCommand {
     });
   }
 
-  private async preview(
+  async preview(
     arg: FixAllRequest | { plan: FixAllPlan } | ListProblemsRequest | ApplyProblemFixRequest,
   ): Promise<FixAllPlan> {
     if (!("scope" in arg) || arg.scope === "all") {
@@ -149,7 +114,7 @@ export default class FixAll extends ZettlrCommand {
     }
   }
 
-  private async commit(plan: FixAllPlan): Promise<FixAllOutcome> {
+  async commit(plan: FixAllPlan): Promise<FixAllOutcome> {
     const edits: WorkspaceTextEdit[] = plan.documents.flatMap((document) =>
       document.edits.map((edit) => ({
         documentPath: document.documentPath,
@@ -160,23 +125,10 @@ export default class FixAll extends ZettlrCommand {
     const expectedSourceHashes = Object.fromEntries(
       plan.documents.map((document) => [document.documentPath, document.sourceHash]),
     );
-    const documents = this._app.documents;
-    const result = await runWorkspaceEditTransaction(documents, app.getPath("userData"), {
+    const outcome = await applyWorkspaceEdit(this._app.documents, app.getPath("userData"), {
       edits,
       expectedSourceHashes,
     });
-    if (result.status === "conflict") {
-      return { status: "conflict", documentPath: result.documentPath };
-    }
-    const unsaved = await saveUpdatedBuffers(
-      async (documentPath) => await documents.saveFile(documentPath),
-      result.openBuffersUpdated,
-    );
-    return {
-      status: "applied",
-      fixesApplied: edits.length,
-      documentsChanged: [...result.openBuffersUpdated, ...result.closedFilesWritten],
-      unsaved,
-    };
+    return outcome.status === "conflict" ? outcome : { ...outcome, fixesApplied: edits.length };
   }
 }

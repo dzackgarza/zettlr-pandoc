@@ -189,7 +189,7 @@ class CitationWidget extends WidgetType implements RowJoinedWidget {
       elem.classList.add("citeproc-citation", "error");
       elem.textContent = this.rawCitation;
       elem.title = this.error;
-      elem.addEventListener("click", clickAndSelect(view));
+      elem.addEventListener("mousedown", clickAndSelect(view));
       return elem;
     }
     const { items } = this.citation;
@@ -228,7 +228,7 @@ class CitationWidget extends WidgetType implements RowJoinedWidget {
       }
 
       elem.textContent = citationTexts.join("; ");
-      elem.addEventListener("click", clickAndSelect(view));
+      elem.addEventListener("mousedown", clickAndSelect(view));
 
       return elem;
     }
@@ -261,7 +261,7 @@ class CitationWidget extends WidgetType implements RowJoinedWidget {
         },
       );
     }
-    elem.addEventListener("click", clickAndSelect(view));
+    elem.addEventListener("mousedown", clickAndSelect(view));
 
     elem.addEventListener("contextmenu", (event) => {
       const coords = { x: event.clientX, y: event.clientY };

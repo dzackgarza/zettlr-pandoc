@@ -7,7 +7,10 @@
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     This command renames a tag across all files.
+ * Description:     This command offers the rename of a tag across all files:
+ *                  it sends the window the proposal of the edit of each file
+ *                  that has the tag. No file changes until the author
+ *                  applies it, and then each file changes or none does.
  *
  * END HEADER
  */
@@ -15,19 +18,22 @@
 import { trans } from "@common/i18n-main";
 import replaceTags from "@common/util/replace-tags";
 import type { MDFileDescriptor } from "@dts/common/fsal";
-import { dialog } from "electron";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import { proposalOf } from "source/app/util/workspace-edit-proposal";
 import ZettlrCommand from "./zettlr-command";
 
 export default class RenameTag extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "rename-tag");
+    super(app);
   }
 
   /**
-   * Replace a tag in each file that has it.
+   * Proposes the replacement of a tag in each file that has it. The text of
+   * an open document is the text of its buffer.
+   *
    * @param {String} evt The event name
    * @param  {Object} arg The old and the new name of the tag.
+   * @return {boolean} Whether a file has the tag; then the window shows the edit.
    */
   async run(evt: string, arg: { oldName: string; newName: string }): Promise<boolean> {
     const oldName: string = arg.oldName;
@@ -36,67 +42,35 @@ export default class RenameTag extends ZettlrCommand {
       throw new Error(trans('The tag "%s" needs a new name.', oldName));
     }
 
-    // First, retrieve all files from the FSAL
-    const allFiles = (await this._app.fsal.getAllLoadedDescriptors()).filter(
-      (d) => d.type === "file",
-    ) as MDFileDescriptor[];
+    const relevantFiles = (await this._app.fsal.getAllLoadedDescriptors()).filter(
+      (d): d is MDFileDescriptor => d.type === "file" && d.tags.includes(oldName),
+    );
 
-    // Then, retain only the relevant files
-    const relevantFiles = allFiles.filter((d: MDFileDescriptor) => d.tags.includes(oldName));
+    const documents = [];
+    for (const file of relevantFiles) {
+      const source =
+        this._app.documents.readMarkdownBufferContent(file.path) ??
+        (await this._app.fsal.readTextFile(file.path));
+      documents.push({
+        documentPath: file.path,
+        source,
+        target: replaceTags(source, oldName, newName),
+      });
+    }
 
-    const response = await dialog.showMessageBox({
-      title: trans("Confirm"),
-      message: trans(
-        'Replace tag "%s" with "%s" across %s files?',
+    const proposal = proposalOf(
+      trans("Rename tag"),
+      trans(
+        'The tag "%s" becomes "%s" in these files. No file changes until you apply.',
         oldName,
         newName,
-        relevantFiles.length,
       ),
-      buttons: [trans("Yes"), trans("Cancel")],
-      defaultId: 1,
-    });
-
-    if (response.response === 1) {
-      return false; // Do not replace the tag.
-    }
-
-    // Lastly, do the replacing file by file. NOTE: This rests on the fact that
-    // the FSAL will pick up those changes via the file system itself. One file
-    // that cannot be changed does not stop the others; the command names each.
-    const refusals: string[] = [];
-    for (const file of relevantFiles) {
-      const refusal = await this.renameIn(file.path, oldName, newName).then(
-        () => undefined,
-        (err: Error) => `${file.path}: ${err.message}`,
-      );
-      if (refusal !== undefined) {
-        refusals.push(refusal);
-      }
-    }
-
-    if (refusals.length > 0) {
-      throw new Error(
-        trans(
-          'The tag "%s" was not replaced in %s of %s files:\n%s',
-          oldName,
-          refusals.length,
-          relevantFiles.length,
-          refusals.join("\n"),
-        ),
-      );
-    }
-    return true;
-  }
-
-  private async renameIn(filePath: string, oldName: string, newName: string): Promise<void> {
-    const content = await this._app.fsal.readTextFile(filePath);
-    const newContent = replaceTags(content, oldName, newName);
-    if (newContent === content) {
-      throw new Error(trans("The file does not contain the tag."));
-    }
-    await this._app.fsal.writeTextFile(filePath, newContent);
-    this._app.log.info(
-      `[Application] Replaced tag "${oldName}" with "${newName}" in file ${filePath}`,
+      documents,
     );
+    if (proposal === undefined) {
+      return false;
+    }
+    this._app.commands.propose(proposal);
+    return true;
   }
 }

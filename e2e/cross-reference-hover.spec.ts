@@ -27,7 +27,6 @@ import {
   attach,
   createFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   type RunningApp,
   requireInitialized,
@@ -81,9 +80,8 @@ describe("assembled app: the hover of a cross-reference and of a citation", func
     const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
     config.export = { ...(config.export as Record<string, unknown>), cslLibrary: libraryPath };
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-    app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    app = await attach(fixture.configDirectory, rendererEvents);
     page = await findEditorPage(app.browser, 60_000);
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

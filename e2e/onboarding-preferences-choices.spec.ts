@@ -29,6 +29,7 @@ import {
   findEditorPage,
   preserveArtifacts,
   shutdown,
+  startDeadline,
   waitForApplicationBoot,
 } from "./support/electron-app";
 import {
@@ -58,7 +59,7 @@ async function settledScreenshot(page: Page): Promise<Buffer> {
 function describeFirstStart(
   title: string,
   name: string,
-  environment: NodeJS.ProcessEnv,
+  buildEnvironment: NodeJS.ProcessEnv | undefined,
   cases: (start: () => FirstStart, screenshots: Map<string, Buffer>) => void,
 ): void {
   describe(title, function () {
@@ -67,12 +68,10 @@ function describeFirstStart(
     const screenshots = new Map<string, Buffer>();
 
     before(async function () {
-      start = await startFirstRun(
-        `zettlr-${name}-e2e-`,
-        rendererEvents,
-        this.timeout(),
-        environment,
-      );
+      // A start of a build of its own compiles webpack: the hook gives the
+      // start its whole deadline, and the error of the start ends the hook.
+      this.timeout(startDeadline({ buildEnvironment }) + 30_000);
+      start = await startFirstRun(`zettlr-${name}-e2e-`, rendererEvents, buildEnvironment);
     });
 
     after(async function () {
@@ -109,7 +108,7 @@ function describeFirstStart(
 describeFirstStart(
   "assembled app: the onboarding offers the choices of the Preferences",
   "onboarding-choices",
-  {},
+  undefined,
   (start, screenshots) => {
     it("offers beta releases only while the app checks for updates", async function () {
       const page = await onboardingPage(start().browser, this.timeout());

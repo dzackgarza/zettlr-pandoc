@@ -163,6 +163,10 @@ export interface LinkOrImage extends MDNode {
    */
   url: string;
   /**
+   * Where the URL is written in the source, with its angle brackets.
+   */
+  urlRange: { from: number; to: number };
+  /**
    * ALT text of the link or image (i.e. what's written in square brackets)
    */
   alt: TextNode;
@@ -760,6 +764,7 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
             ? undefined
             : genericTextNode(title.from, title.to, markdown.substring(title.from, title.to)),
         url: markdown.substring(url.from, url.to),
+        urlRange: { from: url.from, to: url.to },
         alt,
         children,
       };
@@ -780,6 +785,7 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         url,
+        urlRange: { from: node.from, to: node.to },
         alt: genericTextNode(node.from, node.to, url),
         children: [genericTextNode(node.from, node.to, url)],
       };

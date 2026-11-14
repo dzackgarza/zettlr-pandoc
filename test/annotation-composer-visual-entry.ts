@@ -1,8 +1,7 @@
 /**
  * Mounts the production AnnotationCreateDialog (M6) for isolated visual
  * capture — the plan's scene `01-selection-composer`, gated against
- * mockup-2-creation-dialog.png. Modeled on
- * reference-rename-preview-entry.ts: webpack bundles this against the
+ * mockup-2-creation-dialog.png. Webpack bundles this against the
  * production renderer config (vue-loader, aliases), a bare real EditorView
  * stands in for the pane behind the dialog (the dialog only needs a real
  * EditorView to attach its live draft-tracking compartment to — it renders

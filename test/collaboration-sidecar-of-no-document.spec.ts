@@ -48,12 +48,8 @@ import {
   dirDeleteCommand,
   fileDeleteCommand,
 } from "./documents-provider-seam";
-import { ipcMainHandlers, messageBoxes, userData } from "./headless-electron-harness.cjs";
-
-type IpcHandler = (
-  event: unknown,
-  message: { command: string; payload?: unknown },
-) => Promise<unknown> | unknown;
+import { messageBoxes, userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const SOURCE = "An even unimodular lattice has a rank that 8 divides.\n";
 const SIDECARS = path.join(userData, "review-sidecars");
@@ -121,17 +117,12 @@ describe("A collaboration sidecar whose document has no file", function () {
     assert.equal(await provider.closeFileEverywhere(documentPath), true);
   }
 
-  async function invoke(command: string, payload: unknown): Promise<unknown> {
-    const handler = ipcMainHandlers.get("documents-provider") as IpcHandler | undefined;
-    assert.ok(handler !== undefined, "the documents-provider handler is registered");
-    return await handler(undefined, { command, payload });
-  }
-
   /** The listing that the Annotations view reads for the files of the workspace. */
   async function workspaceListing(paths: string[]): Promise<WorkspaceCollaborationListing> {
-    return (await invoke("get-workspace-collaboration-sessions", {
-      paths,
-    })) as WorkspaceCollaborationListing;
+    return await invokeMain("documents-provider", {
+      command: "get-workspace-collaboration-sessions",
+      payload: { paths },
+    });
   }
 
   /** The file and the document path of each sidecar that the listing names as of no document. */
@@ -198,7 +189,10 @@ describe("A collaboration sidecar whose document has no file", function () {
     // The workspace has no file now.
     assert.deepEqual(await sidecarsOfNoDocument([]), [[sidecarFile, filePath]]);
 
-    await invoke("set-aside-collaboration-sidecar", { file: sidecarFile });
+    await invokeMain("documents-provider", {
+      command: "set-aside-collaboration-sidecar",
+      payload: { file: sidecarFile },
+    });
 
     assert.deepEqual(await sidecarsOfNoDocument([]), [], "the listing names no file");
     assert.deepEqual(sidecarDirectoryBytes(), [bytes], "the bytes of the file are kept");

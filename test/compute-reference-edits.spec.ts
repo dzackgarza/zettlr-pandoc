@@ -41,7 +41,7 @@ import { readFileSync } from "fs";
 import path from "path";
 import {
   previewReferenceRename,
-  type ReferenceRenamePreview,
+  type ReferenceRenameResult,
 } from "source/common/pandoc-util/compute-reference-edits";
 import {
   extractReferences,
@@ -79,13 +79,13 @@ function applyEdits(source: string, edits: WorkspaceTextEdit[]): string {
 }
 
 /** Narrows an accepted preview to its edit, failing loudly on rejection. */
-function editOf(preview: ReferenceRenamePreview, label: string): WorkspaceReferenceEdit {
+function editOf(preview: ReferenceRenameResult, label: string): WorkspaceReferenceEdit {
   assert.equal(
     preview.status,
     "ok",
     `${label}: the preview must be accepted, got ${JSON.stringify(preview)}`,
   );
-  return (preview as Extract<ReferenceRenamePreview, { status: "ok" }>).edit;
+  return (preview as Extract<ReferenceRenameResult, { status: "ok" }>).edit;
 }
 
 /** The exact range of `token`'s single authored occurrence in a document. */

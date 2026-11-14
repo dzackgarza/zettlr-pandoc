@@ -83,7 +83,7 @@ describe("annotation-presentation", function () {
     });
   });
 
-  it("counts a proposal card by the linked actions still undecided", function () {
+  it("counts a proposal card by the linked actions still undecided and by each outcome", function () {
     const actions: AnnotationProposalAction[] = [
       {
         actionId: "a-1",
@@ -94,8 +94,29 @@ describe("annotation-presentation", function () {
       },
       { actionId: "a-2", packetId: "p-2", reviewId: "r-1", linkedAt: "2026-05-20T10:00:30.000Z" },
       { actionId: "a-3", packetId: "p-3", reviewId: "r-1", linkedAt: "2026-05-20T10:01:00.000Z" },
+      {
+        actionId: "a-4",
+        packetId: "p-4",
+        reviewId: "r-1",
+        linkedAt: "2026-05-20T10:01:30.000Z",
+        terminalOutcome: "withdrawn",
+      },
+      {
+        actionId: "a-5",
+        packetId: "p-5",
+        reviewId: "r-1",
+        linkedAt: "2026-05-20T10:02:00.000Z",
+        terminalOutcome: "accepted",
+      },
     ];
-    assert.deepEqual(proposalCardView(actions), { pendingCount: 2, totalCount: 3 });
+    assert.deepEqual(proposalCardView(actions), {
+      pendingCount: 2,
+      totalCount: 5,
+      outcomes: [
+        { outcome: "accepted", count: 2 },
+        { outcome: "withdrawn", count: 1 },
+      ],
+    });
   });
 
   it("submits a trimmed draft, and nothing for whitespace", function () {

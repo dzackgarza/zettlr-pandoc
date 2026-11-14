@@ -63,9 +63,8 @@
 <script setup lang="ts">
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
+import { mainWindowId } from "@common/util/main-window-id";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
-import type { CodeFileDescriptor, MDFileDescriptor, OtherFileDescriptor } from "@dts/common/fsal";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { useDocumentTreeStore, useTagsStore, useWorkspaceStore } from "source/pinia";
 import { computed, ref, watch } from "vue";
 import { RecycleScroller } from "vue-virtual-scroller";
@@ -84,12 +83,7 @@ const workspaceStore = useWorkspaceStore();
 const tagStore = useTagsStore();
 const documentTreeStore = useDocumentTreeStore();
 
-const searchParams = new URLSearchParams(window.location.search);
-const windowId = searchParams.get("window_id");
-
-if (windowId === null) {
-  throw new Error("windowID was null");
-}
+const windowId = mainWindowId();
 
 const relatedFiles = ref<RelatedFile[]>([]);
 
@@ -122,7 +116,7 @@ watch(lastActiveFile, () => {
 });
 
 watch(roots, () => {
-  recomputeRelatedFiles().catch((err) => console.log("Could not recompute related files:", err));
+  recomputeRelatedFiles().catch((err) => reportError("Could not recompute related files:", err));
 });
 
 async function recomputeRelatedFiles(): Promise<void> {
@@ -131,13 +125,12 @@ async function recomputeRelatedFiles(): Promise<void> {
     return;
   }
 
-  const descriptor: MDFileDescriptor | CodeFileDescriptor | OtherFileDescriptor | undefined =
-    await ipcRenderer.invoke("fsal", {
-      command: "get-descriptor",
-      payload: lastActiveFile.value.path,
-    });
+  const descriptor = await ipcRenderer.invoke("fsal", {
+    command: "get-descriptor",
+    payload: lastActiveFile.value.path,
+  });
 
-  if (descriptor === undefined || descriptor.type === "code") {
+  if (descriptor.type !== "file" && descriptor.type !== "other") {
     relatedFiles.value = [];
     return;
   }
@@ -268,7 +261,7 @@ function requestFile(event: MouseEvent, filePath: string): void {
         leafId: lastLeafId.value,
         newTab: event.type === "mousedown" && event.button === 1,
       },
-    } as DocumentManagerIPCAPI)
+    })
     .catch((e) => reportError(e));
 }
 

@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import broadcastIPCMessage from "@common/util/broadcast-ipc-message";
+import broadcastIPCMessage, { replyIPCMessage } from "@common/util/broadcast-ipc-message";
 import { showNativeNotification } from "@common/util/show-notification";
 import type { SerializedMenuItem, SerializedSubmenu } from "@dts/common/serialized-menu";
 import type ConfigProvider from "@providers/config";
@@ -26,6 +26,7 @@ import {
   type MenuItemConstructorOptions,
   type WebFrameMain,
 } from "electron";
+import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import type CommandProvider from "../commands";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
@@ -92,7 +93,7 @@ export default class MenuProvider extends ProviderContract {
       const { command } = message;
 
       if (command === "get-application-menu") {
-        event.reply("menu-provider", {
+        replyIPCMessage(event, "menu-provider", {
           command: "application-menu",
           payload: this.serializableApplicationMenu,
         });
@@ -118,7 +119,7 @@ export default class MenuProvider extends ProviderContract {
           return;
         }
 
-        event.reply("menu-provider", {
+        replyIPCMessage(event, "menu-provider", {
           command: "application-submenu",
           payload: {
             id: itemID,
@@ -222,14 +223,9 @@ export default class MenuProvider extends ProviderContract {
       }
     });
 
-    ipcMain.handle("menu-provider", async (event, message) => {
-      const { command, payload } = message;
-      if (command === "display-native-context-menu") {
-        const menu: Electron.MenuItemConstructorOptions[] = payload.menu;
-        const x: number = payload.x;
-        const y: number = payload.y;
-        return await this._displayNativeContextMenu(menu, x, y, event.senderFrame ?? undefined);
-      }
+    handleInvokeChannel("menu-provider", {
+      "display-native-context-menu": async (event, { payload: { menu, x, y } }) =>
+        await this._displayNativeContextMenu(menu, x, y, event.senderFrame ?? undefined),
     });
   }
 

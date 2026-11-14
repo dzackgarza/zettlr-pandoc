@@ -57,7 +57,6 @@
 import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
 import { reportError } from "@common/util/error-reporting";
 import { type BranchNodeJSON } from "@dts/common/documents";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { computed, ref, toRef, watch } from "vue";
 import type { CreateReferenceLabelDialogPrompt, EditorCommands } from "./component-contracts";
 import EditorPane from "./EditorPane.vue";
@@ -187,7 +186,7 @@ function onEndResizing(_event: MouseEvent): void {
         branchId: props.node.id,
         sizes: sizes.value.map((s) => s), // Again, deproxy
       },
-    } as DocumentManagerIPCAPI)
+    })
     .catch((err) => reportError(err));
 }
 </script>

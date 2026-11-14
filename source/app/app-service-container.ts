@@ -42,11 +42,12 @@ import StatsProvider from "@providers/stats";
 import TagProvider from "@providers/tags";
 import TargetProvider from "@providers/targets";
 import TrayProvider from "@providers/tray";
-import UpdateProvider from "@providers/updates";
+import UpdateProvider, { releaseLocations } from "@providers/updates";
 import WindowProvider from "@providers/windows";
 import { app, dialog } from "electron";
 import path from "path";
 import { trans } from "source/common/i18n-main";
+import PACKAGE_JSON from "../../package.json";
 import LongRunningTaskProvider from "./service-providers/long-running-tasks";
 import { SearchProvider } from "./service-providers/search";
 import { showStoreWriteFailure } from "./util/show-store-write-failure";
@@ -171,7 +172,7 @@ export class AppServiceContainer {
       this._logProvider,
       this._fsal,
       this._documentManager,
-      this._configProvider.get().references.authorityReportDebounceMs,
+      () => this._configProvider.get().references.authorityReportDebounceMs,
       app.getPath("userData"),
     );
     this._documentLintProvider = new DocumentLintProvider({
@@ -235,8 +236,8 @@ export class AppServiceContainer {
     this._updateProvider = new UpdateProvider(
       this._logProvider,
       this._configProvider,
-      this._commandProvider,
       this._windowProvider,
+      releaseLocations(PACKAGE_JSON.homepage),
     );
   }
 
@@ -317,7 +318,7 @@ export class AppServiceContainer {
     if (this.config.isFirstStart()) {
       this.log.info("[AppServiceContainer] Copying over the interactive tutorial!");
       this.commands
-        .run("tutorial-open", {})
+        .run("tutorial-open", undefined)
         .catch((err) => this.log.error("[AppServiceContainer] Could not open tutorial", err));
     }
 

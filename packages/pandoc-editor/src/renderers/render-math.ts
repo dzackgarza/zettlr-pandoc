@@ -70,7 +70,7 @@ class MathWidget extends WidgetType implements RowJoinedWidget {
     elem.classList.add("preview-math");
     const host = requireMathHost(view.state);
     this.draw(elem, host);
-    elem.addEventListener("click", clickAndSelect(view));
+    elem.addEventListener("mousedown", clickAndSelect(view));
     if (host.contextMenu)
       elem.addEventListener("contextmenu", (event) => {
         host.contextMenu!(

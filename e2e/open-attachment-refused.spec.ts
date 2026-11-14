@@ -32,7 +32,6 @@ import {
   attach,
   createFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -51,8 +50,6 @@ const LIBRARY = `@article{${CITEKEY},
 `;
 
 describe("A refused attachment open", function () {
-  this.timeout(180_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
@@ -71,12 +68,12 @@ describe("A refused attachment open", function () {
     documentPath = fixture.documentPath;
     await writeFile(path.join(path.dirname(documentPath), "forms.bib"), LIBRARY);
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
   });
 

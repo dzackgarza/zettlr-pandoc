@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { sendIPCMessage } from "@common/util/broadcast-ipc-message";
 import errorToString from "@common/util/error-to-string";
 import { COMMAND_FAILED_CHANNEL, type CommandFailedBroadcast } from "@dts/common/command-failure";
 import type { WebContents } from "electron";
@@ -28,5 +29,5 @@ export function showRefusalInWindow(window: WebContents, request: string, error:
   }
   const message = error instanceof Error ? error.message : errorToString(error);
   const failure: CommandFailedBroadcast = { command: request, message };
-  window.send(COMMAND_FAILED_CHANNEL, failure);
+  sendIPCMessage(window, COMMAND_FAILED_CHANNEL, failure);
 }

@@ -15,7 +15,8 @@
  *                  is there at the next start. Text that the author accepted
  *                  from a review is unsaved text of the author: a quit asks
  *                  about it, and the next load of a closed document has it
- *                  (#146).
+ *                  (#146), also when another program changed the file
+ *                  (#210).
  *
  * END HEADER
  */
@@ -33,23 +34,26 @@ import type DocumentManager from "source/app/service-providers/documents";
 import type { DocumentsUpdateContext } from "source/app/service-providers/documents";
 import type { ReviewStatus } from "source/app/service-providers/documents/review-diff-store";
 import { sha256Text } from "source/common/util/sha256";
-import { DP_EVENTS } from "source/types/common/documents";
+import {
+  DP_EVENTS,
+  REMOTE_CHANGE_KEPT_CHANNEL,
+  type RemoteChangeKeptBroadcast,
+} from "source/types/common/documents";
 import { bootDocumentManager } from "./documents-provider-seam";
 import {
   appListeners,
   appQuitRequests,
-  ipcMainHandlers,
   messageBoxes,
   sentMessagesFor,
   userData,
 } from "./headless-electron-harness.cjs";
-
-type OperationHandler = (event: unknown, input: unknown) => Promise<unknown>;
+import { invokeMain } from "./main-ipc";
 
 const REVIEWED_SOURCE = "A lattice is a free abelian group with a bilinear form.\n";
 const REVIEWED_TARGET = REVIEWED_SOURCE.replace("bilinear", "symmetric bilinear");
 const AUTHOR_PREFIX = "Definition. ";
 const DRAFT_SOURCE = "The author is typing here.\n";
+const CHANGED_ON_DISK = `${REVIEWED_SOURCE}Another program wrote this line.\n`;
 const DRAFT_EDIT = "Draft: ";
 const SIDECARS = path.join(userData, "review-sidecars");
 // The quit dialog's buttons: Save, Discard, Cancel.
@@ -143,6 +147,24 @@ describe("Documents-provider quit with an open review", function () {
     }
     assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 1);
     return { reviewId: submitted.reviewId, generation: submitted.reviewGeneration };
+  }
+
+  /**
+   * The author accepts the proposal of the closed reviewed document in the
+   * Annotations view. No file is written.
+   */
+  async function acceptInAnnotationsView(review: OpenReview): Promise<void> {
+    const accepted = await invokeMain("documents:accept-all-workspace-review-chunks", {
+      path: reviewedPath,
+      reviewId: review.reviewId,
+      expectedReviewGeneration: review.generation,
+      expectedWorkingSha256: sha256Text(REVIEWED_TARGET),
+    });
+    assert.deepEqual(
+      [accepted.ok, readFileSync(reviewedPath, "utf-8")],
+      [true, REVIEWED_SOURCE],
+      "the author accepts the proposal of the closed document, and no file is written",
+    );
   }
 
   async function editDraft(): Promise<void> {
@@ -280,6 +302,68 @@ describe("Documents-provider quit with an open review", function () {
     });
   });
 
+  describe("a saved review at the close of its tab (#57)", function () {
+    it("stays when the author discards a later edit", async function () {
+      await show(reviewedPath);
+      const { reviewId } = await propose();
+      const saved = await provider.saveFile(reviewedPath);
+      assert.equal(saved.ok, true, "the author saves the document while the review is open");
+      assert.equal(readFileSync(reviewedPath, "utf-8"), REVIEWED_TARGET);
+      await provider.applyWorkspaceTextEdits([
+        { documentPath: reviewedPath, range: { from: 0, to: 0 }, insert: AUTHOR_PREFIX },
+      ]);
+      assert.equal(provider.isModified(reviewedPath), true);
+
+      messageBoxes.answer = DISCARD;
+      assert.equal(
+        await provider.closeFile(windowId, leafId, reviewedPath),
+        true,
+        "the tab closes",
+      );
+      assert.equal(readFileSync(reviewedPath, "utf-8"), REVIEWED_TARGET, "the edit is discarded");
+
+      await restart();
+      const status = await loadedReviewStatus();
+      assert.deepEqual(
+        [status?.reviewId, status?.unresolvedChunks],
+        [reviewId, 1],
+        "the discard of the later edit leaves the saved review",
+      );
+      assert.equal(provider.readMarkdownBufferContent(reviewedPath), REVIEWED_TARGET);
+    });
+
+    it("keeps the chunk on the text that it proposed", async function () {
+      await show(reviewedPath);
+      const { reviewId } = await propose();
+      assert.equal((await provider.saveFile(reviewedPath)).ok, true);
+      await provider.applyWorkspaceTextEdits([
+        { documentPath: reviewedPath, range: { from: 0, to: 0 }, insert: AUTHOR_PREFIX },
+      ]);
+      messageBoxes.answer = DISCARD;
+      assert.equal(await provider.closeFile(windowId, leafId, reviewedPath), true);
+
+      await restart();
+      const documentId = provider.ensureDocumentId(reviewedPath);
+      const status = await loadedReviewStatus();
+      const [sidecar] = await provider.annotationQueries.listCollaborationSidecars();
+      const chunk = sidecar?.review?.suggestions[0];
+      if (status === undefined || chunk === undefined) {
+        assert.fail("the saved review returns with its chunk");
+      }
+      const rejected = await provider.decideReviewChunk(reviewId, chunk.suggestionId, "reject", {
+        expectedReviewGeneration: status.generation,
+        expectedWorkingSha256: sha256Text(REVIEWED_TARGET),
+      });
+      assert.ok(rejected.ok, "the author rejects the chunk");
+      assert.equal(
+        provider.readMarkdownBufferContent(reviewedPath),
+        REVIEWED_SOURCE,
+        "the reject removes the proposed text and nothing else",
+      );
+      assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 0);
+    });
+  });
+
   describe("a review that returns from its sidecar when the document loads", function () {
     it("reaches the window with the text that the editor loads", async function () {
       await propose();
@@ -337,21 +421,7 @@ describe("Documents-provider quit with an open review", function () {
       await restart();
       assert.deepEqual(provider.loadedDocuments, [], "the document is closed");
 
-      const acceptAll = ipcMainHandlers.get("documents:accept-all-workspace-review-chunks") as
-        | OperationHandler
-        | undefined;
-      assert.ok(acceptAll !== undefined, "the accept operation of the Annotations view exists");
-      const accepted = await acceptAll(undefined, {
-        path: reviewedPath,
-        reviewId,
-        expectedReviewGeneration: generation,
-        expectedWorkingSha256: sha256Text(REVIEWED_TARGET),
-      });
-      assert.deepEqual(
-        [(accepted as { ok: boolean }).ok, readFileSync(reviewedPath, "utf-8")],
-        [true, REVIEWED_SOURCE],
-        "the author accepts the proposal of the closed document, and no file is written",
-      );
+      await acceptInAnnotationsView({ reviewId, generation });
 
       assert.equal(
         (await loadedReviewStatus())?.state,
@@ -368,6 +438,40 @@ describe("Documents-provider quit with an open review", function () {
       const saved = await provider.saveFile(reviewedPath);
       assert.equal(saved.ok, true, "a save writes the accepted text");
       assert.equal(readFileSync(reviewedPath, "utf-8"), REVIEWED_TARGET);
+    });
+
+    it("stays the text of a closed document whose file another program changed (#210)", async function () {
+      const review = await propose();
+      await requestQuit();
+      await restart();
+      await acceptInAnnotationsView(review);
+      writeFileSync(reviewedPath, CHANGED_ON_DISK, "utf-8");
+      const window = new BrowserWindow();
+
+      await provider.getDocument(reviewedPath);
+
+      const kept = sentMessagesFor(window)
+        .filter(([channel]) => channel === REMOTE_CHANGE_KEPT_CHANNEL)
+        .map(([, payload]) => payload as RemoteChangeKeptBroadcast);
+      window.close();
+      assert.equal(
+        provider.readMarkdownBufferContent(reviewedPath),
+        REVIEWED_TARGET,
+        "the document loads with the accepted text",
+      );
+      assert.equal(provider.isModified(reviewedPath), true, "the accepted text is unsaved");
+      assert.deepEqual(
+        kept,
+        [{ filePath: reviewedPath, unsavedChanges: true, frozenReview: true }],
+        "the window is told that the file changed on disk and the document kept its text",
+      );
+      const saved = await provider.saveFile(reviewedPath);
+      assert.equal(
+        saved.ok ? undefined : saved.refusal.reason,
+        "disk-changed",
+        "a save does not write over the text of the other program",
+      );
+      assert.equal(readFileSync(reviewedPath, "utf-8"), CHANGED_ON_DISK);
     });
   });
 });

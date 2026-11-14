@@ -30,7 +30,6 @@ import {
   attach,
   createFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
   requireInitialized,
@@ -126,12 +125,12 @@ describe("assembled app: the slide of a side pane", function () {
     fixtureRoot = fixture.root;
     configDirectory = fixture.configDirectory;
     documentPath = fixture.documentPath;
-    const app = await attach(configDirectory, rendererEvents, this.timeout());
+    const app = await attach(configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     await page.setViewportSize({ width: 1500, height: 950 });
 

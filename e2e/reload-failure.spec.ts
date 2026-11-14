@@ -28,7 +28,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   makeUnreadableAndNewer,
   preserveArtifacts,
   requireInitialized,
@@ -95,12 +94,12 @@ describe("a loaded document that changed on disk and cannot be read", function (
     notePath = fixture.documentPath;
     otherPath = path.join(path.dirname(notePath), "other.md");
     await writeFile(otherPath, OTHER);
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(EDITOR).waitFor({ state: "visible", timeout: this.timeout() });
   });
 

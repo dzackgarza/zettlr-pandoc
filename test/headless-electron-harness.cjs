@@ -38,6 +38,14 @@ const userData = fs.mkdtempSync(
 );
 fs.mkdirSync(path.join(userData, "logs"), { recursive: true });
 fs.mkdirSync(path.join(userData, "lang"), { recursive: true });
+// The downloads folder of the app (`app.getPath("downloads")`), per process
+// for the same reason.
+const downloads = path.join(userData, "downloads");
+fs.mkdirSync(downloads, { recursive: true });
+// The home folder of the app (`app.getPath("home")`), per process for the
+// same reason. A spec that needs a ~/.pandoc makes it here and removes it.
+const home = path.join(userData, "home");
+fs.mkdirSync(home, { recursive: true });
 
 // Webpack's DefinePlugin puts the build date into the bundle
 // (webpack.main.config.js). The configuration template reads it.
@@ -119,6 +127,14 @@ const saveDialogs = { shown: [], answer: undefined };
  */
 const notifications = { shown: [] };
 
+/**
+ * Electron's `net` module. `online` is what `net.online` answers; a spec
+ * sets it to false for a computer without a network connection.
+ *
+ * @type {{ online: boolean }}
+ */
+const net = { online: true };
+
 class HeadlessBrowserWindow {
   constructor() {
     const messages = [];
@@ -172,7 +188,14 @@ Module._load = function (request, ...rest) {
   if (request === "electron") {
     return {
       app: {
-        getPath: (key) => (key === "userData" ? userData : os.tmpdir()),
+        getPath: (key) =>
+          key === "userData"
+            ? userData
+            : key === "downloads"
+              ? downloads
+              : key === "home"
+                ? home
+                : os.tmpdir(),
         isPackaged: false,
         getName: () => "Zettlr-Pandoc",
         getVersion: () => "0.0.0-headless-test",
@@ -222,6 +245,7 @@ Module._load = function (request, ...rest) {
             : { canceled: false, filePath: saveDialogs.answer };
         },
       },
+      net,
       shell: { openPath: async () => "" },
       nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
       nativeTheme: { shouldUseDarkColors: false },
@@ -251,10 +275,13 @@ module.exports = {
   appExitCodes,
   appListeners,
   appQuitRequests,
+  downloads,
   errorBoxes,
+  home,
   ipcMainHandlers,
   ipcMainListeners,
   messageBoxes,
+  net,
   notifications,
   saveDialogs,
   sentMessagesFor,

@@ -28,12 +28,14 @@ import {
 import { mkdtemp, rm, unlink, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
+import type { ConfigValue } from "source/app/service-providers/config/get-config-template";
 import LogProvider from "source/app/service-providers/log";
 import getDarwinMenu from "source/app/service-providers/menu/menu.darwin";
 import getWin32Menu from "source/app/service-providers/menu/menu.win32";
 import type {
   MenuCommands,
   MenuConfig,
+  MenuConfigKey,
   MenuDocuments,
   MenuLogger,
   MenuRecentDocuments,
@@ -47,13 +49,23 @@ import { sentMessagesFor } from "./headless-electron-harness.cjs";
 type MenuBuilder = typeof getWin32Menu;
 type Send = unknown[];
 
+/** The keyed settings that the menu of a spec reads. */
+const menuSettings: { [K in MenuConfigKey]: ConfigValue<K> } = {
+  "system.zoomBehavior": "editor",
+  darkMode: false,
+  fileMeta: false,
+  debug: false,
+};
+
 class TestMenuConfig implements MenuConfig {
   get(): {
     editor: { fontSize: number; snippetsFile: string; quickTexFile: string };
   };
 
-  get(key: "system.zoomBehavior" | "darkMode" | "fileMeta" | "debug"): unknown;
-  get(key?: "system.zoomBehavior" | "darkMode" | "fileMeta" | "debug"): unknown {
+  get<K extends MenuConfigKey>(key: K): ConfigValue<K>;
+  get<K extends MenuConfigKey>(
+    key?: K,
+  ): ConfigValue<K> | { editor: { fontSize: number; snippetsFile: string; quickTexFile: string } } {
     if (key === undefined) {
       return {
         editor: {
@@ -63,10 +75,13 @@ class TestMenuConfig implements MenuConfig {
         },
       };
     }
-    return key === "system.zoomBehavior" ? "editor" : false;
+    return menuSettings[key];
   }
 
-  set(_key: "darkMode" | "fileMeta" | "editor.fontSize", _value: boolean | number): void {}
+  set<K extends "darkMode" | "fileMeta" | "editor.fontSize">(
+    _key: K,
+    _value: ConfigValue<K>,
+  ): void {}
 }
 
 function findItem(
@@ -92,6 +107,7 @@ function clickMenuItem(
   id: string,
 ): {
   sent: Send[];
+  sentToLastMainWindow: Send[];
   commandCalls: Array<[string, unknown]>;
   loggedErrors: string[];
   accelerator: string | undefined;
@@ -114,7 +130,12 @@ function clickMenuItem(
       return undefined;
     },
   };
+  // The focused window is a window without panes (Preferences); the main
+  // window that the author used last is another window.
+  const focusedWindow = new BrowserWindow();
+  const lastMainWindow = new BrowserWindow();
   const windows: MenuWindows = {
+    getFirstMainWindow: () => lastMainWindow,
     showAboutWindow: () => {},
     showDefaultsWindow: () => {},
     showErrorMessage: (title: string, message: string) => {
@@ -148,14 +169,15 @@ function clickMenuItem(
   const click = item.click;
   assert.ok(click !== undefined, `the menu item ${id} must be clickable`);
 
-  const focusedWindow = new BrowserWindow();
   const menuItem = new MenuItem(item);
   const event: KeyboardEvent = { triggeredByAccelerator: true };
   click(menuItem, focusedWindow, event);
   focusedWindow.close();
+  lastMainWindow.close();
 
   return {
     sent: sentMessagesFor(focusedWindow),
+    sentToLastMainWindow: sentMessagesFor(lastMainWindow),
     commandCalls,
     loggedErrors,
     accelerator: item.accelerator,
@@ -169,18 +191,20 @@ describe("File ▸ Previous/Next file menu navigation", function () {
   ];
 
   for (const [platform, getMenu] of platforms) {
-    it(`${platform}: Previous file moves the focused pane back`, function () {
+    it(`${platform}: Previous file moves the main window that the author used last back`, function () {
       assert.deepEqual(clickMenuItem(getMenu, "menu.previous_file"), {
-        sent: [["shortcut", "navigate-back"]],
+        sent: [],
+        sentToLastMainWindow: [["shortcut", "navigate-back"]],
         commandCalls: [],
         loggedErrors: [],
         accelerator: "CmdOrCtrl+Alt+-",
       });
     });
 
-    it(`${platform}: Next file moves the focused pane forward`, function () {
+    it(`${platform}: Next file moves the main window that the author used last forward`, function () {
       assert.deepEqual(clickMenuItem(getMenu, "menu.next_file"), {
-        sent: [["shortcut", "navigate-forward"]],
+        sent: [],
+        sentToLastMainWindow: [["shortcut", "navigate-forward"]],
         commandCalls: [],
         loggedErrors: [],
         accelerator: "CmdOrCtrl+Shift+-",
@@ -248,6 +272,7 @@ describe("File ▸ Recent files", function () {
     const documents = await bootDocumentManager([workspace]);
     const shown: Array<{ title: string; message: string }> = [];
     const windows: MenuWindows = {
+      getFirstMainWindow: () => undefined,
       showAboutWindow: () => {},
       showDefaultsWindow: () => {},
       showLogWindow: () => {},

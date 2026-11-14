@@ -27,7 +27,7 @@ export interface DirDeleteServices {
 
 export default class DirDelete extends ZettlrCommand<DirDeleteServices> {
   constructor(app: DirDeleteServices) {
-    super(app, "dir-delete");
+    super(app);
   }
 
   /**

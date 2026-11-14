@@ -245,83 +245,80 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
     .catch((err) => reportError(err));
 
   // ... and we listen to subsequent changes.
-  ipcRenderer.on(
-    "documents-update",
-    (evt, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
-      const { event, context } = payload;
-      // A file has been saved or modified
-      if (event === DP_EVENTS.CHANGE_FILE_STATUS && context.status === "modification") {
-        ipcRenderer
-          .invoke("documents-provider", { command: "get-file-modification-status" })
-          .then((modifiedFiles: string[]) => {
-            modifiedDocuments.value = modifiedFiles;
-          })
-          .catch((err) => reportError(err));
-      } else {
-        // We only tend to events that pertain this window
-        if (context.windowId !== windowId) {
-          return; // None of our business
-        }
-        captureRangeNavigation(event, context);
-        pendingTreeUpdates.value += 1;
-
-        // Something in the document status has changed, here we simply pull in
-        // the full config as it is in the main process, and dispatch it into
-        // the worker who then has the task to apply a delta update with as few
-        // changes as possible.
-        ipcRenderer
-          .invoke("documents-provider", { command: "retrieve-tab-config", payload: { windowId } })
-          .then((treedata: LeafNodeJSON | BranchNodeJSON) => {
-            // The task for this function is to apply the minimum necessary delta update
-            // for the document tree. Due to Vue's happy reactivity, we have to maintain
-            // two states: One for only the structure, and one only for the data. Since
-            // the tree that's coming from main has both structure and data, we have to
-            // disentangle both here and apply delta updates to each structure based on
-            // the events the document provider is emitting here.
-
-            switch (event) {
-              // At the beginning, and whenever the structure of the tree changes, we have
-              // to apply a full update.
-              case DP_EVENTS.LEAF_CLOSED:
-              case DP_EVENTS.NEW_LEAF:
-                recoverState(paneStructure, paneData, lastLeafId, treedata);
-                break;
-              // Events that pertain only to one leaf: no structural change
-              case DP_EVENTS.ACTIVE_FILE:
-              case DP_EVENTS.CHANGE_FILE_STATUS:
-              case DP_EVENTS.OPEN_FILE:
-              case DP_EVENTS.CLOSE_FILE:
-              case DP_EVENTS.FILES_SORTED:
-                copyDelta(paneData, treedata, context);
-                break;
-            }
-
-            // NOTE: We must ensure the paneData is correct before we potentially
-            // set the leaf IDs
-            if (event === DP_EVENTS.ACTIVE_FILE) {
-              const { leafId, filePath } = context;
-              lastLeafId.value = leafId;
-              const leaf = paneData.value.find((leaf) => leaf.id === lastLeafId.value);
-              if (leaf?.activeFile != null && filePath !== undefined) {
-                lastLeafActiveFile.value = leaf.activeFile;
-                // If applicable, uncollapse the parent directory(s).
-                maybeUncollapseDirectories(leaf.activeFile.path);
-              } else {
-                lastLeafActiveFile.value = undefined;
-                // The editor that published these values closed: no
-                // document is active, so the window shows none.
-                windowStateStore.activeDocumentInfo = undefined;
-                windowStateStore.tableOfContents = undefined;
-              }
-            }
-          })
-          .catch((err) => reportError(err))
-          .finally(() => {
-            pendingTreeUpdates.value -= 1;
-          });
+  ipcRenderer.on("documents-update", (evt, payload) => {
+    const { event, context } = payload;
+    // A file has been saved or modified
+    if (event === DP_EVENTS.CHANGE_FILE_STATUS && context.status === "modification") {
+      ipcRenderer
+        .invoke("documents-provider", { command: "get-file-modification-status" })
+        .then((modifiedFiles: string[]) => {
+          modifiedDocuments.value = modifiedFiles;
+        })
+        .catch((err) => reportError(err));
+    } else {
+      // We only tend to events that pertain this window
+      if (context.windowId !== windowId) {
+        return; // None of our business
       }
-    },
-  );
+      captureRangeNavigation(event, context);
+      pendingTreeUpdates.value += 1;
+
+      // Something in the document status has changed, here we simply pull in
+      // the full config as it is in the main process, and dispatch it into
+      // the worker who then has the task to apply a delta update with as few
+      // changes as possible.
+      ipcRenderer
+        .invoke("documents-provider", { command: "retrieve-tab-config", payload: { windowId } })
+        .then((treedata: LeafNodeJSON | BranchNodeJSON) => {
+          // The task for this function is to apply the minimum necessary delta update
+          // for the document tree. Due to Vue's happy reactivity, we have to maintain
+          // two states: One for only the structure, and one only for the data. Since
+          // the tree that's coming from main has both structure and data, we have to
+          // disentangle both here and apply delta updates to each structure based on
+          // the events the document provider is emitting here.
+
+          switch (event) {
+            // At the beginning, and whenever the structure of the tree changes, we have
+            // to apply a full update.
+            case DP_EVENTS.LEAF_CLOSED:
+            case DP_EVENTS.NEW_LEAF:
+              recoverState(paneStructure, paneData, lastLeafId, treedata);
+              break;
+            // Events that pertain only to one leaf: no structural change
+            case DP_EVENTS.ACTIVE_FILE:
+            case DP_EVENTS.CHANGE_FILE_STATUS:
+            case DP_EVENTS.OPEN_FILE:
+            case DP_EVENTS.CLOSE_FILE:
+            case DP_EVENTS.FILES_SORTED:
+              copyDelta(paneData, treedata, context);
+              break;
+          }
+
+          // NOTE: We must ensure the paneData is correct before we potentially
+          // set the leaf IDs
+          if (event === DP_EVENTS.ACTIVE_FILE) {
+            const { leafId, filePath } = context;
+            lastLeafId.value = leafId;
+            const leaf = paneData.value.find((leaf) => leaf.id === lastLeafId.value);
+            if (leaf?.activeFile != null && filePath !== undefined) {
+              lastLeafActiveFile.value = leaf.activeFile;
+              // If applicable, uncollapse the parent directory(s).
+              maybeUncollapseDirectories(leaf.activeFile.path);
+            } else {
+              lastLeafActiveFile.value = undefined;
+              // The editor that published these values closed: no
+              // document is active, so the window shows none.
+              windowStateStore.activeDocumentInfo = undefined;
+              windowStateStore.tableOfContents = undefined;
+            }
+          }
+        })
+        .catch((err) => reportError(err))
+        .finally(() => {
+          pendingTreeUpdates.value -= 1;
+        });
+    }
+  });
 
   ipcRenderer.on("shortcut", (event, command) => {
     if (command === "toggle-distraction-free") {

@@ -112,7 +112,7 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
     await writeFile(path.join(workspace, "other.md"), OTHER, "utf8");
     await writeFile(path.join(workspace, "clean.md"), CLEAN, "utf8");
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;

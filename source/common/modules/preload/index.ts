@@ -84,7 +84,7 @@ contextBridge.exposeInMainWorld("getCitationCallback", function (database: Citat
     const response = ipcRenderer.sendSync("citeproc-provider", {
       command: "get-citation-sync",
       payload: { database, citations, composite },
-    } as CiteprocProviderIPCAPI) as CiteprocSyncCitationResponse;
+    } satisfies CiteprocProviderIPCAPI) as CiteprocSyncCitationResponse;
     if (!response.ok) {
       throw new Error(response.error);
     }

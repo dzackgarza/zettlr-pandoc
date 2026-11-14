@@ -40,13 +40,18 @@ import {
   incrementalNodeDecorations,
   type SourceRange,
 } from "@dzack/pandoc-editor/util/incremental-node-decorations";
+import { MATH_DELIMITERS } from "@dzack/pandoc-editor/util/math-delimiters";
 import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
 } from "@dzack/pandoc-editor/util/range-in-preview-suppression";
 import { rangeInSelection } from "@dzack/pandoc-editor/util/range-in-selection";
 import { visitVisibleSyntaxNodes } from "@dzack/pandoc-editor/util/visible-syntax-nodes";
-import { divModelFromNode, type PandocDivModel } from "source/common/pandoc-util/pandoc-div-model";
+import {
+  divIsUnclosed,
+  divModelFromNode,
+  type PandocDivModel,
+} from "source/common/pandoc-util/pandoc-div-model";
 import { parsePandocAttributes } from "source/common/pandoc-util/parse-pandoc-attributes";
 import { reportError } from "source/common/util/error-reporting";
 import { mathJaxToElem } from "source/common/util/mathtex-to-html";
@@ -123,7 +128,15 @@ function isEscapedAt(text: string, index: number): boolean {
   return backslashes % 2 === 1;
 }
 
-/** Split the small inline-math subset useful in authored div titles. */
+/**
+ * The math delimiters of a div title. The amsthm filter puts the title into
+ * the optional argument of the theorem environment, where TeX reads inline
+ * math; a display delimiter there stays text.
+ */
+const TITLE_MATH_DELIMITERS = MATH_DELIMITERS.filter((pair) => !pair.display);
+const DISPLAY_OPENERS = MATH_DELIMITERS.filter((pair) => pair.display).map((pair) => pair.open);
+
+/** Split a div title into its text and its inline math. */
 function inlineTitleParts(title: string): InlineTitlePart[] {
   const parts: InlineTitlePart[] = [];
   let textStart = 0;
@@ -136,18 +149,23 @@ function inlineTitleParts(title: string): InlineTitlePart[] {
   };
 
   while (cursor < title.length) {
-    let open = "";
-    let close = "";
-    if (title.startsWith("\\(", cursor) && !isEscapedAt(title, cursor)) {
-      open = "\\(";
-      close = "\\)";
-    } else if (title[cursor] === "$" && !isEscapedAt(title, cursor) && title[cursor + 1] !== "$") {
-      open = "$";
-      close = "$";
-    } else {
+    if (isEscapedAt(title, cursor)) {
       cursor++;
       continue;
     }
+    const displayOpen = DISPLAY_OPENERS.find((open) => title.startsWith(open, cursor));
+    if (displayOpen !== undefined) {
+      cursor += displayOpen.length;
+      continue;
+    }
+    const pair = TITLE_MATH_DELIMITERS.find((candidate) =>
+      title.startsWith(candidate.open, cursor),
+    );
+    if (pair === undefined) {
+      cursor++;
+      continue;
+    }
+    const { open, close } = pair;
 
     let closing = cursor + open.length;
     while (closing < title.length) {
@@ -270,7 +288,10 @@ function collectVisibleDivs(view: EditorView): PandocDivModel[] {
       const model = divModelFromNode(view.state.doc, node.node);
       if (model !== undefined) {
         divs.set(key, model);
-      } else if (syntaxTreeAvailable(view.state, view.state.doc.length)) {
+      } else if (
+        !divIsUnclosed(node.node) &&
+        syntaxTreeAvailable(view.state, view.state.doc.length)
+      ) {
         reportUnmodeledDiv(view, node.from, node.to);
       }
     }
@@ -404,7 +425,7 @@ function divHeaderDecorations(state: EditorState, from: number, to: number): Ran
       }
       const div = divModelFromNode(state.doc, node.node);
       if (div === undefined) {
-        if (syntaxTreeAvailable(state, state.doc.length)) {
+        if (!divIsUnclosed(node.node) && syntaxTreeAvailable(state, state.doc.length)) {
           reportError(
             "Pandoc fenced div at " +
               String(node.from) +
@@ -433,10 +454,10 @@ function divHeaderDecorations(state: EditorState, from: number, to: number): Ran
  * The header of a div depends on a selection anywhere in the div, so the reach
  * of a selection range is the start of each div that the range touches.
  */
-function divHeaderReach(state: EditorState): SourceRange[] {
+function divHeaderReach(state: EditorState, ranges: readonly SourceRange[]): SourceRange[] {
   const starts: SourceRange[] = [];
   const tree = syntaxTree(state);
-  for (const range of state.selection.ranges) {
+  for (const range of ranges) {
     tree.iterate({
       from: range.from,
       to: range.to,
@@ -458,8 +479,22 @@ const pandocDivHeaderField = incrementalNodeDecorations({
       after.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
     );
   },
-  reach: divHeaderReach,
-  reachChanged: (before, after) => before.selection !== after.selection,
+  // The start of each div that the old or the new selection touches.
+  changedReach: (transaction) => {
+    if (
+      !transaction.docChanged &&
+      transaction.startState.selection === transaction.state.selection
+    ) {
+      return [];
+    }
+    const changes = transaction.changes;
+    return [
+      ...divHeaderReach(transaction.startState, transaction.startState.selection.ranges).map(
+        (start) => ({ from: changes.mapPos(start.from, -1), to: changes.mapPos(start.to, 1) }),
+      ),
+      ...divHeaderReach(transaction.state, transaction.state.selection.ranges),
+    ];
+  },
 });
 
 function createDivDecorations(view: EditorView): RangeSet<BlockWrapper> {

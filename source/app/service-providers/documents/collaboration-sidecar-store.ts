@@ -48,6 +48,7 @@
 
 import { sha256Text } from "@common/util/sha256";
 import Ajv from "ajv";
+import { Mutex } from "async-mutex";
 import { promises as fs } from "fs";
 import path from "path";
 import writeFileAtomic from "write-file-atomic";
@@ -67,12 +68,12 @@ import {
 const SIDECAR_EXTENSION = ".json";
 
 /**
- * The sidecar file for a document. Keyed by the hash of the canonical
- * (resolved) path, so the workspace layout never leaks into app data and no
- * character of the document path needs escaping.
+ * The sidecar file for a document. Keyed by the hash of the document path,
+ * so the workspace layout never leaks into app data and no character of the
+ * document path needs escaping. A document path is the real path of its
+ * file (`openFile`, `rootPathsOnDisk`), so the names of one file that
+ * symbolic links give reach one sidecar.
  */
-// ponytail: path.resolve is the canonical form — symlinked aliases of one
-// file get distinct sidecars. Move to realpath if that ever bites.
 export function collaborationSidecarFilePath(directory: string, documentPath: string): string {
   return path.join(directory, `${sha256Text(path.resolve(documentPath))}${SIDECAR_EXTENSION}`);
 }
@@ -384,6 +385,14 @@ export class CollaborationSidecarUnreadableError extends Error {
   }
 }
 
+function reviewKey(reviewId: string): string {
+  return `review:${reviewId}`;
+}
+
+function packetKey(packetId: string): string {
+  return `packet:${packetId}`;
+}
+
 export class CollaborationSidecarStore {
   /**
    * The files whose last read in this session gave a sidecar or no file.
@@ -391,13 +400,78 @@ export class CollaborationSidecarStore {
    */
   private readonly examined = new Set<string>();
 
+  /**
+   * One lock for each sidecar file. Each operation on a file runs after the
+   * operations that were called on it before, so the file holds the state of
+   * the last call. write-file-atomic orders only its own writes: a removal
+   * of a sidecar without state, a read before a write and a move aside are
+   * not in its queue.
+   */
+  private readonly locks = new Map<string, Mutex>();
+
+  /**
+   * The keys of each sidecar file (its review and the packets of that
+   * review), and the file of each key. A sidecar file is named by its
+   * document, not by its review. The store is the one writer of its
+   * directory: the directory is in userData, and one instance of the app
+   * holds userData (`requestSingleInstanceLock`). So after one inventory the
+   * maps name the keys of each readable file, and each read, write, removal
+   * and move aside keeps them so.
+   */
+  private readonly keysOfFile = new Map<string, string[]>();
+  private readonly fileOfKey = new Map<string, string>();
+  /** Whether an inventory read the directory in this session. */
+  private indexed = false;
+  /** The files whose last read failed; a review can be in each of them. */
+  private readonly unreadableFiles = new Set<string>();
+
   constructor(private readonly directory: string) {}
+
+  /** The file holds `sidecar` now, or no sidecar for undefined. */
+  private recordContent(file: string, sidecar: CollaborationSidecarData | undefined): void {
+    this.forgetFile(file);
+    this.unreadableFiles.delete(file);
+    if (sidecar === undefined || sidecar.review === null) {
+      return;
+    }
+    const keys = [
+      reviewKey(sidecar.review.reviewId),
+      ...sidecar.review.packets.map((packet) => packetKey(packet.packetId)),
+    ];
+    this.keysOfFile.set(file, keys);
+    for (const key of keys) {
+      this.fileOfKey.set(key, file);
+    }
+  }
+
+  private recordUnreadable(file: string): void {
+    this.forgetFile(file);
+    this.unreadableFiles.add(file);
+  }
+
+  private forgetFile(file: string): void {
+    const keys = this.keysOfFile.get(file);
+    if (keys === undefined) {
+      return;
+    }
+    for (const key of keys) {
+      this.fileOfKey.delete(key);
+    }
+    this.keysOfFile.delete(file);
+  }
+
+  private exclusive<T>(target: string, run: () => Promise<T>): Promise<T> {
+    let lock = this.locks.get(target);
+    if (lock === undefined) {
+      lock = new Mutex();
+      this.locks.set(target, lock);
+    }
+    return lock.runExclusive(run);
+  }
 
   /**
    * Write a sidecar through. write-file-atomic does the temporary file, the
-   * fsync, and the rename, and already serializes concurrent writes to the
-   * same path — wrapping it in a queue of our own would only add a second
-   * ordering to reason about.
+   * fsync, and the rename.
    *
    * A sidecar carrying neither an open review nor any annotation has
    * nothing to restore, so it is deleted instead of written: this is the one
@@ -406,14 +480,17 @@ export class CollaborationSidecarStore {
    */
   async write(sidecar: CollaborationSidecarData): Promise<void> {
     const target = collaborationSidecarFilePath(this.directory, sidecar.documentPath);
-    await this.examine(target);
-    await this.store(sidecar, target);
+    await this.exclusive(target, async () => {
+      await this.examine(target);
+      await this.store(sidecar, target);
+    });
   }
 
   /** Runs after the file at `target` was read: see `examined`. */
   private async store(sidecar: CollaborationSidecarData, target: string): Promise<void> {
     if (sidecar.review === null && sidecar.annotations.items.length === 0) {
       await fs.rm(target, { force: true });
+      this.recordContent(target, undefined);
       return;
     }
     assertCollaborationSidecarSemantics(sidecar, target);
@@ -422,6 +499,7 @@ export class CollaborationSidecarStore {
       encoding: "utf8",
       fsync: true,
     });
+    this.recordContent(target, sidecar);
   }
 
   /**
@@ -443,7 +521,8 @@ export class CollaborationSidecarStore {
    * CollaborationSidecarUnreadableError.
    */
   async read(documentPath: string): Promise<CollaborationSidecarData | undefined> {
-    return await this.readFile(collaborationSidecarFilePath(this.directory, documentPath));
+    const target = collaborationSidecarFilePath(this.directory, documentPath);
+    return await this.exclusive(target, () => this.readFile(target));
   }
 
   private async readFile(target: string): Promise<CollaborationSidecarData | undefined> {
@@ -455,8 +534,10 @@ export class CollaborationSidecarStore {
     } catch (error) {
       if (isMissingFile(error)) {
         this.examined.add(target);
+        this.recordContent(target, undefined);
         return undefined;
       }
+      this.recordUnreadable(target);
       throw new CollaborationSidecarUnreadableError(
         [{ file: target, cause: error instanceof Error ? error.message : String(error) }],
         { cause: error },
@@ -467,14 +548,71 @@ export class CollaborationSidecarStore {
       await this.store(decoded.sidecar, target);
     }
     this.examined.add(target);
+    this.recordContent(target, decoded.sidecar);
     return decoded.sidecar;
+  }
+
+  /**
+   * The sidecar that holds the review `reviewId`, or undefined. A lookup
+   * reads the one file of the review, and the read confirms the id. Only
+   * the first lookup of a session, and a lookup while a file cannot be
+   * read, reads each file. A file that cannot be read refuses the lookup
+   * only when no readable file holds the review, as the review can be in it.
+   */
+  async findReview(reviewId: string): Promise<CollaborationSidecarData | undefined> {
+    return await this.findHolder(
+      reviewKey(reviewId),
+      (sidecar) => sidecar.review?.reviewId === reviewId,
+    );
+  }
+
+  /**
+   * The sidecar whose review holds the packet `packetId`, or undefined. The
+   * reads are those of `findReview`.
+   */
+  async findReviewOfPacket(packetId: string): Promise<CollaborationSidecarData | undefined> {
+    return await this.findHolder(
+      packetKey(packetId),
+      (sidecar) => sidecar.review?.packets.some((packet) => packet.packetId === packetId) === true,
+    );
+  }
+
+  private async findHolder(
+    key: string,
+    holds: (sidecar: CollaborationSidecarData) => boolean,
+  ): Promise<CollaborationSidecarData | undefined> {
+    const known = this.fileOfKey.get(key);
+    if (known !== undefined) {
+      const sidecar = await this.exclusive(known, () => this.readFile(known));
+      if (sidecar !== undefined && holds(sidecar)) {
+        return sidecar;
+      }
+    }
+    if (this.indexed && this.unreadableFiles.size === 0) {
+      return undefined;
+    }
+    const { sidecars, unreadable } = await this.inventory();
+    const holder = sidecars.find(holds);
+    if (holder !== undefined) {
+      return holder;
+    }
+    if (unreadable.length > 0) {
+      throw new CollaborationSidecarUnreadableError(unreadable);
+    }
+    return undefined;
   }
 
   /** Remove a document's sidecar. Absent is fine — deletion is idempotent. */
   async delete(documentPath: string): Promise<void> {
     const target = collaborationSidecarFilePath(this.directory, documentPath);
+    await this.exclusive(target, () => this.remove(target));
+  }
+
+  /** Runs while the caller holds the lock of `target`. */
+  private async remove(target: string): Promise<void> {
     await this.examine(target);
     await fs.rm(target, { force: true });
+    this.recordContent(target, undefined);
   }
 
   /**
@@ -488,20 +626,33 @@ export class CollaborationSidecarStore {
    * a sidecar that was at the new path described the file that the move
    * replaced, so a moved document with no sidecar leaves none there. When
    * that sidecar cannot be read, its bytes are kept: it is moved aside.
+   *
+   * The move holds the locks of both files, in the order of their names, so
+   * two moves that share a file wait for each other and do not deadlock.
    */
   async rename(oldPath: string, newPath: string): Promise<void> {
-    const sidecar = await this.read(oldPath);
+    const source = collaborationSidecarFilePath(this.directory, oldPath);
     const replaced = collaborationSidecarFilePath(this.directory, newPath);
-    const [reading] = await Promise.allSettled([this.readFile(replaced)]);
-    if (reading.status === "rejected") {
-      await this.setAside(replaced);
-    }
-    if (sidecar === undefined) {
-      await this.delete(newPath);
+    if (source === replaced) {
       return;
     }
-    await this.write({ ...sidecar, documentPath: newPath });
-    await this.delete(oldPath);
+    const [first, second] = [source, replaced].sort();
+    await this.exclusive(first, () =>
+      this.exclusive(second, async () => {
+        const sidecar = await this.readFile(source);
+        const [reading] = await Promise.allSettled([this.readFile(replaced)]);
+        if (reading.status === "rejected") {
+          await this.moveAside(replaced);
+        }
+        if (sidecar === undefined) {
+          await this.remove(replaced);
+          return;
+        }
+        await this.examine(replaced);
+        await this.store({ ...sidecar, documentPath: newPath }, replaced);
+        await this.remove(source);
+      }),
+    );
   }
 
   /**
@@ -528,6 +679,7 @@ export class CollaborationSidecarStore {
       names = await fs.readdir(this.directory);
     } catch (error) {
       if (isMissingFile(error)) {
+        this.indexed = true;
         return { sidecars: [], unreadable: [] };
       }
       throw error;
@@ -535,7 +687,9 @@ export class CollaborationSidecarStore {
     const files = names
       .filter((name) => name.endsWith(SIDECAR_EXTENSION))
       .map((name) => path.join(this.directory, name));
-    const readings = await Promise.allSettled(files.map((file) => this.readFile(file)));
+    const readings = await Promise.allSettled(
+      files.map((file) => this.exclusive(file, () => this.readFile(file))),
+    );
     const inventory: CollaborationSidecarInventory = { sidecars: [], unreadable: [] };
     readings.forEach((reading, index) => {
       if (reading.status === "rejected") {
@@ -548,6 +702,7 @@ export class CollaborationSidecarStore {
         inventory.sidecars.push(reading.value);
       }
     });
+    this.indexed = true;
     return inventory;
   }
 
@@ -561,8 +716,14 @@ export class CollaborationSidecarStore {
     if (path.dirname(file) !== this.directory || !file.endsWith(SIDECAR_EXTENSION)) {
       throw new Error(`${file} is not a collaboration sidecar of ${this.directory}`);
     }
+    return await this.exclusive(file, () => this.moveAside(file));
+  }
+
+  /** Runs while the caller holds the lock of `file`. */
+  private async moveAside(file: string): Promise<string> {
     const aside = `${file}.set-aside-${Date.now()}`;
     await fs.rename(file, aside);
+    this.recordContent(file, undefined);
     return aside;
   }
 }

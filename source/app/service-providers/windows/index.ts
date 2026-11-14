@@ -17,9 +17,10 @@
 
 import { trans } from "@common/i18n-main";
 import PersistentDataContainer from "@common/modules/persistent-data-container";
+import { replyIPCMessage, sendIPCMessage } from "@common/util/broadcast-ipc-message";
 import { DP_EVENTS } from "@dts/common/documents";
-import type { Cloneable, IpcArgument } from "@dts/common/ipc";
 import type { PreferenceNavigationTarget } from "@dts/common/preferences";
+import type { IpcBroadcastArgs, IpcBroadcastContracts } from "@dts/renderer/ipc-bridge";
 import { getCLIArgument } from "@providers/cli-provider";
 import type ConfigProvider from "@providers/config";
 import type DocumentManager from "@providers/documents";
@@ -30,6 +31,8 @@ import { app, BrowserWindow, type FileFilter, ipcMain, screen } from "electron";
 import EventEmitter from "events";
 import path from "path";
 import { checkedEnvironment } from "source/app/util/environment-check";
+import { handleBareChannel, handleFixedChannel } from "source/app/util/handle-ipc-channel";
+import { showRefusalInWindow } from "source/app/util/show-refusal-in-window";
 import { showStoreWriteFailure } from "source/app/util/show-store-write-failure";
 import type { PasteModalResult } from "../commands/save-image-from-clipboard";
 import createAboutWindow from "./create-about-window";
@@ -71,8 +74,6 @@ export type CloseAllIPCContract = {
   response: boolean;
 };
 
-export type CloseAllIPCAPI = CloseAllIPCContract["request"];
-
 // 'request-dir' takes no message at all, so it owns a response type only.
 export type RequestDirIPCResponse = string[];
 
@@ -89,6 +90,18 @@ export type WindowControlsIPCAPI = IPCAPI<{
   "inspect-element": { x: number; y: number };
   "drag-start": { filePath: string };
 }>;
+
+/**
+ * A `window-controls` message to a window: the direction of the traffic
+ * lights, whether the window is maximised, and whether it is in full screen.
+ */
+export type WindowControlsBroadcast = {
+  command: "traffic-lights-rtl" | "get-maximised-status" | "fullscreen";
+  payload: boolean;
+};
+
+/** A `jump-to-line` message: the main window shows this line of this file. */
+export type JumpToLineBroadcast = { filePath: string; line: number };
 
 export default class WindowProvider extends ProviderContract {
   private readonly _mainWindows: Record<string, BrowserWindow>;
@@ -201,7 +214,7 @@ export default class WindowProvider extends ProviderContract {
           break;
         // This event is only important for macOS
         case "get-traffic-lights-rtl":
-          event.reply("window-controls", {
+          replyIPCMessage(event, "window-controls", {
             command: "traffic-lights-rtl",
             payload: this._hasRTLLocale, // if RTL then also RTL traffic lights
           });
@@ -244,19 +257,18 @@ export default class WindowProvider extends ProviderContract {
      * user for files corresponding to the given filters, and then return a list
      * of those selected.
      */
-    ipcMain.handle("request-files", async (event, message: RequestFilesIPCAPI) => {
+    handleFixedChannel("request-files", async (_event, message) => {
       const focusedWindow = BrowserWindow.getFocusedWindow();
       // The client only can choose what and how much it wants to get
       return await this.askFile(message.filters, message.multiSelection, focusedWindow);
     });
 
-    ipcMain.handle("request-dir", async (_event, _message) => {
+    handleBareChannel("request-dir", async () => {
       const focusedWindow = BrowserWindow.getFocusedWindow();
       return await this.askDir(trans("Open project folder"), focusedWindow);
     });
 
-    ipcMain.handle("close-all", async (event, message: CloseAllIPCAPI) => {
-      const { rootType } = message;
+    handleFixedChannel("close-all", async (_event, { rootType }) => {
       return await this.shouldCloseAll(rootType);
     });
 
@@ -425,6 +437,18 @@ export default class WindowProvider extends ProviderContract {
       const closeAgain = async (): Promise<void> => {
         window.close();
       };
+      // A close that fails keeps the window: its documents are in an unknown
+      // state, and a close without them can lose text. The window shows the
+      // cause, so the author knows why it stays (#57).
+      const showCloseFailure = (err: unknown): void => {
+        this._logger.error("[WindowManager] Could not close the window", err);
+        const cause = err instanceof Error ? err.message : String(err);
+        showRefusalInWindow(
+          window.webContents,
+          "close-window",
+          new Error(trans("The window was not closed: %s", cause)),
+        );
+      };
       if (!this._documents.isClean(key)) {
         event.preventDefault();
         this._documents
@@ -435,9 +459,7 @@ export default class WindowProvider extends ProviderContract {
               window.close();
             }
           })
-          .catch((err) => {
-            this._logger.error("[WindowManager] Could not ask user to close window", err);
-          });
+          .catch(showCloseFailure);
       } else {
         event.preventDefault();
         this._documents
@@ -448,9 +470,7 @@ export default class WindowProvider extends ProviderContract {
               window.close();
             }
           })
-          .catch((err) => {
-            this._logger.error("[WindowManager] Could not close clean window", err);
-          });
+          .catch(showCloseFailure);
       }
     });
 
@@ -630,7 +650,7 @@ export default class WindowProvider extends ProviderContract {
       };
 
       this._updateWindowPosition(stateId, newPosition);
-      window.webContents.send("window-controls", {
+      sendIPCMessage(window.webContents, "window-controls", {
         command: "get-maximised-status",
         payload: window.isMaximized(),
       });
@@ -746,7 +766,7 @@ export default class WindowProvider extends ProviderContract {
     if (window === undefined) {
       throw new Error(`No main window ${windowId}`);
     }
-    window.webContents.send("jump-to-line", { filePath, line });
+    sendIPCMessage(window.webContents, "jump-to-line", { filePath, line });
   }
 
   /**
@@ -754,10 +774,10 @@ export default class WindowProvider extends ProviderContract {
    * renderer. When none of them has one, the main window that the author
    * used last gets the message.
    */
-  tellMainWindows<A extends readonly IpcArgument[]>(
+  tellMainWindows<C extends keyof IpcBroadcastContracts>(
     windowIds: readonly string[],
-    channel: string,
-    ...args: A & Cloneable<A>
+    channel: C,
+    ...args: IpcBroadcastArgs<C>
   ): void {
     tellMainWindows(
       windowIds.map((windowId) => this._mainWindows[windowId]),
@@ -852,7 +872,7 @@ export default class WindowProvider extends ProviderContract {
   showPreferences(target?: PreferenceNavigationTarget): void {
     const navigate = (): void => {
       if (target !== undefined && this._preferences !== null && !this._preferences.isDestroyed()) {
-        this._preferences.webContents.send("preferences-navigate", target);
+        sendIPCMessage(this._preferences.webContents, "preferences-navigate", target);
       }
     };
     if (this._preferences === null) {

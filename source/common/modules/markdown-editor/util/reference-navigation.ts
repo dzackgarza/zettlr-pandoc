@@ -40,7 +40,6 @@ import {
 } from "@dts/common/references";
 import { NODES } from "@dzack/pandoc-editor/parser/citation-parser";
 import type { SyntaxNode } from "@lezer/common";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { editorMetadataFacet } from "../plugins/editor-metadata";
 import { workspaceReferencesField } from "../plugins/workspace-references-field";
 import { configField } from "./configuration";
@@ -108,10 +107,7 @@ function currentDocumentPath(view: EditorView): string | null {
  * the state; editors without a document authority (e.g. the isolated probe
  * editors) define generation 0.
  */
-export function captureDocumentLocation(
-  view: EditorView,
-  documentPath: string,
-): DocumentLocation | null {
+export function captureDocumentLocation(view: EditorView, documentPath: string): DocumentLocation {
   const main = view.state.selection.main;
 
   const folds: SourceRange[] = [];
@@ -121,21 +117,14 @@ export function captureDocumentLocation(
     iterator.next();
   }
 
-  let sourceGeneration = 0;
-  try {
-    sourceGeneration = getSyncedVersion(view.state);
-  } catch (err) {
-    // The state carries no collab field: this editor has no document
-    // authority, and its source generation is defined as 0.
-    sourceGeneration = 0;
-  }
-
   return {
     documentPath,
     selection: { anchor: main.anchor, head: main.head },
     scrollTop: view.scrollDOM.scrollTop,
     folds,
-    sourceGeneration,
+    // Each editor of a document has the collab field of its document
+    // authority (`hookDocumentAuthority`).
+    sourceGeneration: getSyncedVersion(view.state),
   };
 }
 
@@ -220,9 +209,6 @@ function resolveCitationIntent(
 
   const { definition } = resolution;
   const source = captureDocumentLocation(view, documentPath);
-  if (source === null) {
-    return null;
-  }
 
   return {
     kind: "reference",
@@ -278,9 +264,6 @@ function resolveFootnoteIntent(
   }
 
   const source = captureDocumentLocation(view, documentPath);
-  if (source === null) {
-    return null;
-  }
 
   return {
     kind: "footnote",
@@ -361,7 +344,7 @@ export function followReferenceNavigationIntent(
         targetRange: intent.target.range,
         sourceLocation: intent.source,
       },
-    } as DocumentManagerIPCAPI)
+    })
     .catch((error: unknown) => {
       reportError("Following the reference failed", error);
     });
@@ -369,11 +352,38 @@ export function followReferenceNavigationIntent(
 }
 
 /**
- * Requests a per-pane history navigation from the documents provider,
- * sending the current DocumentLocation so the provider can stamp the current
- * history entry before moving (issue #1 Phase 5). Returns false when this
- * view carries no editor metadata (window/leaf), i.e. outside the main
- * editor.
+ * Moves one pane one step through its session history. Each entry point (the
+ * keys in the editor, the application menu, the mouse buttons, the swipe)
+ * comes here. The request carries the place of the caret in `view`, the
+ * editor that the pane shows, and the documents provider stamps it on the
+ * current entry before it moves, so the opposite move restores it. A pane
+ * that shows no editor (an image, a PDF) or a document without a path sends
+ * no place. A refused request shows one closable error message.
+ */
+export function navigatePaneHistory(
+  windowId: string,
+  leafId: string,
+  command: "navigate-back" | "navigate-forward",
+  view: EditorView | null,
+): void {
+  const documentPath = view === null ? null : currentDocumentPath(view);
+  const location =
+    view === null || documentPath === null
+      ? undefined
+      : captureDocumentLocation(view, documentPath);
+  void runRecoverably(
+    async () =>
+      await window.ipc.invoke("documents-provider", {
+        command,
+        payload: { windowId, leafId, location },
+      }),
+    trans("History navigation"),
+  );
+}
+
+/**
+ * The keys in the editor move the pane of the editor. Returns false outside
+ * the main editor: that view carries no window and pane.
  */
 function requestHistoryNavigation(
   view: EditorView,
@@ -383,20 +393,7 @@ function requestHistoryNavigation(
   if (windowId === undefined || leafId === undefined) {
     return false;
   }
-
-  const documentPath = currentDocumentPath(view);
-  const location =
-    documentPath === null ? undefined : (captureDocumentLocation(view, documentPath) ?? undefined);
-  // A failed history request surfaces through the recoverable boundary
-  // (review B8): one closable error toast, never a silent console-only line.
-  void runRecoverably(
-    async () =>
-      await window.ipc.invoke("documents-provider", {
-        command,
-        payload: { windowId, leafId, location },
-      } as DocumentManagerIPCAPI),
-    trans("History navigation"),
-  );
+  navigatePaneHistory(windowId, leafId, command, view);
   return true;
 }
 

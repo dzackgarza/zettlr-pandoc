@@ -121,8 +121,6 @@ function problemsReadByTheWindow(page: Page): Promise<Problem[]> {
 }
 
 describe("packaged app: a citation library is read on a thread of its own", function () {
-  this.timeout(300_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;

@@ -48,10 +48,10 @@ import {
   type AgentClient,
   agentClient,
   attach,
+  clickBeforeClose,
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
   requestQuit,
@@ -260,9 +260,6 @@ async function waitForWorkingText(
 }
 
 describe("a review that cannot be persisted", function () {
-  // One cold `forge start` compile plus the five failure scenarios.
-  this.timeout(300_000);
-
   let fixtureRoot: string | undefined;
   let sidecarDirectory: string | undefined;
   let documentPath: string | undefined;
@@ -292,14 +289,13 @@ describe("a review that cannot be persisted", function () {
     parkedPath = path.join(path.dirname(fixture.documentPath), "parked.md");
     await writeFile(parkedPath, PARKED, "utf8");
     sidecarDirectory = path.join(fixture.configDirectory, "review-sidecars");
-    const running = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const running = await attach(fixture.configDirectory, rendererEvents);
     appProcess = running.appProcess;
     browser = running.browser;
     getOutput = running.getOutput;
     api = agentClient(await readAgentApiPort(fixture.configDirectory, 60_000));
     page = await findEditorPage(running.browser, this.timeout());
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {
@@ -903,7 +899,7 @@ describe("a review that cannot be persisted", function () {
     assert.equal(running.exitCode, null, "the refused quit leaves the app running");
     screenshots.set("quit-refused.png", await activePage.screenshot());
 
-    await action.click();
+    await clickBeforeClose(action);
     const outcome = await Promise.race([exited, delay(30_000).then(() => "still running")]);
     assert.deepEqual(outcome, [0, null], "the action ends the app");
     assert.equal(

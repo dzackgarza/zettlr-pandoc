@@ -81,6 +81,7 @@
     v-bind:name="props.field.model"
     v-bind:placeholder="props.field.placeholder"
     v-bind:directory="true"
+    v-bind:problem="props.field.problem"
     v-on:update:model-value="emit('update:modelValue', $event)"
   ></FileInput>
   <CheckboxInput

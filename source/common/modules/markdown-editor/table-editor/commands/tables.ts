@@ -210,8 +210,6 @@ export function alignTables(target: EditorView, pos?: number): boolean {
     const newRows = newContents.map((row) => "|" + row.join("|") + "|");
     newRows.splice(1, 0, "|" + delimRow.join("|") + "|");
 
-    console.log({ cellContents, newRows, newContents, cellSizes, targetColumnSizes });
-
     return {
       changes: {
         from: ctx.tableAST.from,

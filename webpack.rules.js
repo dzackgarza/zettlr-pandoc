@@ -81,6 +81,10 @@ module.exports = [
       options: {
         transpileOnly: true,
         appendTsSuffixTo: [/\.vue$/], // Enable ts support in Vue SFCs
+        // The type checker resolves a package as webpack does (tsconfig
+        // `moduleResolution: bundler`, which needs an ES `module`). The
+        // bundles are made of CommonJS modules.
+        compilerOptions: { module: "commonjs", moduleResolution: "node10" },
       },
     },
   },

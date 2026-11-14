@@ -12,7 +12,7 @@ export interface QuartoBookEditRequest {
 /** Edits the Quarto book file and returns the refreshed project settings. */
 export default class QuartoBookEditCommand extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "quarto-book-edit");
+    super(app);
   }
 
   async run(_evt: string, arg: QuartoBookEditRequest): Promise<ProjectSettings> {

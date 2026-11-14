@@ -13,12 +13,13 @@
  */
 
 import { trans } from "@common/i18n-main";
-import { clipboard, ipcMain, nativeImage } from "electron";
+import { clipboard, nativeImage } from "electron";
 import { promises as fs } from "fs";
 import md5 from "md5";
 import path from "path";
 import sanitize from "sanitize-filename";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import { handleBareChannelOnce } from "source/app/util/handle-ipc-channel";
 import ZettlrCommand from "./zettlr-command";
 
 export interface SaveImageFromClipboardAPI {
@@ -49,7 +50,7 @@ export interface PasteImageRetrieveDataIPCResponse {
 
 export default class SaveImage extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "save-image-from-clipboard");
+    super(app);
   }
 
   /**
@@ -79,7 +80,7 @@ export default class SaveImage extends ZettlrCommand {
     // ridiculous amount of code it takes to get that exact information with
     // only browser APIs, and (b) circumvent permission issues (since in the
     // browser, reading from clipboard often requires the user to do something).
-    ipcMain.handleOnce("paste-image-retrieve-data", () => {
+    handleBareChannelOnce("paste-image-retrieve-data", () => {
       const text = clipboard.readText();
 
       const dataUrl = arg.imageData;

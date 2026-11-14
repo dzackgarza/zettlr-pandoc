@@ -16,6 +16,9 @@
 
 import type { UpdateState } from "./index";
 
+/** An `update-provider` message to the windows: the new state of the update. */
+export type UpdateProviderBroadcast = [command: "state-changed", state: UpdateState];
+
 export type UpdateProviderIPCContract = {
   "check-for-update": {
     request: { payload?: undefined };

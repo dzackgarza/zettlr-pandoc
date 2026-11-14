@@ -32,7 +32,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -129,12 +128,12 @@ describe("assembled app: the close of root files and of all workspaces", functio
     config.app = { openFiles: [rootFilePath], openWorkspaces: [workspace, inner] };
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
   });

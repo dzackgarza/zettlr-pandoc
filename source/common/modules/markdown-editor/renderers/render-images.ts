@@ -183,9 +183,7 @@ class ImageWidget extends WidgetType {
     img.dataset.title = this.imageTitle;
 
     // Select the underlying node
-    img.addEventListener("click", (event) => {
-      clickAndSelect(view)(event);
-    });
+    img.addEventListener("mousedown", clickAndSelect(view));
 
     // Display a replacement image in case the correct one is not found
     img.onerror = () => {

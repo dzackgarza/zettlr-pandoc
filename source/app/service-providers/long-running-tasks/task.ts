@@ -16,7 +16,6 @@ import { reportError } from "@common/util/error-reporting";
 import EventEmitter from "events";
 import { DateTime, type Duration } from "luxon";
 import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
-import type { LRTIPCSyncMessage } from ".";
 
 // How often should long running tasks broadcast a status update (in ms)?
 const LRT_UPDATE_DEBOUNCE = 100;
@@ -201,7 +200,7 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
     broadcastIPCMessage("lrt-provider", {
       command: "update-task",
       payload: { task: this.toJSON() },
-    } as LRTIPCSyncMessage);
+    });
     let resolve = () => {};
     this.debouncePromise = new Promise<void>((r) => {
       resolve = r;

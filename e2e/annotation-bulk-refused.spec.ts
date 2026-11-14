@@ -30,7 +30,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -91,12 +90,12 @@ describe("assembled app: a refused bulk action of the Annotations view", functio
     fixtureRoot = fixture.root;
     documentPath = fixture.documentPath;
     sidecarDirectory = path.join(fixture.configDirectory, "review-sidecars");
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
   });

@@ -59,29 +59,21 @@ class WikilinkChipWidget extends WidgetType implements RowJoinedWidget {
     elem.textContent = this.label;
 
     // Widget mouse events never reach the clickListeners() mousedown path
-    // (ignoreEvent below), so the Mod-click lives here. It runs on
-    // mousedown: the default mousedown moves the caret next to the link,
-    // which reveals the source before a click event could arrive.
+    // (ignoreEvent below), so the Mod-click lives here. A Mod-click opens
+    // the link; another click selects its source. Both run on mousedown:
+    // the default mousedown moves the caret next to the link, which reveals
+    // the source before a click event could arrive (#131).
     const revealSource = clickAndSelect(view);
-    let openedOnMousedown = false;
     elem.addEventListener("mousedown", (event) => {
-      openedOnMousedown = false;
       const cmd = event.metaKey && process.platform === "darwin";
       const ctrl = event.ctrlKey && process.platform !== "darwin";
       const open = view.state.facet(wikilinkOpener);
       if ((!cmd && !ctrl) || open === undefined) {
+        revealSource(event);
         return;
       }
       event.preventDefault();
-      openedOnMousedown = true;
       open(this.linkContents);
-    });
-    elem.addEventListener("click", (event) => {
-      if (openedOnMousedown) {
-        openedOnMousedown = false;
-        return;
-      }
-      revealSource(event);
     });
 
     return elem;

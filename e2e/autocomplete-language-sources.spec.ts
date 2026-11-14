@@ -7,13 +7,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type EditorView } from "@codemirror/view";
 import { type Browser, type Page } from "playwright";
-import {
-  attach,
-  createFixture,
-  findEditorPage,
-  hideDevServerOverlay,
-  shutdown,
-} from "./support/electron-app";
+import { attach, createFixture, findEditorPage, shutdown } from "./support/electron-app";
 
 const DOCUMENT = String.raw`# Completion integration
 
@@ -32,14 +26,18 @@ Central macro: $\fiberpr$
 \end{tikzpicture}
 
 Added phrase: as a r
+
+~~~{=latex}
+\usepackage{mathtools}
+~~~
+
+Package command: $\xmapst$
 `;
 
 /** The production editor's content element; CodeMirror keeps its view on the element's tile. */
 type EditorContentElement = HTMLElement & { cmTile?: { root: { view: EditorView } } };
 
 describe("language-aware completion sources in the assembled editor", function () {
-  this.timeout(240_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
@@ -70,11 +68,10 @@ describe("language-aware completion sources in the assembled editor", function (
     };
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
-    const app = await attach(fixture.configDirectory, [], this.timeout());
+    const app = await attach(fixture.configDirectory, []);
     appProcess = app.appProcess;
     browser = app.browser;
     page = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {
@@ -256,6 +253,18 @@ describe("language-aware completion sources in the assembled editor", function (
     assert.match(macroInfo, /User MathJax macro/u);
     assert.match(macroInfo, /3 arguments/u);
     assert.match(macroInfo, /\\fiberprod\{\$\{1\}\}\{\$\{2\}\}\{\$\{3\}\}/u);
+  });
+
+  // The window asks Flowmark for the TeX vocabulary of its lint (#118)
+  it("offers a command of a package that the document loads, from Flowmark's index", async function () {
+    assert.ok(page !== undefined);
+    await completionLabelsAfter("Package command: $\\xmapst");
+    const details = await page
+      .locator(".cm-tooltip-autocomplete li")
+      .filter({ has: page.locator(".cm-completionLabel", { hasText: /^\\xmapsto$/u }) })
+      .locator(".cm-completionDetail")
+      .allTextContents();
+    assert.ok(details.includes("[mathtools]"), `no mathtools option: ${JSON.stringify(details)}`);
   });
 
   it("adds a phrase through the real provider to the portable file and completes it without restart", async function () {

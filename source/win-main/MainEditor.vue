@@ -47,14 +47,22 @@
         </TikzPreviewPane>
       </SplitterPanel>
     </SplitterGroup>
-    <RenameReferencePreviewDialog
+    <WorkspaceEditPreviewDialog
       v-if="renamePreviewPrompt !== undefined"
-      :old-key="renamePreviewPrompt.intent.oldKey"
-      :new-key="renamePreviewPrompt.intent.newKey"
-      :files="renamePreviewPrompt.files"
-      @apply="applyWorkspaceRename()"
-      @close="cancelWorkspaceRename()"
-    />
+      :title="trans('Rename reference')"
+      :description="trans('Each use of the reference gets the new key. Nothing changes until you apply.')"
+      :documents="renamePreviewPrompt.documents"
+      @apply="void runRecoverably(applyWorkspaceRename, trans('Workspace rename'))"
+      @cancel="cancelWorkspaceRename()"
+    >
+      <template #identity>
+        <p class="identity">
+          <code data-rename-old-key>{{ renamePreviewPrompt.intent.oldKey }}</code>
+          <span class="arrow">→</span>
+          <code data-rename-new-key>{{ renamePreviewPrompt.intent.newKey }}</code>
+        </p>
+      </template>
+    </WorkspaceEditPreviewDialog>
     <AnnotationCreateDialog
       v-if="annotationComposerRequest !== null"
       :editor-view="annotationComposerRequest.editorView"
@@ -124,49 +132,43 @@ import {
 import { type EditorWindowConfiguration } from "@common/modules/markdown-editor/util/configuration";
 import { documentAuthorityIPCAPI } from "@common/modules/markdown-editor/util/ipc-api";
 import { saveBuffer } from "@common/modules/markdown-editor/util/save-buffer";
+import { whenAuthoritySynced } from "@common/modules/markdown-editor/util/when-authority-synced";
 import { markdownToAST } from "@common/modules/markdown-utils";
 import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
-import {
-  buildRenamePreviewSummary,
-  type CommitRenameOutcome,
-  type ReferenceRenamePreview,
-  type ReferenceRenameRejection,
-  type RenamePreviewFileSummary,
-  type UndoRenameOutcome,
+import type {
+  CommitRenameOutcome,
+  IssuedReferenceRenamePreview,
+  ReferenceRenameRejection,
+  UndoRenameOutcome,
 } from "@common/pandoc-util/compute-reference-edits";
 import { annotateCompletionEntries } from "@common/pandoc-util/project-reference-status";
 import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { documentTitle } from "@common/util/document-title";
 import { reportError } from "@common/util/error-reporting";
-import { getDocumentTypeForExtension, hasMarkdownExt } from "@common/util/file-extention-checks";
+import { hasMarkdownExt } from "@common/util/file-extention-checks";
 import makeValidUri from "@common/util/make-valid-uri";
 import { pathBasename, pathDirname, resolvePath } from "@common/util/renderer-path-polyfill";
 import { runRecoverably } from "@common/util/run-recoverably";
 import showToast from "@common/util/show-toast";
-import {
-  declaredTexMacroSources,
-  type TexDocumentKind,
-  type TexMacroSource,
-  texDocument,
-} from "@common/util/tex-context";
-import { resolveTexMacroSourcePaths } from "@common/util/tex-macro-source-resolution";
 import { wikilinkTargetsIn } from "@common/util/wikilink-target";
+import WorkspaceEditPreviewDialog from "@common/vue/WorkspaceEditPreviewDialog.vue";
 import type { AnnotationSet } from "@dts/common/annotation-domain";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
-import { DocumentType, DP_EVENTS, type OpenDocument } from "@dts/common/documents";
+import { DP_EVENTS, type OpenDocument } from "@dts/common/documents";
 import type { CodeFileDescriptor, DirDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type {
   DocumentLocation,
   ProjectRootSpec,
   ReferenceCompletionEntry,
   SourceRange,
-  WorkspaceReferenceEdit,
 } from "@dts/common/references";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import { isEditorCommandName } from "@dts/common/shortcut-names";
+import type { TexCommandVocabulary } from "@dts/common/tex-vocabulary";
+import type { WorkspaceEditDocumentPreview } from "@dts/common/workspace-edit";
 import type { TikzPreviewHost } from "@dzack/tikz-render/host";
 import type { TikzLivePreviewTarget } from "@dzack/tikz-render/live-preview";
 import {
@@ -176,7 +178,6 @@ import {
 import TikzPreviewPane from "@dzack/tikz-render/ui/TikzPreviewPane.vue";
 import { storeToRefs } from "pinia";
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
-import type { DocumentsUpdateContext } from "source/app/service-providers/documents";
 import type { WikilinkEdge } from "source/app/service-providers/links/ipc-contract";
 import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
 import type { CustomEditorShortcut } from "source/common/modules/markdown-editor/keymaps/shortcuts";
@@ -199,7 +200,6 @@ import type { CreateReferenceLabelDialogPrompt, EditorCommands } from "./compone
 import InlineCollaborationControls, {
   type CollaborationBlock,
 } from "./editor-collaboration/InlineCollaborationControls.vue";
-import RenameReferencePreviewDialog from "./RenameReferencePreviewDialog.vue";
 import { resolveReattachSelection } from "./util/annotation-reattach-selection";
 import getDocumentTitle from "./util/get-document-title";
 import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
@@ -320,74 +320,21 @@ function stepReviewChunk(direction: 1 | -1): void {
 
 // UNREFFED STUFF
 let currentEditor: MarkdownEditor | null = null;
-let texMacroSourceCacheKey = "";
-let texMacroSourceRequestId = 0;
-let activeTexMacroSourcePaths = new Set<string>();
 
-function texDocumentKindForPath(filePath: string): TexDocumentKind | undefined {
-  switch (getDocumentTypeForExtension(filePath)) {
-    case DocumentType.Markdown:
-      return "markdown";
-    case DocumentType.LaTeX:
-      return "latex";
-    case DocumentType.YAML:
-      return "yaml";
-    case DocumentType.JSON:
-    case undefined:
-      return undefined;
-  }
-}
+/**
+ * Flowmark's TeX vocabulary (#118): the index and the packages of the lint
+ * context. One request for the window; a rejected request stays, and the
+ * dispatcher showed its failure one time.
+ */
+let texVocabularyRequest: Promise<TexCommandVocabulary> | null = null;
 
-async function updateTexMacroSources(
-  editor: MarkdownEditor | null = currentEditor,
-  force = false,
-): Promise<void> {
-  // An editor without its document declares no sources yet; its `loaded`
-  // event reads them.
-  if (editor === null || !editor.documentLoaded) return;
-  const kind = texDocumentKindForPath(editor.documentPath);
-  if (kind === undefined) return;
-
-  // The metadata block of the whole syntax tree: a block after the first
-  // screen declares sources too.
-  const state = editor.instance.state;
-  const tree = ensureSyntaxTree(state, state.doc.length, Number.POSITIVE_INFINITY);
-  if (tree === null) {
-    throw new Error(`The editor of ${editor.documentPath} has no syntax tree`);
-  }
-  const patterns = declaredTexMacroSources(texDocument(state.doc.toString(), kind, tree));
-  const descriptors = workspaceStore.descriptorMap;
-  const workspacePaths =
-    patterns.length === 0
-      ? []
-      : [...descriptors.values()]
-          .filter((descriptor) => descriptor.type === "file" || descriptor.type === "code")
-          .map((descriptor) => descriptor.path);
-  const paths = resolveTexMacroSourcePaths(editor.documentPath, patterns, workspacePaths);
-  // The modification time of a source is part of the key: a source that
-  // changed on disk is read again.
-  const cacheKey = JSON.stringify([
-    editor.documentPath,
-    patterns,
-    paths.map((filePath) => [filePath, descriptors.get(filePath)?.modtime]),
-  ]);
-  if (!force && cacheKey === texMacroSourceCacheKey) return;
-
-  texMacroSourceCacheKey = cacheKey;
-  activeTexMacroSourcePaths = new Set(paths);
-  const requestId = ++texMacroSourceRequestId;
-  const sources: TexMacroSource[] = [];
-  for (const filePath of paths) {
-    try {
-      const sourceDocument = await documentAuthorityIPCAPI.fetchDoc(filePath);
-      sources.push({ path: filePath, content: sourceDocument.content });
-    } catch (error) {
-      console.error("[MainEditor] Could not load TeX macro source " + filePath, error);
-    }
-  }
-
-  if (requestId !== texMacroSourceRequestId || currentEditor !== editor) return;
-  editor.setCompletionDatabase("tex-macro-sources", sources);
+function giveTexVocabulary(editor: MarkdownEditor): void {
+  texVocabularyRequest ??= ipcRenderer.invoke("application", {
+    command: "tex-command-vocabulary",
+  });
+  texVocabularyRequest
+    .then((vocabulary) => editor.setTexVocabulary(vocabulary))
+    .catch((error) => reportError("Could not read the TeX vocabulary of Flowmark", error));
 }
 let editorLoadPromise: Promise<void> | null = null;
 const activeTikzSource = shallowRef<TikzSourceBlock | null>(null);
@@ -545,37 +492,34 @@ function applyReviewDiffSession(session: ReviewDiffSession): void {
 }
 
 // EVENT LISTENERS
-const stopCiteprocUpdates = ipcRenderer.on(
-  "citeproc-database-updated",
-  (_event, _dbPath: string) => {
-    if (!isActiveTab.value) {
-      return;
-    }
-    const descriptor = activeFileDescriptor.value;
+const stopCiteprocUpdates = ipcRenderer.on("citeproc-database-updated", (_event, _dbPath) => {
+  if (!isActiveTab.value) {
+    return;
+  }
+  const descriptor = activeFileDescriptor.value;
 
-    if (descriptor === undefined || descriptor.type !== "file") {
-      return; // Nothing to do
-    }
+  if (descriptor === undefined || descriptor.type !== "file") {
+    return; // Nothing to do
+  }
 
-    documentCitationDatabase(descriptor.path)
-      .then(async (library) => {
-        await updateCitationKeys(library);
-        if (activeFileDescriptor.value?.path !== descriptor.path) {
-          return;
-        }
+  documentCitationDatabase(descriptor.path)
+    .then(async (library) => {
+      await updateCitationKeys(library);
+      if (activeFileDescriptor.value?.path !== descriptor.path) {
+        return;
+      }
 
-        currentEditor?.setMetadata({
-          path: descriptor.path,
-          id: descriptor.id,
-          library,
-        });
-        currentEditor?.syncCitationData();
-      })
-      .catch((e) => {
-        reportError("Could not update citation keys", e);
+      currentEditor?.setMetadata({
+        path: descriptor.path,
+        id: descriptor.id,
+        library,
       });
-  },
-);
+      currentEditor?.syncCitationData();
+    })
+    .catch((e) => {
+      reportError("Could not update citation keys", e);
+    });
+});
 
 // Combined @-completion label feed (issue #1). Mirrors the citation-keys
 // feed above: whenever main broadcasts changed workspace references, fetch
@@ -674,95 +618,73 @@ const stopShortcuts = ipcRenderer.on("shortcut", (event, command) => {
   }
 });
 
-const stopDocumentUpdates = ipcRenderer.on(
-  "documents-update",
-  (e, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
-    const { event, context } = payload;
-    if (
-      event === DP_EVENTS.ACTIVE_FILE &&
-      context.leafId === props.leafId &&
-      context.filePath !== undefined &&
-      (context.location !== undefined || context.targetRange !== undefined)
-    ) {
-      // The activation carries a navigation payload (issue #1 Phase 5): a
-      // Back/Forward-restored DocumentLocation or a cross-file reference jump
-      // landing range. Record it, and apply it right away when the editor for
-      // that file is already loaded (otherwise the 'loaded' hook applies it
-      // after the remount).
-      pendingNavigation = {
-        filePath: context.filePath,
-        location: context.location,
-        targetRange: context.targetRange,
-      };
-      applyPendingNavigation();
-    }
+const stopDocumentUpdates = ipcRenderer.on("documents-update", (e, payload) => {
+  const { event, context } = payload;
+  if (
+    event === DP_EVENTS.ACTIVE_FILE &&
+    context.leafId === props.leafId &&
+    context.filePath !== undefined &&
+    (context.location !== undefined || context.targetRange !== undefined)
+  ) {
+    // The activation carries a navigation payload (issue #1 Phase 5): a
+    // Back/Forward-restored DocumentLocation or a cross-file reference jump
+    // landing range. Record it, and apply it right away when the editor for
+    // that file is already loaded (otherwise the 'loaded' hook applies it
+    // after the remount).
+    pendingNavigation = {
+      filePath: context.filePath,
+      location: context.location,
+      targetRange: context.targetRange,
+    };
+    applyPendingNavigation();
+  }
 
-    if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
-      // The currently loaded document has been changed remotely. This event indicates
-      // that the document provider has already reloaded the document and we only
-      // need to tell the main editor to reload it as well.
-      //
-      // Drop the review first. notifyRemoteChange closed the provider-owned review
-      // when it accepted the external edit, so this pane's session is already dead;
-      // leaving it set would let the reload restore accept/reject controls over the
-      // externally reloaded text. Rejecting one of those phantom chunks would
-      // reinstate the stale review reference, and with the provider's review gone
-      // the save gate would not stop that text being written over the external
-      // edit.
-      currentEditor?.clearReviewDiffSession();
-      currentEditor?.reload().catch(reportDocumentLoadError);
-    } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
-      // The file has been saved to disk. This means we should probably update the
-      // descriptor to know of, e.g., library changes.
-      ipcRenderer
-        .invoke("fsal", { command: "get-descriptor", payload: props.file.path })
-        .then(async (descriptor) => {
-          if (
-            descriptor === undefined ||
-            Array.isArray(descriptor) ||
-            (descriptor.type !== "file" && descriptor.type !== "code")
-          ) {
-            throw new Error(
-              `Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`,
-            );
-          }
+  if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
+    // The currently loaded document has been changed remotely. This event indicates
+    // that the document provider has already reloaded the document and we only
+    // need to tell the main editor to reload it as well.
+    //
+    // Drop the review first. notifyRemoteChange closed the provider-owned review
+    // when it accepted the external edit, so this pane's session is already dead;
+    // leaving it set would let the reload restore accept/reject controls over the
+    // externally reloaded text. Rejecting one of those phantom chunks would
+    // reinstate the stale review reference, and with the provider's review gone
+    // the save gate would not stop that text being written over the external
+    // edit.
+    currentEditor?.clearReviewDiffSession();
+    currentEditor?.reload().catch(reportDocumentLoadError);
+  } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
+    // The file has been saved to disk. This means we should probably update the
+    // descriptor to know of, e.g., library changes.
+    ipcRenderer
+      .invoke("fsal", { command: "get-descriptor", payload: props.file.path })
+      .then(async (descriptor) => {
+        if (descriptor.type !== "file" && descriptor.type !== "code") {
+          throw new Error(`${props.file.path} is not a Markdown or code file`);
+        }
 
-          activeFileDescriptor.value = descriptor;
-          const library =
-            descriptor.type === "file"
-              ? await documentCitationDatabase(descriptor.path)
-              : undefined;
-          if (library !== undefined) {
-            updateCitationKeys(library).catch((e) =>
-              reportError("Could not update citation keys", e),
-            );
-          }
+        activeFileDescriptor.value = descriptor;
+        const library =
+          descriptor.type === "file" ? await documentCitationDatabase(descriptor.path) : undefined;
+        if (library !== undefined) {
+          updateCitationKeys(library).catch((e) =>
+            reportError("Could not update citation keys", e),
+          );
+        }
 
-          // Provide the editor instance with updated metadata
-          currentEditor?.setMetadata({
-            path: props.file.path,
-            id: descriptor.type === "file" ? descriptor.id : "",
-            library: library ?? CITEPROC_MAIN_DB,
-          });
-        })
-        .catch((err) => reportError(err));
-    }
-    if (
-      context.filePath !== undefined &&
-      activeTexMacroSourcePaths.has(context.filePath) &&
-      (event === DP_EVENTS.CHANGE_FILE_STATUS ||
-        event === DP_EVENTS.FILE_REMOTELY_CHANGED ||
-        event === DP_EVENTS.FILE_SAVED)
-    ) {
-      updateTexMacroSources(currentEditor, true).catch((error) =>
-        reportError("Could not refresh TeX macro sources", error),
-      );
-    }
-    // Collaboration state (annotations, review) is not handled here: it
-    // reaches this pane through the document-collaboration store and the
-    // `collaborationSession` watcher below, not through this raw event.
-  },
-);
+        // Provide the editor instance with updated metadata
+        currentEditor?.setMetadata({
+          path: props.file.path,
+          id: descriptor.type === "file" ? descriptor.id : "",
+          library: library ?? CITEPROC_MAIN_DB,
+        });
+      })
+      .catch((err) => reportError(err));
+  }
+  // Collaboration state (annotations, review) is not handled here: it
+  // reaches this pane through the document-collaboration store and the
+  // `collaborationSession` watcher below, not through this raw event.
+});
 
 const stopReloads = ipcRenderer.on("reload-editors", (_e) => {
   currentEditor?.reload().catch(reportDocumentLoadError);
@@ -1316,9 +1238,6 @@ async function getEditorFor(doc: string): Promise<MarkdownEditor> {
       // A pane navigation may have arrived before this editor finished
       // loading its document (issue #1 Phase 5); restore it now.
       applyPendingNavigation();
-      updateTexMacroSources(editor).catch((error) =>
-        reportError("Could not refresh TeX macro sources", error),
-      );
     }
   });
 
@@ -1483,7 +1402,7 @@ async function loadDocument(): Promise<void> {
   currentEditor.setCompletionDatabase("snippets", snippets.value);
   currentEditor.setCompletionDatabase("phrases", phraseCompletions.value);
   currentEditor.setQuickTexCatalogue(quickTex.value);
-  await updateTexMacroSources(currentEditor);
+  giveTexVocabulary(currentEditor);
 
   maybeHighlightSearchResults();
 
@@ -1491,14 +1410,8 @@ async function loadDocument(): Promise<void> {
     command: "get-descriptor",
     payload: props.file.path,
   });
-  if (
-    descriptor === undefined ||
-    Array.isArray(descriptor) ||
-    (descriptor.type !== "file" && descriptor.type !== "code")
-  ) {
-    throw new Error(
-      `Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`,
-    );
+  if (descriptor.type !== "file" && descriptor.type !== "code") {
+    throw new Error(`${props.file.path} is not a Markdown or code file`);
   }
 
   activeFileDescriptor.value = descriptor;
@@ -1554,9 +1467,6 @@ function refreshWorkspaceState(): void {
     currentEditor.projectInfo = updateProjectInfo();
   }
   updateFileDatabase().catch((err) => reportError("Could not update file database", err));
-  updateTexMacroSources().catch((error) =>
-    reportError("Could not refresh TeX macro sources", error),
-  );
 }
 
 function refreshActiveEditorAuxiliaryState(): void {
@@ -1738,7 +1648,7 @@ async function updateReferenceEntries(): Promise<void> {
   // failed fetch surfaces one closable toast and the editor keeps its last
   // known reference state — never a fabricated fallback, never an
   // uncloseable overlay.
-  const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+  const outcome = await invokeReferenceProviderRecoverably(
     async (channel, message) => await ipcRenderer.invoke(channel, message),
     { command: "get-snapshot" },
     trans("Loading workspace references"),
@@ -1861,26 +1771,28 @@ function promptWorkspaceRename(intent: ReferenceKeyEditPromptIntent): void {
 }
 
 /**
- * The pending rename preview shown by the dialog (issue #1, review A4):
- * the confirmed intent, the previewed workspace edit, and the per-file
- * affected-occurrence summary. Nothing commits while this is pending —
- * Apply commits, Cancel restores the authored local edit.
+ * The pending rename preview shown by the dialog (#6): the confirmed
+ * intent, the id under which the main process keeps the previewed edit,
+ * and each changed line of each document. Nothing commits while this is
+ * pending — Apply commits the edit of the id, Cancel restores the authored
+ * local edit.
  */
 interface RenamePreviewPrompt {
   intent: ReferenceKeyEditPromptIntent;
-  edit: WorkspaceReferenceEdit;
-  files: RenamePreviewFileSummary[];
+  id: string;
+  documents: WorkspaceEditDocumentPreview[];
 }
 
-const renamePreviewPrompt = ref<RenamePreviewPrompt | undefined>(undefined);
+const renamePreviewPrompt = shallowRef<RenamePreviewPrompt | undefined>(undefined);
 
 /**
- * Runs the confirmed workspace rename protocol up to the PREVIEW (issue #1,
- * review A4 / US-17): withdraws the local token edit (the atomic workspace
- * rename owns the whole change), previews, and presents the affected
- * occurrences in the rename-preview dialog. Nothing commits here — Apply
- * in the dialog commits, Cancel restores the authored edit. Typed
- * rejections surface as closable toasts, never as blocking dialogs.
+ * Runs the confirmed workspace rename protocol up to the PREVIEW (#6):
+ * withdraws the local token edit (the atomic workspace rename owns the
+ * whole change), previews, and shows each changed line of each document in
+ * the workspace edit preview dialog. Nothing commits here — Apply in the
+ * dialog commits, Cancel restores the authored edit. A rejection and a
+ * failed preview restore the authored edit too; a rejection shows its
+ * reason in a message, a failure rejects to the caller, which shows it.
  *
  * @param   {ReferenceKeyEditPromptIntent}  intent  The confirmed intent
  */
@@ -1895,34 +1807,40 @@ async function runWorkspaceRename(intent: ReferenceKeyEditPromptIntent): Promise
   view.dispatch({
     changes: { from: intent.range.from, to: intent.range.to, insert: "#" + intent.oldKey },
   });
-
-  const preview: ReferenceRenamePreview = await ipcRenderer.invoke("application", {
-    command: "preview-reference-rename",
-    payload: { oldKey: intent.oldKey, newKey: intent.newKey },
-  });
+  // The preview reads the text of the document authority: it must hold
+  // the withdrawal.
+  const preview: IssuedReferenceRenamePreview = await whenAuthoritySynced(() => view.state)
+    .then(
+      async () =>
+        await ipcRenderer.invoke("application", {
+          command: "preview-reference-rename",
+          payload: { oldKey: intent.oldKey, newKey: intent.newKey },
+        }),
+    )
+    .catch((error: Error) => {
+      restoreAuthoredKey(view, intent);
+      throw error;
+    });
 
   if (preview.status === "rejected") {
+    restoreAuthoredKey(view, intent);
     showToast(describeRenameRejection(preview.reason), "error");
     return;
   }
 
-  // The per-file summary is built over the same merged workspace state the
-  // preview was computed from (the provider's snapshots carry the authored
-  // previewSource/clusterRaw context the dialog shows).
-  const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
-    async (channel, message) => await ipcRenderer.invoke(channel, message),
-    { command: "get-snapshot" },
-    trans("Loading workspace references"),
-  );
-  if (outcome.status === "failed") {
-    return; // The boundary surfaced the closable toast; the withdrawal stays.
-  }
+  renamePreviewPrompt.value = { intent, id: preview.id, documents: preview.documents };
+}
 
-  renamePreviewPrompt.value = {
-    intent,
-    edit: preview.edit,
-    files: buildRenamePreviewSummary(preview.edit, outcome.value.snapshots, intent.oldKey),
-  };
+/**
+ * Puts the key that the author wrote back in place of the withdrawn one,
+ * when the definition still holds the withdrawn key.
+ */
+function restoreAuthoredKey(view: EditorView, intent: ReferenceKeyEditPromptIntent): void {
+  const from = intent.range.from;
+  const to = from + ("#" + intent.oldKey).length;
+  if (view.state.doc.sliceString(from, to) === "#" + intent.oldKey) {
+    view.dispatch({ changes: { from, to, insert: "#" + intent.newKey } });
+  }
 }
 
 /**
@@ -1937,13 +1855,7 @@ function cancelWorkspaceRename(): void {
   if (prompt === undefined || view === undefined) {
     return;
   }
-
-  const { intent } = prompt;
-  const from = intent.range.from;
-  const to = from + ("#" + intent.oldKey).length;
-  if (view.state.doc.sliceString(from, to) === "#" + intent.oldKey) {
-    view.dispatch({ changes: { from, to, insert: "#" + intent.newKey } });
-  }
+  restoreAuthoredKey(view, prompt.intent);
 }
 
 /**
@@ -1961,11 +1873,11 @@ async function applyWorkspaceRename(): Promise<void> {
   if (prompt === undefined || view === undefined) {
     return;
   }
-  const { intent, edit } = prompt;
+  const { intent, id, documents } = prompt;
 
   const outcome: CommitRenameOutcome = await ipcRenderer.invoke("application", {
     command: "commit-reference-rename",
-    payload: { edit },
+    payload: { id },
   });
 
   if (outcome.status === "conflict") {
@@ -1980,12 +1892,7 @@ async function applyWorkspaceRename(): Promise<void> {
   }
 
   showToast(
-    trans(
-      "Renamed %s to %s across %s documents.",
-      intent.oldKey,
-      intent.newKey,
-      Object.keys(edit.expectedSourceHashes).length,
-    ),
+    trans("Renamed %s to %s across %s documents.", intent.oldKey, intent.newKey, documents.length),
     "info",
     8000,
     {
@@ -2073,11 +1980,6 @@ const refreshDocumentRequests = _.debounce(() => {
   updateWikilinkResolutions(false).catch((error) =>
     reportError("Could not resolve the wikilinks", error),
   );
-  if (ownsWindowActiveState()) {
-    updateTexMacroSources().catch((error) =>
-      reportError("Could not refresh TeX macro sources", error),
-    );
-  }
 }, 200);
 
 // The targets whose resolutions the editor last asked for

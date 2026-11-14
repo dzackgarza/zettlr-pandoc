@@ -14,6 +14,7 @@ const markdown: MDFileDescriptor = {
   id: "",
   tags: [],
   links: [],
+  fileLinks: [],
   citekeys: [],
   bom: "",
   wordCount: 1,

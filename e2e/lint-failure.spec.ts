@@ -43,7 +43,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
   shutdown,
@@ -151,8 +150,6 @@ function finding(page: Page, documentName: string): ReturnType<Page["locator"]> 
 }
 
 describe("a lint that did not run", function () {
-  this.timeout(240_000);
-
   describe("a Flowmark run that fails", function () {
     let appProcess: ChildProcess | undefined;
     let browser: Browser | undefined;
@@ -177,12 +174,12 @@ describe("a lint that did not run", function () {
       indexPath = fixture.documentPath;
       workspace = path.dirname(indexPath);
       await writeFile(path.join(workspace, "problem.md"), PROBLEM, "utf8");
-      const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+      const app = await attach(fixture.configDirectory, rendererEvents);
       appProcess = app.appProcess;
       browser = app.browser;
       getOutput = app.getOutput;
       page = await findEditorPage(app.browser, this.timeout());
-      await hideDevServerOverlay(page);
+
       await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     });
 
@@ -277,12 +274,12 @@ describe("a lint that did not run", function () {
       workspace = path.dirname(indexPath);
       cachePath = path.join(fixture.configDirectory, "document-lint-cache.json");
       await writeFile(path.join(workspace, "problem.md"), PROBLEM, "utf8");
-      const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+      const app = await attach(fixture.configDirectory, rendererEvents);
       appProcess = app.appProcess;
       browser = app.browser;
       getOutput = app.getOutput;
       page = await findEditorPage(app.browser, this.timeout());
-      await hideDevServerOverlay(page);
+
       await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
       await page.locator('[data-activity="problems"]').click();
     });
@@ -400,7 +397,7 @@ describe("a lint that did not run", function () {
       await mkdir(toolDirectory);
       await mkdir(toolBinDirectory);
       await mkdir(cacheDirectory);
-      const app = await attach(fixture.configDirectory, rendererEvents, this.timeout(), {
+      const app = await attach(fixture.configDirectory, rendererEvents, {
         environment: {
           UV_TOOL_DIR: toolDirectory,
           UV_TOOL_BIN_DIR: toolBinDirectory,
@@ -412,7 +409,7 @@ describe("a lint that did not run", function () {
       browser = app.browser;
       getOutput = app.getOutput;
       page = await findEditorPage(app.browser, this.timeout());
-      await hideDevServerOverlay(page);
+
       await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     });
 

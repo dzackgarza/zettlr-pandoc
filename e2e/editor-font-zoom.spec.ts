@@ -26,7 +26,6 @@ import {
   attach,
   createFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   type RunningApp,
   requireInitialized,
@@ -77,9 +76,8 @@ describe("assembled app: the zoom of the editor font", function () {
       },
     });
     fixtureRoot = fixture.root;
-    app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    app = await attach(fixture.configDirectory, rendererEvents);
     page = await findEditorPage(app.browser, 60_000);
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

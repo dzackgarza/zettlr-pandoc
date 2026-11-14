@@ -49,7 +49,7 @@ function pathToWin(pathFragment: string): string {
 
 export default class DirProjectExport extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "dir-project-export");
+    super(app);
   }
 
   /**

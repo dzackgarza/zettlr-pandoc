@@ -32,7 +32,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   REPO_ROOT,
   requireInitialized,
@@ -311,8 +310,6 @@ function overlap(a: Box, b: Box): boolean {
 }
 
 describe("assembled app: fenced divs with a title", function () {
-  this.timeout(300_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
@@ -332,12 +329,12 @@ describe("assembled app: fenced divs with a title", function () {
       },
     });
     fixtureRoot = fixture.root;
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".pandoc-div-header").first().waitFor({
       state: "visible",
       timeout: this.timeout(),
@@ -536,8 +533,6 @@ function readRendering(page: Page): Promise<RenderedDocument> {
 }
 
 describe("assembled app: the document of the report of titled fenced divs", function () {
-  this.timeout(300_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
@@ -557,12 +552,12 @@ describe("assembled app: the document of the report of titled fenced divs", func
       },
     });
     fixtureRoot = fixture.root;
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".pandoc-div-header").first().waitFor({
       state: "visible",
       timeout: this.timeout(),

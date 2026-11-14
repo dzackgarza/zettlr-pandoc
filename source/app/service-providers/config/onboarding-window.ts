@@ -28,6 +28,7 @@ import { loadData } from "@common/i18n-main";
 import type LogProvider from "@providers/log";
 import type { IPCMessage } from "@providers/provider-contract";
 import { BrowserWindow, type BrowserWindowConstructorOptions, ipcMain } from "electron";
+import { handleInvokeChannel } from "source/app/util/handle-ipc-channel";
 import attachLogger from "../windows/attach-logger";
 import setWindowChrome from "../windows/set-window-chrome";
 import type ConfigProvider from ".";
@@ -111,17 +112,16 @@ export async function showOnboardingWindow(
     });
 
     // Asynchronous messages
-    ipcMain.handle("onboarding", async (event, payload: OnboardingIPCMessage) => {
-      if (payload.command === "set-app-lang") {
+    handleInvokeChannel("onboarding", {
+      "set-app-lang": async (_event, { language }) => {
         // The user has changed the language. This unfortunately cannot be done
         // with the default config setters, since this will require a singular
         // reload of the translation strings, which is only possible here
         // because we are able to control this process entirely.
-        const { language } = payload;
         // We enforce a skip-check here to prevent a "restart required" modal.
         config.set("appLang", language, true);
         await loadData(language);
-      }
+      },
     });
 
     onboardingWindow.on("unresponsive", () => {
@@ -130,7 +130,6 @@ export async function showOnboardingWindow(
     });
 
     onboardingWindow.on("closed", () => {
-      console.log("CLOSED EVENT EMITTED");
       // NOTE: We must "destroy" the window, because otherwise 'closable: false'
       // will prevent programmatic closing.
       onboardingWindow.destroy();

@@ -28,7 +28,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   requireInitialized,
   shutdown,
 } from "../support/electron-app";
@@ -96,8 +95,6 @@ async function hostUrl(host: EditorHost, timeoutMs: number): Promise<string> {
 }
 
 describe("editing a diagram in Visual TikZ Editor", function () {
-  this.timeout(240_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
@@ -118,12 +115,11 @@ describe("editing a diagram in Visual TikZ Editor", function () {
     fixtureRoot = fixture.root;
     documentPath = fixture.documentPath;
     documentDirectory = path.dirname(documentPath);
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     appOutput = app.getOutput;
     page = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

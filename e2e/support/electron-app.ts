@@ -1,6 +1,6 @@
-// Shared assembled-app harness. Both E2E specs launch the real Forge app
-// against a throwaway data directory and attach over CDP; keeping that in one
-// module is what stops the second spec from copying the first one's 300 lines.
+// Shared assembled-app harness. A spec starts the packaged build of the run
+// against a throwaway data directory and attaches over CDP; keeping that in
+// one module stops each spec from copying the start sequence.
 import { strict as assert } from "node:assert";
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -16,11 +16,17 @@ import {
   utimes,
   writeFile,
 } from "node:fs/promises";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Browser, chromium, type Locator, type Page } from "playwright";
+import {
+  AGENT_API_DISCOVERY_FILE,
+  parseAgentApiDiscovery,
+} from "source/app/service-providers/agent-api/discovery-file";
+import type { components } from "source/types/generated/agent-api";
 import { stringify } from "yaml";
+
+type AgentApiSchemas = components["schemas"];
 
 export const REPO_ROOT = path.resolve(process.cwd());
 
@@ -31,6 +37,52 @@ export const REPO_ROOT = path.resolve(process.cwd());
  * the desktop launcher compares.
  */
 export function currentPackagedBinary(): string {
+  return path.join(currentPackagedDirectory(), "zettlr-pandoc");
+}
+
+/**
+ * The application archive of the packaged build. A spec starts it with the
+ * Electron of `node_modules` (`launchElectron`): the code is the code that
+ * the package ships, and the app is not packaged for Electron
+ * (`app.isPackaged`), so it writes its log to its output too.
+ */
+export function currentPackagedArchive(): string {
+  return path.join(currentPackagedDirectory(), "resources", "app.asar");
+}
+
+/**
+ * The Electron binary of the installed `electron` package, found as the
+ * `index.js` of that package finds it: `dist/` and the name in `path.txt`.
+ */
+export function electronBinary(): string {
+  const packageDirectory = path.join(REPO_ROOT, "node_modules", "electron");
+  const name = readFileSync(path.join(packageDirectory, "path.txt"), "utf8");
+  return path.join(packageDirectory, "dist", name);
+}
+
+/**
+ * The source fingerprint of this run. A run tests the source that it
+ * started on: a source edit or a commit during the run does not stop its
+ * later starts, and a build that replaces the package during the run (a
+ * start from the desktop launcher) has another stamp and is refused. The
+ * lanes runner reads the fingerprint at its start and gives it to each spec
+ * file in `E2E_SOURCE_FINGERPRINT`; a Mocha process that no runner started
+ * is a run of its own and reads it at its first start.
+ */
+let runFingerprint: string | undefined = process.env.E2E_SOURCE_FINGERPRINT;
+
+function sourceFingerprintOfRun(): string {
+  if (runFingerprint === undefined) {
+    runFingerprint = execFileSync(
+      path.join(REPO_ROOT, "scripts", "desktop", "zettlr-pandoc-source-fingerprint"),
+      [REPO_ROOT],
+      { encoding: "utf8" },
+    ).trim();
+  }
+  return runFingerprint;
+}
+
+function currentPackagedDirectory(): string {
   const packagedDirectory = path.join(REPO_ROOT, "out", "Zettlr-Pandoc-linux-x64");
   const binary = path.join(packagedDirectory, "zettlr-pandoc");
   const stamp = path.join(packagedDirectory, ".source-fingerprint");
@@ -38,17 +90,12 @@ export function currentPackagedBinary(): string {
     existsSync(binary) && existsSync(stamp),
     `No packaged build at ${packagedDirectory}. Run \`just package\` first.`,
   );
-  const fingerprint = execFileSync(
-    path.join(REPO_ROOT, "scripts", "desktop", "zettlr-pandoc-source-fingerprint"),
-    [REPO_ROOT],
-    { encoding: "utf8" },
-  ).trim();
   assert.equal(
     readFileSync(stamp, "utf8").trim(),
-    fingerprint,
+    sourceFingerprintOfRun(),
     `The packaged build at ${packagedDirectory} is older than the source. Run \`just package\` first.`,
   );
-  return binary;
+  return packagedDirectory;
 }
 
 export function delay(milliseconds: number): Promise<void> {
@@ -62,8 +109,11 @@ export function delay(milliseconds: number): Promise<void> {
  * 5 ms of the one before it, and it reports a change only when the
  * modification time moved: the change of the mode alone is no change, and a
  * time change 5 ms after it is lost. The two changes are therefore apart.
+ * The line of the output gives the time of the change, so a run whose app
+ * reports no change shows whether the watch of the app was in place (#62).
  */
 export async function makeUnreadableAndNewer(filePath: string, changedAt: Date): Promise<void> {
+  console.log(`[${new Date().toISOString()}] makeUnreadableAndNewer: chmod 000 ${filePath}`);
   await chmod(filePath, 0o000);
   await delay(100);
   await utimes(filePath, changedAt, changedAt);
@@ -78,39 +128,6 @@ export function requireInitialized<T>(value: T | undefined, message: string): T 
 
 export function outputTail(output: string): string {
   return output.split("\n").slice(-100).join("\n");
-}
-
-/**
- * Bind port 0, read what the kernel gave, release it, and hand it to the
- * caller. The reservation ends at the release: nothing owns the port until
- * the child binds it, so this is only admissible for ports whose bind owner
- * cannot choose its own port — Forge's webpack dev-server and logger, whose
- * entry URLs are baked from the configured port before the server starts.
- * Mocha runs specs serially in one process, and a collision fails the launch
- * loudly with the process output rather than silently changing ports. Ports
- * the application binds itself (the Agent API) must instead be requested as
- * `port: 0` and read back through readAgentApiPort().
- */
-export async function reserveFreePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        reject(new Error("Could not reserve a loopback port"));
-        return;
-      }
-      const { port } = address;
-      server.close((error) => {
-        if (error !== undefined) {
-          reject(error);
-          return;
-        }
-        resolve(port);
-      });
-    });
-  });
 }
 
 export async function waitForDevTools(
@@ -252,12 +269,27 @@ async function waitForProcessGroupExit(pid: number, timeoutMs: number): Promise<
   return !processGroupIsAlive(pid);
 }
 
+/**
+ * Waits for an app that was asked to quit, and ends its process group when
+ * it does not exit within 10 s.
+ */
 export async function stopProcess(appProcess: ChildProcess | undefined): Promise<void> {
   if (appProcess?.pid === undefined) {
     return;
   }
 
   if (await waitForProcessGroupExit(appProcess.pid, 10_000)) {
+    return;
+  }
+  await terminateProcess(appProcess);
+}
+
+/**
+ * Ends the process group of an app that nothing asked to quit: SIGTERM, and
+ * SIGKILL for a group that is still alive 5 s later.
+ */
+export async function terminateProcess(appProcess: ChildProcess | undefined): Promise<void> {
+  if (appProcess?.pid === undefined || !processGroupIsAlive(appProcess.pid)) {
     return;
   }
 
@@ -316,18 +348,6 @@ export async function preserveArtifacts(
   }
 }
 
-/**
- * Takes the dev server's error overlay out of the way. `forge start` injects a
- * full-window iframe that intercepts pointer events, so a Playwright click on
- * a real control is refused for a reason that belongs to the harness rather
- * than to the application.
- */
-export async function hideDevServerOverlay(page: Page): Promise<void> {
-  await page.addStyleTag({
-    content: "#webpack-dev-server-client-overlay { display: none !important; }",
-  });
-}
-
 export interface SerializedMenuNode {
   id?: string;
   label?: string;
@@ -341,14 +361,11 @@ export function readApplicationMenu(page: Page): Promise<SerializedMenuNode[]> {
   return page.evaluate(
     () =>
       new Promise<SerializedMenuNode[]>((resolve) => {
-        window.ipc.on(
-          "menu-provider",
-          (_event: unknown, message: { command: string; payload: SerializedMenuNode[] }) => {
-            if (message.command === "application-menu") {
-              resolve(message.payload);
-            }
-          },
-        );
+        window.ipc.on("menu-provider", (_event, message) => {
+          if (message.command === "application-menu") {
+            resolve(message.payload);
+          }
+        });
         window.ipc.send("menu-provider", { command: "get-application-menu" });
       }),
   );
@@ -442,18 +459,17 @@ function transientConnectionFailure(error: unknown): undefined {
 
 /**
  * Reads the port the running instance actually bound, from the discovery
- * file the Agent API publishes into its user-data directory. This is the
- * race-free counterpart of reserveFreePort(): the bind owner chose the port,
- * so no other process can have taken it. The port must also answer
- * `/v1/ping` before it is handed out — a killed process leaves its file
- * behind, and a stale port must read as "not published yet", not as the
- * endpoint of the instance currently booting.
+ * file the Agent API publishes into its user-data directory. The port is
+ * handed out only when its `/v1/ping` names the instance of the file: a
+ * killed process leaves its file behind, and another instance can bind its
+ * port. A stale file reads as "not published yet", not as the endpoint of
+ * the instance currently booting.
  */
 export async function readAgentApiPort(
   configDirectory: string,
   timeoutMs: number,
 ): Promise<number> {
-  const portFile = path.join(configDirectory, "agent-api.port");
+  const portFile = path.join(configDirectory, AGENT_API_DISCOVERY_FILE);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     // ENOENT is the one legal read failure: the instance has not published
@@ -466,16 +482,15 @@ export async function readAgentApiPort(
       throw error;
     });
     if (contents !== undefined) {
-      const port = Number.parseInt(contents.trim(), 10);
-      assert.ok(
-        Number.isInteger(port) && port > 0,
-        `The Agent API port file holds no port: ${JSON.stringify(contents)}`,
-      );
-      const response = await fetch(`http://127.0.0.1:${port}/v1/ping`, {
+      const discovery = parseAgentApiDiscovery(contents);
+      const response = await fetch(`http://127.0.0.1:${discovery.port}/v1/ping`, {
         headers: AGENT_API_AUTHORIZATION,
       }).catch(transientConnectionFailure);
       if (response?.ok === true) {
-        return port;
+        const ping = (await response.json()) as AgentApiSchemas["PingResponse"];
+        if (ping.instanceId === discovery.instanceId) {
+          return discovery.port;
+        }
       }
     }
     await delay(250);
@@ -620,19 +635,38 @@ export interface LaunchOptions {
   flags?: string[];
   /** Variables set over the inherited environment of the app process. */
   environment?: NodeJS.ProcessEnv;
+  /**
+   * Variables that webpack reads when it compiles the app, such as
+   * `ZETTLR_DISABLE_UPDATE_CHECK` (`__UPDATES_DISABLED__` of
+   * `webpack.main.config.js`). A start with them compiles a development
+   * build of its own through `electron-forge start`; a start without them
+   * runs the packaged build of the run.
+   */
+  buildEnvironment?: NodeJS.ProcessEnv;
+  /**
+   * The deadline of a start that the spec expects to hang: the attach gives
+   * up after it. A start that must succeed keeps `startDeadline`.
+   */
+  hangDeadlineMs?: number;
+  /**
+   * A start whose windows have WebGL. A start without it turns hardware
+   * acceleration off, and Chromium then gives a window no WebGL context. A
+   * display of a run has no GPU, so the contexts of this start are those
+   * of SwiftShader, the software renderer of Chromium.
+   */
+  softwareWebGL?: true;
 }
 
 export async function launchElectron(
   configDirectory: string,
   options: LaunchOptions = {},
 ): Promise<ChildProcess> {
-  const forgeExecutable = path.join(REPO_ROOT, "node_modules", ".bin", "electron-forge");
-  const forgeArguments = [
-    "start",
-    "--",
+  const appArguments = [
     `--data-dir=${configDirectory}`,
     "--remote-debugging-port=0",
-    "--disable-hardware-acceleration",
+    ...(options.softwareWebGL === true
+      ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+      : ["--disable-hardware-acceleration"]),
     // The run owns the X display (`just test-e2e`, `just test-e2e-file`):
     // DISPLAY names the desktop's server or the virtual one of the run.
     // Chromium prefers a Wayland compositor whenever WAYLAND_DISPLAY is
@@ -647,34 +681,61 @@ export async function launchElectron(
     `--xdg-portal-required-version=${NO_PORTAL_FILE_CHOOSER_VERSION}`,
   ];
   if (options.flags !== undefined) {
-    forgeArguments.push(...options.flags);
+    appArguments.push(...options.flags);
   }
   if (options.files !== undefined) {
-    forgeArguments.push(...options.files);
+    appArguments.push(...options.files);
+  }
+  const environment = { ...process.env, ...AGENT_API_ENVIRONMENT, ...options.environment };
+
+  if (options.buildEnvironment === undefined) {
+    // The archive of the packaged build that the run made one time
+    // (`just test-e2e`): the start compiles nothing.
+    return spawn(electronBinary(), [currentPackagedArchive(), ...appArguments], {
+      cwd: REPO_ROOT,
+      detached: true,
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   }
 
-  // Forge's dev server and logger need separate ports. Choose fresh loopback
-  // ports for this launch; the application owns the subsequent bind and will
-  // report an unrelated collision rather than silently changing ports.
-  const rendererPort = await reserveFreePort();
-  const loggerPort = await reserveFreePort();
-
-  const childEnvironment: NodeJS.ProcessEnv = {
-    ...process.env,
-    NODE_ENV: "develop",
-    ZETTLR_E2E: "1",
-    ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
-    ZETTLR_FORGE_LOGGER_PORT: String(loggerPort),
-    ...AGENT_API_ENVIRONMENT,
-    ...options.environment,
-  };
-
-  return spawn(forgeExecutable, forgeArguments, {
+  const { rendererPort, loggerPort } = forgePortsOfLane();
+  const forgeExecutable = path.join(REPO_ROOT, "node_modules", ".bin", "electron-forge");
+  return spawn(forgeExecutable, ["start", "--", ...appArguments], {
     cwd: REPO_ROOT,
     detached: true,
-    env: childEnvironment,
+    env: {
+      ...environment,
+      ...options.buildEnvironment,
+      NODE_ENV: "develop",
+      ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
+      ZETTLR_FORGE_LOGGER_PORT: String(loggerPort),
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
+}
+
+/**
+ * The ports of Forge's webpack dev server and logger for a start in this
+ * lane. Forge bakes the entry URLs from the configured port before the
+ * server binds it, so the port cannot be 0. A port that a probe binds and
+ * releases is free for any other process until Forge binds it, and three
+ * lanes start at the same time (#70). Each lane has two ports of its own,
+ * below the ephemeral range of Linux (`net.ipv4.ip_local_port_range`, 32768
+ * to 60999): the kernel gives no port of that range to a bind of port 0 or
+ * to an outgoing connection. The run has a network namespace of its own
+ * (`_e2e-run`), so no process of the host binds them, and a lane starts one
+ * app at a time.
+ */
+function forgePortsOfLane(): { rendererPort: number; loggerPort: number } {
+  const lane = process.env.E2E_LANE;
+  if (lane === undefined || !/^[1-9][0-9]*$/.test(lane)) {
+    throw new Error(
+      `A start that compiles the app runs in a lane of e2e/support/run-lanes.ts (E2E_LANE is ${JSON.stringify(lane)})`,
+    );
+  }
+  const rendererPort = 20_000 + 2 * Number(lane);
+  return { rendererPort, loggerPort: rendererPort + 1 };
 }
 
 export function observeRenderer(page: Page, rendererEvents: string[]): void {
@@ -706,12 +767,32 @@ export interface RunningApp {
   devToolsUrl: string;
 }
 
+/**
+ * The time a start has to expose DevTools and to boot (#70). A start of the
+ * packaged build compiles nothing, so a start that takes longer hangs. The
+ * deadline is shorter than the hook timeout of mocha, so the error of the
+ * start names the hang with the output of the app; the hook timeout would
+ * end the hook without it. A start with a build environment compiles
+ * webpack first.
+ */
+const PACKAGED_START_DEADLINE_MS = 60_000;
+const BUILD_START_DEADLINE_MS = 240_000;
+
+export function startDeadline(options: LaunchOptions): number {
+  if (options.hangDeadlineMs !== undefined) {
+    return options.hangDeadlineMs;
+  }
+  return options.buildEnvironment === undefined
+    ? PACKAGED_START_DEADLINE_MS
+    : BUILD_START_DEADLINE_MS;
+}
+
 export async function attach(
   configDirectory: string,
   rendererEvents: string[],
-  timeoutMs: number,
   options: LaunchOptions = {},
 ): Promise<RunningApp> {
+  const timeoutMs = startDeadline(options);
   const appProcess = await launchElectron(configDirectory, options);
   let attached = false;
   let browser: Browser | undefined;
@@ -744,7 +825,7 @@ export async function attach(
   return await running.finally(async () => {
     if (!attached) {
       await browser?.close();
-      await stopProcess(appProcess);
+      await terminateProcess(appProcess);
     }
   });
 }
@@ -777,20 +858,26 @@ export async function requestWindowClose(page: Page): Promise<void> {
 }
 
 /**
- * Clicks a control whose action closes its page, and waits for the close.
- * Playwright stops each action of a page that closes before the action ends,
- * so a click whose handler closes the page races that close. The page clicks
- * the control in a later task, after the evaluation has answered.
+ * Clicks a control whose action can close its page. Playwright stops each
+ * action of a page that closes before the action ends, so a click whose
+ * handler closes the page races that close. The page clicks the control in a
+ * later task, after the evaluation has answered. The caller waits for what it
+ * expects.
  */
-export async function clickToClose(page: Page, control: Locator): Promise<void> {
+export async function clickBeforeClose(control: Locator): Promise<void> {
   await control.waitFor({ state: "visible", timeout: 10_000 });
   assert.ok(await control.isEnabled(), "the control that closes the page is enabled");
-  const closed = page.waitForEvent("close", { timeout: 10_000 });
   await control.evaluate((element: HTMLElement) => {
     setTimeout(() => {
       element.click();
     }, 100);
   });
+}
+
+/** Clicks a control whose action closes its page, and waits for the close. */
+export async function clickToClose(page: Page, control: Locator): Promise<void> {
+  const closed = page.waitForEvent("close", { timeout: 10_000 });
+  await clickBeforeClose(control);
   await closed;
 }
 

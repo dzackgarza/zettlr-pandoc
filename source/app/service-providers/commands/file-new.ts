@@ -24,11 +24,12 @@ import { app } from "electron";
 import path from "path";
 import sanitize from "sanitize-filename";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import type { ApplicationPayload } from ".";
 import ZettlrCommand from "./zettlr-command";
 
 export default class FileNew extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, ["file-new"]);
+    super(app);
   }
 
   /**
@@ -37,10 +38,7 @@ export default class FileNew extends ZettlrCommand {
    * @param  {Object} arg   An object containing information about the file to create.
    * @return {void}         This function does not return anything.
    */
-  async run(
-    evt: string,
-    arg: { leafId?: string; windowId?: string; name?: string; path?: string; type?: DocumentType },
-  ): Promise<string | undefined> {
+  async run(evt: string, arg: ApplicationPayload<"file-new">): Promise<string | undefined> {
     // A few notes on how this command works with respect to its input. As you
     // can see, all parameters are optional and all which are missing will be
     // inferred from context (otherwise the command will fail). The type

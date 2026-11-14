@@ -40,15 +40,30 @@ import type CiteprocProvider from "@providers/citeproc";
  */
 const CITABLE_DEADLINE_MS = 30000;
 
-export type ZoteroResult<Body> =
+/** The statuses of a failed read of Zotero's local API. */
+export type ZoteroReadFailureStatus = 502 | 503;
+
+/**
+ * The statuses of a failed request to the local-write-api add-on: the 400,
+ * 404 and 409 of the add-on (its ApiError), 502 for each other failure of
+ * Zotero, and 503 for Zotero without the add-on or without an answer.
+ */
+export type ZoteroWriteFailureStatus = 400 | 404 | 409 | 502 | 503;
+
+/** The statuses of a failed URL import: 422 is a source that no method identifies. */
+export type ZoteroUrlImportFailureStatus = ZoteroWriteFailureStatus | 422;
+
+export type ZoteroResult<Body, FailureStatus extends number> =
   | { ok: true; body: Body }
   | {
       ok: false;
-      status: number;
+      status: FailureStatus;
       code: AgentErrorCode;
       message: string;
       remediation?: ZoteroSourceRemediation;
     };
+
+type ZoteroFailure<Status extends number> = Extract<ZoteroResult<never, Status>, { ok: false }>;
 
 /** The fields of an item that Zotero's local API returns and the search reads. */
 interface ZoteroApiItem {
@@ -74,6 +89,53 @@ interface AddonError {
       message: string;
       alternative_sources: Array<{ name: string; example: string }>;
     };
+  };
+}
+
+/** An error answer of the add-on, with its HTTP status. */
+interface AddonRefusal {
+  ok: false;
+  status: number;
+  error: AddonError;
+}
+
+/**
+ * The failure of a refused add-on request. The add-on's 400, 404 and 409 are
+ * of the request and keep their status; each other status is a failure inside
+ * Zotero, a 502 of this API.
+ */
+function addonFailure(
+  refusal: AddonRefusal | ZoteroFailure<503>,
+): ZoteroFailure<ZoteroWriteFailureStatus> {
+  if (!("error" in refusal)) {
+    return refusal;
+  }
+  const { status, error } = refusal;
+  return {
+    ok: false,
+    status: status === 400 || status === 404 || status === 409 ? status : 502,
+    code: "ZOTERO_REQUEST_FAILED",
+    message: `${error.stage}: HTTP ${status} ${error.error}`,
+  };
+}
+
+/** The 422 of a source that no method of the add-on identifies, with its remediation. */
+function sourceNotIdentified(error: AddonError): ZoteroFailure<422> {
+  const remediation = error.details.remediation;
+  if (remediation === undefined) {
+    throw new Error(
+      "The Zotero add-on answered identify_source without a remediation; it is older than 3.4.0",
+    );
+  }
+  return {
+    ok: false,
+    status: 422,
+    code: "ZOTERO_SOURCE_NOT_IDENTIFIED",
+    message: error.error,
+    remediation: {
+      message: remediation.message,
+      alternativeSources: remediation.alternative_sources,
+    },
   };
 }
 
@@ -132,8 +194,10 @@ export default class ZoteroLibrary {
     readonly origin: string,
   ) {}
 
-  async extractions(itemKey: string): Promise<ZoteroResult<ZoteroExtractionsResponse>> {
-    const response = await this.request<AddonChildrenEnvelope>(new URL("/write", this.origin), {
+  async extractions(
+    itemKey: string,
+  ): Promise<ZoteroResult<ZoteroExtractionsResponse, ZoteroWriteFailureStatus>> {
+    const response = await this.write<AddonChildrenEnvelope>({
       operation: "get_item_children",
       item_key: itemKey,
     });
@@ -170,7 +234,10 @@ export default class ZoteroLibrary {
     return { ok: true, body: { itemKey, extractions } };
   }
 
-  async search(query: string, limit: number): Promise<ZoteroResult<ZoteroSearchResponse>> {
+  async search(
+    query: string,
+    limit: number,
+  ): Promise<ZoteroResult<ZoteroSearchResponse, ZoteroReadFailureStatus>> {
     const url = new URL("/api/users/0/items/top", this.origin);
     url.search = new URLSearchParams({
       q: query,
@@ -179,7 +246,7 @@ export default class ZoteroLibrary {
       sort: "dateAdded",
       direction: "desc",
     }).toString();
-    const response = await this.request<ZoteroApiItem[]>(url, undefined);
+    const response = await this.read<ZoteroApiItem[]>(url);
     if (!response.ok) {
       return response;
     }
@@ -212,7 +279,7 @@ export default class ZoteroLibrary {
 
   async importIdentifier(
     request: ZoteroIdentifierImportRequest,
-  ): Promise<ZoteroResult<ZoteroIdentifierImportResponse>> {
+  ): Promise<ZoteroResult<ZoteroIdentifierImportResponse, ZoteroWriteFailureStatus>> {
     const response = await this.write<AddonIdentifierImport>({
       operation: "import_by_identifier",
       identifier: request.identifier,
@@ -228,9 +295,11 @@ export default class ZoteroLibrary {
     return { ok: true, body: { items } };
   }
 
-  async importUrl(request: ZoteroUrlImportRequest): Promise<ZoteroResult<ZoteroUrlImportResponse>> {
+  async importUrl(
+    request: ZoteroUrlImportRequest,
+  ): Promise<ZoteroResult<ZoteroUrlImportResponse, ZoteroUrlImportFailureStatus>> {
     const fallback = request.fallbackMetadata;
-    const response = await this.write<AddonUrlImport>({
+    const response = await this.addon<AddonUrlImport>({
       operation: "import_from_url",
       url: request.url,
       collection_keys: request.collectionKeys,
@@ -248,7 +317,9 @@ export default class ZoteroLibrary {
           }),
     });
     if (!response.ok) {
-      return response;
+      return "error" in response && response.error.stage === "identify_source"
+        ? sourceNotIdentified(response.error)
+        : addonFailure(response);
     }
     const body = response.body;
     return {
@@ -271,20 +342,76 @@ export default class ZoteroLibrary {
     };
   }
 
-  private async write<Body>(body: AddonWriteRequest): Promise<ZoteroResult<Body>> {
-    return await this.request<Body>(new URL("/write", this.origin), body);
+  /** A read of Zotero's local API. Each failure of Zotero is a 502 of this API. */
+  private async read<Body>(url: URL): Promise<ZoteroResult<Body, ZoteroReadFailureStatus>> {
+    const exchange = await this.exchange(url, undefined);
+    if (!("response" in exchange)) {
+      return exchange;
+    }
+    if (exchange.response.ok) {
+      return { ok: true, body: JSON.parse(exchange.text) as Body };
+    }
+    return {
+      ok: false,
+      status: 502,
+      code: "ZOTERO_REQUEST_FAILED",
+      message: `Zotero ${exchange.response.status}: ${exchange.text}`,
+    };
   }
 
   /**
-   * One request to Zotero. An add-on error keeps its status, except that a
-   * Zotero-side failure (5xx) is a 502 of this API; the 422 of a source that
-   * no method identifies carries the add-on's remediation. Zotero without the
-   * add-on is ZOTERO_UNAVAILABLE, as Zotero that does not answer is.
+   * A request to the add-on whose failure is a failure of Zotero. The add-on
+   * answers identify_source only for import_from_url and resolve_url (its
+   * document), so that stage here is no state of this API.
    */
-  private async request<Body>(
+  private async write<Body>(
+    body: AddonWriteRequest,
+  ): Promise<ZoteroResult<Body, ZoteroWriteFailureStatus>> {
+    const response = await this.addon<Body>(body);
+    if (response.ok) {
+      return response;
+    }
+    if ("error" in response && response.error.stage === "identify_source") {
+      throw new Error(
+        `The Zotero add-on answered identify_source for ${body.operation}: ${response.error.error}`,
+      );
+    }
+    return addonFailure(response);
+  }
+
+  /**
+   * A request to the add-on: its answer, its error, or the failure of a
+   * Zotero without the add-on or without an answer.
+   */
+  private async addon<Body>(
+    body: AddonWriteRequest,
+  ): Promise<{ ok: true; body: Body } | AddonRefusal | ZoteroFailure<503>> {
+    const exchange = await this.exchange(new URL("/write", this.origin), body);
+    if (!("response" in exchange)) {
+      return exchange;
+    }
+    const { response, text } = exchange;
+    if (response.ok) {
+      return { ok: true, body: JSON.parse(text) as Body };
+    }
+    // The add-on answers each request with JSON. A route that no endpoint
+    // serves gets Zotero's own text/plain 404: the add-on is not installed.
+    if (response.headers.get("content-type") !== "application/json") {
+      return {
+        ok: false,
+        status: 503,
+        code: "ZOTERO_UNAVAILABLE",
+        message: `Zotero answers at ${this.origin} without the local-write-api add-on: HTTP ${response.status} ${text}`,
+      };
+    }
+    return { ok: false, status: response.status, error: JSON.parse(text) as AddonError };
+  }
+
+  /** One request to Zotero, or the failure of a Zotero that does not answer. */
+  private async exchange(
     url: URL,
     body: AddonWriteRequest | undefined,
-  ): Promise<ZoteroResult<Body>> {
+  ): Promise<{ response: Response; text: string } | ZoteroFailure<503>> {
     let response: Response;
     try {
       response = await fetch(url, {
@@ -304,52 +431,6 @@ export default class ZoteroLibrary {
         message: `Zotero does not answer at ${this.origin}: ${String(error.cause ?? error.message)}`,
       };
     }
-    const text = await response.text();
-    if (response.ok) {
-      return { ok: true, body: JSON.parse(text) as Body };
-    }
-    if (url.pathname !== "/write") {
-      return {
-        ok: false,
-        status: 502,
-        code: "ZOTERO_REQUEST_FAILED",
-        message: `Zotero ${response.status}: ${text}`,
-      };
-    }
-    // The add-on answers each request with JSON. A route that no endpoint
-    // serves gets Zotero's own text/plain 404: the add-on is not installed.
-    if (response.headers.get("content-type") !== "application/json") {
-      return {
-        ok: false,
-        status: 503,
-        code: "ZOTERO_UNAVAILABLE",
-        message: `Zotero answers at ${this.origin} without the local-write-api add-on: HTTP ${response.status} ${text}`,
-      };
-    }
-    const error = JSON.parse(text) as AddonError;
-    if (error.stage === "identify_source") {
-      const remediation = error.details.remediation;
-      if (remediation === undefined) {
-        throw new Error(
-          "The Zotero add-on answered identify_source without a remediation; it is older than 3.4.0",
-        );
-      }
-      return {
-        ok: false,
-        status: 422,
-        code: "ZOTERO_SOURCE_NOT_IDENTIFIED",
-        message: error.error,
-        remediation: {
-          message: remediation.message,
-          alternativeSources: remediation.alternative_sources,
-        },
-      };
-    }
-    return {
-      ok: false,
-      status: response.status >= 500 ? 502 : response.status,
-      code: "ZOTERO_REQUEST_FAILED",
-      message: `${error.stage}: ${error.error}`,
-    };
+    return { response, text: await response.text() };
   }
 }

@@ -41,9 +41,11 @@ import { mapAnnotationThroughChanges } from "@common/util/annotation-anchors";
 import type {
   AnnotationActor,
   AnnotationMessage,
+  AnnotationProposalAction,
   AnnotationSet,
   TextAnnotation,
 } from "@dts/common/annotation-domain";
+import type { ActiveReviewState } from "@dts/common/review-domain";
 import { randomUUID } from "crypto";
 import { annotationSetValidationIssue } from "./annotation-domain-validation";
 import type { AgentEventDraft } from "./review-transitions";
@@ -731,6 +733,69 @@ export function prepareAnnotationOrphaning(
 // ============================================================================
 // Proposal linkage
 // ============================================================================
+
+/**
+ * The outcome of one packet of `review`, or undefined while the owner has a
+ * suggestion of it to decide. A packet that the review no longer holds was
+ * retracted by its agent. A review that ends (a save after the last
+ * decision, a discard) settles each packet it still holds: an undecided
+ * suggestion of an ended review is cleared.
+ */
+function packetOutcome(
+  review: ActiveReviewState,
+  packetId: string,
+  ended: boolean,
+): AnnotationProposalAction["terminalOutcome"] {
+  if (!review.packets.some((packet) => packet.packetId === packetId)) {
+    return "withdrawn";
+  }
+  const decided = new Set<"accepted" | "rejected" | "withdrawn">();
+  for (const suggestion of review.suggestions) {
+    if (suggestion.packetId !== packetId) {
+      continue;
+    }
+    if (suggestion.state === "proposed") {
+      return ended ? "cleared" : undefined;
+    }
+    decided.add(suggestion.state);
+  }
+  if (decided.size === 0) {
+    throw new Error(`Packet ${packetId} of review ${review.reviewId} has no suggestion.`);
+  }
+  return decided.size === 1 ? [...decided][0] : "mixed";
+}
+
+/**
+ * The annotations with the outcome of each proposal action of `review` that
+ * the owner decided. An action keeps an outcome it has; an action of another
+ * review is not changed. The annotation generation does not move: an outcome
+ * follows from the review, and no decision about the annotation was made.
+ * Returns `annotations` itself when no action changes.
+ */
+export function settleProposalActions(
+  annotations: AnnotationSet,
+  review: ActiveReviewState,
+  ended: boolean,
+): AnnotationSet {
+  let changed = false;
+  const items = annotations.items.map((annotation) => {
+    const actions = annotation.proposalActions.map((action) => {
+      if (action.terminalOutcome !== undefined || action.reviewId !== review.reviewId) {
+        return action;
+      }
+      const terminalOutcome = packetOutcome(review, action.packetId, ended);
+      if (terminalOutcome === undefined) {
+        return action;
+      }
+      changed = true;
+      return { ...action, terminalOutcome };
+    });
+    return actions.some((action, index) => action !== annotation.proposalActions[index])
+      ? { ...annotation, proposalActions: actions }
+      : annotation;
+  });
+  return changed ? { generation: annotations.generation, items } : annotations;
+}
 
 /**
  * Record the annotations a submitted proposal says it addresses.

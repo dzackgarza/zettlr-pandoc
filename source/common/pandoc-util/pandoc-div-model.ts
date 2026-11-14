@@ -199,6 +199,16 @@ export function safeProperties(
   );
 }
 
+/**
+ * Whether the author gave the div no closing fence. Pandoc closes such a div
+ * at the end of its container and warns; Flowmark shows that warning
+ * (`pandoc/unclosed-fenced-div`). The div has no model: its source stays
+ * visible, which shows the author where the fence is absent.
+ */
+export function divIsUnclosed(node: SyntaxNode): boolean {
+  return node.getChildren("PandocDivMark").length === 1;
+}
+
 export function divModelFromNode(
   doc: DivSourceDocument,
   node: SyntaxNode,

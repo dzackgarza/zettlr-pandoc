@@ -19,6 +19,7 @@
  */
 
 import { BrowserWindow } from "electron";
+import { EventEmitter } from "events";
 import { readFileSync, rmSync, statSync, unlinkSync } from "fs";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
@@ -27,6 +28,7 @@ import DirDelete from "source/app/service-providers/commands/dir-delete";
 import FileDelete from "source/app/service-providers/commands/file-delete";
 import ConfigProvider from "source/app/service-providers/config";
 import DocumentManager from "source/app/service-providers/documents";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import FSAL from "source/app/service-providers/fsal";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import { parse as parseMarkdownFile } from "source/app/service-providers/fsal/fsal-file";
@@ -37,7 +39,7 @@ import askSaveChanges from "source/app/service-providers/windows/dialog/ask-save
 import saveFileDialog from "source/app/service-providers/windows/dialog/save-dialog";
 import tellMainWindows from "source/app/service-providers/windows/tell-main-windows";
 import type { AnyDescriptor } from "source/types/common/fsal";
-import type { IpcValue } from "source/types/common/ipc";
+import type { IpcBroadcastArgs, IpcBroadcastContracts } from "source/types/renderer/ipc-bridge";
 import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 type WatchdogListener = (event: string, filePath: string) => void;
@@ -49,6 +51,14 @@ export function emitWatchdogEvent(event: "add" | "change" | "unlink", filePath: 
     throw new Error("No DocumentManager subscribed to the watchdog");
   }
   watchdogListener(event, filePath);
+}
+
+/** The publication of the FSAL: each batch of `fsal-events`. */
+const fsalPublication = new EventEmitter();
+
+/** Publishes one batch of FSAL events to the booted manager, as the FSAL does. */
+export function publishFsalEvents(events: FSALEventPayload[]): void {
+  fsalPublication.emit("fsal-events", events);
 }
 
 /** The main window of each window id of a provider, while the window is open. */
@@ -132,6 +142,12 @@ export async function bootDocumentManager(
     config,
     fsal: {
       getWatchdog: () => watcher,
+      on: (evt: "fsal-events", callback: (events: FSALEventPayload[]) => void) => {
+        fsalPublication.on(evt, callback);
+      },
+      off: (evt: "fsal-events", callback: (events: FSALEventPayload[]) => void) => {
+        fsalPublication.off(evt, callback);
+      },
       getDescriptorForAnySupportedFile: descriptorFor,
       loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, "utf-8"),
       getDescriptorFor: descriptorFor,
@@ -161,7 +177,11 @@ export async function bootDocumentManager(
       // The real file dialog, with no window to attach it to.
       saveFile: async (filePath: string) => await saveFileDialog(log, dialogConfig, null, filePath),
       // The real addressing, over the windows that the spec has open.
-      tellMainWindows: (windowIds: readonly string[], channel: string, payload: IpcValue) => {
+      tellMainWindows: <C extends keyof IpcBroadcastContracts>(
+        windowIds: readonly string[],
+        channel: C,
+        ...message: IpcBroadcastArgs<C>
+      ) => {
         const open = BrowserWindow.getAllWindows();
         tellMainWindows(
           windowIds
@@ -169,7 +189,7 @@ export async function bootDocumentManager(
             .filter((window) => window !== undefined && open.includes(window)),
           open[0],
           channel,
-          payload,
+          ...message,
         );
       },
     },

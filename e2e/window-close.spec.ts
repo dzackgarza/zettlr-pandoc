@@ -36,10 +36,10 @@ import {
   agentClient,
   assertCleanExit,
   attach,
+  clickBeforeClose,
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
   requestWindowClose,
@@ -105,7 +105,7 @@ describe("assembled app: the close of a main window", function () {
     );
     await page.locator("#window-content").waitFor({ state: "visible", timeout: 60_000 });
     await page.setViewportSize({ width: 1400, height: 900 });
-    await hideDevServerOverlay(page);
+
     const [leaf] = await leafIds(page);
     await openInLeaf(page, leaf, documentPath);
     await page
@@ -133,12 +133,12 @@ describe("assembled app: the close of a main window", function () {
     sidecarDirectory = path.join(configDirectory, "review-sidecars");
     await writeFile(draftPath, DRAFT, "utf8");
     await writeFile(reviewedPath, REVIEWED, "utf8");
-    const app = await attach(configDirectory, rendererEvents, this.timeout());
+    const app = await attach(configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     firstWindow = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(firstWindow);
+
     await firstWindow.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
   });
 
@@ -233,7 +233,7 @@ describe("assembled app: the close of a main window", function () {
       "the window that the author did not close shows no message",
     );
 
-    await toast.first().locator("[data-toast-action]").click();
+    await clickBeforeClose(toast.first().locator("[data-toast-action]"));
     const prompts = await nativeDialogs(PROMPT_TITLE, 5_000);
     if (prompts.length > 0) {
       screenshots.set("prompt-after-close-anyway.png", await captureWindow(prompts[0]));

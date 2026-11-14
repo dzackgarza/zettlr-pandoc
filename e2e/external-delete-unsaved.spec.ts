@@ -29,7 +29,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -86,12 +85,12 @@ describe("a file that another program removes while its document has unsaved tex
     });
     fixtureRoot = fixture.root;
     documentPath = fixture.documentPath;
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(EDITOR).waitFor({ state: "visible", timeout: this.timeout() });
   });
 
