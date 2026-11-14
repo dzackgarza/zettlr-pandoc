@@ -456,6 +456,12 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   `http://127.0.0.1:27414/ui`; `/readyz` reports readiness.
 - In ChatGPT, the app uses Connection: Tunnel with that tunnel ID. Tool calls fail
   while the editor is closed; the tunnel itself stays up.
+- The Cloudflare tunnel is a second route of the user. The user unit
+  `cloudflared-zettlr.service` (owned by the dotfiles of the user, with the
+  configuration `~/.cloudflared/zettlr-pandoc-laptop.yml`) publishes the
+  listener at a public hostname. It is a part of the working system, as the
+  OpenAI tunnel is. A request through it carries the token as each other
+  request does, and the route answers only while the editor is open.
 - ChatGPT keeps the tool list it read when the app was created or last
   refreshed. A contract change (a new operation, a new request body) reaches
   ChatGPT only after Refresh on the app's settings page and a new
