@@ -1077,8 +1077,12 @@ of an isolated instance are in the first comment of #132.
   file left: an app whose after hook failed takes no display and no memory
   from the next file. Mocha ends when the tests and the hooks of the file
   ended (`--exit`), so a handle that a file left holds no lane. A stop of
-  the run ends each file and its processes with SIGKILL. Proof:
-  `test/e2e-run-lanes.spec.ts`.
+  the run ends each file and its processes with SIGKILL. A runner that
+  SIGKILL ends runs no handler, and the time limit of a file is a timer of
+  the runner: the runner starts each child (the file, the Xvfb server of a
+  lane) through `setpriv --pdeathsig KILL` (`ENDS_WITH_RUNNER`), so the
+  kernel ends the child with the runner. A new child of the runner starts
+  the same way. Proof: `test/e2e-run-lanes.spec.ts`.
 - **Each wait of a run has a limit.** A test or a hook has its Mocha limit.
   A Mocha process ends with its last hook (`--exit` of the lanes runner,
   `exit` of `.mocharc.js` for the unit suite). A spec file of the lanes has

@@ -81,6 +81,15 @@ const FILE_INIT = [
   "; exit $?",
 ].join(" ");
 
+/**
+ * The start of a child that ends with the runner: the kernel sends the child
+ * SIGKILL when the runner ends, also when a signal that the runner cannot
+ * handle ended it (setpriv(1), `PR_SET_PDEATHSIG` of prctl(2)). The time
+ * limit of a file is a timer of the runner, so a file without this would
+ * have no limit after its runner.
+ */
+const ENDS_WITH_RUNNER = ["--pdeathsig", "KILL"];
+
 interface FileResult {
   file: string;
   lane: number;
@@ -102,8 +111,18 @@ interface Display {
  */
 async function startDisplay(): Promise<Display> {
   const server = spawn(
-    "Xvfb",
-    ["-displayfd", "3", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
+    "setpriv",
+    [
+      ...ENDS_WITH_RUNNER,
+      "Xvfb",
+      "-displayfd",
+      "3",
+      "-screen",
+      "0",
+      "1920x1080x24",
+      "-nolisten",
+      "tcp",
+    ],
     { stdio: ["ignore", "ignore", "pipe", "pipe"] },
   );
   let errors = "";
@@ -159,7 +178,8 @@ async function runFile(
   const startedAt = Date.now();
   const { uid, gid } = userInfo();
   const init = ["bash", "-c", FILE_INIT, String(uid), String(gid)];
-  const child = spawn("unshare", [...FILE_NAMESPACES, "--", ...init, mocha, ...MOCHA_ARGS, file], {
+  const unshare = ["unshare", ...FILE_NAMESPACES, "--", ...init, mocha, ...MOCHA_ARGS, file];
+  const child = spawn("setpriv", [...ENDS_WITH_RUNNER, ...unshare], {
     env: {
       ...process.env,
       DISPLAY: display.name,
@@ -274,7 +294,8 @@ async function main(): Promise<number> {
 // A stop ends the running files, and no lane takes another file. The
 // unshare process of a file blocks SIGINT and SIGTERM while it waits for
 // the file; SIGKILL ends it, and the first process of the namespaces with it
-// (`--kill-child`), so no process of the file is left.
+// (`--kill-child`), so no process of the file is left. A runner that SIGKILL
+// ends runs no handler: the kernel ends its children (`ENDS_WITH_RUNNER`).
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     stoppedBy = signal;
