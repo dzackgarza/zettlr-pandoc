@@ -193,7 +193,7 @@ onMounted(() => {
         .invoke("documents-provider", {
           command: shortcut,
           payload: { windowId: props.windowId },
-        } as DocumentManagerIPCAPI)
+        })
         .catch((e) => reportError(e));
     } else if (shortcut === "rename-file") {
       if (currentIdx < 0) {
