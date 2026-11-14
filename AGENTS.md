@@ -90,6 +90,8 @@ recipe exists. Key recipes (see the `justfile` for the exact commands):
 | `just verify-build`                     | Build, then prove the asar is fresh + built from HEAD (observability).                                         |
 | `just verify-build-only`                | Fast staleness check of the existing artifact (no rebuild).                                                    |
 | `just export-headless PDF.yaml file.md` | Run the real `makeExport` headlessly (no GUI) — debug exports.                                                 |
+| `just test-file test/x.spec.ts`         | Run one unit spec.                                                                                             |
+| `just test-e2e-file e2e/x.spec.ts`      | Run one assembled-app spec on the packaged build of the tree (§13).                                            |
 
 ## Build process
 
@@ -153,6 +155,13 @@ Both Zettlr and math-flashcards consume its `markdownEditor` factory. The packag
 imports no application modules. Hosts supply math conversion, preview configuration,
 and ranges that must remain source text. Zettlr adds document-specific renderers
 through its renderer collection. See `packages/pandoc-editor/README.md`.
+
+A fenced div that the author did not close goes to the end of its
+container, as Pandoc reads it. It is a state of the document: its source
+stays visible, Flowmark reports it (`pandoc/unclosed-fenced-div`), and the
+renderer records no application error for it (`divIsUnclosed`,
+`common/pandoc-util/pandoc-div-model.ts`). Proof:
+`test/editor-pandoc-div-widget.spec.ts`.
 
 A click on a rendered widget selects its source through
 `selectRenderedSourceRange` or `placeCursorFromRenderedPoint`
@@ -1026,6 +1035,10 @@ of an isolated instance are in the first comment of #132.
   package before the run too, so the boot script of the installed launcher
   starts the current build and does not package it in a test
   (`e2e/desktop/installed-launcher-delivery.spec.ts`).
+- **A start has no WebGL without `softwareWebGL`.** A start of the harness
+  turns hardware acceleration off. The start option `softwareWebGL`
+  (`LaunchOptions`) gives the windows of one start the contexts of
+  SwiftShader, the software renderer of Chromium.
 - **A lane owns its display.** Each lane starts one Xvfb server
   (`-displayfd`) and runs its files with that `DISPLAY`, also when the
   environment has a display. A native message box, a key that `xdotool`
@@ -1767,10 +1780,18 @@ of an isolated instance are in the first comment of #132.
   folder, applies its rules, and then publishes `addDir` and `add` for each
   listed path, so each window shows the workspace with its files and no path
   that a rule hides.
-- **A row follows the events before its first read.** `TreeItem.vue`
-  follows its children (`followChildren`) before it reads them, so a row
-  whose first read gives nothing still shows the children that a later
-  event adds.
+- **A row has the children of the item that it shows now.**
+  `useItemChildren` (`file-manager/util/item-children.ts`) owns the children
+  of the item of a row, for the list (`FileItem.vue`) and for the tree
+  (`TreeItem.vue`). The list keeps its rows while the folder that it shows
+  changes: the scroller gives a row the item of another path. A new path
+  ends the old subscription and empties the children. A row of a folder
+  follows the folder (`followChildren`) before it reads it, so a row whose
+  first read gives nothing still shows the children that a later event
+  adds. A row of a file follows nothing and reads nothing. An answer is for
+  the row only while no later read started. A read that fails is in the log
+  as `[File manager]`. A new row component gets its children from
+  `useItemChildren`. Proof: `e2e/file-list-row-children.spec.ts`.
 - **One listener for the rows of a window.** `followChildren`
   (`file-manager/util/follow-children.ts`) has the one `fsal-events`
   listener of the file manager; it calls the rows of the parent folder of
@@ -1919,7 +1940,61 @@ of an isolated instance are in the first comment of #132.
   from the downloads folder (`_abandonDownload`, `shutdown`). A file that
   cannot be removed is named in the message. A download is complete when
   its file has each byte (the `end` of the write stream).
-- **Proof:** `test/updater-failures.spec.ts`.
+- **A check that reaches no server is no failure to show.** A host that is
+  not found (`ENOTFOUND`) and a check that gets no answer in its time limit
+  (`ETIMEDOUT`) set the error of the state without a notification: the check
+  runs each hour.
+- **Proof:** `test/updater-failures.spec.ts`,
+  `test/updater-check-timeout.spec.ts`.
+
+### 29. HTTP requests
+
+- **`got` 16 makes each HTTP request of the main process** (the update
+  check and its downloads, the link preview). It is an ES module whose
+  package has an `exports` map only. The type checker therefore resolves a
+  package as webpack does (`tsconfig.json`: `module: preserve`,
+  `moduleResolution: bundler`), and ts-loader states the CommonJS emit of
+  the bundles itself (`webpack.rules.js`).
+- **The Node of Electron is not the Node of the unit tests.** Under the
+  Node of Electron a TLS socket ends a destroyed request with an error of
+  its own, which `got` 11 gave to the caller in place of the timeout. A spec
+  whose subject depends on that Node starts the Electron binary with
+  `ELECTRON_RUN_AS_NODE` (`test/updater-check-timeout.spec.ts`).
+- **The time limit of a request is `timeout.request`.**
+- **The headers of a response come from the stream of the request.** The
+  promise of a request gives its `response` event after the body.
+  `fetchHeaders` (`common/util/fetch-link-preview.ts`) reads the headers
+  from `got.stream` and destroys the stream, so a linked file of another
+  content type is not downloaded.
+- **Proof:** `test/updater-check-timeout.spec.ts`,
+  `test/fetch-link-preview.spec.ts`.
+
+### 30. The QuickTeX configuration
+
+- **Neovim evaluates the configuration.** `loadQuickTex`
+  (`app/util/load-quicktex.ts`) sources the QuickTeX plugin of
+  `editor.quickTexPluginDirectory` and the Vimscript file of
+  `editor.quickTexFile` in Neovim and reads the two dictionaries. The app
+  parses no Vimscript. No file setting is no configuration.
+- **A configuration that the app cannot use is a problem, not a stop.**
+  `AssetsProvider.readQuickTex` gives a catalogue without expansions and one
+  `QuickTexProblem` (`types/common/quicktex.ts`): the setting, the value
+  that the provider read, and the cause. A file that cannot be read and a
+  Neovim run that fails are problems of `editor.quickTexFile`. A plugin
+  directory without `plugin/quicktex.vim` and a configuration without a
+  plugin directory are problems of `editor.quickTexPluginDirectory`.
+- **Each window shows the problem at its setting.** A window follows the
+  problem through `followQuickTexProblem`
+  (`common/util/quicktex-problem.ts`). The main window shows it one time as
+  an error with the action "Open Preferences" (`showQuickTexProblem`). The
+  Preferences window marks the field of the setting while the field holds
+  the value that the provider read (`getSnippetsFields`).
+- **A problem of a setting is shown one time while it stands.**
+  `showStandingProblems` (`win-main/util/standing-problem-toasts.ts`) owns
+  that rule for the citation problems (§12) and the QuickTeX problem. A new
+  provider whose setting names a file that it cannot load shows the problem
+  through it.
+- **Proof:** `e2e/quicktex-unavailable.spec.ts`.
 
 ### 28. Edits of several documents
 
@@ -2056,7 +2131,11 @@ of an isolated instance are in the first comment of #132.
   queue, the startup Flowmark update and the index of the workspaces after a
   change of the open paths each register a long-running task
   (`LongRunningTaskProvider`). The status bar names the newest running task
-  with its elapsed time; its indicator opens the task list. A routine task
+  with its elapsed time; its indicator opens the task list. The status bar
+  has the indicator only while the list holds a task, and a window has a
+  limit of active WebGL contexts: an indicator that leaves gives its context
+  back (`IrisIndicator.dispose`, the extension `WEBGL_lose_context`). Proof:
+  `e2e/task-indicator-webgl-context.spec.ts`. A routine task
   ends through `settleTask`: a success leaves the list, a failure stays
   listed with its error. Each path out of the work, a rejection too, ends
   its task. New background work registers a task the same way. A file that
