@@ -2086,6 +2086,12 @@ of an isolated instance are in the first comment of #132.
 
 ## Traps (details in agent-memory: `agent-memory search --scope both`)
 
+- A change that removes a surface removes its tests, but not the rules
+  that they prove. Before a test of a removed surface goes, find the
+  surface that owns the rule now and put the test there in the same
+  commit. 51a1b362b deleted the test that an ordinary edit is no review
+  decision with the editor label, and the rule had no test until
+  ed4346a48.
 - The raw production command can report success without a fresh asar. Use `just
   package` or `just verify-build` so the verifier checks the current fingerprint.
 - `userData/defaults` is copied once and never pruned. A surface that offers or
