@@ -16,7 +16,6 @@
  */
 
 import { loadData } from "@common/i18n-renderer";
-import { reportError } from "@common/util/error-reporting";
 import { initializeMathJax } from "@common/util/mathtex-to-html";
 import showToast from "@common/util/show-toast";
 import { COMMAND_FAILED_CHANNEL } from "@dts/common/command-failure";
@@ -24,23 +23,7 @@ import type { MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import loadIcons from "./load-icons";
 import registerDefaultContextMenu from "./register-default-context";
 import registerThemes from "./register-themes";
-
-let rendererErrorCaptureInstalled = false;
-
-/** Route otherwise-uncaught renderer failures into the durable application log. */
-export function registerRendererErrorCapture(): void {
-  if (rendererErrorCaptureInstalled) {
-    return;
-  }
-  rendererErrorCaptureInstalled = true;
-
-  window.addEventListener("error", (event) => {
-    reportError("[Renderer] Uncaught error", event.error ?? event.message);
-  });
-  window.addEventListener("unhandledrejection", (event) => {
-    reportError("[Renderer] Unhandled promise rejection", event.reason);
-  });
-}
+import { registerRendererErrorCapture } from "./renderer-error-capture";
 
 /**
  * This function is the renderer's counterpart to the main process's window

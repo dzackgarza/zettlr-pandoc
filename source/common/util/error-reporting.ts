@@ -14,7 +14,10 @@
  *                  container. If logging itself is unavailable or fails, the
  *                  independent stderr sink remains as the final diagnostic
  *                  surface and never recursively attempts to log itself.
- *                  In a renderer that surface is the console of the window.
+ *                  A renderer has no stderr: a failed log request there is
+ *                  a `RendererLogFailure` that rejects unhandled, and the
+ *                  window writes it to its console, which the main process
+ *                  records (`attachLogger`).
  *
  * END HEADER
  */
@@ -58,18 +61,22 @@ function normalizeErrorArguments(args: readonly unknown[]): { message: string; d
   };
 }
 
-/**
- * Final independent fallback that bypasses the application logger itself.
- * A sandboxed renderer has no `process`: there the text goes to the console
- * of the window, which the main process records (`attachLogger`).
- */
+/** Final independent fallback of a Node process that bypasses the application logger itself. */
 export function stderrError(...args: readonly unknown[]): void {
-  const text = args.map(describeErrorValue).join(" ");
-  if (typeof process === "undefined") {
-    console.error(text);
-    return;
+  process.stderr.write(`${args.map(describeErrorValue).join(" ")}\n`);
+}
+
+/**
+ * A renderer could not send an error to the log. It rejects unhandled: the
+ * window writes it to its console, and the capture of the window does not
+ * send it to the log again (`registerRendererErrorCapture`).
+ */
+export class RendererLogFailure extends Error {
+  constructor(message: string, details: string | undefined, cause: unknown) {
+    const reported = details === undefined ? message : `${message}\n${details}`;
+    super(`[Renderer logging failed] ${reported}\n${describeErrorValue(cause)}`, { cause });
+    this.name = "RendererLogFailure";
   }
-  process.stderr.write(`${text}\n`);
 }
 
 /**
@@ -101,7 +108,7 @@ export function reportError(...args: readonly unknown[]): void {
         payload: { message, details },
       })
       .catch((loggingError) => {
-        stderrError(`[Renderer logging failed] ${message}`, loggingError);
+        throw new RendererLogFailure(message, details, loggingError);
       });
     return;
   }
