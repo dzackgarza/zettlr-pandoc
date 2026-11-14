@@ -34,6 +34,7 @@ import {
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
+import { findProjectPropertiesPage } from "./support/project-properties";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-project-settings-refusal-e2e-latest");
 const NOTE = "# Lattices\n\nThe genus of a lattice: see @def\n";
@@ -92,21 +93,6 @@ async function dismissErrors(page: Page): Promise<void> {
   while ((await dismiss.count()) > 0) {
     await dismiss.first().click();
   }
-}
-
-async function findProjectPropertiesPage(browser: Browser, timeoutMs: number): Promise<Page> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    for (const context of browser.contexts()) {
-      for (const page of context.pages()) {
-        if ((await page.locator("#formats-panel").count()) > 0) {
-          return page;
-        }
-      }
-    }
-    await delay(100);
-  }
-  throw new Error(`No project-properties window appeared within ${timeoutMs}ms`);
 }
 
 describe("a refused change of Project settings", function () {
