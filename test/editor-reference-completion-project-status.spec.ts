@@ -58,6 +58,7 @@ import {
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import { type CompletionInsertionAffordance } from "source/common/pandoc-util/project-reference-status";
+import { dismissAllNotifications, notificationEntries } from "source/common/util/show-toast";
 import {
   type AppendAndContinuePlan,
   type ProjectReferenceStatus,
@@ -130,6 +131,8 @@ describe("Project-status completion gating (issue #1 Phase 7)", function () {
     ipc?: { invoke: (channel: string, message: RecordedInvoke["message"]) => Promise<unknown> };
   };
   let previousIpc: typeof windowWithIpc.ipc;
+  /** The rejection of the main process for `update-project-properties`. */
+  let updateRefusal: Error | undefined;
 
   before(function () {
     // window.ipc is the production preload bridge, present in every renderer
@@ -159,6 +162,9 @@ describe("Project-status completion gating (issue #1 Phase 7)", function () {
             },
           };
         }
+        if (message.command === "update-project-properties" && updateRefusal !== undefined) {
+          throw updateRefusal;
+        }
         return undefined;
       },
     };
@@ -170,6 +176,8 @@ describe("Project-status completion gating (issue #1 Phase 7)", function () {
 
   beforeEach(function () {
     recordedInvokes.splice(0);
+    updateRefusal = undefined;
+    dismissAllNotifications();
   });
 
   afterEach(function () {
@@ -317,6 +325,34 @@ describe("Project-status completion gating (issue #1 Phase 7)", function () {
         "the append plan must extend ProjectSettings.files with exactly the omitted target",
       );
     });
+  });
+
+  it("shows no message of its own when the main process refuses the append", async function () {
+    // The dispatcher of the main process shows the failure of a command in
+    // the window that started it. A message of the completion would be a
+    // second one, and a message of success would be false.
+    updateRefusal = new Error("Could not write the settings of ProjectA: permission denied.");
+    const view = createEditor("See @tbl", annotatedEntries());
+    const { surface, option } = optionFor(view, "tbl:coble-lattices");
+
+    applyOption(view, surface, option);
+    await waitForAppend();
+
+    assert.strictEqual(view.state.doc.toString(), "See @tbl:coble-lattices");
+    assert.deepStrictEqual(
+      recordedInvokes.map((entry) => [entry.channel, entry.message.command]),
+      [
+        ["fsal", "get-descriptor"],
+        ["application", "update-project-properties"],
+        ["log-provider", "record-error"],
+      ],
+      "the completion logs the refusal",
+    );
+    assert.deepStrictEqual(
+      notificationEntries().map((entry) => entry.message),
+      [],
+      "the completion shows no message beside the one of the dispatcher",
+    );
   });
 
   it("inserts standalone entries with the export-unit warning affordance", function () {
