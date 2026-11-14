@@ -133,9 +133,11 @@ describe("assembled app: an Agent API port that another process holds (#215)", f
   });
 
   it("stops each process of the app when an attach fails (#57)", async function () {
-    // The attach waits its whole time limit for a start that does not end,
-    // and then stops the process group of the app.
-    this.timeout(startDeadline({}) + 60_000);
+    // The app stops at the error box, so the start does not end. The attach
+    // waits its time limit, and then stops the process group of the app. The
+    // app shows the box in about 3 s; the limit leaves the app running.
+    const options = { hangDeadlineMs: 15_000 };
+    this.timeout(startDeadline(options) + 60_000);
     const address = requireInitialized(holder, "the holder listens").address();
     assert.ok(address !== null && typeof address === "object", "the holder has a port");
 
@@ -144,7 +146,7 @@ describe("assembled app: an Agent API port that another process holds (#215)", f
       documentContents: "# Note\n",
       config: { agentApi: { enabled: true, port: address.port } },
     });
-    await assert.rejects(attach(attachFixture.configDirectory, []), Error);
+    await assert.rejects(attach(attachFixture.configDirectory, [], options), Error);
     assert.deepEqual(
       await processesNaming(attachFixture.configDirectory),
       [],

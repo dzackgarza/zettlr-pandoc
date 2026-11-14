@@ -269,12 +269,27 @@ async function waitForProcessGroupExit(pid: number, timeoutMs: number): Promise<
   return !processGroupIsAlive(pid);
 }
 
+/**
+ * Waits for an app that was asked to quit, and ends its process group when
+ * it does not exit within 10 s.
+ */
 export async function stopProcess(appProcess: ChildProcess | undefined): Promise<void> {
   if (appProcess?.pid === undefined) {
     return;
   }
 
   if (await waitForProcessGroupExit(appProcess.pid, 10_000)) {
+    return;
+  }
+  await terminateProcess(appProcess);
+}
+
+/**
+ * Ends the process group of an app that nothing asked to quit: SIGTERM, and
+ * SIGKILL for a group that is still alive 5 s later.
+ */
+export async function terminateProcess(appProcess: ChildProcess | undefined): Promise<void> {
+  if (appProcess?.pid === undefined || !processGroupIsAlive(appProcess.pid)) {
     return;
   }
 
@@ -628,6 +643,11 @@ export interface LaunchOptions {
    * runs the packaged build of the run.
    */
   buildEnvironment?: NodeJS.ProcessEnv;
+  /**
+   * The deadline of a start that the spec expects to hang: the attach gives
+   * up after it. A start that must succeed keeps `startDeadline`.
+   */
+  hangDeadlineMs?: number;
 }
 
 export async function launchElectron(
@@ -750,6 +770,9 @@ const PACKAGED_START_DEADLINE_MS = 60_000;
 const BUILD_START_DEADLINE_MS = 240_000;
 
 export function startDeadline(options: LaunchOptions): number {
+  if (options.hangDeadlineMs !== undefined) {
+    return options.hangDeadlineMs;
+  }
   return options.buildEnvironment === undefined
     ? PACKAGED_START_DEADLINE_MS
     : BUILD_START_DEADLINE_MS;
@@ -793,7 +816,7 @@ export async function attach(
   return await running.finally(async () => {
     if (!attached) {
       await browser?.close();
-      await stopProcess(appProcess);
+      await terminateProcess(appProcess);
     }
   });
 }

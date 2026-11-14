@@ -113,6 +113,8 @@ describe("application launch delivery", function () {
         rejected.once("exit", resolve);
       });
       assert.equal(rejectedStatus, 1, "A failed document open must fail the invoking process");
+      // The owner quits as the author quits it; the cleanup waits for its exit.
+      await requestQuit(page);
     } finally {
       if (primary.pid !== undefined && primary.exitCode === null && primary.signalCode === null)
         process.kill(primary.pid, "SIGCONT");
@@ -212,6 +214,8 @@ describe("application launch delivery", function () {
         1,
         "Repeated quit requests must run cleanup once",
       );
+      // The new owner quits as the author quits it; the cleanup waits for its exit.
+      await requestQuit(page);
     } finally {
       if (primary.exitCode === null && primary.signalCode === null) process.kill(pid, "SIGCONT");
       await browser?.close();
