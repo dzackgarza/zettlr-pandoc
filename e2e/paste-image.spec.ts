@@ -27,10 +27,10 @@ import { type Browser, type Page } from "playwright";
 import {
   assertCleanExit,
   attach,
+  clickToClose,
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -91,12 +91,12 @@ describe("assembled app: paste of an image from the clipboard", function () {
     });
     fixtureRoot = fixture.root;
     documentPath = fixture.documentPath;
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
   });
@@ -143,7 +143,8 @@ describe("assembled app: paste of an image from the clipboard", function () {
     const modal = await findPasteImagePage(requireInitialized(browser, "No browser"), 20_000);
     screenshots.set(`paste-image-window-${name}.png`, await modal.screenshot());
     await modal.locator("#paste-image input[type='text']").first().fill(name);
-    await modal.locator("#statusbar button", { hasText: "Save" }).click();
+    // The main process closes the window when it has the answer of Save.
+    await clickToClose(modal, modal.locator("#statusbar button", { hasText: "Save" }));
   }
 
   /** Waits until the window shows one more error message than before. */

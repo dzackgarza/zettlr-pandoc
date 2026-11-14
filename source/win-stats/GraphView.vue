@@ -52,10 +52,8 @@ import Checkbox from "@common/vue/form/elements/CheckboxControl.vue";
 import ProgressElement from "@common/vue/form/elements/ProgressControl.vue";
 import SelectElement from "@common/vue/form/elements/SelectControl.vue";
 import TextElement from "@common/vue/form/elements/TextControl.vue";
-import { type MDFileDescriptor } from "@dts/common/fsal";
 import * as d3 from "d3";
 import { type SimulationNodeDatum } from "d3";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import type { WikilinkEdge } from "source/app/service-providers/links/ipc-contract";
 import getDocumentTitle from "source/win-main/util/get-document-title";
 import tippy from "tippy.js";
@@ -461,7 +459,7 @@ function startSimulation(): void {
                   path: vertex.id,
                   newTab: event.altKey === true ? true : undefined,
                 },
-              } as DocumentManagerIPCAPI)
+              })
               .catch((err) => reportError(err));
           })
           .attr("data-tippy-content", (vertex) => {
@@ -540,21 +538,16 @@ async function buildGraph(): Promise<void> {
 
   const DG = new DirectedGraph();
 
-  const startTime = performance.now();
   DG.startOperation();
   // Fortunately, the fileLinkDatabase is basically just one large edgelist
   for (const [sourcePath, targets] of database) {
     buildProgress.value.currentFile += 1;
     // We have to specifically add the source, since isolates will have 0
     // targets, and hence we cannot rely on the Graph adding these vertices
-    const sourceDescriptor: MDFileDescriptor | undefined = await ipcRenderer.invoke("fsal", {
+    const sourceDescriptor = await ipcRenderer.invoke("fsal", {
       command: "get-descriptor",
       payload: sourcePath,
     });
-    if (sourceDescriptor === undefined) {
-      console.warn(`Could not find descriptor for ${sourcePath}. Not adding to graph.`);
-      continue;
-    }
 
     DG.addVertex(sourcePath, getDocumentTitle(sourceDescriptor));
 
@@ -566,11 +559,11 @@ async function buildGraph(): Promise<void> {
         DG.addArc(sourcePath, edge.target);
         continue;
       }
-      const found: MDFileDescriptor | undefined = await ipcRenderer.invoke("fsal", {
+      const found = await ipcRenderer.invoke("fsal", {
         command: "get-descriptor",
         payload: edge.path,
       });
-      DG.addVertex(edge.path, found === undefined ? edge.target : getDocumentTitle(found));
+      DG.addVertex(edge.path, getDocumentTitle(found));
       DG.addArc(sourcePath, edge.path);
     }
   }
@@ -605,10 +598,6 @@ async function buildGraph(): Promise<void> {
   }
   // END: Component determining
 
-  const duration = performance.now() - startTime;
-  console.log(
-    `[Link Provider] Graph constructed in ${Math.round(duration)}ms. Graph contains ${DG.countVertices} nodes, ${DG.countArcs} arcs and ${DG.countComponents} components.`,
-  );
   isBuildingGraph.value = false;
   fileGraph.value = DG.graph;
   startSimulation();

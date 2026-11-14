@@ -702,4 +702,19 @@ export class WebGLEngine {
     ]);
     this.gl.bufferData(this.gl.ARRAY_BUFFER, coords, this.gl.STATIC_DRAW);
   }
+
+  /**
+   * Gives the WebGL context back to the window. A window has a limit of
+   * contexts, and a context of a removed canvas counts until the browser
+   * collects the canvas. The engine draws nothing after this call.
+   */
+  releaseContext() {
+    const extension = this.gl.getExtension("WEBGL_lose_context");
+    if (extension === null) {
+      throw new Error(
+        "The WebGL context of the indicator has no WEBGL_lose_context extension and stays active.",
+      );
+    }
+    extension.loseContext();
+  }
 }

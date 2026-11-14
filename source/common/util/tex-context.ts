@@ -1,8 +1,7 @@
+import type { TexstudioCommandIndex } from "@dts/common/tex-vocabulary";
 import { texCommandDeclarationEntries } from "@dzack/tikz-render/tex-command-declarations";
 import type { Tree } from "@lezer/common";
-import YAML from "yaml";
 import { firstMetadataBlock, type MetadataBlockRange } from "./document-frontmatter";
-import type { TexstudioCommandIndex } from "./texstudio-command-index";
 
 export type TexDocumentKind = "markdown" | "latex" | "yaml";
 
@@ -22,69 +21,13 @@ export function texDocument(source: string, kind: TexDocumentKind, tree: Tree): 
     : { kind, source };
 }
 
-export interface TexMacroSource {
-  path: string;
-  content: string;
-}
-
+/**
+ * The TeX of a document as the completion reads it: the index entries that
+ * its declarations load, and the commands that it defines.
+ */
 export interface TexContextDeclaration {
-  packages: string[];
-  classes: string[];
-  macroSources: string[];
+  roots: string[];
   userCommands: string[];
-}
-
-function stringList(value: unknown): string[] {
-  if (typeof value === "string") {
-    return [value];
-  }
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((entry): entry is string => typeof entry === "string");
-}
-
-function frontmatterObject(document: TexDocument): Record<string, unknown> | undefined {
-  let yamlSource = document.source;
-  if (document.kind === "markdown") {
-    if (document.metadata === null) {
-      return undefined;
-    }
-    yamlSource = document.source.slice(document.metadata.bodyFrom, document.metadata.bodyTo);
-  } else if (document.kind !== "yaml") {
-    return undefined;
-  }
-
-  try {
-    const parsed: unknown = YAML.parse(yamlSource);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function explicitTexContext(document: TexDocument): {
-  packages: string[];
-  classes: string[];
-  macroSources: string[];
-} {
-  const root = frontmatterObject(document);
-  const tex = root?.tex;
-  if (typeof tex !== "object" || tex === null || Array.isArray(tex)) {
-    return { packages: [], classes: [], macroSources: [] };
-  }
-  const record = tex as Record<string, unknown>;
-  return {
-    packages: stringList(record.packages),
-    classes: stringList(record.classes),
-    macroSources: stringList(record.macro_sources),
-  };
-}
-
-export function declaredTexMacroSources(document: TexDocument): string[] {
-  return explicitTexContext(document).macroSources;
 }
 
 /**
@@ -241,98 +184,49 @@ function stripTexComments(source: string): string {
     .join("\n");
 }
 
-function scanTexSource(source: string): {
-  packages: string[];
-  classes: string[];
-  userCommands: string[];
-} {
-  const packages = new Set<string>();
-  const classes = new Set<string>();
-  const userCommands = new Set<string>();
-  const uncommented = stripTexComments(source);
-
-  for (const match of uncommented.matchAll(
-    /\\(?:usepackage|RequirePackage)(?:\s*\[[^\]]*\])?\s*\{([^}]*)\}/gu,
-  )) {
-    for (const packageName of match[1].split(",")) {
-      if (packageName.trim() !== "") {
-        packages.add(packageName.trim());
-      }
-    }
-  }
-  for (const match of uncommented.matchAll(/\\documentclass(?:\s*\[[^\]]*\])?\s*\{([^}]*)\}/gu)) {
-    for (const className of match[1].split(",")) {
-      if (className.trim() !== "") {
-        classes.add(className.trim());
-      }
-    }
-  }
-
-  // The one reader of TeX declarations, which the macro inventory uses too
-  for (const declaration of texCommandDeclarationEntries(uncommented)) {
-    userCommands.add(declaration.name);
-  }
-
-  return {
-    packages: [...packages],
-    classes: [...classes],
-    userCommands: [...userCommands],
-  };
-}
-
-function providerName(name: string): string {
-  return name.trim().replace(/\.(?:cwl|sty|cls)$/iu, "");
-}
-
-function classProviderName(name: string, index: TexstudioCommandIndex): string {
-  const normalized = providerName(name);
-  const className = "class-" + normalized;
-  return index.p[className] === undefined ? normalized : className;
-}
+// Flowmark's `_PACKAGE_DECLARATION` and `_DOCUMENT_CLASS_DECLARATION`
+// (lint_authoring.py): a package declaration loads each name of its list, a
+// class declaration loads one name.
+const PACKAGE_DECLARATION =
+  /\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]*\]\s*)?\{(?<names>[^{}]+)\}/gu;
+const DOCUMENT_CLASS_DECLARATION = /\\documentclass\s*(?:\[[^\]]*\]\s*)?\{(?<name>[^{}]+)\}/gu;
 
 /**
- * Extracts the package/class roots and user-defined commands that determine
- * TeX completion validity. Additional macro sources are supplied by the host
- * through Zettlr's document authority; this common module never reads files.
+ * The index entries that a declaration loads: a package by its name, a class
+ * as `class-<name>` when the index has that entry and by its name otherwise.
+ * Flowmark's `_texstudio_roots`.
  */
+function declaredRoots(source: string, index: TexstudioCommandIndex): Set<string> {
+  const roots = new Set<string>();
+  for (const match of source.matchAll(PACKAGE_DECLARATION)) {
+    for (const name of match.groups!.names.split(",")) {
+      if (name.trim() !== "") {
+        roots.add(name.trim());
+      }
+    }
+  }
+  for (const match of source.matchAll(DOCUMENT_CLASS_DECLARATION)) {
+    const name = match.groups!.name.trim();
+    if (name !== "") {
+      const className = `class-${name}`;
+      roots.add(index.packages[className] === undefined ? name : className);
+    }
+  }
+  return roots;
+}
+
+/** The index entries that the TeX of the document loads, and the commands it defines. */
 export function collectTexContext(
   index: TexstudioCommandIndex,
   document: TexDocument,
-  macroSources: readonly TexMacroSource[] = [],
 ): TexContextDeclaration {
   const visible = texCommandSurface(document);
-  const scanned = scanTexSource(visible);
-  const explicit = explicitTexContext(document);
-  const packages = new Set<string>([
-    ...scanned.packages.map(providerName),
-    ...explicit.packages.map(providerName),
-  ]);
-  const classes = new Set<string>([
-    ...scanned.classes.map((name) => classProviderName(name, index)),
-    ...explicit.classes.map((name) => classProviderName(name, index)),
-  ]);
-  const userCommands = new Set<string>(scanned.userCommands);
-
-  for (const macroSource of macroSources) {
-    if (!/\.(?:tex|sty|cls)$/iu.test(macroSource.path)) {
-      continue;
-    }
-    const sourceContext = scanTexSource(macroSource.content);
-    for (const packageName of sourceContext.packages) {
-      packages.add(providerName(packageName));
-    }
-    for (const className of sourceContext.classes) {
-      classes.add(classProviderName(className, index));
-    }
-    for (const command of sourceContext.userCommands) {
-      userCommands.add(command);
-    }
-  }
-
+  // The one reader of TeX declarations, which the macro inventory uses too
+  const userCommands = new Set(
+    texCommandDeclarationEntries(visible).map((declaration) => declaration.name),
+  );
   return {
-    packages: [...packages].sort(),
-    classes: [...classes].sort(),
-    macroSources: [...new Set(explicit.macroSources)].sort(),
+    roots: [...declaredRoots(visible, index)].sort(),
     userCommands: [...userCommands].sort(),
   };
 }

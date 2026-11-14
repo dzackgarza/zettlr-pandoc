@@ -66,12 +66,6 @@ const captures = {
     driver: "test/reference-navigation-probe.mjs",
     esbuildArgs: ["--define:process.platform='\"linux\"'"],
   },
-  "rename-preview": {
-    build: "test/visual-build.cjs",
-    entry: "test/reference-rename-preview-entry.ts",
-    bundle: "reference-rename-preview-bundle.js",
-    driver: "test/reference-rename-preview-probe.mjs",
-  },
   "selection-composer": {
     build: "test/visual-build.cjs",
     entry: "test/annotation-composer-visual-entry.ts",

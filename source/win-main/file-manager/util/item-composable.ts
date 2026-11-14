@@ -17,7 +17,6 @@
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import generateFilename from "@common/util/generate-filename";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { hasImageExt, hasPDFExt } from "source/common/util/file-extention-checks";
 import makeValidUri from "source/common/util/make-valid-uri";
 import {
@@ -205,7 +204,7 @@ export function useItemComposable(
             leafId: documentTreeStore.lastLeafId,
             newTab: middleClick || (alt && type === "file"), // Force a new tab in this case.
           },
-        } as DocumentManagerIPCAPI)
+        })
         .then(() => {
           configStore.setConfigValue("openDirectory", obj.value.dir);
           // Finally, since it's a directory, uncollapse it.
@@ -303,7 +302,7 @@ export function useItemComposable(
                 windowId,
                 newTab: true,
               },
-            } as DocumentManagerIPCAPI)
+            })
             .catch((e) => reportError(e));
         } else if (clickedID === "menu.rename_file") {
           nameEditing.value = true;

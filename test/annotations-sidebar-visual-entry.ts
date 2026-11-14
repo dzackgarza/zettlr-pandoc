@@ -100,6 +100,9 @@ declare global {
      *  three annotations plus a multi-turn thread and a partially decided
      *  proposal, review active. */
     annotationsSceneSetM10CapturesScenario: (active: boolean) => Promise<void>;
+    /** The same session after the agent withdrew the pending proposal of
+     *  the partly decided thread: each of its proposals has an outcome. */
+    annotationsSceneSetProposalsDecided: () => Promise<void>;
     /** Clicks the gutter chip on a 1-based source line, as the owner does. */
     annotationsSceneClickChip: (line: number) => Promise<void>;
     /** Clicks an annotation's row in the workspace panel and reports every
@@ -184,6 +187,7 @@ declare global {
       /** The proposal card's one affordance. */
       showProposalLabel: string;
       proposalCardText: string | null;
+      proposalCountText: string | null;
       /** Every thread message's relative time, in thread order. */
       messageTimes: string[];
       /** Every thread message's rendered text, in thread order. */
@@ -348,6 +352,12 @@ function trimmedText(element: Element): string {
     throw new Error(`<${element.localName}> has no text`);
   }
   return text.trim();
+}
+
+/** The text of the element that `selector` names in `root`; null when the scene shows none. */
+function textIfPresent(root: Element | null, selector: string): string | null {
+  const element = root === null ? null : root.querySelector(selector);
+  return element === null ? null : trimmedText(element);
 }
 
 function requireAttribute(element: Element, name: string): string {
@@ -664,6 +674,22 @@ async function mount(): Promise<void> {
   window.annotationsSceneSetM10CapturesScenario = async (active) => {
     await setSession(active ? m10CapturesSession : sceneSession);
   };
+  window.annotationsSceneSetProposalsDecided = async () => {
+    await setSession({
+      ...m10CapturesSession,
+      annotations: {
+        generation: m10CapturesSession.annotations.generation + 1,
+        items: m10CapturesSession.annotations.items.map((annotation) => ({
+          ...annotation,
+          proposalActions: annotation.proposalActions.map((action) =>
+            action.terminalOutcome === undefined
+              ? { ...action, terminalOutcome: "withdrawn" as const }
+              : action,
+          ),
+        })),
+      },
+    });
+  };
   window.annotationsSceneSetUnreadableFile = async (active) => {
     setAnnotationsSceneUnreadableFiles(active ? [sceneUnreadableFile] : []);
     await collaborationStore.refreshWorkspaceSessions([SCENE_DOCUMENT_PATH]);
@@ -902,6 +928,7 @@ async function mount(): Promise<void> {
       showProposalLabel:
         thread?.querySelector(".annotation-action-show-proposal")?.textContent?.trim() ?? "",
       proposalCardText: thread?.querySelector(".proposal-action-card")?.textContent ?? null,
+      proposalCountText: textIfPresent(thread, ".proposal-action-card .proposal-count"),
       messageTimes: [...paneHost.querySelectorAll(".annotation-message-time")].map(trimmedText),
       messageTexts: [...paneHost.querySelectorAll(".annotation-message-text")].map(trimmedText),
       annotationRowSummaries: [

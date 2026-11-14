@@ -41,7 +41,7 @@ export interface OpenAttachmentServices {
 
 export default class OpenAttachment extends ZettlrCommand<OpenAttachmentServices> {
   constructor(app: OpenAttachmentServices) {
-    super(app, "open-attachment");
+    super(app);
   }
 
   /**

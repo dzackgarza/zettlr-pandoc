@@ -53,7 +53,7 @@ export interface FileMetadataServices {
 
 export default class FilePathFindMetaData extends ZettlrCommand<FileMetadataServices> {
   constructor(app: FileMetadataServices) {
-    super(app, ["file-find-and-return-meta-data"]);
+    super(app);
   }
 
   /**

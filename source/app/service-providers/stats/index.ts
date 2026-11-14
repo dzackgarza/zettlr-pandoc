@@ -18,10 +18,11 @@ import PersistentDataContainer, {
 } from "@common/modules/persistent-data-container";
 import broadcastIPCMessage from "@common/util/broadcast-ipc-message";
 import { isDateInTheFuture, today } from "@common/util/stats";
-import { app, ipcMain } from "electron";
+import { app } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
 import { disambiguateFile } from "source/app/util/disambiguate-filename";
+import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
 
@@ -77,11 +78,8 @@ export default class StatsProvider extends ProviderContract {
       pomodoros: {},
     };
 
-    ipcMain.handle("stats-provider", (event, payload) => {
-      const { command } = payload;
-      if (command === "get-data") {
-        return this.getData();
-      }
+    handleInvokeChannel("stats-provider", {
+      "get-data": () => this.getData(),
     });
   }
 

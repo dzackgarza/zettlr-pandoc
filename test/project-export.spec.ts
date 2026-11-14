@@ -33,7 +33,7 @@ import LogProvider from "source/app/service-providers/log";
 import LongRunningTaskProvider from "source/app/service-providers/long-running-tasks";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { bootFilteredFsal, bootFsal } from "./fsal-seam";
-import { messageBoxes, notifications, userData } from "./headless-electron-harness.cjs";
+import { home, messageBoxes, notifications, userData } from "./headless-electron-harness.cjs";
 import { installRecordingJust, type RecordingJust } from "./recording-just";
 import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
@@ -207,7 +207,7 @@ describe("Project export", function () {
 
     // An export with pandoc reads the macro tree and its MathJax projection
     // from the home directory.
-    macroHome = path.join(tmpdir(), ".pandoc");
+    macroHome = path.join(home, ".pandoc");
     await cp(path.resolve("test", "fixtures", "pandoc-macros"), macroHome, { recursive: true });
     // A Pandoc export runs the wikilink filter of pandoc-config.
     await cp(

@@ -243,7 +243,7 @@ describe("useDocumentCollaborationStore", function () {
     // The main process sends a copy of the session for each request.
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       return message.command === "get-workspace-collaboration-sessions"
-        ? { sessions: [structuredClone(provided)], unreadable: [], ownerless: [] }
+        ? { sessions: [structuredClone(provided)], unreadable: [], ownerless: [], unsaved: [] }
         : structuredClone(provided);
     });
 
@@ -323,6 +323,7 @@ describe("useDocumentCollaborationStore", function () {
       sessions: [structuredClone(beforeReply)],
       unreadable: [],
       ownerless: [],
+      unsaved: [],
     });
     await refresh;
 
@@ -380,7 +381,7 @@ describe("useDocumentCollaborationStore", function () {
       context: { filePath: DOCUMENT_PATH, collaborationSession: annotated },
     });
 
-    workspaceRead.resolve({ sessions: [], unreadable: [], ownerless: [] });
+    workspaceRead.resolve({ sessions: [], unreadable: [], ownerless: [], unsaved: [] });
     await refresh;
 
     assert.deepEqual(store.getSession(DOCUMENT_PATH), annotated);

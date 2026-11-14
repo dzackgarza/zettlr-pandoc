@@ -16,7 +16,8 @@
 
 /**
  * The messages the dictionary provider broadcasts on 'dictionary-provider'.
- * Renderer listeners annotate their payload with this type.
+ * IpcBroadcastContracts (source/types/renderer/ipc-bridge.ts) declares it
+ * for the channel, so a listener gets this type without an annotation.
  */
 export interface DictionaryProviderBroadcast {
   command: "invalidate-dict" | "prose-completions-updated";
@@ -64,6 +65,6 @@ export type DictionaryProviderIPCContract = {
   };
   "open-prose-completion-file": {
     request: { payload?: undefined };
-    response: string;
+    response: void;
   };
 };

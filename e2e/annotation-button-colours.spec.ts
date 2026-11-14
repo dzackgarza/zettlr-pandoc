@@ -33,7 +33,6 @@ import {
   attach,
   createFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
   requireInitialized,
@@ -186,12 +185,12 @@ describe("assembled app: controls of the collaboration surfaces", function () {
     fixtureRoot = fixture.root;
     configDirectory = fixture.configDirectory;
     documentPath = fixture.documentPath;
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     const editorPage = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(editorPage);
+
     await editorPage.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     page = editorPage;
   });

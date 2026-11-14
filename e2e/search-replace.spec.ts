@@ -12,7 +12,11 @@
  *                  options, the globs that scope it, result rows that read
  *                  as one line each and show what a replacement would do,
  *                  and replacing all of them, one file's, or one match —
- *                  with the row a dismissal removed left alone.
+ *                  with the row a dismissal removed left alone. Replace
+ *                  All shows the shared preview of an edit of several
+ *                  documents first (#6): each document and each changed
+ *                  line, before and after, and no file changes until the
+ *                  author applies.
  *
  * END HEADER
  */
@@ -29,12 +33,12 @@ import {
   createWorkspaceFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   REPO_ROOT,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
+import { answerPreview, PREVIEW, previewRows } from "./support/workspace-edit-preview";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-search-replace-e2e-latest");
 
@@ -51,53 +55,6 @@ const TOGGLE = (name: string): string => `${VIEW} [data-search-toggle="${name}"]
 async function clickRowAction(row: Locator, action: string): Promise<void> {
   await row.hover();
   await row.locator(ACTION(action)).click();
-}
-
-interface ConfirmationPainting {
-  centre: [number, number];
-  viewportCentre: [number, number];
-  replace: string;
-  cancel: string;
-  accent: string;
-  surface: string;
-  text: string;
-  chromeText: string;
-}
-
-/**
- * Where the Replace All confirmation is, the background of its two actions,
- * and what the colour tokens of the window resolve to on an element of
- * `body`, which is where the confirmation is.
- */
-async function confirmationPainting(page: Page): Promise<ConfirmationPainting> {
-  return await page.evaluate(() => {
-    const replace = document.querySelector('[data-search-confirm="replace-all"]');
-    const dialog = replace?.closest('[role="alertdialog"]');
-    const cancel = dialog?.querySelector("button:not([data-search-confirm])");
-    if (replace == null || dialog == null || cancel == null) {
-      throw new Error("The Replace All confirmation is not open");
-    }
-    const box = dialog.getBoundingClientRect();
-    const probe = document.createElement("span");
-    document.body.append(probe);
-    probe.style.backgroundColor = "var(--chrome-row-accent)";
-    const accent = getComputedStyle(probe).backgroundColor;
-    probe.style.backgroundColor = "var(--chrome-surface)";
-    const surface = getComputedStyle(probe).backgroundColor;
-    probe.style.color = "var(--chrome-text)";
-    const chromeText = getComputedStyle(probe).color;
-    probe.remove();
-    return {
-      text: getComputedStyle(dialog).color,
-      chromeText,
-      centre: [Math.round(box.left + box.width / 2), Math.round(box.top + box.height / 2)],
-      viewportCentre: [Math.round(innerWidth / 2), Math.round(innerHeight / 2)],
-      replace: getComputedStyle(replace).backgroundColor,
-      cancel: getComputedStyle(cancel).backgroundColor,
-      accent,
-      surface,
-    };
-  });
 }
 
 const TERM = "subgroupoid";
@@ -188,13 +145,12 @@ describe("the Search view", function () {
     const app = await attach(
       requireInitialized(configDirectory, "config directory"),
       rendererEvents,
-      this.timeout(),
     );
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     const editorPage = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(editorPage);
+
     await editorPage.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     await editorPage.locator(VIEW).waitFor({ timeout: 60_000 });
     await editorPage.setViewportSize({ width: 1500, height: 950 });
@@ -283,40 +239,57 @@ describe("the Search view", function () {
     screenshots.set("search-details.png", await activePage.screenshot());
   });
 
-  it("replaces every match once the owner confirms: the open document in its editor and on disk, the closed file on disk", async function () {
+  it("previews every match before Replace All changes a file, and changes nothing on Cancel (#6)", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await activePage.locator(REPLACEMENT).fill(REPLACES_WITH);
     await activePage.locator(`${VIEW} ${ACTION("replace-all")}`).click();
-    const confirm = activePage.locator(`[data-search-confirm="replace-all"]`);
-    await confirm.waitFor({ state: "visible", timeout: 10_000 });
+    const preview = activePage.locator(PREVIEW);
+    await preview.waitFor({ state: "visible", timeout: 10_000 });
+    screenshots.set("replace-all-preview-light.png", await activePage.screenshot());
+    await activePage.evaluate(() => document.body.classList.add("dark"));
+    screenshots.set("replace-all-preview-dark.png", await activePage.screenshot());
+    await activePage.evaluate(() => document.body.classList.remove("dark"));
     assert.match(
-      await activePage.locator("[data-search-confirm-message]").innerText(),
+      await preview.locator(".description").innerText(),
       /3 occurrences across 2 files/,
-      "the confirmation counts what it is about to change",
+      "the preview says what the author asked for",
     );
-    screenshots.set("replace-all-confirmation.png", await activePage.screenshot());
-    const painted = await confirmationPainting(activePage);
-    assert.deepEqual(
-      painted.centre,
-      painted.viewportCentre,
-      "the confirmation is in the middle of the window",
-    );
+    assert.deepEqual(await previewRows(activePage), [
+      {
+        documentPath: closedFile(),
+        changes: [
+          {
+            before: "Compute the maximal subgroupoid with Sage.",
+            after: "Compute the maximal subcategory with Sage.",
+          },
+          {
+            before: "Every subgroupoid here is finite.",
+            after: "Every subcategory here is finite.",
+          },
+        ],
+      },
+      {
+        documentPath: openFile(),
+        changes: [{ before: "The maximal subgroupoid.", after: "The maximal subcategory." }],
+      },
+    ]);
+
+    await preview.locator("[data-cancel]").click();
+    await preview.waitFor({ state: "detached", timeout: 10_000 });
+    await delay(1000);
+    assert.match(await editorText(activePage), /subgroupoid/, "Cancel leaves the open document");
     assert.equal(
-      painted.replace,
-      painted.accent,
-      "the action that replaces has the accent colour of the window",
+      (await readFile(closedFile(), "utf-8")).includes(REPLACES_WITH),
+      false,
+      "Cancel leaves the closed file",
     );
-    assert.equal(
-      painted.cancel,
-      painted.surface,
-      "the action that cancels has the surface colour of the window",
-    );
-    assert.equal(
-      painted.text,
-      painted.chromeText,
-      "the confirmation has the text colour of the window chrome",
-    );
-    await confirm.click();
+  });
+
+  it("replaces every match once the owner applies: the open document in its editor and on disk, the closed file on disk", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    await activePage.locator(REPLACEMENT).fill(REPLACES_WITH);
+    await activePage.locator(`${VIEW} ${ACTION("replace-all")}`).click();
+    assert.deepEqual(await answerPreview(activePage, "apply"), [closedFile(), openFile()]);
 
     await waitUntil(
       async () =>
@@ -400,7 +373,11 @@ describe("the Search view", function () {
 
     await activePage.locator(REPLACEMENT).fill(REPLACES_WITH);
     await activePage.locator(`${VIEW} ${ACTION("replace-all")}`).click();
-    await activePage.locator(`[data-search-confirm="replace-all"]`).click();
+    assert.deepEqual(
+      await answerPreview(activePage, "apply"),
+      [openFile()],
+      "the preview leaves the dismissed file out",
+    );
     await waitUntil(
       async () => /subcategory/.test(await editorText(activePage)),
       "the file that stayed to be replaced",

@@ -26,7 +26,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -63,8 +62,6 @@ async function typeInto(page: Page, documentPath: string, text: string): Promise
 }
 
 describe("Close other tabs from the context menu of a tab (#202)", function () {
-  this.timeout(120_000);
-
   let browser: Browser | undefined;
   let appProcess: ChildProcess | undefined;
   let getOutput: () => string = () => "";
@@ -84,13 +81,8 @@ describe("Close other tabs from the context menu of a tab (#202)", function () {
     form = path.join(path.dirname(genus), "form.md");
     await writeFile(lemma, "# Lemma\n\nA unimodular lattice is its own dual.\n");
     await writeFile(form, "# Form\n\nThe discriminant form of an even lattice.\n");
-    ({ browser, appProcess, getOutput } = await attach(
-      fixture.configDirectory,
-      [],
-      this.timeout(),
-    ));
+    ({ browser, appProcess, getOutput } = await attach(fixture.configDirectory, []));
     page = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

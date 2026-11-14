@@ -40,7 +40,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
   requestQuit,
@@ -85,12 +84,12 @@ describe("assembled app: a quit with an open review in a pane", function () {
   const screenshots = new Map<string, Buffer>();
 
   async function start(timeoutMs: number): Promise<Page> {
-    const app = await attach(configDirectory, rendererEvents, timeoutMs);
+    const app = await attach(configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     const page = await findEditorPage(app.browser, timeoutMs);
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content:visible").waitFor({ state: "visible", timeout: timeoutMs });
     return page;
   }

@@ -18,7 +18,8 @@ import CiteprocProvider, {
 } from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
 import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
-import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
+import { userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
 
@@ -158,12 +159,8 @@ describe("Citeproc printable-form invariant", function () {
   it("rejects impossible output over async IPC instead of returning a sentinel", async function () {
     const provider = await providerFor(impossibleStylePath);
     try {
-      const handler = ipcMainHandlers.get("citeproc-provider") as
-        | ((event: unknown, message: unknown) => Promise<unknown>)
-        | undefined;
-      assert.ok(handler !== undefined);
       await assert.rejects(
-        handler(undefined, {
+        invokeMain("citeproc-provider", {
           command: "get-citation",
           payload: { database: libraryPath, citations: [{ id: "AW71" }], composite: true },
         }),

@@ -29,7 +29,7 @@ export function followCitationProblems(
 ): void {
   // A broadcast is newer than the answer to the read below.
   let broadcastArrived = false;
-  window.ipc.on(CITEPROC_PROBLEMS_CHANNEL, (_event, problems: CitationResourceProblem[]) => {
+  window.ipc.on(CITEPROC_PROBLEMS_CHANNEL, (_event, problems) => {
     broadcastArrived = true;
     onProblems(problems);
   });

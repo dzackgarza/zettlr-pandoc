@@ -19,6 +19,7 @@ import { trans } from "@common/i18n-renderer";
 import type { Fieldset, FormField } from "@common/vue/form/FormBuilder.vue";
 import type { CitationResourceProblem } from "@dts/common/citeproc";
 import { type PreferenceNavigationTarget, PreferencesGroups } from "@dts/common/preferences";
+import type { QuickTexProblem } from "@dts/common/quicktex";
 import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
 import { getAdvancedFields } from "./advanced";
 import { getAppearanceFields } from "./appearance";
@@ -76,11 +77,14 @@ export function getPreferenceGroups(): PreferenceGroupDescriptor[] {
  * @param  citationProblems  The files of the citation settings that the
  *                           citation provider could not load. The form flags
  *                           their fields; the launcher index has no use for them.
+ * @param  quickTexProblem   The setting of the QuickTeX configuration that the
+ *                           assets provider could not use. The form flags its field.
  */
 export function getPreferenceFieldsets(
   config: ConfigOptions,
   appLangOptions: Record<string, string> = {},
   citationProblems: CitationResourceProblem[] = [],
+  quickTexProblem: QuickTexProblem | undefined = undefined,
 ): PreferencesFieldset[] {
   return [
     ...getAdvancedFields(config),
@@ -92,7 +96,7 @@ export function getPreferenceFieldsets(
     ...getGeneralFields(appLangOptions),
     ...getImportExportFields(),
     ...getShortcutFields(config),
-    ...getSnippetsFields(),
+    ...getSnippetsFields(config, quickTexProblem),
     ...getSpellcheckingFields(config),
     ...getZettelkastenFields(config),
   ];

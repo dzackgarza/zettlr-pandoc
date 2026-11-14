@@ -24,40 +24,14 @@ import { reportError } from "@common/util/error-reporting";
 import showToast from "@common/util/show-toast";
 import type { CitationResourceProblem } from "@dts/common/citeproc";
 import { type PreferenceNavigationTarget, PreferencesGroups } from "@dts/common/preferences";
-
-/**
- * The Preferences window writes a setting at each key. The problem of a path
- * that the author did not finish is not shown: the window shows the list
- * that stands after this time.
- */
-const SETTLE_MS = 1000;
+import { showStandingProblems } from "./standing-problem-toasts";
 
 /**
  * Shows the citation resource problems of the provider in this window: the
- * ones of the start, and each one that a later setting causes. One problem
- * is shown one time while it stands.
+ * ones of the start, and each one that a later setting causes.
  */
 export function showCitationProblems(): void {
-  const shown = new Set<string>();
-  let settle: ReturnType<typeof setTimeout> | undefined;
-
-  followCitationProblems((problems) => {
-    clearTimeout(settle);
-    settle = setTimeout(() => {
-      const standing = new Map(problems.map((problem) => [JSON.stringify(problem), problem]));
-      for (const key of shown) {
-        if (!standing.has(key)) {
-          shown.delete(key);
-        }
-      }
-      for (const [key, problem] of standing) {
-        if (!shown.has(key)) {
-          shown.add(key);
-          showProblem(problem);
-        }
-      }
-    }, SETTLE_MS);
-  });
+  showStandingProblems(followCitationProblems, showProblem);
 }
 
 function showProblem(problem: CitationResourceProblem): void {

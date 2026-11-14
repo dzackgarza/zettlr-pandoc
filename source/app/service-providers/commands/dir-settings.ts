@@ -23,7 +23,7 @@ export interface DirSettingsCommandAPI {
 
 export default class DirSettings extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, ["set-directory-setting"]);
+    super(app);
   }
 
   /**

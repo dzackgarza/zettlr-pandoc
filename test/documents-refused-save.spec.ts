@@ -39,17 +39,12 @@ import { bootDocumentManager } from "./documents-provider-seam";
 import {
   appListeners,
   appQuitRequests,
-  ipcMainHandlers,
   messageBoxes,
   saveDialogs,
   sentMessagesFor,
   userData,
 } from "./headless-electron-harness.cjs";
-
-type IpcHandler = (
-  event: unknown,
-  message: { command: string; payload?: unknown },
-) => Promise<unknown> | unknown;
+import { invokeMain } from "./main-ipc";
 
 const SOURCE = "An even unimodular lattice has a rank that 8 divides.\n";
 const REVISED = SOURCE.replace("rank", "signature");
@@ -152,12 +147,6 @@ describe("Documents-provider save that it must refuse", function () {
     }
   }
 
-  async function invoke(command: string, payload: unknown): Promise<unknown> {
-    const handler = ipcMainHandlers.get("documents-provider") as IpcHandler | undefined;
-    assert.ok(handler !== undefined, "the documents-provider handler is registered");
-    return await handler(undefined, { command, payload });
-  }
-
   it("answers with the read failure when the file of a reviewed document cannot be read", async function () {
     await openWithReview();
     chmodSync(filePath, 0o000);
@@ -250,7 +239,10 @@ describe("Documents-provider save that it must refuse", function () {
     const copyPath = path.join(root, "rescued.md");
     saveDialogs.answer = copyPath;
 
-    assert.equal(await invoke("save-copy", { path: filePath }), copyPath);
+    assert.equal(
+      await invokeMain("documents-provider", { command: "save-copy", payload: { path: filePath } }),
+      copyPath,
+    );
 
     assert.deepEqual(
       saveDialogs.shown.map((options) => options.defaultPath),
@@ -266,7 +258,10 @@ describe("Documents-provider save that it must refuse", function () {
     await openWithReview();
     saveDialogs.answer = null;
 
-    assert.equal(await invoke("save-copy", { path: filePath }), undefined);
+    assert.equal(
+      await invokeMain("documents-provider", { command: "save-copy", payload: { path: filePath } }),
+      undefined,
+    );
 
     assert.equal(saveDialogs.shown.length, 1, "the author was asked for a file");
     assert.deepEqual(readdirSync(root), ["note.md"], "no file was made");
@@ -288,7 +283,10 @@ describe("Documents-provider save that it must refuse", function () {
     writeFileSync(filePath, EXTERNAL, "utf-8");
     chmodSync(SIDECARS, 0o500);
 
-    await invoke("load-from-disk", { path: filePath });
+    await invokeMain("documents-provider", {
+      command: "load-from-disk",
+      payload: { path: filePath },
+    });
 
     assert.deepEqual(
       refusals().map((entry) => entry.refused),
@@ -299,7 +297,13 @@ describe("Documents-provider save that it must refuse", function () {
 
     // The action of the refusal loads the disk version without the review
     // state that could not be written.
-    assert.equal(await invoke("close-without-review", { documentId: id }), true);
+    assert.equal(
+      await invokeMain("documents-provider", {
+        command: "close-without-review",
+        payload: { documentId: id },
+      }),
+      true,
+    );
     assert.deepEqual(provider.loadedDocuments, [], "the document waits for its editors to load it");
     await provider.getDocument(filePath);
     assert.equal(provider.readWorkingText(id), EXTERNAL, "the editors load the text of the file");

@@ -29,8 +29,28 @@ import {
 // loads it through the real loader.
 const FIXTURE = "test/fixtures/mathjax-macros.json";
 
+// The module is initialized one time for a process, and a Mocha process runs
+// more than one spec file. The process of this test loaded nothing before.
 it("requires initialization before conversion", function () {
-  assert.throws(() => mathJaxToHTML("\\RR", "inline"), Error);
+  this.timeout(30000);
+
+  assert.throws(
+    () =>
+      execFileSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "--input-type",
+          "module",
+          "--eval",
+          `import { mathJaxToHTML } from './source/common/util/mathtex-to-html.ts'
+mathJaxToHTML('\\\\RR', 'inline')`,
+        ],
+        { encoding: "utf8", stdio: "pipe" },
+      ),
+    /MathJax must be initialized before rendering/,
+  );
 });
 
 it("registers updater IPC only after its boot initialization", function () {

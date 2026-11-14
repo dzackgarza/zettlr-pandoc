@@ -70,6 +70,7 @@ import {
 } from "@dzack/pandoc-editor/renderers/base-renderer";
 import clickAndSelect from "@dzack/pandoc-editor/renderers/click-and-select";
 import { type SyntaxNodeRef } from "@lezer/common";
+import { linkModifier } from "../plugins/link-modifier";
 import { referencePresentationField } from "../plugins/workspace-references-field";
 import {
   followReferenceNavigationIntent,
@@ -151,16 +152,16 @@ class ReferenceChipClusterWidget extends WidgetType implements RowJoinedWidget {
     // platform Mod-click instead follows the clicked chip's reference to its
     // definition (issue #1 Phase 5). Widget mouse events never reach the
     // clickListeners() mousedown path (ignoreEvent below), so the navigation
-    // branch lives on the widget listener itself. It runs on mousedown: the
-    // browser's default mousedown puts the caret beside the cluster, which
-    // un-renders this widget before any click event could reach it.
+    // branch lives on the widget listener itself. Both branches run on
+    // mousedown: the browser's default mousedown puts the caret beside the
+    // cluster, which un-renders this widget before any click event could
+    // reach it (#131).
     const revealAuthoredSource = clickAndSelect(view);
-    let navigatedOnMousedown = false;
     elem.addEventListener("mousedown", (event) => {
-      navigatedOnMousedown = false;
       const cmd = event.metaKey && process.platform === "darwin";
       const ctrl = event.ctrlKey && process.platform !== "darwin";
       if (!cmd && !ctrl) {
+        revealAuthoredSource(event);
         return;
       }
       const chip =
@@ -170,18 +171,11 @@ class ReferenceChipClusterWidget extends WidgetType implements RowJoinedWidget {
       const pos = view.posAtDOM(elem);
       const intent = resolveReferenceNavigationIntent(view, pos, chip?.dataset.referenceKey);
       if (intent === null) {
+        revealAuthoredSource(event);
         return;
       }
       event.preventDefault();
-      navigatedOnMousedown = true;
       followReferenceNavigationIntent(view, intent);
-    });
-    elem.addEventListener("click", (event) => {
-      if (navigatedOnMousedown) {
-        navigatedOnMousedown = false;
-        return;
-      }
-      revealAuthoredSource(event);
     });
 
     return elem;
@@ -254,6 +248,7 @@ const chipTheme = EditorView.baseTheme({
     borderRadius: "4px",
     fontSize: "90%",
     whiteSpace: "nowrap",
+    cursor: "pointer",
   },
   "&light .reference-chip": {
     backgroundColor: "rgba(28, 120, 176, 0.12)",
@@ -265,9 +260,18 @@ const chipTheme = EditorView.baseTheme({
     border: "1px solid rgba(93, 173, 226, 0.4)",
     color: "#9ecbe8",
   },
+  // A chip under the pointer has a stronger tint. While the Mod key is
+  // held, a click follows the reference, and the label has the look of a link.
+  "&light .reference-chip:hover": { backgroundColor: "rgba(28, 120, 176, 0.24)" },
+  "&dark .reference-chip:hover": { backgroundColor: "rgba(93, 173, 226, 0.32)" },
+  "&.cm-link-modifier .reference-chip:hover": {
+    color: "var(--zettlr-editor-primary-color)",
+    textDecoration: "underline",
+  },
 });
 
 export const renderReferenceChips = [
   renderBlockWidgets([NODES.CITATION], shouldHandleNode, createWidget, displayNumbersChanged),
   chipTheme,
+  linkModifier,
 ];

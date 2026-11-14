@@ -112,7 +112,7 @@ describe("opening a Markdown document", function () {
     });
     fixtureRoot = fixture.root;
     documentPath = fixture.documentPath;
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
@@ -390,7 +390,7 @@ describe("cold-launch file delivery", function () {
       "# Cold launch\n\n" + "This exact buffer arrived through the application argv.\n";
     await writeFile(documentPath, expectedContents, "utf8");
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout(), {
+    const app = await attach(fixture.configDirectory, rendererEvents, {
       files: [documentPath],
     });
     appProcess = app.appProcess;

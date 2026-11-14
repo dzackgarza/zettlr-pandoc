@@ -66,7 +66,7 @@ describe("assembled editor: click into rendered math to edit it", function () {
     });
     fixtureRoot = fixture.root;
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;

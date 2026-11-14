@@ -36,7 +36,7 @@ import {
 // CodeMirror imports
 import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import type { PhraseDictionaryEntry } from "@common/util/phrase-dictionary";
-import type { TexMacroSource } from "@common/util/tex-context";
+import { boundedChangesBetween } from "@common/util/text-changes";
 import type { AnnotationSet } from "@dts/common/annotation-domain";
 import { DocumentType } from "@dts/common/documents";
 import type { QuickTexCatalogue } from "@dts/common/quicktex";
@@ -48,6 +48,7 @@ import {
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import type { EditorCommandName } from "@dts/common/shortcut-names";
 import type { UserSnippet } from "@dts/common/snippets";
+import type { TexCommandVocabulary } from "@dts/common/tex-vocabulary";
 import { darkModeEffect, useDarkModeEditor } from "@dzack/pandoc-editor/theme/dark-mode";
 import { type TagRecord } from "@providers/tags";
 // Keymaps/Input modes
@@ -65,7 +66,7 @@ import {
   referencesUpdate,
   snippetsUpdate,
   tagsUpdate,
-  texMacroSourcesUpdate,
+  texVocabularyUpdate,
 } from "./autocomplete";
 // Custom commands
 import { runEditorCommand } from "./commands/editor-commands";
@@ -109,7 +110,11 @@ import {
   type PushUpdateCallback,
   reloadStateEffect,
 } from "./plugins/remote-doc";
-import { markReviewChunksStale, reviewChunksExtension } from "./plugins/review-chunks";
+import {
+  markReviewChunksStale,
+  reviewChunksBroadcast,
+  reviewChunksExtension,
+} from "./plugins/review-chunks";
 import { countField, updateWordCountEffect } from "./plugins/statistics-fields";
 import {
   annotationChipClickedEffect,
@@ -294,7 +299,7 @@ export default class MarkdownEditor extends EventEmitter {
     citations: Array<{ citekey: string; displayText: string }>;
     snippets: UserSnippet[];
     phrases: PhraseDictionaryEntry[];
-    texMacroSources: TexMacroSource[];
+    texVocabulary: TexCommandVocabulary | null;
     quickTex: QuickTexCatalogue;
     files: Array<{ filename: string; displayName: string; id: string }>;
     references: ReferenceCompletionEntry[];
@@ -363,7 +368,7 @@ export default class MarkdownEditor extends EventEmitter {
       citations: [],
       snippets: [],
       phrases: [],
-      texMacroSources: [],
+      texVocabulary: null,
       quickTex: EMPTY_QUICKTEX,
       files: [],
       references: [],
@@ -501,14 +506,10 @@ export default class MarkdownEditor extends EventEmitter {
       onWikiLink(url) {
         editorInstance.emit("zettelkasten-link", url);
       },
-      domEventsListeners: clickListeners({
-        onWikiLink(url) {
-          editorInstance.emit("zettelkasten-link", url);
-        },
-        onTag(tag) {
-          editorInstance.emit("zettelkasten-tag", tag);
-        },
-      }),
+      onTag(tag) {
+        editorInstance.emit("zettelkasten-tag", tag);
+      },
+      domEventsListeners: clickListeners(),
       referenceKeyEditListener: (intent) => {
         // The selection left a directly edited definition-id token: surface
         // the prompt intent to the shell (MainEditor.vue confirms and runs
@@ -571,10 +572,14 @@ export default class MarkdownEditor extends EventEmitter {
 
   /**
    * Loads the document from main and sets up everything required to display and
-   * edit it.
+   * edit it. A load into an editor that shows the document is a reload: the
+   * author keeps their place (the caret, the scroll position, the folds) and
+   * the focus stays where it is.
    */
   async loadDocument(persistentState?: EditorViewPersistentState): Promise<void> {
     const { content, type, startVersion } = await this.authority.fetchDoc(this.representedDocument);
+    const isReload = this._documentLoaded;
+    const place = isReload ? this.placeIn(content) : persistentState;
 
     // The documents contents have changed, so we must recreate the state
     const extensions = this._getExtensions(this.representedDocument, type, startVersion);
@@ -598,7 +603,7 @@ export default class MarkdownEditor extends EventEmitter {
       this._instance.dispatch({ effects: markReviewChunksStale.of(null) });
     }
 
-    if (persistentState !== undefined) {
+    if (place !== undefined) {
       // Now that the correct document has been loaded, there will be content
       // and we can restore the persisted information.
       //
@@ -609,7 +614,7 @@ export default class MarkdownEditor extends EventEmitter {
       // end, and the throw would land as a document-load error — the file
       // would simply refuse to open, over a cursor. So bring the positions
       // into this document instead of trusting them.
-      const { scrollSnapshot, selection, foldedRanges } = persistentState;
+      const { scrollSnapshot, selection, foldedRanges } = place;
       const end = this._instance.state.doc.length;
 
       const effects: StateEffect<unknown>[] = [scrollSnapshot];
@@ -644,7 +649,9 @@ export default class MarkdownEditor extends EventEmitter {
       citekeyUpdate.of(this.databaseCache.citations),
       snippetsUpdate.of(this.databaseCache.snippets),
       phraseCompletionsUpdate.of(this.databaseCache.phrases),
-      texMacroSourcesUpdate.of(this.databaseCache.texMacroSources),
+      ...(this.databaseCache.texVocabulary === null
+        ? []
+        : [texVocabularyUpdate.of(this.databaseCache.texVocabulary)]),
       quickTexUpdate.of(this.databaseCache.quickTex),
       filesUpdate.of(this.databaseCache.files),
       referencesUpdate.of(this.databaseCache.references),
@@ -667,10 +674,32 @@ export default class MarkdownEditor extends EventEmitter {
     // do not wait for an unrelated later edit to retry activation.
     this.activatePendingReviewDiffSession();
 
-    this._instance.focus();
+    // A reload can come while the author types in another field of the window.
+    if (!isReload) {
+      this._instance.focus();
+    }
 
     this._documentLoaded = true;
     this.emit("loaded");
+  }
+
+  /**
+   * The place of the author in the text that the editor shows, as a place in
+   * `content`: each position goes through the changes from the shown text to
+   * `content`.
+   */
+  private placeIn(content: string): EditorViewPersistentState {
+    const { scrollSnapshot, selection, foldedRanges } = this.persistentState;
+    const changes = boundedChangesBetween(this._instance.state.doc.toString(), content);
+    const mappedSnapshot = scrollSnapshot.map(changes);
+    if (mappedSnapshot === undefined) {
+      throw new Error("The scroll position of the editor has no place in the new text.");
+    }
+    return {
+      scrollSnapshot: mappedSnapshot,
+      selection: selection.map(changes),
+      foldedRanges: foldedRanges.map(changes),
+    };
   }
 
   /**
@@ -690,8 +719,9 @@ export default class MarkdownEditor extends EventEmitter {
   }
 
   /**
-   * This function allows to reload the full editor contents. This is useful if
-   * a setting has changed that requires extensions to be fully reloaded.
+   * This function allows to reload the full editor contents: after a setting
+   * changed that requires extensions to be fully reloaded, and after another
+   * program changed the file of the document.
    */
   async reload(): Promise<void> {
     await this.loadDocument();
@@ -1016,7 +1046,6 @@ export default class MarkdownEditor extends EventEmitter {
   ): void;
   setCompletionDatabase(type: "snippets", database: UserSnippet[]): void;
   setCompletionDatabase(type: "phrases", database: PhraseDictionaryEntry[]): void;
-  setCompletionDatabase(type: "tex-macro-sources", database: TexMacroSource[]): void;
   setCompletionDatabase(
     type: "files",
     database: Array<{ filename: string; displayName: string; id: string }>,
@@ -1056,14 +1085,6 @@ export default class MarkdownEditor extends EventEmitter {
           effects: phraseCompletionsUpdate.of(this.databaseCache.phrases),
         });
         break;
-      case "tex-macro-sources":
-        if (_.isEqual(database, this.databaseCache.texMacroSources)) return;
-        this.databaseCache.texMacroSources = database as TexMacroSource[];
-        this._instance.dispatch({
-          effects: texMacroSourcesUpdate.of(this.databaseCache.texMacroSources),
-        });
-        forceLinting(this._instance);
-        break;
       case "files":
         if (_.isEqual(database, this.databaseCache.files)) return;
         this.databaseCache.files = database as Array<{
@@ -1083,6 +1104,13 @@ export default class MarkdownEditor extends EventEmitter {
         });
         break;
     }
+  }
+
+  /** Gives the TeX command completion Flowmark's TeX vocabulary. */
+  setTexVocabulary(vocabulary: TexCommandVocabulary): void {
+    if (vocabulary === this.databaseCache.texVocabulary) return;
+    this.databaseCache.texVocabulary = vocabulary;
+    this._instance.dispatch({ effects: texVocabularyUpdate.of(vocabulary) });
   }
 
   setQuickTexCatalogue(catalogue: QuickTexCatalogue): void {
@@ -1166,9 +1194,14 @@ export default class MarkdownEditor extends EventEmitter {
     this.activeReviewDiffSession = session;
     // The review-diff-active styling scope rides in the extension itself
     // (an editorAttributes facet), so installing the compartment is what
-    // styles the pane — nothing here to keep in sync.
+    // styles the pane — nothing here to keep in sync. A later broadcast of
+    // the same review is an effect on the installed field: each chunk that
+    // the broadcast does not change keeps its decorations and its control,
+    // so a broadcast costs work for the chunks that it changed (#57).
     this._instance.dispatch({
-      effects: this.reviewDiffCompartment.reconfigure(this.buildReviewExtension(session)),
+      effects: arriving
+        ? this.reviewDiffCompartment.reconfigure(this.buildReviewExtension(session))
+        : reviewChunksBroadcast.of(session.suggestions),
     });
     // Focus follows a review's arrival only. Every later broadcast of the
     // same review (a note, a reply, a keystroke elsewhere) would otherwise

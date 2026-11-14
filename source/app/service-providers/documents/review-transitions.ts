@@ -32,6 +32,7 @@ import { type ChangeDesc, ChangeSet, Text } from "@codemirror/state";
 import { mapSuggestionThroughChanges } from "@common/util/review-suggestion-anchors";
 import { sha256Text } from "@common/util/sha256";
 import type {
+  AgentErrorCode,
   AgentEvent,
   AgentEventType,
   DocumentRevision,
@@ -60,13 +61,14 @@ export interface AgentEventDraft {
 }
 
 /**
- * The complete candidate outcome of one review mutation. `nextReview` is
- * undefined when the transition ends the review. `nextWorkingText` is what
- * the document must show afterwards — equal to the current text for a
- * transition that moves no document bytes.
+ * The complete candidate outcome of one review mutation. `nextReview` is the
+ * review afterwards: no transition ends a review (a clear keeps it, without
+ * its unresolved suggestions). `nextWorkingText` is what the document must show
+ * afterwards — equal to the current text for a transition that moves no
+ * document bytes.
  */
 export interface ReviewMutationPlan<Response> {
-  nextReview: ActiveReviewState | undefined;
+  nextReview: ActiveReviewState;
   nextWorkingText: string;
   response: Response;
   events: AgentEventDraft[];
@@ -100,15 +102,20 @@ export interface DuplicateClaimError {
 }
 
 /** Why a proposal committed nothing. */
-export type ProposalRefusal = { ok: false; code: string; message: string } | DuplicateClaimError;
+export type ProposalRefusal =
+  | { ok: false; code: AgentErrorCode; message: string }
+  | DuplicateClaimError;
 
-export interface RetractionError {
+/** No review holds the packet. */
+export interface ProposalNotFound {
   ok: false;
-  code: "PACKET_NOT_RETRACTABLE";
+  code: "PROPOSAL_NOT_FOUND";
   message: string;
-  reviewId: string;
-  canClearUnresolved: true;
 }
+
+export type RetractionError =
+  | { ok: false; code: "PACKET_NOT_RETRACTABLE"; message: string; reviewId: string }
+  | ProposalNotFound;
 
 /**
  * A plan and an error are told apart by the discriminant only errors carry.
@@ -1346,13 +1353,12 @@ export function prepareRetraction(input: {
     code: "PACKET_NOT_RETRACTABLE",
     message,
     reviewId: input.review.reviewId,
-    canClearUnresolved: true,
   });
   const packetIndex = input.review.packets.findIndex(
     (packet) => packet.packetId === input.packetId,
   );
   if (packetIndex === -1) {
-    return refuse("Proposal not found.");
+    return { ok: false, code: "PROPOSAL_NOT_FOUND", message: "Proposal not found." };
   }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);

@@ -23,21 +23,19 @@ import { DP_EVENTS } from "@dts/common/documents";
 import { strict as assert } from "assert";
 import { mkdirSync, rmSync } from "fs";
 import path from "path";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import DocumentManager, {
   type DocumentsUpdateContext,
 } from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
-import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
+import { userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const FIXTURE_ROOT = path.resolve("test", "fixtures", "reference-workspace");
 const HALPHEN = path.join(FIXTURE_ROOT, "ProjectA", "Halphen_Surfaces.md");
 const THEOREMS = path.join(FIXTURE_ROOT, "ProjectA", "Theorems.md");
 
-type IpcHandler = (
-  event: unknown,
-  message: { command: string; payload?: unknown },
-) => Promise<unknown> | unknown;
 type WatchdogListener = (event: string, filePath: string) => void;
 
 describe("Documents-provider remote changes", function () {
@@ -47,15 +45,6 @@ describe("Documents-provider remote changes", function () {
   let watchdogListener: WatchdogListener | undefined;
   const remoteChangeErrors: DocumentsUpdateContext[] = [];
   const closedFiles: DocumentsUpdateContext[] = [];
-
-  async function invoke(command: string, payload?: unknown): Promise<unknown> {
-    const registered = ipcMainHandlers.get("documents-provider") as IpcHandler | undefined;
-    assert.ok(
-      registered !== undefined,
-      "constructing DocumentManager must register the documents-provider handler",
-    );
-    return await registered(undefined, { command, payload });
-  }
 
   async function emitDiskEvent(event: "change" | "unlink", filePath: string): Promise<void> {
     assert.ok(watchdogListener !== undefined, "the manager must subscribe to the watchdog");
@@ -88,6 +77,9 @@ describe("Documents-provider remote changes", function () {
       },
       fsal: {
         getWatchdog: () => watcherSeam,
+        // This spec drives no FSAL event: the provider subscribes and hears nothing.
+        on: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
+        off: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
         testAccess: async () => true,
       },
       citeproc: {
@@ -115,11 +107,17 @@ describe("Documents-provider remote changes", function () {
     });
 
     assert.equal(
-      await invoke("open-file", { windowId, leafId, path: HALPHEN, newTab: true }),
+      await invokeMain("documents-provider", {
+        command: "open-file",
+        payload: { windowId, leafId, path: HALPHEN, newTab: true },
+      }),
       true,
     );
     assert.equal(
-      await invoke("open-file", { windowId, leafId, path: THEOREMS, newTab: true }),
+      await invokeMain("documents-provider", {
+        command: "open-file",
+        payload: { windowId, leafId, path: THEOREMS, newTab: true },
+      }),
       true,
     );
   });

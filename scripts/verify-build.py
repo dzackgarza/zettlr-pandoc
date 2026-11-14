@@ -6,11 +6,12 @@ app.asar: a swallowed webpack failure still exits 0, so the launcher believed th
 build was current and shipped 03:33 bytes for hours. Nothing caught it. This is
 that missing check.
 
-It proves the packaged app.asar was actually (re)built from the CURRENT commit,
-using the ``__GIT_COMMIT_HASH__`` value webpack's DefinePlugin bakes into the
-bundle (a string literal that survives minification, referenced by
-win-about/Debug-Tab.vue). If the asar does not carry the current commit hash, the
-build is stale/broken -- and this exits non-zero, loudly.
+It proves the packaged app.asar was actually (re)built from the commit of the
+start of the build (HEAD, for --verify-only), using the ``__GIT_COMMIT_HASH__``
+value webpack's DefinePlugin bakes into the bundle (a string literal that
+survives minification, referenced by win-about/Debug-Tab.vue). If the asar does
+not carry that commit hash, the build is stale/broken -- and this exits
+non-zero, loudly.
 
 Usage:
     verify-build.py                # run the production build, then verify output
@@ -214,11 +215,12 @@ def exit_cause(returncode: int) -> str:
 
 
 def fail(msg: str, out: str = "", err: str = "") -> "typing.NoReturn":  # noqa: F821
-    print(f"\n[verify-build] BUILD BROKEN: {msg}\n", file=sys.stderr)
+    # The cause is the last line, so the end of a log names it.
     if out.strip():
         print("--- build stdout (tail) ---\n" + out[-3000:], file=sys.stderr)
     if err.strip():
         print("--- build stderr (tail) ---\n" + err[-3000:], file=sys.stderr)
+    print(f"\n[verify-build] BUILD BROKEN: {msg}\n", file=sys.stderr)
     sys.exit(1)
 
 
@@ -228,8 +230,8 @@ def asar_contains(needle: str) -> bool:
     return subprocess.run(["grep", "-a", "-q", needle, str(ASAR)]).returncode == 0
 
 
-def verify_artifact(build_out: str = "", build_err: str = "") -> None:
-    head = head_short_hash()
+def verify_artifact(head: str, build_out: str = "", build_err: str = "") -> None:
+    """Prove that app.asar was built from the commit `head`."""
 
     if not ASAR.exists():
         fail(f"app.asar does not exist at {ASAR}", build_out, build_err)
@@ -241,20 +243,23 @@ def verify_artifact(build_out: str = "", build_err: str = "") -> None:
 
     if not asar_contains(head):
         fail(
-            f"app.asar does NOT contain the current commit {head} -- it was built "
+            f"app.asar does NOT contain the commit {head} -- it was built "
             f"from a different (stale) commit. THIS is the silent-stale-build "
             f"failure that shipped old code.",
             build_out, build_err,
         )
 
-    print(f"[verify-build] OK: app.asar is built from HEAD ({head}) and is {size_mb} MB")
+    print(f"[verify-build] OK: app.asar is built from {head} and is {size_mb} MB")
 
 
 def build_and_verify() -> None:
     local_package = os.environ.get("ZETTLR_LOCAL_PACKAGE") == "1"
     profile = "local unminified package" if local_package else "production build"
     print(f"[verify-build] running {profile} (timeout {BUILD_TIMEOUT_S}s)...")
+    # The build bakes the commit of its start into the bundle; a commit made
+    # while it runs moves HEAD but not the bundle or this fingerprint.
     fingerprint = source_fingerprint()
+    head = head_short_hash()
     electron_zip_dir = electron_packager_zip_dir()
     start = time.time_ns()
     # CI=1 selects listr's verbose renderer so the launcher log carries real
@@ -277,7 +282,7 @@ def build_and_verify() -> None:
             build_tail,
         )
 
-    verify_artifact(build_tail)
+    verify_artifact(head, build_tail)
     STAMP.write_text(fingerprint + "\n")
     print(f"[verify-build] wrote source fingerprint to {STAMP}")
 
@@ -286,12 +291,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--verify-only", action="store_true",
                         help="only verify the existing artifact; do not run a build")
+    parser.add_argument("--if-stale", action="store_true",
+                        help="build only when the stamp of the package is not the "
+                             "fingerprint of the source (an e2e run shares one build)")
     args = parser.parse_args()
 
     if args.verify_only:
-        verify_artifact()
-    else:
-        build_and_verify()
+        verify_artifact(head_short_hash())
+        return
+    if args.if_stale and ASAR.exists() and STAMP.exists() \
+            and STAMP.read_text().strip() == source_fingerprint():
+        print(f"[verify-build] {ASAR} is current: its stamp is the source fingerprint")
+        return
+    build_and_verify()
 
 
 if __name__ == "__main__":

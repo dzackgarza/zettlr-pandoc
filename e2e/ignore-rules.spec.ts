@@ -20,7 +20,6 @@ import {
   delay,
   findEditorPage,
   findMenuNode,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
   readApplicationMenu,
@@ -158,13 +157,13 @@ describe("assembled app: gitignore rules filter the workspace", function () {
       await writeFile(filePath, `# ${path.basename(relativePath, ".md")}\n`, "utf8");
     }
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     api = agentClient(await readAgentApiPort(fixture.configDirectory, 60_000));
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     await page.setViewportSize({ width: 1500, height: 950 });
   });

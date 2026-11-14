@@ -28,6 +28,7 @@ import {
   findEditorPage,
   readAgentApiPort,
   shutdown,
+  startDeadline,
 } from "./support/electron-app";
 
 /** The editor pane: every review control sits inside it, at its chunk or in the review bar. */
@@ -263,13 +264,10 @@ async function submitBatch(
 }
 
 describe("review-diff closure contract composite lifecycle", function () {
-  // This suite launches the app TWICE (it restarts mid-test to prove sidecar
-  // persistence), and every launch pays a full cold webpack compile through
-  // `forge start` — a persistent dev cache is not an option because the
-  // asset-relocator loader that embeds native modules (nodehun) skips asset
-  // emission for cache-restored builds. Two cold compiles under machine load
-  // regularly exceeded the old 180 s budget; that flake predates this branch.
-  this.timeout(600_000);
+  // The test starts the packaged app two times: it restarts the app to
+  // prove that the sidecar persists. Each start has its own deadline, and
+  // the work of the test has one minute.
+  this.timeout(2 * startDeadline({}) + 60_000);
 
   let fixtureRoot: string | undefined;
   let configDirectory: string | undefined;
@@ -299,7 +297,7 @@ describe("review-diff closure contract composite lifecycle", function () {
     configDirectory = fixture.configDirectory;
     documentPath = fixture.documentPath;
 
-    const running = await attach(configDirectory, [], this.timeout());
+    const running = await attach(configDirectory, []);
     appProcess = running.appProcess;
     browser = running.browser;
     const api = client(await readAgentApiPort(configDirectory, 60_000));
@@ -489,7 +487,7 @@ describe("review-diff closure contract composite lifecycle", function () {
     await shutdown(browser, appProcess);
     browser = undefined;
     appProcess = undefined;
-    const restarted = await attach(configDirectory, [], this.timeout());
+    const restarted = await attach(configDirectory, []);
     browser = restarted.browser;
     appProcess = restarted.appProcess;
     const restartedPage = await findEditorPage(browser, this.timeout());

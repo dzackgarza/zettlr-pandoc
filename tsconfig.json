@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ESNext",
     "allowJs": true,
-    "module": "commonjs",
+    "module": "preserve",
     "skipLibCheck": true,
     "esModuleInterop": true,
     "strict": true,
@@ -38,7 +38,8 @@
       "@dzack/external-process/*": [
         "./packages/external-process/src/*"
       ]
-    }
+    },
+    "moduleResolution": "bundler"
   },
   "include": [
     "source/**/*",

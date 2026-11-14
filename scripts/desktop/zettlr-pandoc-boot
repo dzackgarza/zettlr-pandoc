@@ -66,6 +66,27 @@ process_alive() {
   exit 1
 }
 
+# True while an app holds the single-instance lock of the profile that this
+# start opens. Chromium's ProcessSingleton (process_singleton_posix.cc) keeps
+# the lock as the symbolic link SingletonLock -> "<hostname>-<pid>"; a link of
+# another host or of a process that is gone is a stale lock, which the next
+# start takes over. A window of the class does not decide: an app of another
+# profile (--data-dir) has the same class, and this start is not delivered to
+# it.
+profile_running() {
+  local lock="$profile/SingletonLock"
+  local target
+
+  if [[ ! -L "$lock" ]]; then
+    return 1
+  fi
+  target=$(readlink -- "$lock")
+  if [[ "${target%-*}" != "$HOSTNAME" ]]; then
+    return 1
+  fi
+  process_alive "${target##*-}"
+}
+
 restore_cursor() {
   tput cnorm >/dev/null 2>&1
 }
@@ -151,8 +172,26 @@ exec 9>"$HOME/.cache/zettlr-pandoc-launch.lock"
 flock -w "$rebuild_launch_timeout" 9 || fail "Another desktop launch has not completed."
 printf '=== %s starting zettlr-pandoc from %s ===\n' "$(date)" "$repo" >"$log"
 
+packaged_dir="$repo/out/Zettlr-Pandoc-linux-x64"
+packaged_binary="$packaged_dir/zettlr-pandoc"
+stamp_file="$packaged_dir/.source-fingerprint"
+
+# The profile of this start: the folder of --data-dir, resolved as
+# source/main.ts resolves it for a packaged app (relative to the folder of the
+# binary), or the userData folder of Electron (appData/productName; appData
+# is XDG_CONFIG_HOME, or ~/.config when it is not set).
+profile="${XDG_CONFIG_HOME:-$HOME/.config}/Zettlr-Pandoc"
+for argument in "$@"; do
+  if [[ "$argument" == --data-dir=* ]]; then
+    profile=${argument#--data-dir=}
+    profile=${profile#\"}
+    profile=${profile%\"}
+    if [[ "$profile" != /* ]]; then profile="$packaged_dir/$profile"; fi
+  fi
+done
+
 running=false
-if app_up; then running=true; fi
+if profile_running; then running=true; fi
 
 macro_generator="$HOME/.pandoc/bin/generate-mathjax-config.py"
 macro_config="$HOME/.pandoc/templates/css/mathjax-macros.json"
@@ -173,10 +212,6 @@ fi
 # build — run the binary as-is. Any mismatch (or missing build) repackages
 # and stamps AFTER the build succeeds, so a failed build can never be
 # mistaken for current. Hot-reload development stays on `just launch-desktop`.
-packaged_dir="$repo/out/Zettlr-Pandoc-linux-x64"
-packaged_binary="$packaged_dir/zettlr-pandoc"
-stamp_file="$packaged_dir/.source-fingerprint"
-
 if ! fingerprint=$("$repo/scripts/desktop/zettlr-pandoc-source-fingerprint" "$repo"); then
   fail "Could not fingerprint the repository source."
 fi

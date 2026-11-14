@@ -11,12 +11,15 @@ import {
   findEditorPage,
   readAppLog,
   requestQuit,
+  startDeadline,
   stopProcess,
   waitForDevTools,
 } from "./support/electron-app";
 
 describe("application launch delivery", function () {
-  this.timeout(120_000);
+  // A test starts the packaged app two times: an owner and a second
+  // launch. Each start has its own deadline, and the work has one minute.
+  this.timeout(2 * startDeadline({}) + 60_000);
   let binary: string;
 
   before(function () {
@@ -110,6 +113,8 @@ describe("application launch delivery", function () {
         rejected.once("exit", resolve);
       });
       assert.equal(rejectedStatus, 1, "A failed document open must fail the invoking process");
+      // The owner quits as the author quits it; the cleanup waits for its exit.
+      await requestQuit(page);
     } finally {
       if (primary.pid !== undefined && primary.exitCode === null && primary.signalCode === null)
         process.kill(primary.pid, "SIGCONT");
@@ -209,6 +214,8 @@ describe("application launch delivery", function () {
         1,
         "Repeated quit requests must run cleanup once",
       );
+      // The new owner quits as the author quits it; the cleanup waits for its exit.
+      await requestQuit(page);
     } finally {
       if (primary.exitCode === null && primary.signalCode === null) process.kill(pid, "SIGCONT");
       await browser?.close();

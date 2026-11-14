@@ -27,6 +27,7 @@ import isFile from "@common/util/is-file";
 import safeAssign from "@common/util/safe-assign";
 import { app, dialog, ipcMain } from "electron";
 import EventEmitter from "events";
+import { realpathSync } from "fs";
 import { DateTime } from "luxon";
 import path from "path";
 import type LogProvider from "../log";
@@ -113,6 +114,12 @@ const guardOptions = {
     "zkn.linkFormat", // Requires a reload since required by the parser that has no access to the editor config
   ],
 };
+
+/**
+ * A `config-provider` message to the windows: the path of the option that
+ * changed, or undefined when the whole configuration changed.
+ */
+export type ConfigProviderBroadcast = { command: "update"; payload: string | undefined };
 
 /**
  * This class represents the configuration of Zettlr, represented by the
@@ -209,21 +216,6 @@ export default class ConfigProvider extends ProviderContract {
           }
           event.returnValue = err.message;
         }
-      }
-    });
-
-    // Handle config events
-    ipcMain.handle("config-provider", (event, message) => {
-      const { command } = message;
-
-      if (command === "set-config") {
-        // Sets the complete config object
-        const { payload } = message;
-        for (const opt in payload) {
-          assertConfigPath(this.config, opt);
-          this.set(opt, payload[opt]);
-        }
-        return true;
       }
     });
   }
@@ -436,11 +428,16 @@ export default class ConfigProvider extends ProviderContract {
   }
 
   /**
-   * Adds a path to be opened on startup
-   * @param {String} p The path to be added
+   * Adds a path to be opened on startup. The root is named by its real
+   * path, as at start (`rootPathsOnDisk`).
+   * @param {String} requestedPath The path to be added
    * @return {Boolean} True, if the path was successfully added, else false.
    */
-  addPath(p: string): boolean {
+  addPath(requestedPath: string): boolean {
+    if (!isFile(requestedPath) && !isDir(requestedPath)) {
+      return false;
+    }
+    const p = realpathSync(requestedPath);
     const { openFiles, openWorkspaces } = this.config.app;
     // Only add valid and unique paths
     if (openFiles.includes(p) || openWorkspaces.includes(p)) {

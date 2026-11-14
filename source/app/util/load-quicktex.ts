@@ -14,6 +14,11 @@ function vimQuote(value: string): string {
   return value.replaceAll("'", "''");
 }
 
+/** The script of a QuickTeX plugin checkout that defines the plugin. */
+export function quickTexPluginScript(pluginDirectory: string): string {
+  return path.join(pluginDirectory, "plugin", "quicktex.vim");
+}
+
 /**
  * Sources QuickTeX and the user's Vimscript in Neovim, then exports the two
  * dictionaries through Vim's own keytrans(). Zettlr never parses Vimscript.
@@ -22,7 +27,7 @@ export async function loadQuickTex(
   configFile: string,
   pluginDirectory: string,
 ): Promise<QuickTexCatalogue> {
-  const pluginScript = path.join(pluginDirectory, "plugin", "quicktex.vim");
+  const pluginScript = quickTexPluginScript(pluginDirectory);
   const lua = [
     "local function tx(t)",
     // vim.empty_dict() so an empty dictionary encodes as {} rather than [].
@@ -84,6 +89,6 @@ export async function loadQuickTex(
     math: parsed.math,
     excludeChars: parsed.excludeChars,
     sourceFile: configFile,
-    diagnostics: [],
+    problem: undefined,
   };
 }

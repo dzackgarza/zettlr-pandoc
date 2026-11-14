@@ -38,7 +38,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
   requestQuit,
@@ -139,13 +138,13 @@ describe("a document that carries collaboration state, after a rename", function
     movedParkedPath = path.join(movedParkedDirectory, "genus.md");
     await mkdir(parkedDirectory);
     await writeFile(parkedPath, PARKED_CONTENTS, "utf8");
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     api = agentClient(await readAgentApiPort(fixture.configDirectory, 60_000));
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
   });
 

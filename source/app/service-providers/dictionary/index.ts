@@ -19,7 +19,7 @@ import enumDictFiles, { type DictFileMetadata } from "@common/util/enum-dict-fil
 import findLangCandidates, { type Candidate } from "@common/util/find-lang-candidates";
 import type ConfigProvider from "@providers/config";
 import { FSWatcher } from "chokidar";
-import { app, ipcMain } from "electron";
+import { app } from "electron";
 import EventEmitter from "events";
 import { promises as fs } from "fs";
 // NOTE: We have to include the compiled Nodehun.node library directly, because
@@ -30,6 +30,7 @@ import { promises as fs } from "fs";
 import Nodehun from "nodehun/build/Release/Nodehun.node";
 // import { Nodehun } from 'nodehun'
 import path from "path";
+import { handleInvokeChannel } from "source/app/util/handle-ipc-channel";
 import { openPath } from "source/app/util/open-path";
 import {
   appendPortableProseCompletion,
@@ -113,34 +114,23 @@ export default class DictionaryProvider extends ProviderContract {
     this._fileLock = false;
     this._unwrittenChanges = false;
 
-    ipcMain.handle("dictionary-provider", (event, message) => {
-      const terms: string[] = message.terms;
-      const { command } = message;
-      if (command === "get-user-dictionary") {
-        return this._userDictionary.map((elem) => elem);
-      } else if (command === "set-user-dictionary") {
-        const dict = message.payload;
+    handleInvokeChannel("dictionary-provider", {
+      "get-user-dictionary": () => this._userDictionary.map((elem) => elem),
+      "set-user-dictionary": (_event, { payload: dict }) => {
         if (!Array.isArray(dict) || !dict.every((d) => typeof d === "string")) {
           throw new Error(
             "[Dictionary Provider] Cannot set user dictionary: Argument was not a string array.",
           );
         }
         this.setUserDictionary(dict);
-      } else if (command === "check") {
-        return terms.map((t) => this.check(t));
-      } else if (command === "suggest") {
-        return terms.map((t) => this.suggest(t));
-      } else if (command === "add") {
-        return terms.map((t) => this.add(t));
-      } else if (command === "open-dictionary-folder") {
-        return openPath(path.join(app.getPath("userData"), "dict"));
-      } else if (command === "get-prose-completions") {
-        return this.getProseCompletions();
-      } else if (command === "add-prose-completion") {
-        return this.addProseCompletion(message.payload.entry);
-      } else if (command === "open-prose-completion-file") {
-        return openPath(this._proseCompletionFile);
-      }
+      },
+      check: (_event, { terms }) => terms.map((t) => this.check(t)),
+      suggest: (_event, { terms }) => terms.map((t) => this.suggest(t)),
+      add: (_event, { terms }) => terms.map((t) => this.add(t)),
+      "open-dictionary-folder": () => openPath(path.join(app.getPath("userData"), "dict")),
+      "get-prose-completions": () => this.getProseCompletions(),
+      "add-prose-completion": (_event, { payload }) => this.addProseCompletion(payload.entry),
+      "open-prose-completion-file": () => openPath(this._proseCompletionFile),
     });
 
     // Reload as soon as the config has been updated

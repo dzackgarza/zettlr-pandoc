@@ -26,9 +26,18 @@ export type FsalIPCContract = {
     request: { payload: string };
     response: AnyDescriptor[];
   };
+  /** The descriptor of one path; a path that is not on disk rejects. */
   "get-descriptor": {
-    request: { payload: string | string[] };
-    response: AnyDescriptor | AnyDescriptor[] | undefined;
+    request: { payload: string };
+    response: AnyDescriptor;
+  };
+  /**
+   * The descriptors of the paths that are on disk, in the order of the
+   * request; the FSAL logs each other path.
+   */
+  "get-descriptors": {
+    request: { payload: string[] };
+    response: AnyDescriptor[];
   };
   /**
    * The ignore rules the FSAL lists with. The FSAL also sends them on the

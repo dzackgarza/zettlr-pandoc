@@ -17,7 +17,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class DirRescan extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "rescan-dir");
+    super(app);
   }
 
   /**

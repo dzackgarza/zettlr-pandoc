@@ -14,6 +14,14 @@
  * END HEADER
  */
 
+/**
+ * A `css-provider` message to the windows: the path of the custom CSS file,
+ * and that its content changed.
+ */
+export type CSSProviderBroadcast =
+  | { command: "get-custom-css-path"; payload: string }
+  | { command: "custom-css-updated" };
+
 /** 'set-custom-css' carries its css at the message's top level. */
 export type CSSProviderIPCContract = {
   "get-custom-css-path": {

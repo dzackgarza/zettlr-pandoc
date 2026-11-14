@@ -28,7 +28,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -40,8 +39,6 @@ const REVEAL = "Reveal in File Browser";
 const SECOND_MESSAGE_MS = 2_000;
 
 describe("Reveal in File Browser (#202)", function () {
-  this.timeout(120_000);
-
   let browser: Browser | undefined;
   let appProcess: ChildProcess | undefined;
   let getOutput: () => string = () => "";
@@ -83,16 +80,10 @@ describe("Reveal in File Browser (#202)", function () {
     await chmod(xdgOpen, 0o755);
     await writeFile(opened, "");
 
-    ({ browser, appProcess, getOutput } = await attach(
-      fixture.configDirectory,
-      [],
-      this.timeout(),
-      {
-        environment: { PATH: `${bin}:${process.env.PATH}` },
-      },
-    ));
+    ({ browser, appProcess, getOutput } = await attach(fixture.configDirectory, [], {
+      environment: { PATH: `${bin}:${process.env.PATH}` },
+    }));
     page = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

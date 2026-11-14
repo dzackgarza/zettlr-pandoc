@@ -24,8 +24,10 @@ import {
   AGENT_API_TOKEN,
   type AgentClient,
   agentClient,
+  currentPackagedBinary,
   delay,
   readAgentApiPort,
+  startDeadline,
 } from "../support/electron-app";
 
 const execFile = promisify(execFileCallback);
@@ -126,8 +128,9 @@ async function openDocumentPaths(api: AgentClient): Promise<string[]> {
 }
 
 describe("file delivery through the installed desktop launcher (#52)", function () {
-  // The cold path may repackage the app when the source fingerprint is stale.
-  this.timeout(600_000);
+  // The recipe builds the package before the run, so the boot script starts
+  // the current build and a test has the time of one start and its work.
+  this.timeout(startDeadline({}) + 60_000);
 
   let testHome: string | undefined;
   let appPid: number | undefined;
@@ -168,6 +171,9 @@ describe("file delivery through the installed desktop launcher (#52)", function 
         "single-instance per desktop, so this proof needs the session to itself: " +
         "close the running app and re-run.",
     );
+    // A stale build makes the boot script package the app before the start.
+    // This throws for a build that is absent or not current.
+    currentPackagedBinary();
 
     const macroGenerator = path.join(homedir(), ".pandoc", "bin", "generate-mathjax-config.py");
     await readFile(macroGenerator).catch((error: NodeJS.ErrnoException) => {

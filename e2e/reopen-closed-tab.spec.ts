@@ -22,7 +22,6 @@ import {
   attach,
   createWorkspaceFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   REPO_ROOT,
   shutdown,
@@ -38,10 +37,10 @@ describe("reopen closed document tab", function () {
     });
     const rendererEvents: string[] = [];
     const screenshots = new Map<string, Buffer>();
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     try {
       const page = await findEditorPage(app.browser, this.timeout());
-      await hideDevServerOverlay(page);
+
       const tab = page.locator('[role="tab"][data-path$="/forms.md"]');
       await tab.waitFor({ state: "visible", timeout: this.timeout() });
       await tab.hover();

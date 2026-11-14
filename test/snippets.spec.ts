@@ -325,7 +325,7 @@ describe("always-on completion sources", function () {
 describe("QuickTeX is a separate aggressive Space mechanism", function () {
   const catalogue: QuickTexCatalogue = {
     sourceFile: "/tmp/quicktex.vim",
-    diagnostics: [],
+    problem: undefined,
     excludeChars: ["{", "(", "["],
     prose: {
       cts: "continuous<Space>",

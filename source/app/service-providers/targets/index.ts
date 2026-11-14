@@ -16,9 +16,10 @@ import PersistentDataContainer, {
   type StoreWriteFailureHandler,
 } from "@common/modules/persistent-data-container";
 import broadcastIPCMessage from "@common/util/broadcast-ipc-message";
-import { app, ipcMain } from "electron";
+import { app } from "electron";
 import EventEmitter from "events";
 import path from "path";
+import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import type FSAL from "../fsal";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
@@ -54,15 +55,9 @@ export default class TargetProvider extends ProviderContract {
 
     this._emitter = new EventEmitter();
 
-    ipcMain.handle("targets-provider", (event, payload) => {
-      const { command } = payload;
-
-      if (command === "get-targets") {
-        return this._targets;
-      } else if (command === "set-writing-target") {
-        const target: WritingTarget = payload.payload;
-        return this.set(target);
-      }
+    handleInvokeChannel("targets-provider", {
+      "get-targets": () => this._targets,
+      "set-writing-target": (_event, { payload }) => this.set(payload),
     });
   }
 

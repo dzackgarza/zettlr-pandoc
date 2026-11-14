@@ -53,7 +53,7 @@ describe("scripts in a frame of the main window", function () {
 
     const rendererEvents: string[] = [];
     const screenshots = new Map<string, Buffer>();
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     try {
       const firstWindow = await findEditorPage(app.browser, this.timeout());
       const context = firstWindow.context();

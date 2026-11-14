@@ -42,14 +42,11 @@ export default function registerThemes(): void {
   });
 
   // Listen for custom CSS changes
-  ipcRenderer.on(
-    "css-provider",
-    (evt, { command, payload }: { command: "get-custom-css-path"; payload: string }) => {
-      if (command === "get-custom-css-path") {
-        setCustomCss(payload);
-      }
-    },
-  );
+  ipcRenderer.on("css-provider", (evt, message) => {
+    if (message.command === "get-custom-css-path") {
+      setCustomCss(message.payload);
+    }
+  });
 
   // Initial theme change/setup
   switchDarkLightTheme();

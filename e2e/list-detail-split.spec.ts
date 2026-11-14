@@ -28,7 +28,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   type RunningApp,
   requireInitialized,
@@ -103,8 +102,6 @@ function assertShare(actual: number, expected: number, message: string): void {
 }
 
 describe("the list and detail split of the Preferences and Assets windows", function () {
-  this.timeout(300_000);
-
   let app: RunningApp | undefined;
   let fixtureRoot: string | undefined;
   const rendererEvents: string[] = [];
@@ -120,9 +117,9 @@ describe("the list and detail split of the Preferences and Assets windows", func
     const filters = path.join(fixture.configDirectory, "lua-filter");
     await mkdir(filters);
     await writeFile(path.join(filters, "numbering.lua"), "-- Numbers each theorem.\nreturn {}\n");
-    app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    app = await attach(fixture.configDirectory, rendererEvents);
     const page = await findEditorPage(app.browser, 60_000);
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: 60_000 });
   });
 
@@ -170,7 +167,7 @@ describe("the list and detail split of the Preferences and Assets windows", func
       await window.ipc.invoke("application", { command: "open-preferences" });
     });
     const preferences = await pageWith(running.browser, "#preferences-container-list", 30_000);
-    await hideDevServerOverlay(preferences);
+
     await preferences.setViewportSize({ width: WIDTH, height: 760 });
     await exerciseSplit(preferences, "#preferences-container-list", "preferences");
 
@@ -211,7 +208,7 @@ describe("the list and detail split of the Preferences and Assets windows", func
       });
     });
     const assets = await pageWith(running.browser, "#tab-filter-control", 30_000);
-    await hideDevServerOverlay(assets);
+
     await assets.setViewportSize({ width: WIDTH, height: 760 });
     for (const tab of ["tab-filter-control", "tab-export-control"]) {
       await assets.locator(`#${tab}`).click();

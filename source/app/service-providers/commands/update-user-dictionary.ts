@@ -17,7 +17,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class UpdateUserDictionary extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "update-user-dictionary");
+    super(app);
   }
 
   /**

@@ -40,7 +40,8 @@ import { setTimeout as sleep } from "timers/promises";
 import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { bootDocumentManager } from "./documents-provider-seam";
 import { bootFsal } from "./fsal-seam";
-import { ipcMainHandlers, ipcMainListeners, userData } from "./headless-electron-harness.cjs";
+import { ipcMainListeners, userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
 
@@ -121,12 +122,6 @@ async function longestStopDuring(work: () => Promise<void>): Promise<number> {
   delay.disable();
   return delay.max / 1e6;
 }
-
-/** The request of a window for the items of a database (`ipcRenderer.invoke`). */
-type ItemsHandler = (
-  event: undefined,
-  message: { command: "get-items"; payload: { database: string } },
-) => Promise<CSLItem[]>;
 
 /** The synchronous request of a window for a rendered citation (`ipcRenderer.sendSync`). */
 type SyncCitationListener = (
@@ -262,8 +257,7 @@ describe("The parse of a large citation library (#138)", function () {
     const citeproc = provider(new Settings(libraryPath));
     await citeproc.boot();
 
-    const handler = ipcMainHandlers.get("citeproc-provider") as ItemsHandler;
-    const items = await handler(undefined, {
+    const items = await invokeMain("citeproc-provider", {
       command: "get-items",
       payload: { database: CITEPROC_MAIN_DB },
     });

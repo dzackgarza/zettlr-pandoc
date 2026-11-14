@@ -70,6 +70,7 @@ describe("Quarto editor citation resolution and startup race", function () {
     size: 100,
     tags: [],
     links: [],
+    fileLinks: [],
     citekeys: ["Stacks"],
     yamlTitle: undefined,
     aliases: [],

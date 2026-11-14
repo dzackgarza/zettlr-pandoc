@@ -24,19 +24,22 @@ import "./headless-electron-harness.cjs";
 import { ChangeSet } from "@codemirror/state";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
-import { chmodSync, mkdirSync, writeFileSync } from "fs";
+import EventEmitter from "events";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
+import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
+import LogProvider from "source/app/service-providers/log";
+import ReferenceProvider from "source/app/service-providers/references";
 import { runWorkspaceEditTransaction } from "source/app/service-providers/references/workspace-edit-transaction";
 import { hashDocumentSource } from "source/common/pandoc-util/extract-references";
 import { sha256Text } from "source/common/util/sha256";
 import type { AnnotationAnchor } from "source/types/common/annotation-domain";
 import { bootDocumentManager } from "./documents-provider-seam";
-import { appListeners, ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
-
-type AuthorityHandler = (event: undefined, message: unknown) => Promise<unknown>;
+import { appListeners, userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const SOURCE = "A lattice is a free abelian group with a bilinear form.\n";
 const TARGET_TEXT = "bilinear form";
@@ -91,11 +94,9 @@ describe("Documents-provider edits of a document with annotations", function () 
 
   it("keeps an annotation on its text when an editor inserts text before it", async function () {
     const { from, to } = await annotate();
-    const authority = ipcMainHandlers.get("documents-authority") as AuthorityHandler | undefined;
-    assert.ok(authority !== undefined, "the provider answers its editors");
     const { startVersion } = await provider.getDocument(filePath);
 
-    const accepted = await authority(undefined, {
+    const accepted = await invokeMain("documents-authority", {
       command: "push-updates",
       payload: {
         filePath,
@@ -167,6 +168,133 @@ describe("Documents-provider edits of a document with annotations", function () 
     assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 1);
   });
 
+  it("has each editor update that it took after a review decision in the sidecar file (#57)", async function () {
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text(SOURCE),
+      [
+        {
+          description: "Name the symmetry",
+          patch: createPatch("document", SOURCE, PROPOSED, "", "", { context: 0 }),
+        },
+      ],
+      "edit-after-decision-proposal",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The review proposal was refused: ${submitted.code}`);
+    }
+    const decided = await provider.acceptAllReviewChunks(submitted.reviewId, {
+      expectedReviewGeneration: submitted.reviewGeneration,
+      expectedWorkingSha256: sha256Text(PROPOSED),
+    });
+    assert.ok(decided.ok, "the author accepts the proposal");
+    const sidecarFile = collaborationSidecarFilePath(SIDECARS, filePath);
+    const onDisk = (): string => JSON.parse(readFileSync(sidecarFile, "utf-8")).workingText;
+
+    let { startVersion: version } = await provider.getDocument(filePath);
+    let text = PROPOSED;
+    for (const insert of ["Definition. ", "(Bourbaki) "]) {
+      const accepted = await invokeMain("documents-authority", {
+        command: "push-updates",
+        payload: {
+          filePath,
+          version,
+          updates: [
+            {
+              clientID: "editor-under-test",
+              changes: ChangeSet.of({ from: 0, insert }, text.length).toJSON(),
+            },
+          ],
+        },
+      });
+      assert.equal(accepted, true, "the provider takes the update of the editor");
+      text = `${insert}${text}`;
+      version += 1;
+      // The file is what a start after a crash reads: no quit wrote it.
+      assert.equal(onDisk(), text, "the sidecar file has the update when the provider takes it");
+    }
+  });
+
+  it("restores the sidecar of a reviewed document when the app stopped during a workspace edit (#210)", async function () {
+    await annotate();
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text(SOURCE),
+      [
+        {
+          description: "Name the symmetry",
+          patch: createPatch("document", SOURCE, PROPOSED, "", "", { context: 0 }),
+        },
+      ],
+      "edit-collaboration-proposal",
+      0,
+    );
+    assert.ok(submitted.ok, "the agent submits the proposal");
+    const collaborationState = async (manager: DocumentManager) =>
+      (await manager.annotationQueries.listCollaborationSidecars()).map((sidecar) => ({
+        workingText: sidecar.workingText,
+        suggestionAnchors: sidecar.review?.suggestions.map((suggestion) => suggestion.anchors),
+        annotationAnchors: sidecar.annotations.items.map((item) => item.anchor),
+      }));
+    const beforeEdit = await collaborationState(provider);
+    assert.equal(beforeEdit[0]?.workingText, PROPOSED, "the buffer holds the proposal");
+
+    // The app stops after the reviewed buffer took its edit and before the
+    // transaction ends: the journal is the one that the transaction wrote.
+    const journalFile = path.join(root, "workspace-edit-journal.json");
+    let journalAtStop: string | undefined;
+    const stopping = {
+      readMarkdownBufferContent: (file: string) => provider.readMarkdownBufferContent(file),
+      applyWorkspaceTextEdits: async (
+        edits: Parameters<DocumentManager["applyWorkspaceTextEdits"]>[0],
+      ) => {
+        const updated = await provider.applyWorkspaceTextEdits(edits);
+        journalAtStop = readFileSync(journalFile, "utf-8");
+        return updated;
+      },
+    };
+    const insideTarget = PROPOSED.indexOf(TARGET_TEXT) + "bilinear".length;
+    await runWorkspaceEditTransaction(stopping, root, {
+      edits: [
+        { documentPath: filePath, range: { from: 0, to: 0 }, insert: PREFIX },
+        { documentPath: filePath, range: { from: insideTarget, to: insideTarget }, insert: "," },
+      ],
+      expectedSourceHashes: { [filePath]: hashDocumentSource(PROPOSED) },
+    });
+    assert.ok(journalAtStop !== undefined, "the transaction wrote its journal");
+    await provider.shutdown();
+    writeFileSync(journalFile, journalAtStop, "utf-8");
+
+    // The next start: the references provider recovers the journal before a
+    // document loads.
+    provider = await bootDocumentManager([root]);
+    const references = new ReferenceProvider(
+      new LogProvider(),
+      new EventEmitter(),
+      provider,
+      () => 500,
+      root,
+      {
+        schedule: (callback: () => void) => {
+          callback();
+          return { cancel: () => {} };
+        },
+      },
+    );
+    await references.boot();
+    await references.shutdown();
+
+    assert.deepEqual(
+      await collaborationState(provider),
+      beforeEdit,
+      "the sidecar has the text and the anchors of the document before the transaction",
+    );
+    await provider.getDocument(filePath);
+    assert.equal(provider.readMarkdownBufferContent(filePath), PROPOSED);
+    assert.equal(provider.reviewStatus(provider.ensureDocumentId(filePath))?.unresolvedChunks, 1);
+  });
+
   it("leaves an annotation where it was when a workspace edit is rolled back", async function () {
     const { from, to } = await annotate();
     const insideTarget = from + "bilinear".length;
@@ -200,8 +328,6 @@ describe("Documents-provider edits of a document with annotations", function () 
     const closedSource = "A closed document.\n";
     writeFileSync(closedPath, closedSource, "utf-8");
     chmodSync(closedPath, 0o444);
-    const editor = ipcMainHandlers.get("documents-authority") as AuthorityHandler | undefined;
-    assert.ok(editor !== undefined, "the provider answers its editors");
 
     // The editor sends the typed text when the transaction has checked the
     // buffer and writes the closed file: the update arrives during that
@@ -210,7 +336,7 @@ describe("Documents-provider edits of a document with annotations", function () 
     let typing: Promise<unknown> | undefined;
     async function type(current: string): Promise<void> {
       const { startVersion } = await provider.getDocument(filePath);
-      const accepted = await editor?.(undefined, {
+      const accepted = await invokeMain("documents-authority", {
         command: "push-updates",
         payload: {
           filePath,

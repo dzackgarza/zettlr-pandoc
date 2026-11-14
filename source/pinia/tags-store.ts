@@ -24,11 +24,11 @@ export const useTagsStore = defineStore("tags", () => {
   const tags = ref<TagRecord[]>([]);
 
   // Listen to subsequent changes
-  ipcRenderer.on("tag-provider", (event, command, payload: TagRecord[] | ColoredTag[]) => {
-    if (command === "colored-tags-updated") {
-      coloredTags.value = payload as ColoredTag[];
-    } else if (command === "tags-updated") {
-      tags.value = payload as TagRecord[];
+  ipcRenderer.on("tag-provider", (event, ...message) => {
+    if (message[0] === "colored-tags-updated") {
+      coloredTags.value = message[1];
+    } else {
+      tags.value = message[1];
     }
   });
 

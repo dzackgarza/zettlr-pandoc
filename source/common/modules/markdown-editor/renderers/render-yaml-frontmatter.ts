@@ -20,8 +20,7 @@ import { Decoration, EditorView, keymap, WidgetType } from "@codemirror/view";
 import { codeSyntaxHighlighter } from "@dzack/pandoc-editor/theme/syntax";
 import { incrementalNodeDecorations } from "@dzack/pandoc-editor/util/incremental-node-decorations";
 import {
-  previewSuppressionChanged,
-  previewSuppressionRanges,
+  previewSuppressionChangedRanges,
   rangeInPreviewSuppression,
 } from "@dzack/pandoc-editor/util/range-in-preview-suppression";
 import type { SyntaxNode } from "@lezer/common";
@@ -386,8 +385,7 @@ const frontmatterField = incrementalNodeDecorations({
       after.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
     );
   },
-  reach: previewSuppressionRanges,
-  reachChanged: previewSuppressionChanged,
+  changedReach: previewSuppressionChangedRanges,
 });
 
 export const renderYamlFrontmatter = [

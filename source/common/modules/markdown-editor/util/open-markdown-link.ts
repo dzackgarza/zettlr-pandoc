@@ -16,9 +16,9 @@
 import { type EditorState, type Line } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
+import { mainWindowId } from "@common/util/main-window-id";
 import makeValidUri from "@common/util/make-valid-uri";
 import { isAbsolutePath, pathDirname } from "@common/util/renderer-path-polyfill";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { tocField } from "../plugins/toc-field";
 import { configField } from "./configuration";
 
@@ -60,8 +60,7 @@ export default function (url: string, view: EditorView): void {
       });
     }
   } else {
-    const searchParams = new URLSearchParams(window.location.search);
-    const windowId = searchParams.get("window_id");
+    const windowId = mainWindowId();
     const base = pathDirname(view.state.field(configField).metadata.path);
     const validURI = makeValidUri(url, base);
 
@@ -87,7 +86,7 @@ export default function (url: string, view: EditorView): void {
         .invoke("documents-provider", {
           command: "open-file",
           payload: { path: localPath, newTab: false, windowId },
-        } as DocumentManagerIPCAPI)
+        })
         .catch((e) => reportError(e));
     } else {
       // Handled by the event listener in the main process

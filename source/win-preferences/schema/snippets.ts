@@ -14,14 +14,37 @@
 
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
+import { quickTexProblemMessage } from "@common/util/quicktex-problem";
 import { showRefusal } from "@common/util/show-refusal";
+import type { QuickTexProblem } from "@dts/common/quicktex";
 import { ProgrammaticallyOpenableWindows } from "@providers/commands/open-aux-window";
+import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
 import { PreferencesGroups } from "./_preferences-groups";
 import { type PreferencesFieldset } from "./types";
 
 const ipcRenderer = window.ipc;
 
-export function getSnippetsFields(): PreferencesFieldset[] {
+/**
+ * @param  config           The settings that the form shows
+ * @param  quickTexProblem  The setting of the QuickTeX configuration that the
+ *                          assets provider could not use
+ */
+export function getSnippetsFields(
+  config: ConfigOptions,
+  quickTexProblem: QuickTexProblem | undefined,
+): PreferencesFieldset[] {
+  // A problem belongs to the value that the provider read. While the author
+  // types another value, the field has no problem of its own yet.
+  const problemOf = (setting: QuickTexProblem["setting"]): string | undefined => {
+    const value =
+      setting === "editor.quickTexFile"
+        ? config.editor.quickTexFile
+        : config.editor.quickTexPluginDirectory;
+    return quickTexProblem?.setting === setting && quickTexProblem.path === value
+      ? quickTexProblemMessage(quickTexProblem)
+      : undefined;
+  };
+
   return [
     {
       title: trans("Snippets"),
@@ -45,6 +68,7 @@ export function getSnippetsFields(): PreferencesFieldset[] {
           placeholder: trans("Path to QuickTeX Vimscript configuration"),
           reset: "",
           filter: [{ extensions: ["vim"], name: "Vimscript" }],
+          problem: problemOf("editor.quickTexFile"),
         },
         {
           type: "directory",
@@ -52,6 +76,7 @@ export function getSnippetsFields(): PreferencesFieldset[] {
           model: "editor.quickTexPluginDirectory",
           placeholder: trans("Path to the QuickTeX plugin root"),
           reset: "",
+          problem: problemOf("editor.quickTexPluginDirectory"),
         },
         {
           type: "button",

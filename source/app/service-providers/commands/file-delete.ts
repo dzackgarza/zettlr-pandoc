@@ -29,7 +29,7 @@ export interface FileDeleteServices {
 
 export default class FileDelete extends ZettlrCommand<FileDeleteServices> {
   constructor(app: FileDeleteServices) {
-    super(app, "file-delete");
+    super(app);
   }
 
   /**

@@ -19,11 +19,14 @@
  *                    parse again, so a block with the same node object has
  *                    the same decorations. The field computes again the
  *                    ranges between those blocks.
- *                  - A range that the source calls its reach moved. The
- *                    reach holds the ranges whose decorations depend on more
- *                    than their own nodes, such as the selection. The field
- *                    computes again the old and the new reach, and the
- *                    decorations that touch them.
+ *                  - A transaction changed a range whose decorations depend
+ *                    on more than their own nodes, such as the selection or
+ *                    a pending review change. The source names those ranges
+ *                    for each transaction (`changedReach`), and the field
+ *                    computes them again with the decorations that touch
+ *                    them. The source names the ranges that changed, not
+ *                    each such range, so a transaction that moves one range
+ *                    of many costs the work of one.
  *                  - Another state value that the source reads changed. The
  *                    source reports that, and the field computes all
  *                    decorations again.
@@ -42,7 +45,7 @@
  */
 
 import { syntaxTree } from "@codemirror/language";
-import { type EditorState, type Range, StateField } from "@codemirror/state";
+import { type EditorState, type Range, StateField, type Transaction } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import { Tree, type TreeBuffer } from "@lezer/common";
 
@@ -63,12 +66,11 @@ export interface NodeDecorationSource {
    */
   inputsChanged: (before: EditorState, after: EditorState) => boolean;
   /**
-   * The ranges whose decorations depend on more than their own nodes: the
-   * selection, for a source that leaves a selected node undecorated.
+   * The ranges of the new document whose decorations a transaction can have
+   * changed through more than their own nodes: for a source that leaves a
+   * selected node undecorated, the old selection, mapped, and the new one.
    */
-  reach: (state: EditorState) => readonly SourceRange[];
-  /** Whether `reach` can return other ranges for `after` than for `before`. */
-  reachChanged: (before: EditorState, after: EditorState) => boolean;
+  changedReach: (transaction: Transaction) => readonly SourceRange[];
 }
 
 interface TopLevelBlocks {
@@ -195,9 +197,8 @@ export function incrementalNodeDecorations(
       }
 
       const tree = syntaxTree(state);
-      const reachMoved =
-        transaction.docChanged || source.reachChanged(transaction.startState, state);
-      if (tree === value.tree && !reachMoved) {
+      const reach = source.changedReach(transaction);
+      if (tree === value.tree && reach.length === 0 && !transaction.docChanged) {
         return value;
       }
 
@@ -207,24 +208,14 @@ export function incrementalNodeDecorations(
         blocks = topLevelBlocks(tree);
         dirty.push(...changedRanges(value.blocks, blocks, state.doc.length));
       }
-      if (reachMoved) {
-        // One position more on each side: a decoration that meets the reach
-        // depends on it, and `inRegion` leaves out a decoration that only
-        // meets a region.
-        const widened = (from: number, to: number): SourceRange => {
-          return { from: Math.max(0, from - 1), to: Math.min(state.doc.length, to + 1) };
-        };
-        for (const range of source.reach(transaction.startState)) {
-          dirty.push(
-            widened(
-              transaction.changes.mapPos(range.from, -1),
-              transaction.changes.mapPos(range.to, 1),
-            ),
-          );
-        }
-        for (const range of source.reach(state)) {
-          dirty.push(widened(range.from, range.to));
-        }
+      // One position more on each side: a decoration that meets the reach
+      // depends on it, and `inRegion` leaves out a decoration that only
+      // meets a region.
+      for (const range of reach) {
+        dirty.push({
+          from: Math.max(0, range.from - 1),
+          to: Math.min(state.doc.length, range.to + 1),
+        });
       }
 
       let decorations = transaction.docChanged

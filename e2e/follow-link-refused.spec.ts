@@ -28,7 +28,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -66,14 +65,13 @@ describe("a link that cannot be followed", function () {
     await writeFile(xdgOpen, '#!/bin/sh\necho "no application opens $1" >&2\nexit 4\n', "utf8");
     await chmod(xdgOpen, 0o755);
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout(), {
+    const app = await attach(fixture.configDirectory, rendererEvents, {
       environment: { PATH: `${bin}:${process.env.PATH}` },
     });
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

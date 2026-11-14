@@ -70,6 +70,7 @@ import { markdownFolding } from "./code-folding/markdown";
 import { externalLinterExtension } from "./diagnostics/external-linter-adapter";
 import { markdownDiagnosticExtensions } from "./diagnostics/markdown-diagnostic-plugins";
 import { zettlrKeymap } from "./keymaps";
+import { tagOpener } from "./plugins/click-listeners";
 import { defaultContextMenu } from "./plugins/default-context-menu";
 import { distractionFree } from "./plugins/distraction-free";
 import { footnoteBackground } from "./plugins/footnote-background";
@@ -127,6 +128,8 @@ export interface CoreExtensionOptions {
   referenceKeyEditListener: (intent: ReferenceKeyEditPromptIntent) => void;
   /** Opens the wikilink whose text before `|` is the argument. */
   onWikiLink: (linkContents: string) => void;
+  /** Opens the tag whose text after `#` is the argument. */
+  onTag: (tag: string) => void;
 }
 
 /**
@@ -360,6 +363,7 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
     // a wikilink: the state of the wikilink chips. Fed by MainEditor.vue.
     wikilinkResolutionsField,
     wikilinkOpener.of(options.onWikiLink),
+    tagOpener.of(options.onTag),
     // The diagrams that Visual TikZ Editor has open, and their saves.
     tikzEditSessions,
     // Prompts for the workspace rename after the selection leaves a

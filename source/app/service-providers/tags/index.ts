@@ -23,9 +23,10 @@ import PersistentDataContainer, {
 } from "@common/modules/persistent-data-container";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import { DP_EVENTS } from "@dts/common/documents";
-import { app, ipcMain } from "electron";
+import { app } from "electron";
 import path from "path";
 import { extractFromFileDescriptors } from "source/common/util/extract-from-file-descriptors";
+import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import type ConfigProvider from "../config";
 import type DocumentManager from "../documents";
 import type FSAL from "../fsal";
@@ -83,17 +84,12 @@ export default class TagProvider extends ProviderContract {
     this._coloredTags = [];
     this.container = new PersistentDataContainer(this._file, "json", onWriteFailure);
 
-    ipcMain.handle("tag-provider", async (event, message) => {
-      const { command } = message;
-
-      if (command === "get-all-tags") {
-        return await this.getAllTags();
-      } else if (command === "set-colored-tags") {
-        const tags: ColoredTag[] = message.payload;
-        this.setColoredTags(tags);
-      } else if (command === "get-colored-tags") {
-        return this._coloredTags;
-      }
+    handleInvokeChannel("tag-provider", {
+      "get-all-tags": async () => await this.getAllTags(),
+      "set-colored-tags": (_event, { payload }) => {
+        this.setColoredTags(payload);
+      },
+      "get-colored-tags": () => this._coloredTags,
     });
   }
 

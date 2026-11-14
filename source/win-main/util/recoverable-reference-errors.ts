@@ -19,10 +19,7 @@
  *                  (the Vue wiring is thin; the surfacing semantics live
  *                  here).
  *
- *                  CONTRACT (locked red by the
- *                  test/reference-error-surface probe trio —
- *                  reference-error-surface{-build.cjs,-entry.ts,-probe.cjs,
- *                  .spec.ts}):
+ *                  Proof: test/reference-error-surface.spec.ts.
  *
  *                  - invokeReferenceProviderRecoverably(ipcInvoke, message,
  *                    operationLabel) forwards message on the
@@ -52,37 +49,42 @@
  */
 
 import { type RecoverableOutcome, runRecoverably } from "@common/util/run-recoverably";
-import type { ReferenceProviderIPCAPI } from "source/app/service-providers/references";
+import type { ReferenceProviderIPCContract } from "source/app/service-providers/references";
+
+type ReferenceCommand = keyof ReferenceProviderIPCContract;
+
+/** The message of one reference-provider command. */
+export type ReferenceProviderMessage<K extends ReferenceCommand> = {
+  command: K;
+} & ReferenceProviderIPCContract[K]["request"];
+
+/** The answer that the reference provider declares for one command. */
+export type ReferenceProviderResponse<K extends ReferenceCommand> =
+  ReferenceProviderIPCContract[K]["response"];
 
 /** The renderer ipc seam the invocations travel through (ipcRenderer.invoke). */
-export type ReferenceProviderInvoker = (
+export type ReferenceProviderInvoker<K extends ReferenceCommand> = (
   channel: "reference-provider",
-  message: ReferenceProviderIPCAPI,
-) => Promise<unknown>;
-
-/** The typed outcome of a recoverable reference-provider invocation. */
-export type RecoverableReferenceOutcome<T> = RecoverableOutcome<T>;
+  message: ReferenceProviderMessage<K>,
+) => Promise<ReferenceProviderResponse<K>>;
 
 /**
  * Invokes a reference-provider command, surfacing any rejection as one
  * closable error toast plus a typed 'failed' outcome, per the module
- * contract above. The surfacing semantics live in the shared
- * common/util/run-recoverably boundary (review B8); this module remains the
- * window-level entry point the probe contract pins.
+ * contract above. The value of an 'ok' outcome is the answer that the
+ * provider declares for the command.
  *
- * @param   {ReferenceProviderInvoker}  ipcInvoke       The renderer ipc seam
- * @param   {object}                    message         The provider command message
- * @param   {string}                    operationLabel  The user-facing operation name
- *
- * @return  {Promise<RecoverableReferenceOutcome<T>>}   The typed outcome
+ * @param   ipcInvoke       The renderer ipc seam
+ * @param   message         The provider command message
+ * @param   operationLabel  The user-facing operation name
  */
-export async function invokeReferenceProviderRecoverably<T>(
-  ipcInvoke: ReferenceProviderInvoker,
-  message: ReferenceProviderIPCAPI,
+export async function invokeReferenceProviderRecoverably<K extends ReferenceCommand>(
+  ipcInvoke: ReferenceProviderInvoker<K>,
+  message: ReferenceProviderMessage<K>,
   operationLabel: string,
-): Promise<RecoverableReferenceOutcome<T>> {
-  return await runRecoverably<T>(
-    async () => (await ipcInvoke("reference-provider", message)) as T,
+): Promise<RecoverableOutcome<ReferenceProviderResponse<K>>> {
+  return await runRecoverably(
+    async () => await ipcInvoke("reference-provider", message),
     operationLabel,
   );
 }

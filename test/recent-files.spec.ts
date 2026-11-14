@@ -24,6 +24,7 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
@@ -46,6 +47,7 @@ function descriptorFor(filePath: string): MDFileDescriptor {
     id: "",
     tags: [],
     links: [],
+    fileLinks: [],
     citekeys: [],
     bom: "",
     type: "file",
@@ -123,6 +125,9 @@ describe("Recent files", function () {
       config,
       fsal: {
         getWatchdog: () => watcher,
+        // This spec drives no FSAL event: the provider subscribes and hears nothing.
+        on: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
+        off: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
         getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
         loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, "utf-8"),
         getDescriptorFor: async (filePath: string) => descriptorFor(filePath),

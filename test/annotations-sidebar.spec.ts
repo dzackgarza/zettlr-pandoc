@@ -824,7 +824,7 @@ describe("useDocumentCollaborationStore review surface", function () {
     };
     documentCollaborationIpcDouble.setInvokeResponder(async (message) =>
       message.command === "get-workspace-collaboration-sessions"
-        ? { sessions: [session, second], unreadable: [], ownerless: [] }
+        ? { sessions: [session, second], unreadable: [], ownerless: [], unsaved: [] }
         : undefined,
     );
     const store = useDocumentCollaborationStore();
@@ -856,6 +856,7 @@ describe("useDocumentCollaborationStore review surface", function () {
           sessions: [acceptanceAttempts === 0 ? session : freshSession],
           unreadable: [],
           ownerless: [],
+          unsaved: [],
         };
       }
       if (message.command === "get-collaboration-session") {
@@ -920,6 +921,7 @@ describe("useDocumentCollaborationStore review surface", function () {
           sessions: [workspaceReads === 1 ? session : freshSession],
           unreadable: [],
           ownerless: [],
+          unsaved: [],
         };
       }
       if (message.command === "documents:accept-all-workspace-review-chunks") {
@@ -966,7 +968,7 @@ describe("useDocumentCollaborationStore review surface", function () {
     const accepted: string[] = [];
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       if (message.command === "get-workspace-collaboration-sessions") {
-        return { sessions: [session, second], unreadable: [], ownerless: [] };
+        return { sessions: [session, second], unreadable: [], ownerless: [], unsaved: [] };
       }
       if (message.command === "documents:accept-all-workspace-review-chunks") {
         accepted.push((message.payload as { path: string }).path);
@@ -1005,7 +1007,7 @@ describe("useDocumentCollaborationStore review surface", function () {
     const logged: unknown[] = [];
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       if (message.command === "get-workspace-collaboration-sessions") {
-        return { sessions: [session, second], unreadable: [], ownerless: [] };
+        return { sessions: [session, second], unreadable: [], ownerless: [], unsaved: [] };
       }
       if (message.command === "documents:accept-all-workspace-review-chunks") {
         return (message.payload as { path: string }).path === secondPath

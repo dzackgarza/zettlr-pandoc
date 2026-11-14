@@ -441,10 +441,12 @@ export class IrisIndicator {
   }
 
   /**
-   * Programmatically pauses the rendering
+   * Ends the indicator: it stops the rendering and gives its WebGL context
+   * back. The owner of the canvas calls this before it removes the canvas.
    */
-  pauseRendering() {
+  dispose() {
     this.isRendering = false;
+    this.engine.releaseContext();
   }
 
   /**

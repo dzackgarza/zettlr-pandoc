@@ -24,7 +24,7 @@ const MAX_FILE_PREVIEW_LENGTH = 300;
 
 export default class FetchLinkPreview extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "fetch-link-preview");
+    super(app);
   }
 
   /**

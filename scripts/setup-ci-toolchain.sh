@@ -76,7 +76,8 @@ sudo sysctl --write kernel.apparmor_restrict_unprivileged_userns=0
 # mirror, and some of those serve a certificate curl cannot verify.
 #
 # A ${texlive_dir} that a workflow restored from its cache only
-# needs its paths linked.
+# needs its paths linked. The key of that cache holds the ISO week, so the
+# installation follows the rolling repository once a week (#160).
 readonly texlive_repository='https://mirrors.mit.edu/CTAN/systems/texlive/tlnet'
 readonly texlive_dir="${HOME}/texlive"
 readonly tlmgr="${texlive_dir}/bin/x86_64-linux/tlmgr"

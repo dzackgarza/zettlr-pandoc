@@ -293,31 +293,14 @@
       </div>
     </RecycleScroller>
 
-    <AlertDialogRoot v-model:open="confirmingReplaceAll">
-      <AlertDialogPortal>
-        <AlertDialogOverlay class="search-dialog-backdrop"></AlertDialogOverlay>
-        <AlertDialogContent class="search-dialog self-painted-controls">
-          <AlertDialogTitle class="search-dialog-title">{{ trans('Replace All') }}</AlertDialogTitle>
-          <AlertDialogDescription
-            class="search-dialog-body"
-            data-search-confirm-message
-          >{{ replaceAllQuestion }}</AlertDialogDescription>
-          <p
-            v-if="notSearched.length > 0"
-            class="search-dialog-body"
-            data-search-confirm-not-searched
-          >{{ notSearchedKeepText }}</p>
-          <div class="search-dialog-actions">
-            <AlertDialogCancel class="search-button">{{ trans('Cancel') }}</AlertDialogCancel>
-            <AlertDialogAction
-              class="search-button search-button-primary"
-              data-search-confirm="replace-all"
-              v-on:click="replaceAll()"
-            >{{ trans('Replace') }}</AlertDialogAction>
-          </div>
-        </AlertDialogContent>
-      </AlertDialogPortal>
-    </AlertDialogRoot>
+    <WorkspaceEditPreviewDialog
+      v-if="replacePreview !== undefined"
+      v-bind:title="trans('Replace All')"
+      v-bind:description="replaceAllDescription"
+      v-bind:documents="replacePreview.documents"
+      v-on:apply="applyReplacePreview()"
+      v-on:cancel="replacePreview = undefined"
+    ></WorkspaceEditPreviewDialog>
   </div>
 </template>
 
@@ -340,12 +323,13 @@
  *                  precedes the match, the match, and the rest of that line
  *                  — with the replacement shown beside a struck-through
  *                  match while a replacement is typed. A row carries Replace
- *                  and Dismiss; the widget carries Replace All, which asks
- *                  first; the view's own actions refresh, clear, collapse
- *                  and undo the last replace. A file that the search
- *                  could not read is named below the count, with the cause
- *                  in its title, and the Replace All question says that
- *                  such a file keeps its text.
+ *                  and Dismiss; the widget carries Replace All, which shows
+ *                  the shared preview of an edit of several documents
+ *                  first (#6); the view's own actions refresh, clear,
+ *                  collapse and undo the last replace. A file that the
+ *                  search could not read is named below the count, with the
+ *                  cause in its title, and the preview says that such a
+ *                  file keeps its text.
  *
  *                  The provider owns matching and replacing. This decides
  *                  what to ask for and how to draw what comes back, and
@@ -359,22 +343,13 @@ import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
 import { showUnsavedDocuments } from "@common/util/save-refusal-action";
-import {
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogOverlay,
-  AlertDialogPortal,
-  AlertDialogRoot,
-  AlertDialogTitle,
-} from "reka-ui";
+import WorkspaceEditPreviewDialog from "@common/vue/WorkspaceEditPreviewDialog.vue";
+import type { WorkspaceEditDocumentPreview } from "@dts/common/workspace-edit";
 import type {
   FileSearchResult,
   ReplaceTarget,
   SearchFailure,
   SearchMatch,
-  SearchProviderBroadcast,
   SearchProviderIPCAPI,
   SearchQuery,
   UnsearchedFile,
@@ -384,7 +359,7 @@ import {
   expandReplacement,
 } from "source/app/service-providers/search/util/search-query";
 import { useWindowStateStore } from "source/pinia";
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, shallowRef, watch } from "vue";
 import { RecycleScroller } from "vue-virtual-scroller";
 
 const ipcRenderer = window.ipc;
@@ -537,6 +512,13 @@ const replaceAllQuestion = computed(() => {
     : trans('Replace %s with "%s"?', occurrencesPhrase(matches, files), replacement.value);
 });
 
+/** The question of Replace All, and the files that keep their text. */
+const replaceAllDescription = computed(() =>
+  notSearched.value.length > 0
+    ? `${replaceAllQuestion.value} ${notSearchedKeepText.value}`
+    : replaceAllQuestion.value,
+);
+
 /** "3 results in 2 files", down to "1 result in 1 file". */
 function resultsPhrase(matches: number, files: number): string {
   if (matches === 1 && files === 1) {
@@ -671,42 +653,39 @@ let seenGeneration = 0;
 // The drawer creates this view every time the owner comes back to it, so
 // the listener has to go when the view does: a second copy would add every
 // result to the list twice.
-const stopListening = ipcRenderer.on(
-  "search-provider",
-  (event, message: SearchProviderBroadcast) => {
-    if (message.generation < seenGeneration) {
+const stopListening = ipcRenderer.on("search-provider", (event, message) => {
+  if (message.generation < seenGeneration) {
+    return;
+  }
+  if (message.generation > seenGeneration) {
+    seenGeneration = message.generation;
+    windowStateStore.clearSearchResults();
+    notSearched.value = [];
+  }
+  switch (message.type) {
+    case "search-result":
+      progress.value = message.progress;
+      windowStateStore.addSearchResult(message.result);
       return;
-    }
-    if (message.generation > seenGeneration) {
-      seenGeneration = message.generation;
-      windowStateStore.clearSearchResults();
-      notSearched.value = [];
-    }
-    switch (message.type) {
-      case "search-result":
-        progress.value = message.progress;
-        windowStateStore.addSearchResult(message.result);
-        return;
-      case "search-progress":
-        progress.value = message.progress;
-        return;
-      case "search-unread":
-        progress.value = message.progress;
-        notSearched.value = [...notSearched.value, message.file];
-        return;
-      case "search-failed":
-        windowStateStore.flushSearchResults();
-        searching.value = false;
-        progress.value = 1;
-        searchError.value = failureMessage(message.failure);
-        return;
-      case "search-end":
-        windowStateStore.flushSearchResults();
-        searching.value = false;
-        progress.value = 1;
-    }
-  },
-);
+    case "search-progress":
+      progress.value = message.progress;
+      return;
+    case "search-unread":
+      progress.value = message.progress;
+      notSearched.value = [...notSearched.value, message.file];
+      return;
+    case "search-failed":
+      windowStateStore.flushSearchResults();
+      searching.value = false;
+      progress.value = 1;
+      searchError.value = failureMessage(message.failure);
+      return;
+    case "search-end":
+      windowStateStore.flushSearchResults();
+      searching.value = false;
+      progress.value = 1;
+  }
+});
 
 /** What the view reads out in place of a count it cannot honestly give. */
 function failureMessage(failure: SearchFailure): string {
@@ -752,16 +731,49 @@ function runReplace(targets: ReplaceTarget[]): void {
     });
 }
 
+/**
+ * The preview of Replace All: the targets that the author sees and each
+ * document that they change. A `shallowRef`, so the targets cross IPC as
+ * the plain objects that `targetFor` made.
+ */
+const replacePreview = shallowRef<
+  { targets: ReplaceTarget[]; documents: WorkspaceEditDocumentPreview[] } | undefined
+>(undefined);
+
+/** Asks the provider what Replace All changes, and shows it; nothing changes yet. */
 function askToReplaceAll(): void {
-  if (replaceableFiles.value.length > 0) {
-    confirmingReplaceAll.value = true;
+  const targets = replaceableFiles.value.map((file) => targetFor(file, file.matches));
+  if (targets.length === 0) {
+    return;
   }
+  searchError.value = undefined;
+  ipcRenderer
+    .invoke("search-provider", {
+      command: "preview-replace",
+      payload: { targets, replacement: replacement.value, preserveCase: preserveCase.value },
+    } satisfies SearchProviderIPCAPI)
+    .then((preview) => {
+      if (preview.status === "conflict") {
+        searchError.value = trans(
+          "%s changed since the search; nothing was replaced. Search again.",
+          pathBasename(preview.documentPath),
+        );
+        return;
+      }
+      replacePreview.value = { targets, documents: preview.documents };
+    })
+    .catch((err) => {
+      reportFailure("replace", err);
+    });
 }
 
-const confirmingReplaceAll = ref(false);
-
-function replaceAll(): void {
-  runReplace(replaceableFiles.value.map((file) => targetFor(file, file.matches)));
+/** Replaces what the preview showed; the provider refuses a document that changed since. */
+function applyReplacePreview(): void {
+  const preview = replacePreview.value;
+  replacePreview.value = undefined;
+  if (preview !== undefined) {
+    runReplace(preview.targets);
+  }
 }
 
 function replaceFile(file: FileSearchResult): void {
@@ -1146,60 +1158,6 @@ body div#search-view {
     display: none;
     flex: 0 0 auto;
     gap: 0;
-  }
-}
-
-// The confirmation is a child of `body` (a reka-ui portal), so its rules
-// are not in the rule of the view.
-.search-dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  background-color: rgba(0, 0, 0, 0.35);
-}
-
-.search-dialog {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 340px;
-  max-width: calc(100vw - 32px);
-  padding: 16px;
-  border: 1px solid var(--chrome-border);
-  border-radius: 8px;
-  background-color: var(--chrome-surface);
-  color: var(--chrome-text);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
-}
-
-.search-dialog-title { margin: 0; font-size: 13px; font-weight: 600; }
-.search-dialog-body { margin: 0; opacity: 0.8; }
-
-.search-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-button.search-button {
-  appearance: none;
-  margin: 0;
-  padding: 5px 10px;
-  border: 1px solid var(--chrome-border);
-  border-radius: 6px;
-  background-color: var(--chrome-surface);
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-
-  &.search-button-primary {
-    border-color: transparent;
-    background-color: var(--chrome-row-accent);
-    color: var(--chrome-row-accent-contrast, white);
   }
 }
 </style>

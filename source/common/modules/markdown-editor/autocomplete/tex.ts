@@ -13,12 +13,10 @@ import {
   StateEffect,
   StateField,
 } from "@codemirror/state";
-import indexJson from "@common/data/texstudio-command-index.json";
 import {
   collectTexContext,
   type TexDocument,
   type TexDocumentKind,
-  type TexMacroSource,
   texCommandMayStartAt,
   texCommandSurface,
   texDocument,
@@ -26,11 +24,9 @@ import {
 import {
   buildTexCommandAuthority,
   type TexCommandAuthority,
-  type TexstudioCommandIndex,
 } from "@common/util/texstudio-command-index";
+import type { TexCommandVocabulary } from "@dts/common/tex-vocabulary";
 import { withCompletionSource } from "./completion-presentation";
-
-const texstudioIndex = indexJson as TexstudioCommandIndex;
 
 /**
  * The kind of document the TeX knowledge describes. CodeMirror combines an
@@ -51,13 +47,17 @@ function documentKind(state: EditorState): TexDocumentKind {
   return kind;
 }
 
-export const texMacroSourcesUpdate = StateEffect.define<readonly TexMacroSource[]>();
+export const texVocabularyUpdate = StateEffect.define<TexCommandVocabulary>();
 
-export const texMacroSourcesField = StateField.define<readonly TexMacroSource[]>({
-  create: () => [],
+/**
+ * Flowmark's TeX vocabulary (`tex-command-vocabulary`). Until the window has
+ * it, the completion offers no TeX command.
+ */
+export const texVocabularyField = StateField.define<TexCommandVocabulary | null>({
+  create: () => null,
   update(value, transaction) {
     for (const effect of transaction.effects) {
-      if (effect.is(texMacroSourcesUpdate)) {
+      if (effect.is(texVocabularyUpdate)) {
         return effect.value;
       }
     }
@@ -75,16 +75,12 @@ function editorTexDocument(state: EditorState): TexDocument {
   return texDocument(state.doc.toString(), documentKind(state), syntaxTree(state));
 }
 
-function resolveKnowledge(state: EditorState): ResolvedTexKnowledge {
-  const declaration = collectTexContext(
-    texstudioIndex,
-    editorTexDocument(state),
-    state.field(texMacroSourcesField),
-  );
-  const baseAuthority = buildTexCommandAuthority(texstudioIndex, [
-    ...declaration.packages,
-    ...declaration.classes,
-  ]);
+function resolveKnowledge(
+  state: EditorState,
+  vocabulary: TexCommandVocabulary,
+): ResolvedTexKnowledge {
+  const declaration = collectTexContext(vocabulary.index, editorTexDocument(state));
+  const baseAuthority = buildTexCommandAuthority(vocabulary, declaration.roots);
   const activeCommands = new Set(baseAuthority.activeCommands);
   for (const command of declaration.userCommands) {
     activeCommands.add(command);
@@ -134,9 +130,7 @@ function completionDetail(command: string, knowledge: ResolvedTexKnowledge): str
 
 function completionInfo(command: string, knowledge: ResolvedTexKnowledge): string {
   if (knowledge.userCommands.has(command)) {
-    return (
-      command + "\n\nUser-defined TeX macro active in this document or a declared macro source."
-    );
+    return command + "\n\nUser-defined TeX macro of this document.";
   }
   const active = activeProviders(command, knowledge);
   return active.length === 0
@@ -158,7 +152,11 @@ export const texCommandCompletionSource: CompletionSource = (
     return null;
   }
 
-  const knowledge = resolveKnowledge(context.state);
+  const vocabulary = context.state.field(texVocabularyField);
+  if (vocabulary === null) {
+    return null;
+  }
+  const knowledge = resolveKnowledge(context.state, vocabulary);
   const options: Completion[] = [...knowledge.authority.activeCommands].map((command) =>
     withCompletionSource(
       {
@@ -182,7 +180,7 @@ export const texCommandCompletionSource: CompletionSource = (
 
 /** TeX knowledge state shared by Markdown, LaTeX and Pandoc-YAML editors. */
 export function texKnowledgeExtensions(kind: TexDocumentKind): Extension[] {
-  return [texDocumentKind.of(kind), texMacroSourcesField];
+  return [texDocumentKind.of(kind), texVocabularyField];
 }
 
 /** Standalone completion UI for non-Markdown editors. */

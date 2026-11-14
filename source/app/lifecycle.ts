@@ -36,6 +36,7 @@ import { attachAppNavigationHandlers } from "./util/attach-app-navigation-handle
 import registerCustomProtocols from "./util/custom-protocols";
 import environmentCheck, { checkedEnvironment } from "./util/environment-check";
 import { updateFlowmark } from "./util/flowmark-update";
+import { handleBareChannel } from "./util/handle-ipc-channel";
 import {
   loadCanonicalMathJaxMacros,
   loadCanonicalTexMacroCommands,
@@ -117,10 +118,10 @@ export async function bootApplication(): Promise<AppServiceContainer> {
   // Register the central macro projection BEFORE the service container boots:
   // onboarding/renderers may request it during startup. ~/.pandoc is the only
   // semantic authority.
-  ipcMain.handle("mathjax-macros", async () => {
+  handleBareChannel("mathjax-macros", async () => {
     return await loadCanonicalMathJaxMacros(app.getPath("home"));
   });
-  ipcMain.handle("tex-macro-commands", async (): Promise<TexMacroCommandsIPCResponse> => {
+  handleBareChannel("tex-macro-commands", async () => {
     const vocabulary = await loadCanonicalTexMacroCommands(app.getPath("home"));
     // The completion list has the commands of the readable sources; the log
     // names each source whose commands it does not have.
@@ -129,7 +130,7 @@ export async function bootApplication(): Promise<AppServiceContainer> {
     }
     return vocabulary;
   });
-  ipcMain.handle("tikz-completion-commands", (): TikzCompletionIPCResponse => {
+  handleBareChannel("tikz-completion-commands", () => {
     return tikzTemplateCompletions(resolveTikzTemplatePath(app.getPath("home")));
   });
 

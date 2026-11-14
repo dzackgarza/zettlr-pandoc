@@ -82,7 +82,7 @@ class MermaidWidget extends WidgetType {
       })
       .catch((err: unknown) => onError(err, elem));
 
-    elem.addEventListener("click", clickAndSelect(view));
+    elem.addEventListener("mousedown", clickAndSelect(view));
     return elem;
   }
 

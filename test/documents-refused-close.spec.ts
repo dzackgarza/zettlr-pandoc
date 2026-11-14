@@ -41,16 +41,11 @@ import {
 import {
   appListeners,
   appQuitRequests,
-  ipcMainHandlers,
   messageBoxes,
   sentMessagesFor,
   userData,
 } from "./headless-electron-harness.cjs";
-
-type IpcHandler = (
-  event: unknown,
-  message: { command: string; payload?: unknown },
-) => Promise<unknown> | unknown;
+import { invokeMain } from "./main-ipc";
 
 const SOURCE = "An even unimodular lattice has a rank that 8 divides.\n";
 const ANNOTATED = "even unimodular";
@@ -171,10 +166,11 @@ describe("Documents-provider close that cannot write the collaboration state", f
   }
 
   /** The command that the action of the refusal sends. */
-  async function closeWithoutReview(documentId: string): Promise<unknown> {
-    const handler = ipcMainHandlers.get("documents-provider") as IpcHandler | undefined;
-    assert.ok(handler !== undefined, "the documents-provider handler is registered");
-    return await handler(undefined, { command: "close-without-review", payload: { documentId } });
+  async function closeWithoutReview(documentId: string): Promise<boolean> {
+    return await invokeMain("documents-provider", {
+      command: "close-without-review",
+      payload: { documentId },
+    });
   }
 
   function annotationsInMemory(documentId: string): string[] {

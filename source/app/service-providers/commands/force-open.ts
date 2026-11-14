@@ -42,7 +42,7 @@ function headingLine(markdown: string, fragment: string): number | undefined {
 
 export default class ForceOpen extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, ["force-open"]);
+    super(app);
   }
 
   /**

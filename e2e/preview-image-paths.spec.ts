@@ -27,7 +27,6 @@ import {
   attach,
   createFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   REPO_ROOT,
   type RunningApp,
@@ -91,9 +90,8 @@ describe("assembled app: images in hover previews", function () {
     });
     fixtureRoot = fixture.root;
     await copyFile(FIGURE, path.join(path.dirname(fixture.documentPath), "figure.png"));
-    app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    app = await attach(fixture.configDirectory, rendererEvents);
     page = await findEditorPage(app.browser, 60_000);
-    await hideDevServerOverlay(page);
   });
 
   after(async function () {

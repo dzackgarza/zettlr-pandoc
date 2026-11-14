@@ -40,7 +40,7 @@ import LongRunningTaskProvider from "source/app/service-providers/long-running-t
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { bootDocumentManager } from "./documents-provider-seam";
 import { bootFsal } from "./fsal-seam";
-import { userData } from "./headless-electron-harness.cjs";
+import { home, userData } from "./headless-electron-harness.cjs";
 import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 const run = promisify(execFile);
@@ -133,7 +133,7 @@ describe("Bibliography of a PDF export", function () {
 
   before(async function () {
     // An export reads the macro projection of the home directory.
-    macroHome = path.join(tmpdir(), ".pandoc");
+    macroHome = path.join(home, ".pandoc");
     const projection = path.join(macroHome, "templates", "css");
     await mkdir(projection, { recursive: true });
     await copyFile(

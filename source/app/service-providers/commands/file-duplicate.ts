@@ -17,11 +17,12 @@ import { hasCodeExt, hasMarkdownExt } from "@common/util/file-extention-checks";
 import path from "path";
 import sanitize from "sanitize-filename";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import type { ApplicationPayload } from ".";
 import ZettlrCommand from "./zettlr-command";
 
 export default class FileDuplicate extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "file-duplicate");
+    super(app);
   }
 
   /**
@@ -30,10 +31,7 @@ export default class FileDuplicate extends ZettlrCommand {
    * @param  {string}  evt The event name
    * @param  {any}     arg  An object containing all necessary information.
    */
-  async run(
-    evt: string,
-    arg: { path: string; name?: string; windowId: string; leafId?: string },
-  ): Promise<void> {
+  async run(evt: string, arg: ApplicationPayload<"file-duplicate">): Promise<void> {
     // First, retrieve our source file
     const file = await this._app.fsal.getDescriptorForAnySupportedFile(arg.path);
     if (file === undefined) {

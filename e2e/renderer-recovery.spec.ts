@@ -34,7 +34,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   observeRenderer,
   preserveArtifacts,
   readAppLog,
@@ -71,7 +70,7 @@ describe("assembled app: a main window whose renderer exits or hangs", function 
       context.pages().forEach((open) => observeRenderer(open, rendererEvents));
     }
     const editorPage = await findEditorPage(connected, 30_000);
-    await hideDevServerOverlay(editorPage);
+
     await editorPage.locator(".cm-content:visible").waitFor({ state: "visible", timeout: 30_000 });
     page = editorPage;
     return editorPage;
@@ -154,13 +153,13 @@ describe("assembled app: a main window whose renderer exits or hangs", function 
     fixtureRoot = fixture.root;
     documentPath = fixture.documentPath;
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     devToolsUrl = app.devToolsUrl;
     const editorPage = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(editorPage);
+
     await editorPage.locator(".cm-content:visible").click();
     await editorPage.keyboard.press("ControlOrMeta+End");
     await editorPage.keyboard.type(SENTENCE);

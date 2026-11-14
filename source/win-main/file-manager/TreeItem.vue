@@ -222,7 +222,7 @@ import {
 } from "source/pinia";
 import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 import getDocumentTitle from "../util/get-document-title";
-import { followChildren } from "./util/follow-children";
+import { useItemChildren } from "./util/item-children";
 import { useItemComposable } from "./util/item-composable";
 import { onNameFieldBlur } from "./util/name-field-blur";
 import { newDirectoryRequest } from "./util/new-directory-request";
@@ -261,7 +261,7 @@ const displayText = ref<HTMLDivElement | null>(null);
 const rootElement = ref<HTMLDivElement | null>(null);
 const newObjectInput = ref<HTMLInputElement | null>(null);
 
-const children = ref<AnyDescriptor[]>([]);
+const children = useItemChildren(() => props.item);
 
 const configStore = useConfigStore();
 const windowStateStore = useWindowStateStore();
@@ -562,32 +562,14 @@ watch(
   { flush: "sync" },
 );
 
-let stopFsalListener: (() => void) | undefined;
-
-onMounted(async () => {
-  // The row follows the events before its first read, so a read that fails
-  // leaves a row that a later event of its children still updates.
-  stopFsalListener = followChildren(props.item.path, () => {
-    fetchChildren().catch((err) =>
-      reportError(
-        `[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`,
-        err,
-      ),
-    );
-  });
-
+onMounted(() => {
   // Initially scroll into view if this item is selected
   if (isSelected.value) {
     scrollIntoView();
   }
-
-  if (props.item.type === "directory") {
-    await fetchChildren();
-  }
 });
 
 onUnmounted(() => {
-  stopFsalListener?.();
   if (uncollapseTimeout.value !== undefined) {
     clearTimeout(uncollapseTimeout.value);
   }
@@ -630,13 +612,6 @@ function scrollIntoView() {
       }
     })
     .catch((err) => reportError(err));
-}
-
-async function fetchChildren(): Promise<void> {
-  children.value = await ipcRenderer.invoke("fsal", {
-    command: "read-directory",
-    payload: props.item.path,
-  });
 }
 
 /**

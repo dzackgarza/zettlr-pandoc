@@ -59,6 +59,7 @@ import type {
   UnlintedDocument,
   WorkspaceProblems,
 } from "@dts/common/problems";
+import type { TexCommandVocabulary } from "@dts/common/tex-vocabulary";
 import { tikzTemplateDependencyHash } from "@dzack/tikz-render/tikz-render";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import type FSAL from "@providers/fsal";
@@ -77,6 +78,7 @@ import { documentLintAuthority } from "../../util/document-bibliographies";
 import {
   createDocumentLintContext,
   type DocumentLintDiagnostic,
+  type DocumentLintSharedContext,
   lintDocumentText,
 } from "../../util/document-lint";
 import {
@@ -88,6 +90,7 @@ import {
   workspaceDefinitions,
 } from "../../util/flowmark-lint-context";
 import { flowmarkInstallIdentity } from "../../util/flowmark-runtime";
+import { readTexCommandVocabulary } from "../../util/flowmark-tex-vocabulary";
 import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
 import { systemErrorCause } from "../../util/system-error-cause";
 import { workspaceLintRows } from "../../util/workspace-lint-results";
@@ -554,20 +557,31 @@ export default class DocumentLintProvider extends ProviderContract {
     return await pending;
   }
 
+  /**
+   * The TeX vocabulary of the lint context, from which the editor completes
+   * the commands that `tex/unknown-command` accepts.
+   */
+  async texCommandVocabulary(): Promise<TexCommandVocabulary> {
+    return await readTexCommandVocabulary(await this.sharedContext());
+  }
+
+  private async sharedContext(): Promise<DocumentLintSharedContext> {
+    return await createDocumentLintContext({
+      homeDirectory: this.deps.homeDirectory,
+      env: this.deps.env,
+      wikilinks: this.wikilinkReading(),
+      tikzRenderConfig: this.tikzRenderConfig(),
+      flowmarkLintTimeoutMs: this.deps.config.get().editor.lint.flowmark.timeoutMs,
+    });
+  }
+
   private async run(
     documentPath: string,
     text: string,
     document: DocumentInputs,
     inputs: string,
   ): Promise<DocumentLintRecord> {
-    const config = this.deps.config.get();
-    const context = await createDocumentLintContext({
-      homeDirectory: this.deps.homeDirectory,
-      env: this.deps.env,
-      wikilinks: this.wikilinkReading(),
-      tikzRenderConfig: this.tikzRenderConfig(),
-      flowmarkLintTimeoutMs: config.editor.lint.flowmark.timeoutMs,
-    });
+    const context = await this.sharedContext();
     const outcome = await lintDocumentText(text, documentPath, context, document);
     const record: DocumentLintRecord = {
       revision: sha256Text(text),

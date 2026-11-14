@@ -31,7 +31,7 @@
  * type ProviderAPI = IPCAPI<ProviderAPIMap>
  *
  * // ...
- * ipcMain.handle('provider-name', (event, message: ProviderAPI) => { ... })
+ * handleInvokeChannel('provider-name', { commandName: (event, message) => { ... } })
  * ```
  */
 export type IPCAPI<T> = {
@@ -46,14 +46,15 @@ export type IPCAPI<T> = {
  * A provider's owned IPC contract: for each command, the message fields
  * beside `command` (usually `{ payload: X }`, or `{ payload?: undefined }`
  * for commands without one) and the handler's response. Declared next to the
- * ipcMain.handle() that implements it; the renderer's window.ipc.invoke type
- * is composed from these maps in source/types/renderer/ipc-bridge.ts.
+ * handleInvokeChannel() handler map that implements it; the renderer's
+ * window.ipc.invoke type and the type of that handler map are composed from
+ * these maps in source/types/renderer/ipc-bridge.ts.
  */
 export type IPCContract = Record<string, { request: object; response: unknown }>;
 
 /**
- * The message union of a contract — what ipcMain.handle() receives and
- * window.ipc.invoke() sends.
+ * The message union of a contract — what window.ipc.invoke() sends and the
+ * handler map of handleInvokeChannel() receives.
  */
 export type IPCMessage<T extends IPCContract> = {
   [K in keyof T]: { command: K } & T[K]["request"];

@@ -32,7 +32,6 @@ import {
   attach,
   createFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -138,12 +137,12 @@ describe("assembled app: reference labels in a Quarto book", function () {
     const workspace = path.dirname(fixture.documentPath);
     await writeFile(path.join(workspace, "_quarto.yml"), MANIFEST, "utf8");
     await copyFile(IMAGE_SOURCE, path.join(workspace, "orbit.png"));
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
   });

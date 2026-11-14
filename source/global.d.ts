@@ -178,17 +178,15 @@ declare interface Window {
      */
     invoke: ZettlrIpcInvoke;
     /**
-     * Listens to broadcasted messages from main. The listener's rest
-     * parameters are typed never[]: the bridge does not know a channel's
-     * broadcast payload, so the listener must annotate the payload it
-     * expects (never is assignable to every annotation).
-     *
-     * @param   {string}     channel   The channel on which to listen
-     * @param   {undefined}  listener  An event. This will always be omitted and undefined.
-     *
-     * @return {Function}  A function to stop listening (remove the listener)
+     * Listens to the messages that main sends a window. Each channel and the
+     * arguments of its message are declared in IpcBroadcastContracts
+     * (source/types/renderer/ipc-bridge.ts), which composes the payload types
+     * of the senders and contributes this global alias. The listener gets
+     * those arguments after its event, which is always undefined; an
+     * unknown channel or another payload is a compile error at the call
+     * site. Returns a function that removes the listener.
      */
-    on: (channel: string, listener: (event: undefined, ...args: never[]) => void) => () => void;
+    on: ZettlrIpcOn;
   };
   /**
    * Returns the absolute path to the file on disk which this File object is

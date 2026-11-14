@@ -12,9 +12,9 @@
  * END HEADER
  */
 
-import { ipcMain } from "electron";
 import { promises as fs } from "fs";
 import { type GetTextTranslations, po } from "gettext-parser";
+import { handleBareChannel } from "source/app/util/handle-ipc-channel";
 import { installedTranslationDirectories, type LangFileMetadata } from "./util/enum-lang-files";
 import { type Candidate } from "./util/find-lang-candidates";
 import getLanguageFile from "./util/get-language-file";
@@ -41,9 +41,7 @@ export async function loadData(lang: string): Promise<Candidate & LangFileMetada
 
   // Also make the data available to renderers who request the i18n data
   if (!handlerAttached) {
-    ipcMain.handle("i18n", () => {
-      return i18nData;
-    });
+    handleBareChannel("i18n", () => i18nData);
     handlerAttached = true;
   }
 

@@ -39,13 +39,6 @@ export type Cloneable<T, Depth extends readonly 0[] = []> = Depth["length"] exte
             : { [K in keyof T]: Cloneable<T[K], [...Depth, 0]> };
 
 /**
- * An argument before `Cloneable` has checked it. A sender takes its arguments
- * as a tuple of this type and accepts them only where `Cloneable` maps the
- * tuple to itself.
- */
-export type IpcArgument = unknown;
-
-/**
  * A value that Electron IPC can carry, for a value of no particular type
  * (arrays and plain objects of such values included).
  */

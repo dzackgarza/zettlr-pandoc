@@ -13,7 +13,9 @@
  *                  writes the file again, or, for a document with a review,
  *                  it is refused. An annotation of such a document is kept,
  *                  and a proposal is refused with the cause. A document
- *                  whose text is on disk closes (#210).
+ *                  whose text is on disk closes; when its review state
+ *                  cannot be written, the window gets the refused close
+ *                  with "Close anyway" (#210).
  *
  * END HEADER
  */
@@ -23,7 +25,16 @@ import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import { BrowserWindow } from "electron";
-import { mkdirSync, readFileSync, unlinkSync, utimesSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
@@ -35,14 +46,19 @@ import {
   FILE_REMOVED_KEPT_CHANNEL,
   type FileRemovedKeptBroadcast,
   REMOTE_CHANGE_KEPT_CHANNEL,
+  SAVE_REFUSED_CHANNEL,
+  type SaveRefusedBroadcast,
 } from "source/types/common/documents";
 import { bootDocumentManager, emitWatchdogEvent } from "./documents-provider-seam";
-import { sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+import { messageBoxes, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const SOURCE = "A lattice is a free abelian group with a bilinear form.\n";
 const TARGET = SOURCE.replace("bilinear", "symmetric bilinear");
 const PREFIX = "Definition. ";
 const SIDECARS = path.join(userData, "review-sidecars");
+// The second button of the close prompt: discard the unsaved text.
+const DISCARD = 1;
 
 describe("Documents-provider removed file", function () {
   let root: string;
@@ -80,6 +96,8 @@ describe("Documents-provider removed file", function () {
     mkdirSync(path.join(userData, "logs"), { recursive: true });
     await rm(path.join(userData, "documents.yaml"), { force: true });
     await rm(SIDECARS, { recursive: true, force: true });
+    messageBoxes.shown.length = 0;
+    messageBoxes.answer = undefined;
     provider = await bootDocumentManager([root]);
     windowId = provider.windowKeys()[0];
     leafId = provider.leafIds(windowId)[0];
@@ -93,6 +111,9 @@ describe("Documents-provider removed file", function () {
   });
 
   afterEach(async function () {
+    if (existsSync(SIDECARS)) {
+      chmodSync(SIDECARS, 0o700);
+    }
     window.close();
     await provider.shutdown();
     await rm(root, { recursive: true, force: true });
@@ -127,7 +148,7 @@ describe("Documents-provider removed file", function () {
       sentMessagesFor(window)
         .filter(([channel]) => channel === REMOTE_CHANGE_KEPT_CHANNEL)
         .map(([, payload]) => payload),
-      [{ filePath, unsavedChanges: false }],
+      [{ filePath, unsavedChanges: false, frozenReview: false }],
       "the window hears of the change of the new file",
     );
   });
@@ -221,6 +242,32 @@ describe("Documents-provider removed file", function () {
     assert.equal(provider.readMarkdownBufferContent(filePath), working, "the text stays");
   });
 
+  it("closes a kept document when the author discards its unsaved text", async function () {
+    await provider.applyWorkspaceTextEdits([
+      { documentPath: filePath, range: { from: 0, to: 0 }, insert: PREFIX },
+    ]);
+    await removeOnDisk();
+
+    messageBoxes.answer = DISCARD;
+    assert.equal(
+      await provider.closeFile(windowId, leafId, filePath),
+      true,
+      "the text that the author discards needs no file",
+    );
+
+    assert.deepEqual(
+      closedFiles.map((context) => context.filePath),
+      [filePath],
+    );
+    assert.deepEqual(
+      sentMessagesFor(window).filter(([channel]) => channel === SAVE_REFUSED_CHANNEL),
+      [],
+      "no close is refused",
+    );
+    assert.equal(provider.readMarkdownBufferContent(filePath), undefined);
+    assert.equal(existsSync(filePath), false, "the discard writes no file");
+  });
+
   it("closes a document whose text is on disk", async function () {
     await removeOnDisk();
 
@@ -229,6 +276,74 @@ describe("Documents-provider removed file", function () {
       [filePath],
     );
     assert.deepEqual(removedBroadcasts(), [], "no text is kept, so there is no message");
+    assert.equal(provider.readMarkdownBufferContent(filePath), undefined);
+  });
+
+  it("keeps the renamed document when the unlink of the file that the rename replaced is late (#210)", async function () {
+    // The document whose file the rename replaces has an annotation, so its
+    // close writes the sidecar before the tabs close.
+    const replacedId = provider.ensureDocumentId(filePath);
+    const created = await provider.createAnnotation(replacedId, "owner", 2, 9, "Which lattice?", 0);
+    if ("ok" in created) {
+      assert.fail(`the annotation is refused: ${created.message}`);
+    }
+    const renamedPath = path.join(root, "Groups.md");
+    const RENAMED = "A group is a set with an associative operation.\n";
+    writeFileSync(renamedPath, RENAMED, "utf-8");
+    await provider.getDocument(renamedPath);
+    assert.equal(await provider.openFile(windowId, leafId, renamedPath), true);
+
+    // A rename over an existing file (file-rename.ts) moves that file to the
+    // trash and then renames. When more than 100 ms pass between the two,
+    // chokidar reports `unlink` for the replaced path before the rename;
+    // the provider is still closing that document when the rename and
+    // `hasMovedFile` run.
+    unlinkSync(filePath);
+    emitWatchdogEvent("unlink", filePath);
+    renameSync(renamedPath, filePath);
+    await provider.hasMovedFile(renamedPath, filePath);
+    await settle();
+
+    assert.equal(
+      provider.readMarkdownBufferContent(filePath),
+      RENAMED,
+      "the renamed document is loaded at its new path",
+    );
+    assert.equal(provider.getActiveFile(leafId), filePath, "its tab stays open");
+  });
+
+  it("refuses the close of a removed file whose review state cannot be written, with the action (#210)", async function () {
+    const documentId = provider.ensureDocumentId(filePath);
+    const created = await provider.createAnnotation(documentId, "owner", 2, 9, "Which lattice?", 0);
+    if ("ok" in created) {
+      assert.fail(`the annotation is refused: ${created.message}`);
+    }
+    chmodSync(SIDECARS, 0o500);
+
+    await removeOnDisk();
+
+    assert.deepEqual(
+      sentMessagesFor(window)
+        .filter(([channel]) => channel === SAVE_REFUSED_CHANNEL)
+        .map(([, payload]) => (payload as SaveRefusedBroadcast).refused),
+      [{ documentId, action: "close" }],
+      "the window gets the refused close with its action",
+    );
+    assert.equal(closedFiles.length, 0, "no tab of the document closes");
+    assert.equal(provider.readMarkdownBufferContent(filePath), SOURCE, "the document stays loaded");
+
+    assert.equal(
+      await invokeMain("documents-provider", {
+        command: "close-without-review",
+        payload: { documentId },
+      }),
+      true,
+    );
+    assert.deepEqual(
+      closedFiles.map((context) => context.filePath),
+      [filePath],
+      "Close anyway closes the tab of the removed file",
+    );
     assert.equal(provider.readMarkdownBufferContent(filePath), undefined);
   });
 });

@@ -1,5 +1,5 @@
 // Captures the real main-window chrome through the assembled-app harness: the
-// Forge app launched against a throwaway config whose one workspace root is
+// packaged app launched against a throwaway config whose one workspace root is
 // the Quarto book fixture, with the sidebar and the annotation review panel
 // visible, attached over CDP, and screenshotted in light and dark at two
 // window widths. The scenes are the proof surface for the chrome
@@ -18,7 +18,6 @@ import {
   attach,
   createWorkspaceFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   REPO_ROOT,
   shutdown
@@ -398,11 +397,10 @@ async function main (): Promise<void> {
 
   const rendererEvents: string[] = []
   const screenshots = new Map<string, Buffer>()
-  const app = await attach(fixture.configDirectory, rendererEvents, launchTimeoutMs)
+  const app = await attach(fixture.configDirectory, rendererEvents)
 
   try {
     const page = await findEditorPage(app.browser, launchTimeoutMs)
-    await hideDevServerOverlay(page)
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: launchTimeoutMs })
     // The workspace root is the book, so the sidebar offers its Book module.
     await page.locator('#navigation-sidebar [data-section="book"]').waitFor({ timeout: 60_000 })

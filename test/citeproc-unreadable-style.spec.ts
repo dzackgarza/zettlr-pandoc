@@ -28,8 +28,10 @@ import os from "os";
 import path from "path";
 import CiteprocProvider, { CitationStyleError } from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
+import type { CitationResourceProblem } from "source/types/common/citeproc";
 import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
-import { ipcMainHandlers, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+import { sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
 const LOCALES = path.resolve("static", "csl-locales");
@@ -64,8 +66,6 @@ const YEAR_STYLE = `<?xml version="1.0" encoding="utf-8"?>
   </bibliography>
 </style>
 `;
-
-type IpcHandler = (event: unknown, message: { command: string }) => Promise<unknown>;
 
 interface Settings {
   cslLibrary: string;
@@ -137,9 +137,8 @@ describe("a citation style that the provider cannot load", function () {
   }
 
   /** What a window reads when it asks the provider for its problems. */
-  async function problemsReadByAWindow(): Promise<unknown> {
-    const handler = ipcMainHandlers.get("citeproc-provider") as IpcHandler;
-    return await handler({}, { command: "get-problems" });
+  async function problemsReadByAWindow(): Promise<CitationResourceProblem[]> {
+    return await invokeMain("citeproc-provider", { command: "get-problems" });
   }
 
   function broadcasts(channel: string): unknown[][] {
@@ -220,7 +219,7 @@ describe("a citation style that the provider cannot load", function () {
     await provider.boot();
     await provider.synchronizeDatabases([libraryPath]);
 
-    const problems = (await problemsReadByAWindow()) as Array<{ resource: string; path: string }>;
+    const problems = await problemsReadByAWindow();
     assert.deepEqual(
       problems.map((problem) => [problem.resource, problem.path]),
       [["style", notAStyle]],
@@ -276,7 +275,7 @@ describe("a citation style that the provider cannot load", function () {
     await provider.boot();
     await provider.loadsEnded();
 
-    const problems = (await problemsReadByAWindow()) as Array<{ resource: string; path: string }>;
+    const problems = await problemsReadByAWindow();
     assert.deepEqual(
       problems.map((problem) => [problem.resource, problem.path]),
       [["library", missingLibrary]],

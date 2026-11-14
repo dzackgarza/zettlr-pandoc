@@ -187,7 +187,6 @@
  */
 
 import { trans } from "@common/i18n-renderer";
-import { reportError } from "@common/util/error-reporting";
 import {
   effectiveExplorerDisplayForDirectory,
   projectMembershipForPath,
@@ -203,9 +202,9 @@ import {
   useWindowStateStore,
   useWorkspaceStore,
 } from "source/pinia";
-import { computed, onMounted, onUnmounted, ref, toRef, watch } from "vue";
+import { computed, ref, toRef, watch } from "vue";
 import getDocumentTitle from "../util/get-document-title";
-import { followChildren } from "./util/follow-children";
+import { useItemChildren } from "./util/item-children";
 import { useItemComposable } from "./util/item-composable";
 import { onNameFieldBlur } from "./util/name-field-blur";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
@@ -226,8 +225,6 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<(e: "begin-dragging") => void>();
-
-const ipcRenderer = window.ipc;
 
 const configStore = useConfigStore();
 const tagStore = useTagsStore();
@@ -263,35 +260,8 @@ const nameEditingInput = ref<HTMLInputElement | null>(null);
 const newObjectInput = ref<HTMLInputElement | null>(null);
 const filenameInputPlaceholder = trans("Enter a name");
 
-const children = ref<AnyDescriptor[]>([]);
-
-async function fetchChildren(): Promise<void> {
-  children.value = await ipcRenderer.invoke("fsal", {
-    command: "read-directory",
-    payload: props.item.path,
-  });
-}
-
-let stopFsalListener: (() => void) | undefined;
-
-onMounted(async () => {
-  stopFsalListener = followChildren(props.item.path, () => {
-    fetchChildren().catch((err) =>
-      reportError(
-        `[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`,
-        err,
-      ),
-    );
-  });
-
-  if (props.item.type === "directory") {
-    await fetchChildren();
-  }
-});
-
-onUnmounted(() => {
-  stopFsalListener?.();
-});
+// The list gives a row the item of another path when its folder changes.
+const children = useItemChildren(() => props.item);
 
 const {
   nameEditing,

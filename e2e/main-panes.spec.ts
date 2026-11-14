@@ -31,7 +31,6 @@ import {
   createWorkspaceFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   REPO_ROOT,
   requireInitialized,
@@ -132,13 +131,12 @@ describe("the main window panes", function () {
     const app = await attach(
       requireInitialized(configDirectory, "config directory"),
       rendererEvents,
-      this.timeout(),
     );
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     const editorPage = await findEditorPage(browser, this.timeout());
-    await hideDevServerOverlay(editorPage);
+
     await editorPage.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     await editorPage
       .locator('#navigation-sidebar [data-section="files"]')

@@ -1,11 +1,12 @@
 import { strict as assert } from "node:assert";
 import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
-import indexJson from "source/common/data/texstudio-command-index.json";
+import { rm } from "fs/promises";
 import { collectTexContext, type TexDocument, texDocument } from "source/common/util/tex-context";
-import type { TexstudioCommandIndex } from "source/common/util/texstudio-command-index";
+import type { TexstudioCommandIndex } from "source/types/common/tex-vocabulary";
+import { flowmarkTexVocabulary } from "./flowmark-tex-vocabulary-fixture";
 
-const index = indexJson as TexstudioCommandIndex;
 const bs = String.fromCharCode(92);
+const tick = String.fromCharCode(96);
 const markdown = markdownParser({ zknLinkParserConfig: { format: "link|title" } }).language.parser;
 
 /** A Markdown document with the metadata block of its syntax tree. */
@@ -18,25 +19,46 @@ function latexDocument(source: string): TexDocument {
 }
 
 describe("TeX package context", function () {
-  it("collects raw TeX, document-class and explicit frontmatter roots", function () {
+  this.timeout(60_000);
+
+  let index: TexstudioCommandIndex;
+  let home: string;
+
+  before(async function () {
+    const fixture = await flowmarkTexVocabulary("base.tex", "");
+    index = fixture.vocabulary.index;
+    home = fixture.home;
+  });
+
+  after(async function () {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("takes the packages of header-includes and raw TeX, and a class as its index entry", function () {
     const source = [
       "---",
-      "tex:",
-      "  packages: [amsthm]",
-      "  classes: [amsart]",
-      "  macro_sources:",
-      "    - tex/macros.sty",
       "header-includes:",
-      "  - " + bs + "usepackage{mathtools}",
+      "  - " + bs + "usepackage[foot]{mathtools, amsthm}",
       "---",
       "",
+      bs + "documentclass{amsart}",
+      bs + "documentclass{not-a-class}",
       bs + "RequirePackage{xcolor}",
       "$x+y$",
     ].join("\n");
-    const context = collectTexContext(index, markdownDocument(source));
-    assert.deepEqual(context.packages, ["amsthm", "mathtools", "xcolor"]);
-    assert.deepEqual(context.classes, ["class-amsart"]);
-    assert.deepEqual(context.macroSources, ["tex/macros.sty"]);
+    assert.deepEqual(collectTexContext(index, markdownDocument(source)).roots, [
+      "amsthm",
+      "class-amsart",
+      "mathtools",
+      "not-a-class",
+      "xcolor",
+    ]);
+  });
+
+  // Flowmark and Pandoc read no `tex:` key of the metadata block
+  it("reads no tex key of the metadata block", function () {
+    const source = ["---", "tex:", "  packages: [mathtools]", "---", "", "$x$"].join("\n");
+    assert.deepEqual(collectTexContext(index, markdownDocument(source)).roots, []);
   });
 
   it("does not activate packages mentioned only in ordinary fenced or inline code", function () {
@@ -44,23 +66,17 @@ describe("TeX package context", function () {
       "~~~tex",
       bs + "usepackage{mathtools}",
       "~~~",
-      "inline code: " +
-        String.fromCharCode(96) +
-        bs +
-        "RequirePackage{xcolor}" +
-        String.fromCharCode(96),
+      "inline code: " + tick + bs + "RequirePackage{xcolor}" + tick,
       "",
       "~~~{=latex}",
       bs + "usepackage{amsthm}",
       "~~~",
-      String.fromCharCode(96) +
-        bs +
-        "RequirePackage{graphicx}" +
-        String.fromCharCode(96) +
-        "{=latex}",
+      tick + bs + "RequirePackage{graphicx}" + tick + "{=latex}",
     ].join("\n");
-    const context = collectTexContext(index, markdownDocument(source));
-    assert.deepEqual(context.packages, ["amsthm", "graphicx"]);
+    assert.deepEqual(collectTexContext(index, markdownDocument(source)).roots, [
+      "amsthm",
+      "graphicx",
+    ]);
   });
 
   it("does not close ordinary fences on fence-like content with trailing text", function () {
@@ -71,37 +87,27 @@ describe("TeX package context", function () {
       "~~~",
       bs + "usepackage{xcolor}",
     ].join("\n");
-    const context = collectTexContext(index, markdownDocument(source));
-    assert.deepEqual(context.packages, ["xcolor"]);
+    assert.deepEqual(collectTexContext(index, markdownDocument(source)).roots, ["xcolor"]);
   });
 
-  it("takes package roots and user commands from authority-supplied TeX sources", function () {
-    const context = collectTexContext(index, markdownDocument(""), [
-      {
-        path: "/notes/tex/macros.sty",
-        content: [
-          bs + "RequirePackage{mathtools}",
-          bs + "newcommand{" + bs + "RR}{" + bs + "mathbb{R}}",
-          bs + "DeclareMathOperator{" + bs + "Pic}{Pic}",
-          bs + "def" + bs + "Spec{Spec}",
-        ].join("\n"),
-      },
-      { path: "/notes/ignored.json", content: bs + "usepackage{xcolor}" },
+  it("takes the commands that the TeX of the document defines", function () {
+    const source = [
+      bs + "newcommand{" + bs + "RR}{" + bs + "mathbb{R}}",
+      bs + "DeclareMathOperator{" + bs + "Pic}{Pic}",
+      bs + "def" + bs + "Spec{Spec}",
+    ].join("\n");
+    assert.deepEqual(collectTexContext(index, latexDocument(source)).userCommands, [
+      bs + "Pic",
+      bs + "RR",
+      bs + "Spec",
     ]);
-    assert.deepEqual(context.packages, ["mathtools"]);
-    assert.deepEqual(context.userCommands, [bs + "Pic", bs + "RR", bs + "Spec"]);
   });
 
   it("ignores commented package requirements", function () {
-    const context = collectTexContext(
-      index,
-      latexDocument(
-        [
-          "% " + bs + "usepackage{mathtools}",
-          bs + "usepackage{xcolor} % " + bs + "RequirePackage{amsthm}",
-        ].join("\n"),
-      ),
-    );
-    assert.deepEqual(context.packages, ["xcolor"]);
+    const source = [
+      "% " + bs + "usepackage{mathtools}",
+      bs + "usepackage{xcolor} % " + bs + "RequirePackage{amsthm}",
+    ].join("\n");
+    assert.deepEqual(collectTexContext(index, latexDocument(source)).roots, ["xcolor"]);
   });
 });

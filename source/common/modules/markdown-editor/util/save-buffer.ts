@@ -30,7 +30,8 @@ import { whenAuthoritySynced } from "./when-authority-synced";
  * waits until the authority has confirmed every update of the buffer. When
  * that wait fails, nothing is written: a write then would put older text on
  * disk and report success. The unsent updates stay in the buffer, and a second
- * save tries again.
+ * save tries again; when the editor loaded the document again during the wait,
+ * the updates are gone with the old state. The message names which.
  *
  * A refusal from the provider (an unresolved review, an external edit) is
  * shown on the closable toast, not in a main-process modal, which would block
@@ -50,8 +51,9 @@ export async function saveBuffer(getState: () => EditorState, filePath: string):
     reportError(`[saveBuffer] ${filePath} was NOT saved`, error);
     showToast(
       trans(
-        'Could not save "%s": the editor text did not reach the document in time, so nothing was written. Press save again.',
+        'Could not save "%s"; nothing was written. %s',
         pathBasename(filePath),
+        error instanceof Error ? error.message : String(error),
       ),
       "error",
       12000,

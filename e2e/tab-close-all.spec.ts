@@ -53,8 +53,6 @@ function closeAllItem(page: Page) {
 }
 
 describe("Close all tabs from the context menu of a tab (#202)", function () {
-  this.timeout(120_000);
-
   let browser: Browser | undefined;
   let appProcess: ChildProcess | undefined;
   let getOutput: () => string = () => "";
@@ -73,11 +71,7 @@ describe("Close all tabs from the context menu of a tab (#202)", function () {
     form = path.join(path.dirname(genus), "form.md");
     await writeFile(lemma, "# Lemma\n\nA unimodular lattice is its own dual.\n");
     await writeFile(form, "# Form\n\nThe discriminant form of an even lattice.\n");
-    ({ browser, appProcess, getOutput } = await attach(
-      fixture.configDirectory,
-      [],
-      this.timeout(),
-    ));
+    ({ browser, appProcess, getOutput } = await attach(fixture.configDirectory, []));
     page = await findEditorPage(browser, this.timeout());
   });
 

@@ -132,7 +132,7 @@ export const tikzEditSessions = [
 
       constructor(view: EditorView) {
         this.sessions = view.state.field(tikzEditSessionsField);
-        this.stopListening = window.ipc.on("tikz-edit", (_event, event: TikzEditEvent) => {
+        this.stopListening = window.ipc.on("tikz-edit", (_event, event) => {
           receiveTikzEditEvent(view, event);
         });
       }

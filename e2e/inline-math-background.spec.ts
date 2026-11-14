@@ -150,7 +150,7 @@ describe("inline math in the live editor", function () {
       config: await reproConfig(),
     });
     fixtureRoot = fixture.root;
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;

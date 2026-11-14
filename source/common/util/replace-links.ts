@@ -7,15 +7,17 @@
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     Computes the rewrites that retarget the wikilinks of a file
- *                  after a file or a directory moved
+ * Description:     Computes the rewrites that retarget the wikilinks, the
+ *                  Markdown links and the images of a file after a file or a
+ *                  directory moved
  *
  * END HEADER
  */
 
 import path from "path";
+import { unescape } from "querystring";
 import { extractASTNodes, markdownToAST, type WikilinkFormat } from "../modules/markdown-utils";
-import { type ZettelkastenLink } from "../modules/markdown-utils/markdown-ast";
+import { type LinkOrImage, type ZettelkastenLink } from "../modules/markdown-utils/markdown-ast";
 import { type WikilinkIndex } from "./wikilink-resolution";
 import { splitWikilinkTarget } from "./wikilink-target";
 
@@ -105,10 +107,116 @@ export function retargetedLink(
     : after.canonical(destination);
 }
 
+/** A URL with a scheme (RFC 3986, section 3.1) names no file of the workspace. */
+const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+
+/** The URL of a Markdown link or image, as written, read as a path. */
+interface WrittenLinkUrl {
+  /** The URL is written in angle brackets. */
+  bracketed: boolean;
+  /** The path is written with percent-encoding. */
+  encoded: boolean;
+  /** The path as written, before its query and fragment. */
+  written: string;
+  /** The path that the written path names. */
+  path: string;
+  /** The query and the fragment, as written. */
+  suffix: string;
+}
+
+function readLinkUrl(source: string): WrittenLinkUrl {
+  const bracketed = source.startsWith("<") && source.endsWith(">");
+  const url = bracketed ? source.slice(1, -1) : source;
+  const cut = url.search(/[?#]/);
+  const written = cut === -1 ? url : url.slice(0, cut);
+  const encoded = /%[0-9A-Fa-f]{2}/.test(written);
+  return {
+    bracketed,
+    encoded,
+    written,
+    // `querystring.unescape` decodes each valid escape and leaves a
+    // malformed one as written; it does not throw.
+    path: encoded ? unescape(written) : written,
+    suffix: cut === -1 ? "" : url.slice(cut),
+  };
+}
+
+/**
+ * Whether the URL of a Markdown link or image, as written, can name a file:
+ * it has no scheme and is more than a fragment of its own document.
+ */
+export function isFileLinkUrl(source: string): boolean {
+  const url = readLinkUrl(source);
+  return url.path !== "" && !SCHEME.test(url.path);
+}
+
+/**
+ * The new URL of the Markdown link or image `source` (the URL as written) in
+ * the document that was at `sourcePath` before `move`, or undefined when the
+ * URL names the same file on both sides of the move. A relative URL stays
+ * relative to its document and keeps its `./`; an absolute one stays
+ * absolute. The query, the fragment, the angle brackets and the
+ * percent-encoding are kept. A URL is changed only when the file it named is
+ * at its new place (`exists`), so a URL that names no file stays as written.
+ */
+export function retargetedFileLink(
+  source: string,
+  sourcePath: string,
+  move: PathMove,
+  exists: (filePath: string) => boolean,
+): string | undefined {
+  if (!isFileLinkUrl(source)) {
+    return undefined;
+  }
+  const url = readLinkUrl(source);
+  const absolute = path.isAbsolute(url.path);
+  const sourceDirectory = path.dirname(movedPath(sourcePath, move));
+  const destination = movedPath(
+    absolute ? url.path : path.resolve(path.dirname(sourcePath), url.path),
+    move,
+  );
+  const current = absolute ? url.path : path.resolve(sourceDirectory, url.path);
+  if (path.resolve(current) === destination || !exists(destination)) {
+    return undefined;
+  }
+
+  let written = absolute
+    ? destination
+    : path.relative(sourceDirectory, destination).split(path.sep).join("/");
+  if (!absolute && url.written.startsWith("./") && !written.startsWith("../")) {
+    written = `./${written}`;
+  }
+  if (url.path.endsWith("/")) {
+    written = `${written}/`;
+  }
+  const text = (url.encoded ? encodeURI(written) : written) + url.suffix;
+  return url.bracketed || (!url.encoded && /\s/.test(text)) ? `<${text}>` : text;
+}
+
+/** The Markdown links and images of a parsed document. */
+function fileLinksOf(markdown: string, linkFormat: WikilinkFormat): LinkOrImage[] {
+  const ast = markdownToAST(markdown, null, linkFormat);
+  return [
+    ...(extractASTNodes(ast, "Link") as LinkOrImage[]),
+    ...(extractASTNodes(ast, "Image") as LinkOrImage[]),
+  ];
+}
+
+/**
+ * The URLs, as written, of the Markdown links and images of `markdown` that
+ * can name a file (see `isFileLinkUrl`).
+ */
+export function fileLinkUrls(markdown: string, linkFormat: WikilinkFormat): string[] {
+  return fileLinksOf(markdown, linkFormat)
+    .map((link) => markdown.slice(link.urlRange.from, link.urlRange.to))
+    .filter(isFileLinkUrl);
+}
+
 /**
  * The replacements that retarget the links in `markdown`, the text of the
- * document that was at `sourcePath` before `move` (see `retargetedLink`),
- * read with the link format `linkFormat`.
+ * document that was at `sourcePath` before `move`, read with the link format
+ * `linkFormat`: each wikilink (see `retargetedLink`) and each Markdown link
+ * and image (see `retargetedFileLink`).
  */
 export function retargetLinks(
   markdown: string,
@@ -117,8 +225,19 @@ export function retargetLinks(
   before: WikilinkIndex,
   after: WikilinkIndex,
   linkFormat: WikilinkFormat,
+  exists: (filePath: string) => boolean,
 ): LinkReplacement[] {
-  return linkReplacements(markdown, linkFormat, (target) =>
+  const wikilinks = linkReplacements(markdown, linkFormat, (target) =>
     retargetedLink(target, sourcePath, move, before, after),
   );
+  const fileLinks = fileLinksOf(markdown, linkFormat).flatMap(({ urlRange }) => {
+    const text = retargetedFileLink(
+      markdown.slice(urlRange.from, urlRange.to),
+      sourcePath,
+      move,
+      exists,
+    );
+    return text === undefined ? [] : [{ ...urlRange, text }];
+  });
+  return [...wikilinks, ...fileLinks].sort((a, b) => a.from - b.from);
 }

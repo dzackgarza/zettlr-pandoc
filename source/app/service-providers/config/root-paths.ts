@@ -13,7 +13,7 @@
  * END HEADER
  */
 
-import type { Stats } from "fs";
+import { realpathSync, type Stats } from "fs";
 import { examinePath } from "source/common/util/examine-path";
 import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 
@@ -34,25 +34,32 @@ export function consolidateRootPaths({ openFiles, openWorkspaces }: RootPaths): 
 export type UnexaminedRootReport = (rootPath: string, error: NodeJS.ErrnoException) => void;
 
 /**
- * The root paths without those that are not on disk: an open file must be a
- * file, an open workspace a directory. A root path that the filesystem could
- * not examine has given no answer. It stays, and `report` receives it: a
- * workspace on a mount that fails at one start is not removed for good.
+ * The root paths that are on disk, each named by its real path: an open
+ * file must be a file, an open workspace a directory, and a root that a
+ * symbolic link names is the file or directory it points at, so no document
+ * reaches the application under two names (#57). Two names of one root are
+ * one root. A root path that the filesystem could not examine has given no
+ * answer. It stays as it is, and `report` receives it: a workspace on a
+ * mount that fails at one start is not removed for good.
  */
 export function rootPathsOnDisk(roots: RootPaths, report: UnexaminedRootReport): RootPaths {
-  const keeps = (rootPath: string, isKind: (stats: Stats) => boolean): boolean => {
-    const examination = examinePath(rootPath, false);
-    if (!examination.examined) {
-      report(rootPath, examination.error);
-      return true;
-    }
-    return examination.stats !== undefined && isKind(examination.stats);
+  const kept = (rootPaths: string[], isKind: (stats: Stats) => boolean): string[] => {
+    const names = rootPaths.flatMap((rootPath) => {
+      const examination = examinePath(rootPath, true);
+      if (!examination.examined) {
+        report(rootPath, examination.error);
+        return [rootPath];
+      }
+      if (examination.stats === undefined || !isKind(examination.stats)) {
+        return [];
+      }
+      return [realpathSync(rootPath)];
+    });
+    return [...new Set(names)];
   };
 
   return {
-    openFiles: roots.openFiles.filter((file) => keeps(file, (stats) => stats.isFile())),
-    openWorkspaces: roots.openWorkspaces.filter((workspace) =>
-      keeps(workspace, (stats) => stats.isDirectory()),
-    ),
+    openFiles: kept(roots.openFiles, (stats) => stats.isFile()),
+    openWorkspaces: kept(roots.openWorkspaces, (stats) => stats.isDirectory()),
   };
 }

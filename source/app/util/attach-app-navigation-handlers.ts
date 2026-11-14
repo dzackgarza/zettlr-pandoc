@@ -75,7 +75,14 @@ function openOutside(url: string, window: WebContents): void {
  * the file browser, if applicable.
  */
 export function attachAppNavigationHandlers(log: LogProvider): void {
-  const devServerOrigin = app.isPackaged ? undefined : new URL(MAIN_WINDOW_WEBPACK_ENTRY).origin;
+  // A development build loads its windows from the webpack dev server, which
+  // reloads them; that origin may navigate. A production build loads them
+  // from files, and a file URL has the origin "null", which each file URL
+  // shares: a file entry gives no origin to allow. The protocol of the entry
+  // decides, not app.isPackaged, which is false for a production archive
+  // that the electron binary runs (the e2e runs).
+  const mainWindowEntry = new URL(MAIN_WINDOW_WEBPACK_ENTRY);
+  const devServerOrigin = mainWindowEntry.protocol === "http:" ? mainWindowEntry.origin : undefined;
 
   app.on("web-contents-created", (event, webContents) => {
     webContents.setWindowOpenHandler(({ url }) => {
@@ -88,8 +95,6 @@ export function attachAppNavigationHandlers(log: LogProvider): void {
 
     webContents.on("will-navigate", (event, url) => {
       log.info(`[Navigation Handler] webContents wants to navigate to ${url}`);
-      // NOTE: app.isPackaged is false if the executable is called electron
-      // (instead of Zettlr)
       if (devServerOrigin !== undefined && new URL(url).origin === devServerOrigin) {
         // We are in development, so we must make sure to allow webpack to
         // actually reload the windows. Webpack will always spin up devServers

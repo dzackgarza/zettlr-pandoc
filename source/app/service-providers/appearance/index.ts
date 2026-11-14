@@ -15,7 +15,8 @@
 
 import { getSystemColors } from "@common/util/get-system-colors";
 import type ConfigProvider from "@providers/config";
-import { ipcMain, nativeTheme, systemPreferences } from "electron";
+import { nativeTheme, systemPreferences } from "electron";
+import { handleInvokeChannel } from "source/app/util/handle-ipc-channel";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
 
@@ -130,16 +131,12 @@ export default class AppearanceProvider extends ProviderContract {
       }
     });
 
-    ipcMain.handle("appearance-provider", (event, { command }) => {
-      // This command returns the accent colour including a contrast colour to be used
-      // as the opposite colour, if a good visible contrast is wished for.
-      if (command === "get-accent-color") {
-        // A renderer has requested the current accent colour. The accent colour
-        // MUST be returned, and can be retrieved automatically for macOS and
-        // Windows, and will be the Zettlr green on Linux systems. Format is
-        // always RGBA hexadecimal without preceeding #-sign.
-        return getSystemColors();
-      }
+    handleInvokeChannel("appearance-provider", {
+      // The accent colour with a contrast colour to be used as the opposite
+      // colour, if a good visible contrast is wished for. It comes from the
+      // system on macOS and Windows and is the Zettlr green on Linux. Format
+      // is always RGBA hexadecimal without preceeding #-sign.
+      "get-accent-color": () => getSystemColors(),
     });
   }
 

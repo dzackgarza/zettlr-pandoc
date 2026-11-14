@@ -22,23 +22,24 @@ import { SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
 import { parseReaderWriter } from "@common/pandoc-util/parse-reader-writer";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import type { PhraseDictionaryEntry } from "@common/util/phrase-dictionary";
-import type { QuickTexCatalogue } from "@dts/common/quicktex";
+import type { QuickTexCatalogue, QuickTexProblem } from "@dts/common/quicktex";
 import type { SnippetCatalogue, SnippetFileDiagnostic, UserSnippet } from "@dts/common/snippets";
 import { exportProfiles } from "@providers/commands/exporter";
 import { FSWatcher } from "chokidar";
-import { app, ipcMain } from "electron";
+import { app } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
 import YAML from "yaml";
 import { nameTaken, refusedAs } from "../../util/authored-file-error";
+import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import { loadPhraseDictionaries } from "../../util/load-phrase-dictionaries";
-import { loadQuickTex } from "../../util/load-quicktex";
+import { loadQuickTex, quickTexPluginScript } from "../../util/load-quicktex";
 import { openPath } from "../../util/open-path";
 import type ConfigProvider from "../config";
 import { isTaken } from "../fsal/util/fs";
 import { createTextFile, writeTextFile } from "../fsal/util/write-text-file";
 import type LogProvider from "../log";
-import ProviderContract, { type IPCMessage } from "../provider-contract";
+import ProviderContract from "../provider-contract";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -231,7 +232,11 @@ export type AssetsProviderIPCContract = {
   };
 };
 
-export type AssetsProviderIPCAPI = IPCMessage<AssetsProviderIPCContract>;
+/** An `assets-provider` message to the windows: which asset changed. */
+export type AssetsProviderBroadcast =
+  | "snippets-updated"
+  | "phrase-completions-updated"
+  | "quicktex-updated";
 
 /** The file name of a Lua filter for the name that a caller gives. */
 function luaFilename(name: string): string {
@@ -309,7 +314,7 @@ export default class AssetsProvider extends ProviderContract {
     math: {},
     excludeChars: ["{", "(", "["],
     sourceFile: "",
-    diagnostics: [],
+    problem: undefined,
   };
   /** Watches the configured snippet and QuickTeX files so external edits update open editors. */
   private readonly _snippetsWatcher: FSWatcher;
@@ -421,65 +426,56 @@ export default class AssetsProvider extends ProviderContract {
       }
     });
 
-    ipcMain.handle("assets-provider", async (event, message: AssetsProviderIPCAPI) => {
-      const { command, payload } = message;
-      // NOTE: Any *renderer* who requests a defaults file will always receive
-      // the verbatim file contents, not a parsed object. Renderers who need to
-      // work with the file contents programmatically should thus make use of
-      // the bundled YAML module to parse and stringify the files accordingly.
-      if (command === "get-filter") {
-        return await this.getFilter(payload.filename);
-      } else if (command === "set-filter") {
-        return await this.setFilter(payload.filename, payload.contents);
-      } else if (command === "create-filter") {
-        return await this.createFilter(payload.filename);
-      } else if (command === "rename-filter") {
-        return await this.renameFilter(payload.oldName, payload.newName);
-      } else if (command === "remove-filter") {
-        return await this.removeFilter(payload.filename);
-      } else if (command === "list-filter") {
-        return await this.listFilters();
-      } else if (command === "list-protected-filter") {
-        return this.listProtectedFilters();
-      } else if (command === "open-filter-directory") {
+    // NOTE: Any *renderer* who requests a defaults file will always receive
+    // the verbatim file contents, not a parsed object. Renderers who need to
+    // work with the file contents programmatically should thus make use of
+    // the bundled YAML module to parse and stringify the files accordingly.
+    handleInvokeChannel("assets-provider", {
+      "get-filter": async (_event, { payload }) => await this.getFilter(payload.filename),
+      "set-filter": async (_event, { payload }) =>
+        await this.setFilter(payload.filename, payload.contents),
+      "create-filter": async (_event, { payload }) => await this.createFilter(payload.filename),
+      "rename-filter": async (_event, { payload }) =>
+        await this.renameFilter(payload.oldName, payload.newName),
+      "remove-filter": async (_event, { payload }) => await this.removeFilter(payload.filename),
+      "list-filter": async () => await this.listFilters(),
+      "list-protected-filter": () => this.listProtectedFilters(),
+      "open-filter-directory": async () => {
         this._logger.info(`[Assets Provider] Opening path ${this._filterPath}`);
-        return await openPath(this._filterPath);
-      } else if (command === "get-defaults-file") {
-        return await this.getDefaultsFileContents(payload.filename);
-      } else if (command === "set-defaults-file") {
-        return await this.setDefaultsFile(payload.filename, payload.contents, true);
-      } else if (command === "create-defaults-file") {
-        return await this.createDefaultsFile(payload.filename, payload.contents);
-      } else if (command === "rename-defaults-file") {
-        return await this.renameDefaultsFile(payload.oldName, payload.newName);
-      } else if (command === "remove-defaults-file") {
-        return await this.removeDefaultsFile(payload.filename);
-      } else if (command === "list-defaults") {
-        return await this.listDefaults();
-      } else if (command === "list-export-profiles") {
-        return await this.listExportProfiles();
-      } else if (command === "list-available-filters") {
-        return await this.listAvailableFilters();
-      } else if (command === "open-defaults-directory") {
+        await openPath(this._filterPath);
+      },
+      "get-defaults-file": async (_event, { payload }) =>
+        await this.getDefaultsFileContents(payload.filename),
+      "set-defaults-file": async (_event, { payload }) =>
+        await this.setDefaultsFile(payload.filename, payload.contents, true),
+      "create-defaults-file": async (_event, { payload }) =>
+        await this.createDefaultsFile(payload.filename, payload.contents),
+      "rename-defaults-file": async (_event, { payload }) =>
+        await this.renameDefaultsFile(payload.oldName, payload.newName),
+      "remove-defaults-file": async (_event, { payload }) =>
+        await this.removeDefaultsFile(payload.filename),
+      "list-defaults": async () => await this.listDefaults(),
+      "list-export-profiles": async () => await this.listExportProfiles(),
+      "list-available-filters": async () => await this.listAvailableFilters(),
+      "open-defaults-directory": async () => {
         this._logger.info(`[AssetsProvider] Opening path ${this._defaultsPath}`);
-        return await openPath(this._defaultsPath);
-      } else if (command === "get-snippets-source") {
-        return await this.getSnippetsSource();
-      } else if (command === "set-snippets-source") {
-        return await this.setSnippetsSource(payload.contents);
-      } else if (command === "list-snippets") {
-        return await this.listSnippets();
-      } else if (command === "get-quicktex") {
-        return this._quickTexCatalogue;
-      } else if (command === "open-snippets-file") {
+        await openPath(this._defaultsPath);
+      },
+      "get-snippets-source": async () => await this.getSnippetsSource(),
+      "set-snippets-source": async (_event, { payload }) =>
+        await this.setSnippetsSource(payload.contents),
+      "list-snippets": async () => await this.listSnippets(),
+      "get-quicktex": () => this._quickTexCatalogue,
+      "open-snippets-file": async () => {
         this._logger.info(`[AssetsProvider] Opening path ${this._snippetsFile}`);
-        return await openPath(this._snippetsFile);
-      } else if (command === "list-phrase-completions") {
-        return await loadPhraseDictionaries(this._phraseCompletionsPath);
-      } else if (command === "open-phrase-completions-directory") {
+        await openPath(this._snippetsFile);
+      },
+      "list-phrase-completions": async () =>
+        await loadPhraseDictionaries(this._phraseCompletionsPath),
+      "open-phrase-completions-directory": async () => {
         this._logger.info(`[AssetsProvider] Opening path ${this._phraseCompletionsPath}`);
-        return await openPath(this._phraseCompletionsPath);
-      }
+        await openPath(this._phraseCompletionsPath);
+      },
     });
   }
 
@@ -585,36 +581,77 @@ export default class AssetsProvider extends ProviderContract {
   }
 
   private async configureQuickTexFile(): Promise<void> {
+    const { quickTexFile, quickTexPluginDirectory } = this._config.get().editor;
     const nextFile = this.configuredQuickTexFile();
-    const pluginDirectory = this._config.get().editor.quickTexPluginDirectory.trim();
-    const resolvedPluginDirectory = pluginDirectory === "" ? "" : path.resolve(pluginDirectory);
     if (this._quickTexFile !== "" && nextFile !== this._quickTexFile) {
       await this._snippetsWatcher.unwatch(this._quickTexFile);
     }
     this._quickTexFile = nextFile;
+    this._quickTexCatalogue = await this.readQuickTex(quickTexFile, quickTexPluginDirectory);
+    broadcastIpcMessage("assets-provider", "quicktex-updated");
+  }
+
+  /**
+   * Reads the QuickTeX configuration that the two settings name. A
+   * configuration that the app cannot use gives no expansions and the
+   * problem, which each window shows at its setting. No configuration file
+   * is no configuration, and no problem.
+   *
+   * @param  fileSetting    The value of `editor.quickTexFile`
+   * @param  pluginSetting  The value of `editor.quickTexPluginDirectory`
+   */
+  private async readQuickTex(
+    fileSetting: string,
+    pluginSetting: string,
+  ): Promise<QuickTexCatalogue> {
+    const file = this._quickTexFile;
+    const withoutExpansions = (problem: QuickTexProblem | undefined): QuickTexCatalogue => ({
+      prose: {},
+      math: {},
+      excludeChars: ["{", "(", "["],
+      sourceFile: file,
+      problem,
+    });
+    if (file === "") {
+      return withoutExpansions(undefined);
+    }
+    const unavailable = (
+      setting: QuickTexProblem["setting"],
+      settingValue: string,
+      error: unknown,
+    ): QuickTexCatalogue => {
+      const cause = error instanceof Error ? error.message : String(error);
+      this._logger.error(`[Assets Provider] QuickTeX is unavailable: ${cause}`, error);
+      return withoutExpansions({ setting, path: settingValue, cause });
+    };
+
     try {
-      if (this._quickTexFile !== "") {
-        await fs.access(this._quickTexFile);
-        this._snippetsWatcher.add(this._quickTexFile);
-      }
-      this._quickTexCatalogue =
-        this._quickTexFile === "" || resolvedPluginDirectory === ""
-          ? { prose: {}, math: {}, excludeChars: ["{", "(", "["], sourceFile: "", diagnostics: [] }
-          : await loadQuickTex(this._quickTexFile, resolvedPluginDirectory);
-      broadcastIpcMessage("assets-provider", "quicktex-updated");
+      await fs.access(file);
     } catch (error) {
-      this._quickTexCatalogue = {
-        prose: {},
-        math: {},
-        excludeChars: ["{", "(", "["],
-        sourceFile: this._quickTexFile,
-        diagnostics: [error instanceof Error ? error.message : String(error)],
-      };
-      broadcastIpcMessage("assets-provider", "quicktex-updated");
-      this._logger.error(
-        `[Assets Provider] QuickTeX is unavailable: ${error instanceof Error ? error.message : String(error)}`,
-        error,
+      return unavailable("editor.quickTexFile", fileSetting, error);
+    }
+    this._snippetsWatcher.add(file);
+
+    if (pluginSetting.trim() === "") {
+      return unavailable(
+        "editor.quickTexPluginDirectory",
+        pluginSetting,
+        new Error(
+          `The configuration ${file} needs the QuickTeX plugin, and no setting names the directory of the plugin.`,
+        ),
       );
+    }
+    const pluginDirectory = path.resolve(pluginSetting.trim());
+    try {
+      await fs.access(quickTexPluginScript(pluginDirectory));
+    } catch (error) {
+      return unavailable("editor.quickTexPluginDirectory", pluginSetting, error);
+    }
+
+    try {
+      return await loadQuickTex(file, pluginDirectory);
+    } catch (error) {
+      return unavailable("editor.quickTexFile", fileSetting, error);
     }
   }
 

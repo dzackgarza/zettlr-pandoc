@@ -30,6 +30,8 @@ import {
   assertCleanExit,
   attach,
   createFixture,
+  currentPackagedArchive,
+  electronBinary,
   findEditorPage,
   preserveArtifacts,
   REPO_ROOT,
@@ -40,23 +42,25 @@ import {
 } from "./support/electron-app";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-launch-minimized-e2e-latest");
-const ELECTRON = path.join(REPO_ROOT, "node_modules", "electron", "dist", "electron");
 
 /**
- * Starts the application a second time on the same profile. The start gives
- * its request to the running session (`acquireLaunch`) and exits.
+ * Starts the application a second time on the same profile, from the same
+ * packaged archive as the first start, as the desktop launcher does: a start
+ * without files and without `--open-in-running-instance`, which opens files
+ * only. The start gives its request to the running session
+ * (`acquireLaunch`) and exits. A start that took the lock would run the app
+ * a second time; the time limit ends it.
  */
 async function startAgain(configDirectory: string): Promise<string> {
   const { stdout } = await promisify(execFile)(
-    ELECTRON,
+    electronBinary(),
     [
-      REPO_ROOT,
+      currentPackagedArchive(),
       `--data-dir=${configDirectory}`,
-      "--open-in-running-instance",
       "--disable-hardware-acceleration",
       "--ozone-platform=x11",
     ],
-    { env: { ...process.env, NODE_ENV: "develop", ZETTLR_E2E: "1", ...AGENT_API_ENVIRONMENT } },
+    { cwd: REPO_ROOT, env: { ...process.env, ...AGENT_API_ENVIRONMENT }, timeout: 60_000 },
   );
   return stdout;
 }
@@ -95,12 +99,9 @@ describe("assembled app: a start in the notification area", function () {
   });
 
   it("starts without a window", async function () {
-    app = await attach(
-      requireInitialized(configDirectory, "config directory"),
-      rendererEvents,
-      this.timeout(),
-      { flags: ["--launch-minimized"] },
-    );
+    app = await attach(requireInitialized(configDirectory, "config directory"), rendererEvents, {
+      flags: ["--launch-minimized"],
+    });
     const mainWindows = app.browser
       .contexts()
       .flatMap((context) => context.pages())

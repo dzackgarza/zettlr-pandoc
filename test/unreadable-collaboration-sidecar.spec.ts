@@ -38,17 +38,8 @@ import {
   type WorkspaceCollaborationListing,
 } from "source/types/common/document-collaboration";
 import { bootDocumentManager } from "./documents-provider-seam";
-import {
-  ipcMainHandlers,
-  messageBoxes,
-  sentMessagesFor,
-  userData,
-} from "./headless-electron-harness.cjs";
-
-type IpcHandler = (
-  event: unknown,
-  message: { command: string; payload?: unknown },
-) => Promise<unknown> | unknown;
+import { messageBoxes, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
 const GENUS = "A genus holds finitely many isometry classes.\n";
 const LATTICE = "An even unimodular lattice has a rank that 8 divides.\n";
@@ -99,6 +90,9 @@ describe("A collaboration sidecar that the application cannot read", function ()
     window.close();
     await provider.shutdown();
     await rm(root, { recursive: true, force: true });
+    // The sidecar directory belongs to the process: an unreadable file left
+    // in it refuses the workspace listings of the next spec file.
+    await rm(SIDECARS, { recursive: true, force: true });
   });
 
   function pane(): string {
@@ -128,17 +122,12 @@ describe("A collaboration sidecar that the application cannot read", function ()
     assert.equal(await provider.closeFileEverywhere(filePath), true);
   }
 
-  async function invoke(command: string, payload: unknown): Promise<unknown> {
-    const handler = ipcMainHandlers.get("documents-provider") as IpcHandler | undefined;
-    assert.ok(handler !== undefined, "the documents-provider handler is registered");
-    return await handler(undefined, { command, payload });
-  }
-
   /** The listing that the Annotations view reads. */
   async function workspaceListing(paths: string[]): Promise<WorkspaceCollaborationListing> {
-    return (await invoke("get-workspace-collaboration-sessions", {
-      paths,
-    })) as WorkspaceCollaborationListing;
+    return await invokeMain("documents-provider", {
+      command: "get-workspace-collaboration-sessions",
+      payload: { paths },
+    });
   }
 
   it("lists the other documents and names the file", async function () {
@@ -158,7 +147,10 @@ describe("A collaboration sidecar that the application cannot read", function ()
   });
 
   it("moves the file aside when the author asks, and keeps its bytes", async function () {
-    await invoke("set-aside-collaboration-sidecar", { file: unreadableFile });
+    await invokeMain("documents-provider", {
+      command: "set-aside-collaboration-sidecar",
+      payload: { file: unreadableFile },
+    });
 
     const listing = await workspaceListing([genusPath, latticePath]);
     assert.deepEqual(listing.unreadable, [], "no unreadable file is left in the listing");

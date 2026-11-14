@@ -105,7 +105,7 @@
                 class="crossref-row"
                 role="row"
               >
-                <span role="cell">{{ crossrefLabel(example.kind) }}</span>
+                <span role="cell">{{ trans(example.displayName) }}</span>
                 <code role="cell">{{ example.label }}</code>
                 <code role="cell">{{ example.reference }}</code>
               </div>
@@ -168,7 +168,7 @@
                 class="theorem-row"
                 role="row"
               >
-                <span role="cell">{{ theoremLabel(example) }}</span>
+                <span role="cell">{{ trans(example.displayName) }}</span>
                 <code role="cell">{{ example.label }}</code>
                 <code role="cell">{{ example.reference }}</code>
               </div>
@@ -228,7 +228,6 @@ import {
   type ReferenceAuthoringTopic,
   referenceTopicSyntax,
   THEOREM_DIV_EXAMPLES,
-  type TheoremDivExample,
 } from "@common/util/pandoc-quick-reference";
 import { useConfigStore } from "source/pinia";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
@@ -255,7 +254,7 @@ const citationExamples = computed(() =>
 );
 const crossReferenceExamples = computed(() =>
   filterHelpEntries(PANDOC_CROSS_REFERENCE_EXAMPLES, filterQuery.value, (example) => [
-    crossrefLabel(example.kind),
+    trans(example.displayName),
     example.label,
     example.reference,
   ]),
@@ -274,7 +273,7 @@ const attributeExamples = computed(() =>
 );
 const theoremDivExamples = computed(() =>
   filterHelpEntries(THEOREM_DIV_EXAMPLES, filterQuery.value, (example) => [
-    theoremLabel(example),
+    trans(example.displayName),
     example.divClass,
     example.label,
     example.reference,
@@ -309,26 +308,6 @@ function citationLabel(kind: (typeof PANDOC_CITATION_EXAMPLES)[number]["kind"]):
     "suppress-author": trans("Suppress author"),
   };
   return labels[kind];
-}
-
-function crossrefLabel(kind: (typeof PANDOC_CROSS_REFERENCE_EXAMPLES)[number]["kind"]): string {
-  const labels = {
-    figure: trans("Figure"),
-    table: trans("Table"),
-    equation: trans("Equation"),
-    section: trans("Section"),
-    listing: trans("Listing"),
-  };
-  return labels[kind];
-}
-
-/**
- * The display name of a theorem-div example: its registered div class,
- * capitalized (the same derivation the reference views use), routed through
- * the translation layer like every other label in this dialog.
- */
-function theoremLabel(example: TheoremDivExample): string {
-  return trans(example.divClass.charAt(0).toUpperCase() + example.divClass.slice(1));
 }
 
 function modifierLabel(kind: (typeof PANDOC_REFERENCE_MODIFIERS)[number]["kind"]): string {

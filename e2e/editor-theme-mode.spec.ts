@@ -88,8 +88,6 @@ function decodeSinglePixelPng(png: Buffer): RGB {
 }
 
 describe("Editor theme enum in the assembled app", function () {
-  this.timeout(240_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
@@ -111,7 +109,7 @@ describe("Editor theme enum in the assembled app", function () {
       },
     });
     fixtureRoot = fixture.root;
-    const running = await attach(fixture.configDirectory, [], this.timeout());
+    const running = await attach(fixture.configDirectory, []);
     appProcess = running.appProcess;
     browser = running.browser;
     page = await findEditorPage(browser, this.timeout());

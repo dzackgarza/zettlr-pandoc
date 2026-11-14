@@ -21,7 +21,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class TutorialOpen extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "tutorial-open");
+    super(app);
   }
 
   /**

@@ -5,7 +5,7 @@ import ZettlrCommand from "./zettlr-command";
 /** Configuration action for LanguageTool rules; lint execution uses the generic registry. */
 export default class AddLanguageToolIgnoreRule extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "add-language-tool-ignore-rule");
+    super(app);
   }
 
   async run(_evt: string, rule: LanguageToolIgnoredRuleEntry): Promise<boolean> {

@@ -71,16 +71,32 @@ export function threadMessageView(
   };
 }
 
+export type ProposalOutcome = NonNullable<AnnotationProposalAction["terminalOutcome"]>;
+
 export interface ProposalCardView {
   /** Linked proposal actions the owner has not decided yet. */
   pendingCount: number;
   totalCount: number;
+  /** The count of each outcome that an action has, in a fixed order. */
+  outcomes: Array<{ outcome: ProposalOutcome; count: number }>;
 }
+
+const OUTCOME_ORDER: readonly ProposalOutcome[] = [
+  "accepted",
+  "rejected",
+  "mixed",
+  "withdrawn",
+  "cleared",
+];
 
 export function proposalCardView(actions: readonly AnnotationProposalAction[]): ProposalCardView {
   return {
     pendingCount: actions.filter((action) => action.terminalOutcome === undefined).length,
     totalCount: actions.length,
+    outcomes: OUTCOME_ORDER.map((outcome) => ({
+      outcome,
+      count: actions.filter((action) => action.terminalOutcome === outcome).length,
+    })).filter((entry) => entry.count > 0),
   };
 }
 

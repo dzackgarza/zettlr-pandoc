@@ -31,7 +31,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -68,12 +67,12 @@ describe("a document whose first load fails", function () {
     await chmod(otherPath, 0o000);
     latePath = path.join(path.dirname(fixture.documentPath), "orbits.md");
     await writeFile(latePath, LATE);
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(EDITOR).waitFor({ state: "visible", timeout: this.timeout() });
   });
 

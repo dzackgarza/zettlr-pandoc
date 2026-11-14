@@ -17,7 +17,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class IncreasePomodoro extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "add-pomodoro");
+    super(app);
   }
 
   /**

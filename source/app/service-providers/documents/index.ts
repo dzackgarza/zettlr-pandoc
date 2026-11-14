@@ -22,7 +22,7 @@ import PersistentDataContainer from "@common/modules/persistent-data-container";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import { countAll } from "@common/util/counter";
 import errorToString from "@common/util/error-to-string";
-import isErrnoException from "@common/util/is-errno-exception";
+import isErrnoException, { hasErrnoCode } from "@common/util/is-errno-exception";
 import isFile from "@common/util/is-file";
 import serializeChangeSet from "@common/util/serialize-change-set";
 import { sha256Text } from "@common/util/sha256";
@@ -67,20 +67,24 @@ import {
 } from "@dts/common/documents";
 import type { AnyDescriptor, CodeFileDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type { DocumentLocation, SourceRange, WorkspaceTextEdit } from "@dts/common/references";
+import type { IpcBroadcastContracts } from "@dts/renderer/ipc-bridge";
 import { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
+import type { FSALEventPayload } from "@providers/fsal";
 import type { FolderNotListed } from "@providers/fsal/util/read-directory";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
-import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions } from "electron";
+import { app, type BrowserWindow, dialog, type MessageBoxOptions } from "electron";
 import EventEmitter from "events";
-import { constants as FSConstants } from "fs";
+import { existsSync, constants as FSConstants } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
 import { bibliographyFiles, documentBibliography } from "source/app/util/document-bibliographies";
+import { handleInvokeChannel } from "source/app/util/handle-ipc-channel";
 import { openPath } from "source/app/util/open-path";
+import { canonicalPath } from "source/app/util/real-path";
 import { throwFailures } from "source/app/util/run-each-step";
 import { showRefusalInWindow } from "source/app/util/show-refusal-in-window";
 import { showStoreWriteFailure } from "source/app/util/show-store-write-failure";
@@ -128,6 +132,7 @@ import {
   type ChunkDecisionResponse,
   type ClearReviewResponse,
   type DiscardReviewResponse,
+  type ProposalNotFound,
   type ProposalRefusal,
   type ReapplyReviewResponse,
   type RetractProposalResponse,
@@ -173,6 +178,8 @@ type DocumentManagerApp = {
     | "getDescriptorFor"
     | "getDescriptorForAnySupportedFile"
     | "loadAnySupportedFile"
+    | "off"
+    | "on"
     | "readDirectoryRecursively"
     | "testAccess"
     | "writeTextFile"
@@ -202,13 +209,13 @@ type DocumentManagerApp = {
   >;
 };
 
-/** What the provider tells the author about one document (_tellAbout). */
-type DocumentMessage =
-  | SaveRefusedBroadcast
-  | FileRemovedKeptBroadcast
-  | RemoteChangeKeptBroadcast
-  | CollaborationFileUnreadableBroadcast
-  | CollaborationFileUnwritableBroadcast;
+/** The channels on which the provider tells the author about one document (_tellAbout). */
+type DocumentMessageChannel =
+  | typeof SAVE_REFUSED_CHANNEL
+  | typeof FILE_REMOVED_KEPT_CHANNEL
+  | typeof REMOTE_CHANGE_KEPT_CHANNEL
+  | typeof COLLABORATION_FILE_UNREADABLE_CHANNEL
+  | typeof COLLABORATION_FILE_UNWRITABLE_CHANNEL;
 
 // Keep no more than this many updates.
 const MAX_VERSION_HISTORY = 100;
@@ -260,6 +267,9 @@ export type DocumentsUpdateContext = {
     diagnostic: string;
   };
 };
+
+/** A `documents-update` message to the windows: the event and what it concerns. */
+export type DocumentsUpdateBroadcast = { event: DP_EVENTS; context: DocumentsUpdateContext };
 
 /** A close that the provider refused, and what the author's answer to it does. */
 interface RefusedClose {
@@ -386,8 +396,6 @@ export type DocumentAuthorityIPCContract = {
     response: boolean;
   };
 };
-
-export type DocumentAuthorityIPCAPI = IPCMessage<DocumentAuthorityIPCContract>;
 
 /**
  * Why a save was refused. The provider never presents this itself: a blocking
@@ -550,10 +558,6 @@ export type DocumentManagerIPCContract = {
   };
   // Additive (issue #1 Phase 5): whether the leaf's session history has
   // entries before/after the pointer (Back/Forward enabled state).
-  "get-navigation-state": {
-    request: { payload: LeafLoc };
-    response: { canGoBack: boolean; canGoForward: boolean };
-  };
 };
 
 export type DocumentManagerIPCAPI = IPCMessage<DocumentManagerIPCContract>;
@@ -795,11 +799,22 @@ export default class DocumentManager
 
   /**
    * The id of each document path, and the path of each document id. The
-   * two maps change together (_assignDocumentId, _moveDocumentId): an id
-   * names one path, and a path has one id.
+   * two maps change together (_assignDocumentId, _moveDocumentId,
+   * _forgetDocumentId): an id names one path, and a path has one id. An id
+   * lasts while the application can name its path: a file on disk in an
+   * open workspace, a loaded document, a tab. A listing of the Agent API
+   * names each file of a workspace, so the maps follow the files that
+   * exist, not each file that a listing ever named (#57).
    */
   private readonly _documentIdByPath: Map<string, string>;
   private readonly _documentPathById: Map<string, string>;
+
+  /**
+   * The paths that the FSAL reported as removed while a loaded document or
+   * a tab held them. The id of such a path goes when its last holder
+   * closes and the file is still absent (syncWatchedFilePaths).
+   */
+  private readonly _removedHeldPaths: Set<string>;
 
   /**
    * The closes that the provider refused, by the id of the document that
@@ -876,6 +891,7 @@ export default class DocumentManager
     });
     this._documentIdByPath = new Map();
     this._documentPathById = new Map();
+    this._removedHeldPaths = new Set();
     this._refusedCloses = new Map();
     this.documents = [];
     this._shuttingDown = false;
@@ -955,25 +971,24 @@ export default class DocumentManager
       }
     });
 
+    this._app.fsal.on("fsal-events", this._onFsalEvents);
+
     /**
      * Hook the event listener that directly communicates with the editors
      */
-    ipcMain.handle("documents-authority", async (event, message: DocumentAuthorityIPCAPI) => {
-      const { command, payload } = message;
-      // Loading a document reattaches its sidecar, and an authority update
-      // rewrites the reviewed working text: both are review writers, so both
-      // take the same per-document lock every other writer takes.
-      switch (command) {
-        case "pull-updates":
-          return await this.pullUpdates(payload.filePath, payload.version);
-        case "push-updates":
-          return await this.pushUpdates(payload.filePath, payload.version, payload.updates);
-        case "get-document":
-          return await this._reviewApplication.withDocumentLock(
-            this.ensureDocumentId(payload.filePath),
-            async () => await this.getDocument(payload.filePath),
-          );
-      }
+    // Loading a document reattaches its sidecar, and an authority update
+    // rewrites the reviewed working text: both are review writers, so both
+    // take the same per-document lock every other writer takes.
+    handleInvokeChannel("documents-authority", {
+      "pull-updates": async (_event, { payload }) =>
+        await this.pullUpdates(payload.filePath, payload.version),
+      "push-updates": async (_event, { payload }) =>
+        await this.pushUpdates(payload.filePath, payload.version, payload.updates),
+      "get-document": async (_event, { payload }) =>
+        await this._reviewApplication.withDocumentLock(
+          this.ensureDocumentId(payload.filePath),
+          async () => await this.getDocument(payload.filePath),
+        ),
     });
 
     // The document operations the renderer drives on their own channels. Each
@@ -1140,134 +1155,106 @@ export default class DocumentManager
     });
 
     // Finally, listen to events from the renderer
-    ipcMain.handle("documents-provider", async (event, message: DocumentManagerIPCAPI) => {
-      const { command, payload } = message;
-      switch (command) {
-        // A given tab should be set as pinned
-        case "set-pinned": {
-          const { windowId, leafId, path, pinned } = payload;
-          this.setPinnedStatus(windowId, leafId, path, pinned);
-          return;
+    handleInvokeChannel("documents-provider", {
+      // A given tab should be set as pinned
+      "set-pinned": (_event, { payload }) => {
+        const { windowId, leafId, path, pinned } = payload;
+        this.setPinnedStatus(windowId, leafId, path, pinned);
+      },
+      // Some main window has requested its tab/split view state
+      "retrieve-tab-config": (_event, { payload }) => this._windows[payload.windowId].toJSON(),
+      "open-file": async (event, { payload }) => {
+        const { windowId, leafId, path, newTab, targetRange, sourceLocation } = payload;
+        return await this.openFile(windowId, leafId, path, newTab, {
+          targetRange,
+          sourceLocation,
+        }).catch((error: unknown) => {
+          showRefusalInWindow(event.sender, "open-file", error);
+          throw error;
+        });
+      },
+      "close-file": async (_event, { payload }) => {
+        const { windowId, leafId, path } = payload;
+        return await this.closeFile(windowId, leafId, path);
+      },
+      "reopen-closed-tab": async (_event, { payload }) =>
+        await this.reopenClosedTab(payload.windowId),
+      "close-other-tabs": async (_event, { payload }) => {
+        const { windowId, leafId, path } = payload;
+        return await this.closeOtherTabs(windowId, leafId, path);
+      },
+      "close-all-tabs": async (_event, { payload }) =>
+        await this.closeAllTabs(payload.windowId, payload.leafId),
+      "save-all": async (_event, { payload }) => await this.saveAll(payload.windowId),
+      "save-all-and-close": async (_event, { payload }) =>
+        await this.saveAllAndClose(payload.windowId),
+      "close-file-everywhere": async (_event, { payload }) =>
+        await this.closeFileEverywhere(payload.path),
+      "load-from-disk": async (_event, { payload }) => {
+        if (!this.documents.some((doc) => doc.filePath === payload.path)) {
+          return; // The document was closed; the next open reads the disk.
         }
-        // Some main window has requested its tab/split view state
-        case "retrieve-tab-config": {
-          return this._windows[payload.windowId].toJSON();
+        await this.notifyRemoteChange(payload.path);
+      },
+      "close-without-review": async (_event, { payload }) =>
+        await this.closeWithoutReview(payload.documentId),
+      "save-copy": async (_event, { payload }) => await this.saveCopy(payload.path),
+      "sort-open-files": (_event, { payload }) => {
+        const { windowId, leafId, newOrder } = payload;
+        this.sortOpenFiles(windowId, leafId, newOrder);
+      },
+      "get-file-modification-status": () =>
+        this.documents.filter((x) => this.isModified(x.filePath)).map((x) => x.filePath),
+      "get-collaboration-session": (_event, { payload }) => {
+        const docId = this.getDocumentId(payload.path);
+        return docId === undefined ? undefined : this._collaborationSessionFor(docId, payload.path);
+      },
+      "get-workspace-collaboration-sessions": async (_event, { payload }) =>
+        await this._workspaceCollaborationSessions(payload.paths),
+      "set-aside-collaboration-sidecar": async (_event, { payload }) =>
+        await this._reviewApplication.setAsideCollaborationSidecar(payload.file),
+      "move-file": async (_event, { payload }) => {
+        const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
+        return await this.moveFile(originWindow, targetWindow, originLeaf, targetLeaf, path);
+      },
+      "split-leaf": async (_event, { payload }) => {
+        const { originWindow, originLeaf, direction, insertion, path, fromWindow, fromLeaf } =
+          payload;
+        return await this.splitLeaf(
+          originWindow,
+          originLeaf,
+          direction,
+          insertion,
+          path,
+          fromWindow,
+          fromLeaf,
+        );
+      },
+      "close-leaf": (_event, { payload }) => {
+        return this.closeLeaf(payload.windowId, payload.leafId);
+      },
+      "focus-leaf": (_event, { payload }) => {
+        return this._updateFocusLeaf(payload.windowId, payload.leafId);
+      },
+      "set-branch-sizes": (_event, { payload }) => {
+        // NOTE that in this particular instance we do not emit an event. The
+        // reason is that we need to prevent frequent reloads during resizing.
+        // For as long as the window is open, the window will have the correct
+        // sizes, and will only update those sizes here in the main process.
+        // As soon as the window is closed, however, it will automatically
+        // grab the correct sizes again.
+        const branch = this._windows[payload.windowId].findBranch(payload.branchId);
+        if (branch !== undefined) {
+          branch.sizes = payload.sizes;
+          this.syncToConfig();
         }
-        case "open-file": {
-          const { windowId, leafId, path, newTab, targetRange, sourceLocation } = payload;
-          return await this.openFile(windowId, leafId, path, newTab, {
-            targetRange,
-            sourceLocation,
-          }).catch((error: unknown) => {
-            showRefusalInWindow(event.sender, "open-file", error);
-            throw error;
-          });
-        }
-        case "close-file": {
-          const { windowId, leafId, path } = payload;
-          return await this.closeFile(windowId, leafId, path);
-        }
-        case "reopen-closed-tab": {
-          return await this.reopenClosedTab(payload.windowId);
-        }
-        case "close-other-tabs": {
-          const { windowId, leafId, path } = payload;
-          return await this.closeOtherTabs(windowId, leafId, path);
-        }
-        case "close-all-tabs": {
-          return await this.closeAllTabs(payload.windowId, payload.leafId);
-        }
-        case "save-all": {
-          return await this.saveAll(payload.windowId);
-        }
-        case "save-all-and-close": {
-          return await this.saveAllAndClose(payload.windowId);
-        }
-        case "close-file-everywhere": {
-          const { path } = payload;
-          return this.closeFileEverywhere(path);
-        }
-        case "load-from-disk": {
-          if (!this.documents.some((doc) => doc.filePath === payload.path)) {
-            return; // The document was closed; the next open reads the disk.
-          }
-          await this.notifyRemoteChange(payload.path);
-          return;
-        }
-        case "close-without-review": {
-          return await this.closeWithoutReview(payload.documentId);
-        }
-        case "save-copy": {
-          return await this.saveCopy(payload.path);
-        }
-        case "sort-open-files": {
-          const { windowId, leafId, newOrder } = payload;
-          this.sortOpenFiles(windowId, leafId, newOrder);
-          return;
-        }
-        case "get-file-modification-status": {
-          return this.documents.filter((x) => this.isModified(x.filePath)).map((x) => x.filePath);
-        }
-        case "get-collaboration-session": {
-          const docId = this.getDocumentId(payload.path);
-          return docId === undefined
-            ? undefined
-            : this._collaborationSessionFor(docId, payload.path);
-        }
-        case "get-workspace-collaboration-sessions": {
-          return await this._workspaceCollaborationSessions(payload.paths);
-        }
-        case "set-aside-collaboration-sidecar": {
-          return await this._reviewApplication.setAsideCollaborationSidecar(payload.file);
-        }
-        case "move-file": {
-          const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
-          return await this.moveFile(originWindow, targetWindow, originLeaf, targetLeaf, path);
-        }
-        case "split-leaf": {
-          const { originWindow, originLeaf, direction, insertion, path, fromWindow, fromLeaf } =
-            payload;
-
-          return await this.splitLeaf(
-            originWindow,
-            originLeaf,
-            direction,
-            insertion,
-            path,
-            fromWindow,
-            fromLeaf,
-          );
-        }
-        case "close-leaf": {
-          return this.closeLeaf(payload.windowId, payload.leafId);
-        }
-        case "focus-leaf": {
-          return this._updateFocusLeaf(payload.windowId, payload.leafId);
-        }
-        case "set-branch-sizes": {
-          // NOTE that in this particular instance we do not emit an event. The
-          // reason is that we need to prevent frequent reloads during resizing.
-          // For as long as the window is open, the window will have the correct
-          // sizes, and will only update those sizes here in the main process.
-          // As soon as the window is closed, however, it will automatically
-          // grab the correct sizes again.
-          const branch = this._windows[payload.windowId].findBranch(payload.branchId);
-          if (branch !== undefined) {
-            branch.sizes = payload.sizes;
-            this.syncToConfig();
-          }
-          return;
-        }
-        case "navigate-forward": {
-          return await this.navigateForward(payload.windowId, payload.leafId, payload.location);
-        }
-        case "navigate-back": {
-          return await this.navigateBack(payload.windowId, payload.leafId, payload.location);
-        }
-        case "get-navigation-state": {
-          return this.getNavigationState(payload.windowId, payload.leafId);
-        }
-      }
+      },
+      "navigate-forward": async (_event, { payload }) => {
+        return await this.navigateForward(payload.windowId, payload.leafId, payload.location);
+      },
+      "navigate-back": async (_event, { payload }) => {
+        return await this.navigateBack(payload.windowId, payload.leafId, payload.location);
+      },
     });
 
     // Listen to the before-quit event by which we make sure to only quit the
@@ -1380,11 +1367,11 @@ export default class DocumentManager
    * the main window that the author used last when none of those can show
    * it.
    */
-  private _tellAbout(
+  private _tellAbout<C extends DocumentMessageChannel>(
     filePath: string,
     startedBy: string | undefined,
-    channel: string,
-    payload: DocumentMessage,
+    channel: C,
+    ...message: IpcBroadcastContracts[C]
   ): void {
     const addressed =
       startedBy !== undefined
@@ -1396,7 +1383,7 @@ export default class DocumentManager
                 .some((leaf) => leaf.tabMan.openFiles.some((file) => file.path === filePath)),
             )
             .map(([windowId]) => windowId);
-    this._app.windows.tellMainWindows(addressed, channel, payload);
+    this._app.windows.tellMainWindows(addressed, channel, ...message);
   }
 
   private _pathsShownInPanes(): Set<string> {
@@ -1593,7 +1580,9 @@ export default class DocumentManager
               );
             if (gone) {
               leaf.tabMan.closeFile(file);
+              continue;
             }
+            await this._restoreUnderRealPath(leaf, file);
           }
           if (leaf.tabMan.openFiles.length === 0) {
             leaf.parent.removeNode(leaf);
@@ -1729,11 +1718,72 @@ export default class DocumentManager
     // every chokidar process we utilize. Otherwise, the fsevents dylib will
     // still hold on to some memory after the Electron process itself shuts down
     // which will result in a crash report appearing on macOS.
+    this._app.fsal.off("fsal-events", this._onFsalEvents);
     await this._watcher.shutdown();
     await this._config.shutdown();
   }
 
-  private broadcastEvent(event: DP_EVENTS, context?: DocumentsUpdateContext): void {
+  /**
+   * A removal that the FSAL reports ends the id of each path at or inside
+   * it whose file is absent. A path that a loaded document or a tab holds
+   * keeps its id until it closes: the document can outlive its file (§14).
+   * A path that a rule hides is a removal for the FSAL; its file is on
+   * disk and keeps its id.
+   */
+  private readonly _onFsalEvents = (events: FSALEventPayload[]): void => {
+    const removed = events.flatMap((event) =>
+      event.event === "unlink" || event.event === "unlinkDir" ? [event.path] : [],
+    );
+    if (removed.length === 0) {
+      return;
+    }
+    const held = this._heldPaths();
+    for (const filePath of [...this._documentIdByPath.keys()]) {
+      if (!removed.some((removedPath) => isAtOrInsideRoot(filePath, removedPath))) {
+        continue;
+      }
+      if (held.has(filePath)) {
+        this._removedHeldPaths.add(filePath);
+      } else if (!existsSync(filePath)) {
+        this._forgetDocumentId(filePath);
+      }
+    }
+  };
+
+  /** The paths of the loaded documents and of the tabs of each pane. */
+  private _heldPaths(): Set<string> {
+    return new Set([...this.documents.map((doc) => doc.filePath), ...this._pathsShownInPanes()]);
+  }
+
+  /**
+   * Names a restored tab by the real path of its file, as `openFile` names a
+   * new one; an earlier version stored the name it was opened under. A tab
+   * whose file the pane shows under its real path already is closed. A path
+   * that cannot be resolved keeps its tab, and the document reports the
+   * error of the file when it loads.
+   */
+  private async _restoreUnderRealPath(leaf: DTLeaf, file: string): Promise<void> {
+    const realPath = await canonicalPath(file).then(
+      (resolved) => resolved,
+      (err: Error) => {
+        this._app.log.error(
+          `[Document Provider] Could not resolve the real path of ${file}: ${err.message}`,
+          err,
+        );
+        return file;
+      },
+    );
+    if (realPath === file) {
+      return;
+    }
+    if (leaf.tabMan.openFiles.some((tab) => tab.path === realPath)) {
+      leaf.tabMan.closeFile(file);
+    } else {
+      leaf.tabMan.replaceFilePath(file, realPath);
+    }
+  }
+
+  private broadcastEvent(event: DP_EVENTS, context: DocumentsUpdateContext): void {
     // Here we blast an event notification across every line of code of the app
     broadcastIpcMessage("documents-update", { event, context });
     this._emitter.emit(event, context);
@@ -1892,7 +1942,6 @@ export default class DocumentManager
     }
 
     this._unload(doc);
-    this.syncWatchedFilePaths();
     return true;
   }
 
@@ -2206,13 +2255,16 @@ current contents from the editor somewhere else, and restart the application.`,
   public async openFile(
     windowId: string | undefined,
     leafId: string | undefined,
-    filePath: string,
+    requestedPath: string,
     newTab?: boolean,
     navigation?: {
       targetRange?: SourceRange;
       sourceLocation?: DocumentLocation;
     },
   ): Promise<boolean> {
+    // A document is named by the real path of its file: a file that a
+    // symbolic link names opens the one document of that file (#57).
+    const filePath = await canonicalPath(requestedPath);
     if (!isFile(filePath)) {
       // The renderer process essentially just throws paths at the documents
       // provider when the user intents to open them. Users can also link
@@ -2625,14 +2677,31 @@ current contents from the editor somewhere else, and restart the application.`,
     ) {
       return false;
     }
+    if (documentId === undefined) {
+      await this._closeDocumentAt(filePath);
+      return true;
+    }
+    // A rename can put another document at the path while the sidecar is
+    // written (`hasMovedFile` after a late `unlink` of the file that the
+    // rename replaced). The move waits for the lock of this document, so
+    // under the lock the path names this document or the move is done; a
+    // finished move closed this document already (#210).
+    await this._reviewApplication.withDocumentLock(documentId, async () => {
+      if (this.getDocumentId(filePath) === documentId) {
+        await this._closeDocumentAt(filePath);
+      }
+    });
+    return true;
+  }
+
+  /** Closes the tabs of a path and unloads its document. */
+  private async _closeDocumentAt(filePath: string): Promise<void> {
     await this._closeTabsEverywhere(filePath);
     const document = this.documents.find((doc) => doc.filePath === filePath);
     if (document !== undefined) {
       this._unload(document);
     }
-
     this.syncWatchedFilePaths();
-    return true;
   }
 
   /**
@@ -2735,6 +2804,13 @@ current contents from the editor somewhere else, and restart the application.`,
     for (const filePath of paths) {
       if (!(await this.closeFileEverywhere(filePath))) {
         return false;
+      }
+    }
+    // The application names no path of a closed workspace.
+    const held = this._heldPaths();
+    for (const filePath of [...this._documentIdByPath.keys()]) {
+      if (inside(filePath) && !held.has(filePath)) {
+        this._forgetDocumentId(filePath);
       }
     }
     return true;
@@ -2864,7 +2940,12 @@ current contents from the editor somewhere else, and restart the application.`,
         filePath,
         status: "modification",
       });
-      const payload: RemoteChangeKeptBroadcast = { filePath, unsavedChanges: isModified };
+      const payload: RemoteChangeKeptBroadcast = {
+        filePath,
+        unsavedChanges: isModified,
+        frozenReview:
+          _docId !== undefined && this._reviewApplication.getReview(_docId) !== undefined,
+      };
       this._tellAbout(filePath, undefined, REMOTE_CHANGE_KEPT_CHANNEL, payload);
     } else {
       // The user has activated the setting to alwaysReloadFiles.
@@ -3049,9 +3130,10 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     }
 
-    // Second, get all open files. NOTE: This does not mean "open open", but
-    // rather paths that are "open" somewhere in a leaf. Not actively viewed.
-    let openFiles: string[] = [];
+    // Second, get the paths of the tabs of each pane and of each loaded
+    // document. A review loads a document that no tab shows; its buffer
+    // must learn of a change of its file as the buffer of a tab does.
+    let openFiles: string[] = this.documents.map((doc) => doc.filePath);
     for (const windowId in this._windows) {
       for (const leaf of this._windows[windowId].getAllLeafs()) {
         openFiles.push(...leaf.tabMan.openFiles.map((f) => f.path));
@@ -3071,6 +3153,19 @@ current contents from the editor somewhere else, and restart the application.`,
     for (const openFile of openFiles) {
       if (!watchedFiles.includes(openFile)) {
         this._watcher.watchPath(openFile);
+      }
+    }
+
+    // Fifth, a removed file that nothing holds now has no id (#57). A file
+    // that a save wrote again keeps its id.
+    for (const removedPath of [...this._removedHeldPaths]) {
+      if (openFiles.includes(removedPath)) {
+        continue;
+      }
+      if (existsSync(removedPath)) {
+        this._removedHeldPaths.delete(removedPath);
+      } else {
+        this._forgetDocumentId(removedPath);
       }
     }
   }
@@ -3471,31 +3566,6 @@ current contents from the editor somewhere else, and restart the application.`,
     if (location !== undefined && tabMan.activeFile?.path === location.documentPath) {
       tabMan.updateCurrentHistoryLocation(location);
     }
-  }
-
-  /**
-   * Returns whether the given leaf can navigate back/forward through its
-   * session history (issue #1 Phase 5; feeds the toolbar Back/Forward
-   * enabled state).
-   *
-   * @param   {string}  windowId  The window ID
-   * @param   {string}  leafId    The leaf ID
-   *
-   * @return  {{ canGoBack: boolean, canGoForward: boolean }}  The state
-   */
-  public getNavigationState(
-    windowId: string,
-    leafId: string,
-  ): { canGoBack: boolean; canGoForward: boolean } {
-    const leaf = windowId in this._windows ? this._windows[windowId].findLeaf(leafId) : undefined;
-    if (leaf === undefined) {
-      return { canGoBack: false, canGoForward: false };
-    }
-
-    return {
-      canGoBack: leaf.tabMan.canGoBack,
-      canGoForward: leaf.tabMan.canGoForward,
-    };
   }
 
   /**
@@ -4090,8 +4160,8 @@ current contents from the editor somewhere else, and restart the application.`,
   // ==========================================================================
 
   /**
-   * Get or assign the opaque documentId for a loaded document path.
-   * The documentId is stable for the lifetime of a loaded document.
+   * The documentId of a path, when the path has one. An id lasts while the
+   * application can name its path (_documentIdByPath).
    */
   public getDocumentId(filePath: string): string | undefined {
     return this._documentIdByPath.get(filePath);
@@ -4292,6 +4362,7 @@ current contents from the editor somewhere else, and restart the application.`,
     this.documents.splice(index, 1);
     this._refusedCloses.delete(document.documentId);
     this._app.references.dropAuthorityBuffer(document.filePath);
+    this.syncWatchedFilePaths();
   }
 
   /**
@@ -4337,7 +4408,6 @@ current contents from the editor somewhere else, and restart the application.`,
         this.broadcastCollaborationState(documentId);
       } else {
         this._unload(document);
-        this.syncWatchedFilePaths();
       }
     }
     await refused.repeat();
@@ -4439,11 +4509,27 @@ current contents from the editor somewhere else, and restart the application.`,
       // document's prompt.
       return;
     }
-    const diskContents = await this._app.fsal.loadAnySupportedFile(doc.filePath);
+    const diskContents = await this._savedTextForDiscard(doc);
     await this._reviewApplication.discardCollaboration(doc.documentId, doc.filePath, diskContents);
     this._applyWorkingTextToDocument(doc.filePath, diskContents);
     doc.lastSavedContent = diskContents;
     doc.lastSavedVersion = doc.currentVersion;
+  }
+
+  /**
+   * The text that a discard gives back: the file. When another program
+   * removed the file, the text that the application last read from it or
+   * wrote to it. The fence of the sidecar is of that text, so a file that
+   * comes back with it attaches the state of the discard (#210). Each other
+   * read error refuses the discard.
+   */
+  private async _savedTextForDiscard(doc: Document): Promise<string> {
+    return await this._app.fsal.loadAnySupportedFile(doc.filePath).catch((err: unknown) => {
+      if (!hasErrnoCode(err, "ENOENT", "ENOTDIR")) {
+        throw err;
+      }
+      return doc.lastSavedContent;
+    });
   }
 
   /**
@@ -4468,7 +4554,10 @@ current contents from the editor somewhere else, and restart the application.`,
    * across a gap in time instead of within a process: the review is frozen
    * and announced invalidated, and the file opens with the disk content.
    * The document's annotations survive that; their anchors become
-   * `orphaned` and wait for the owner to reattach them.
+   * `orphaned` and wait for the owner to reattach them. Text that the
+   * author accepted from the review and did not save stays the text of the
+   * document: the window is told that the file changed on disk, as for an
+   * open document whose file changed (`REMOTE_CHANGE_KEPT_CHANNEL`).
    */
   private async _reattachCollaborationSidecar(doc: Document): Promise<void> {
     try {
@@ -4484,6 +4573,14 @@ current contents from the editor somewhere else, and restart the application.`,
       // claim on the buffer.
       if (restored.workingText !== undefined) {
         this._applyWorkingTextToDocument(doc.filePath, restored.workingText);
+      }
+      if (restored.keptOverDisk) {
+        const payload: RemoteChangeKeptBroadcast = {
+          filePath: doc.filePath,
+          unsavedChanges: true,
+          frozenReview: true,
+        };
+        this._tellAbout(doc.filePath, undefined, REMOTE_CHANGE_KEPT_CHANNEL, payload);
       }
       // The window keeps the session that it gets for the document, and an
       // editor shows a review only while its text is the working text of
@@ -4560,6 +4657,17 @@ current contents from the editor somewhere else, and restart the application.`,
     this._documentIdByPath.set(filePath, id);
     this._documentPathById.set(id, filePath);
     return id;
+  }
+
+  /** The path and its id name nothing from here on. */
+  private _forgetDocumentId(filePath: string): void {
+    this._removedHeldPaths.delete(filePath);
+    const documentId = this._documentIdByPath.get(filePath);
+    if (documentId === undefined) {
+      return;
+    }
+    this._documentIdByPath.delete(filePath);
+    this._documentPathById.delete(documentId);
   }
 
   /**
@@ -4673,46 +4781,8 @@ current contents from the editor somewhere else, and restart the application.`,
   public async retractProposal(
     packetId: string,
     precondition: ReviewMutationPrecondition,
-  ): Promise<
-    | RetractProposalResponse
-    | {
-        ok: false;
-        code: AgentErrorCode;
-        message: string;
-        reviewId: string;
-        canClearUnresolved: boolean;
-        actual?: { sha256: string };
-        reviewGeneration?: number;
-      }
-  > {
-    const result = await this._reviewApplication.retractProposal(packetId, precondition);
-    if (
-      "ok" in result &&
-      !result.ok &&
-      result.code === "PACKET_NOT_RETRACTABLE" &&
-      result.reviewId === ""
-    ) {
-      // GET /v1/reviews/{id}/packets hands out a detached review's packetIds,
-      // so this route owes them an answer. The live store dropped them when
-      // the file closed; the sidecar still carries them, and the refusal it
-      // earns is the same one every reviewId route gives — the file is shut,
-      // not the packet missing. Clearing is shut too, so say so.
-      const detached = (await this._reviewApplication.listReviewQueries()).find(
-        (query) =>
-          !query.attached &&
-          query.sidecar.review.packets.some((packet) => packet.packetId === packetId),
-      );
-      if (detached !== undefined && !detached.attached) {
-        return {
-          ok: false,
-          code: "DOCUMENT_CLOSED",
-          message: `The reviewed document ${detached.sidecar.documentPath} is closed. Open it before retracting this proposal.`,
-          reviewId: detached.sidecar.review.reviewId,
-          canClearUnresolved: false,
-        };
-      }
-    }
-    return result;
+  ): Promise<RetractProposalResponse | (ReviewFailure & { reviewId: string }) | ProposalNotFound> {
+    return await this._reviewApplication.retractProposal(packetId, precondition);
   }
 
   /**
@@ -4895,6 +4965,28 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * Changes the working text in the sidecar of a document that is not
+   * loaded, with the anchors of its review and its annotations. The startup
+   * recovery of an interrupted workspace edit calls it, before a document
+   * loads.
+   *
+   * @param   {string}    documentPath  The document
+   * @param   {Function}  restore       The changes for the stored working text
+   *
+   * @return  {Promise<boolean>}        Whether the sidecar changed
+   */
+  public async restoreStoredWorkingText(
+    documentPath: string,
+    restore: (workingText: string) => ChangeSet,
+  ): Promise<boolean> {
+    return await this._reviewApplication.restoreStoredWorkingText(
+      this.ensureDocumentId(documentPath),
+      documentPath,
+      restore,
+    );
+  }
+
+  /**
    * Apply a workspace edit to every open Markdown document named by the
    * transaction set. The document manager is the central collab authority:
    * it prepares every ChangeSet before mutating any document, records one
@@ -5056,6 +5148,7 @@ current contents from the editor somewhere else, and restart the application.`,
     // workspace. This avoids one failed filesystem lookup per ordinary file.
     const { sidecars, unreadable } = await this._reviewApplication.collaborationSidecarInventory();
     const unlisted: string[] = [];
+    const unsaved: string[] = [];
     for (const sidecar of sidecars) {
       if (livePaths.has(sidecar.documentPath)) {
         continue;
@@ -5074,11 +5167,17 @@ current contents from the editor somewhere else, and restart the application.`,
           annotations: sidecar.annotations,
         }),
       );
+      // The fence of a sidecar is the hash of the file when the sidecar
+      // was written; a working text with another hash is in no file.
+      if (sidecar.review !== null && sha256Text(sidecar.workingText) !== sidecar.diskFenceSha256) {
+        unsaved.push(sidecar.documentPath);
+      }
     }
     return {
       sessions,
       unreadable: this._documentsOfUnreadableFiles(unreadable, wanted),
       ownerless: await this._sidecarsOfNoDocument(unlisted),
+      unsaved,
     };
   }
 

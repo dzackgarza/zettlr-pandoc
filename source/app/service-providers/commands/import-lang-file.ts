@@ -24,7 +24,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class ImportLangFile extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "import-lang-file");
+    super(app);
   }
 
   /**

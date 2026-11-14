@@ -22,7 +22,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class ImportFiles extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "import-files");
+    super(app);
   }
 
   /**

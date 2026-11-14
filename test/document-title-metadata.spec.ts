@@ -16,6 +16,7 @@ function descriptor(path = "/tmp/title.md"): MDFileDescriptor {
     id: "",
     tags: [],
     links: [],
+    fileLinks: [],
     citekeys: [],
     bom: "",
     wordCount: 0,

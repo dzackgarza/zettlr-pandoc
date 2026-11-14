@@ -16,7 +16,6 @@
 import { reportError } from "@common/util/error-reporting";
 import type { DirSettingsCommandAPI } from "source/app/service-providers/commands/dir-settings";
 import type {
-  AnyDescriptor,
   DirDescriptor,
   DirectoryExplorerSettings,
   DirectorySettings,
@@ -40,7 +39,7 @@ export function updateExplorerDirectory(
 ): Promise<void> {
   explorerUpdates = explorerUpdates
     .then(async () => {
-      const stored: AnyDescriptor = await ipcRenderer.invoke("fsal", {
+      const stored = await ipcRenderer.invoke("fsal", {
         command: "get-descriptor",
         payload: directory.path,
       });

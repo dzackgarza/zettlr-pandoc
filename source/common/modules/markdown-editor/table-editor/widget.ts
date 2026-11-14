@@ -20,17 +20,14 @@ import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
 import { WIDGET_LINE_STYLE_RESET_CLASS } from "@dzack/pandoc-editor/renderers/base-renderer";
-import {
-  incrementalNodeDecorations,
-  type SourceRange,
-} from "@dzack/pandoc-editor/util/incremental-node-decorations";
-import { previewSuppressionChanged } from "@dzack/pandoc-editor/util/range-in-preview-suppression";
+import { incrementalNodeDecorations } from "@dzack/pandoc-editor/util/incremental-node-decorations";
+import { previewSuppressionChangedRanges } from "@dzack/pandoc-editor/util/range-in-preview-suppression";
 import type { SyntaxNode } from "@lezer/common";
 import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
 import type { Table, TableCell, TableRow } from "../../markdown-utils/markdown-ast";
 import { parseTableNode } from "../../markdown-utils/markdown-ast/parse-table-node";
 import { nodeToHTML } from "../../markdown-utils/markdown-to-html";
-import { getReviewChunks, reviewSuggestionsInRange } from "../plugins/review-chunks";
+import { reviewSuggestionsInRange } from "../plugins/review-chunks";
 import { type CitationRequest, requestRenderedCitation } from "../renderers/render-citations";
 import { configField } from "../util/configuration";
 import { documentText } from "../util/document-text";
@@ -351,23 +348,6 @@ function tableDecorationsBetween(
 }
 
 /**
- * The ranges that decide more of a table than its own source: the selection
- * (the cell that holds it is an editor) and the review suggestions (a table
- * shows how many touch it).
- */
-function tableReach(state: EditorState): SourceRange[] {
-  const ranges: SourceRange[] = [...state.selection.ranges];
-  const suggestions = getReviewChunks(state);
-  if (suggestions === null) {
-    return ranges;
-  }
-  for (const suggestion of suggestions) {
-    ranges.push({ from: suggestion.seam, to: suggestion.seam }, ...suggestion.anchors);
-  }
-  return ranges;
-}
-
-/**
  * Holds a TableWidget for each Table node of the state. A transaction makes
  * again only the widgets of the tables that it can change.
  */
@@ -375,8 +355,11 @@ export const tableDecorations = incrementalNodeDecorations({
   decorate: tableDecorationsBetween,
   // A cell renders links and citations as the configuration says.
   inputsChanged: (before, after) => before.field(configField) !== after.field(configField),
-  reach: tableReach,
-  reachChanged: previewSuppressionChanged,
+  // The selection (the cell that holds it is an editor) and the review
+  // suggestions (a table shows how many touch it) decide more of a table
+  // than its own source; the review field names the extents of the
+  // suggestions that a transaction changed.
+  changedReach: previewSuppressionChangedRanges,
 });
 
 /**

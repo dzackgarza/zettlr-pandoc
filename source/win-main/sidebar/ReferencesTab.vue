@@ -28,11 +28,9 @@ import { trans } from "@common/i18n-renderer";
 import { citationProblemMessage, followCitationProblems } from "@common/util/citation-problems";
 import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { reportError } from "@common/util/error-reporting";
+import { uncitedItems } from "@common/util/nocite";
 import type { CitationResourceProblem } from "@dts/common/citeproc";
 import { DP_EVENTS } from "@dts/common/documents";
-import { type AnyDescriptor } from "@dts/common/fsal";
-import type { CiteprocProviderIPCAPI } from "source/app/service-providers/citeproc";
-import { type DocumentsUpdateContext } from "source/app/service-providers/documents";
 import { hasMarkdownExt } from "source/common/util/file-extention-checks";
 import localiseNumber from "source/common/util/localise-number";
 import { useDocumentTreeStore } from "source/pinia";
@@ -121,20 +119,17 @@ onMounted(() => {
     styleProblem.value = problems.find((problem) => problem.resource === "style");
   });
 
-  ipcRenderer.on(
-    "documents-update",
-    (e, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
-      const { event, context } = payload;
-      // Update the bibliography if the active file has been saved
-      if (event === DP_EVENTS.FILE_SAVED) {
-        const { filePath } = context;
+  ipcRenderer.on("documents-update", (e, payload) => {
+    const { event, context } = payload;
+    // Update the bibliography if the active file has been saved
+    if (event === DP_EVENTS.FILE_SAVED) {
+      const { filePath } = context;
 
-        if (filePath === activeFile.value?.path) {
-          refreshBibliography();
-        }
+      if (filePath === activeFile.value?.path) {
+        refreshBibliography();
       }
-    },
-  );
+    }
+  });
 
   // Initial bibliography update
   refreshBibliography();
@@ -154,40 +149,31 @@ async function updateBibliography(): Promise<void> {
     return;
   }
 
-  const descriptor: AnyDescriptor | undefined = await ipcRenderer.invoke("fsal", {
+  const descriptor = await ipcRenderer.invoke("fsal", {
     command: "get-descriptor",
     payload: activeFile.value.path,
   });
 
-  if (descriptor === undefined || descriptor.type !== "file") {
+  if (descriptor.type !== "file") {
     bibliography.value = undefined;
     return;
   }
 
-  const keys = descriptor.citekeys;
-
-  // Now also include potential nocite citations (see https://pandoc.org/MANUAL.html#including-uncited-items-in-the-bibliography)
-  const frontmatter = descriptor.frontmatter as { nocite?: unknown } | null | undefined;
-  if (frontmatter?.nocite !== undefined) {
-    const rawNocite = frontmatter.nocite;
-    let nocite: string[] = [];
-
-    if (Array.isArray(rawNocite) && rawNocite.every((e): e is string => typeof e === "string")) {
-      nocite = rawNocite.map((e) => e.replace("@", "").trim());
-    } else if (typeof rawNocite === "string" && rawNocite.includes(",")) {
-      nocite = rawNocite.split(",").map((e) => e.replace("@", "").trim());
-    }
-
-    keys.push(...nocite);
+  const database = await documentCitationDatabase(descriptor.path);
+  const uncited = uncitedItems(descriptor.frontmatter?.nocite);
+  const keys = [...descriptor.citekeys, ...uncited.keys];
+  if (uncited.all) {
+    const items: CSLItem[] = await ipcRenderer.invoke("citeproc-provider", {
+      command: "get-items",
+      payload: { database },
+    });
+    keys.push(...items.map((item) => item.id));
   }
 
   bibliography.value = await ipcRenderer.invoke("citeproc-provider", {
     command: "get-bibliography",
-    payload: {
-      database: await documentCitationDatabase(descriptor.path),
-      citations: [...new Set(keys)],
-    },
-  } as Extract<CiteprocProviderIPCAPI, { command: "get-bibliography" }>);
+    payload: { database, citations: [...new Set(keys)] },
+  });
 }
 </script>
 

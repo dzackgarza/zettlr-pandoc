@@ -27,6 +27,7 @@ const markdown = {
   id: "",
   tags: [],
   links: [],
+  fileLinks: [],
   citekeys: [],
   bom: "",
   wordCount: 1,

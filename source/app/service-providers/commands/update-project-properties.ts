@@ -21,7 +21,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class UpdateProjectProperties extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "update-project-properties");
+    super(app);
   }
 
   /**

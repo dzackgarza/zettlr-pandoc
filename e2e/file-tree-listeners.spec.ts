@@ -29,7 +29,6 @@ import {
   attach,
   createFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -108,12 +107,12 @@ describe("assembled app: a file tree with many rows", function () {
       await writeFile(path.join(folder, "draft.md"), `# Draft ${index}\n`, "utf8");
     }
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
   });

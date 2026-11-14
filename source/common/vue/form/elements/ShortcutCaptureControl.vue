@@ -170,7 +170,6 @@ function handleKeydown(event: KeyboardEvent): void {
   if (!isNonTerminalKey) {
     isCurrentlyRecording.value = false;
     model.value = implodeShortcut(newShortcut.value);
-    console.log("Finished shortcut:", implodeShortcut(newShortcut.value));
     stopRecording(event);
   }
 }

@@ -8,7 +8,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class RunExternalLinter extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "run-external-linter");
+    super(app);
   }
 
   async run(_evt: string, request: ExternalLinterRunRequest): Promise<ExternalLinterRunResponse> {

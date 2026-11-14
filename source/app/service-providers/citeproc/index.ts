@@ -19,6 +19,7 @@ import CSL from "citeproc";
 import { app, ipcMain } from "electron";
 import { constants as FS_CONSTANTS, promises as fs, readFileSync } from "fs";
 import path from "path";
+import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import type LogProvider from "../log";
 import ProviderContract, { type IPCMessage } from "../provider-contract";
 
@@ -316,28 +317,30 @@ export default class CiteprocProvider extends ProviderContract {
     /**
      * Listen to renderer requests
      */
-    ipcMain.handle("citeproc-provider", async (event, message: CiteprocProviderIPCAPI) => {
-      if (message.command === "get-problems") {
-        return this.problems();
-      }
-      const { command, payload } = message;
-      const { database } = payload;
-      // A database that does not load is a problem that the windows show.
-      if (!(await this.databasesAvailable(database))) {
-        return command === "get-items" ? [] : undefined;
-      }
-
-      if (command === "get-items") {
+    // get-citation-sync is sent synchronously above; it is no invoke command.
+    // A database that does not load is a problem that the windows show, and
+    // a request for it answers nothing.
+    handleInvokeChannel("citeproc-provider", {
+      "get-problems": () => this.problems(),
+      "get-items": async (_event, { payload: { database } }) => {
+        if (!(await this.databasesAvailable(database))) {
+          return [];
+        }
         this.selectDatabase(database);
         return Object.values(this._items);
-      } else if (command === "get-citation") {
-        const { citations, composite } = payload;
+      },
+      "get-citation": async (_event, { payload: { database, citations, composite } }) => {
+        if (!(await this.databasesAvailable(database))) {
+          return undefined;
+        }
         return this.getCitation(database, citations, composite);
-      } else if (command === "get-bibliography") {
-        const { citations } = payload;
-        // The Payload contains the items the renderer wants to have
+      },
+      "get-bibliography": async (_event, { payload: { database, citations } }) => {
+        if (!(await this.databasesAvailable(database))) {
+          return undefined;
+        }
         return this.makeBibliography(database, citations);
-      }
+      },
     });
   } // END constructor
 

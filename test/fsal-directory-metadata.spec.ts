@@ -26,14 +26,9 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type FSAL from "source/app/service-providers/fsal";
 import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import { DirectorySettingsUnreadableError } from "source/app/service-providers/fsal/fsal-directory";
-import type { AnyDescriptor, DirDescriptor } from "source/types/common/fsal";
+import type { DirDescriptor } from "source/types/common/fsal";
 import { bootFsal } from "./fsal-seam";
-import { ipcMainHandlers } from "./headless-electron-harness.cjs";
-
-type DescriptorHandler = (
-  event: null,
-  message: { command: "get-descriptor"; payload: string[] },
-) => Promise<AnyDescriptor[]>;
+import { invokeMain } from "./main-ipc";
 
 /** A settings file with the conflict markers of an unfinished git merge. */
 const CONFLICTED_SETTINGS = [
@@ -187,8 +182,8 @@ describe("FSAL: directory metadata that cannot be used", function () {
   });
 
   it("answers the descriptors of every path that a window asks for", async function () {
-    const handler = ipcMainHandlers.get("fsal") as DescriptorHandler;
-    const descriptors = await handler(null, { command: "get-descriptor", payload: folders });
+    const descriptors = await invokeMain("fsal", { command: "get-descriptors", payload: folders });
+    assert.ok(Array.isArray(descriptors), "a list of paths is answered with a list of descriptors");
     assert.deepEqual(
       descriptors.map((descriptor) => [descriptor.type, descriptor.path]),
       folders.map((folderPath) => ["directory", folderPath]),

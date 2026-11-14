@@ -23,9 +23,10 @@ menu. The package owns equation widgets and the interaction that reveals source.
 
 Zettlr adds document services through `renderers`: citations, resolved references,
 media, diagrams, tables, and Pandoc semantic containers. Its configuration field
-provides `previewConfig`; its review field provides `previewSuppression` ranges.
-These facets let the shared renderers follow host state without importing the
-application. `theme` accepts an existing host theme; otherwise the editor uses
+provides `previewConfig`; its review field provides `previewSuppression`: a
+query for the ranges that stay source, and the ranges that each transaction
+changed, so a renderer computes again only those ranges. These facets let the
+shared renderers follow host state without importing the application. `theme` accepts an existing host theme; otherwise the editor uses
 the Berlin light theme.
 
 Subpath exports serve Zettlr's other editing surfaces. Pure delimiter helpers

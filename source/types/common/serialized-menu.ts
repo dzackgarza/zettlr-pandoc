@@ -80,12 +80,6 @@ export const serializedMenuItemSchema: z.ZodType<SerializedMenuItem> = z.lazy(()
 export const serializedMenuSchema = z.array(serializedMenuItemSchema);
 
 /** The `menu-provider` messages a renderer receives. */
-export const menuProviderMessageSchema = z.discriminatedUnion("command", [
-  z.object({ command: z.literal("application-menu"), payload: serializedMenuSchema }),
-  z.object({
-    command: z.literal("application-submenu"),
-    payload: z.object({ id: z.string().min(1), submenu: serializedMenuSchema }),
-  }),
-]);
-
-export type MenuProviderMessage = z.infer<typeof menuProviderMessageSchema>;
+export type MenuProviderMessage =
+  | { command: "application-menu"; payload: SerializedMenuItem[] }
+  | { command: "application-submenu"; payload: { id: string; submenu: SerializedMenuItem[] } };

@@ -87,6 +87,7 @@ function markdown(
     id: "",
     tags: [],
     links: [],
+    fileLinks: [],
     citekeys: [],
     bom: "",
     wordCount: 0,

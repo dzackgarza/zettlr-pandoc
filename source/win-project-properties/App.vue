@@ -9,8 +9,17 @@
     :tabbar-label="'Properties'"
     @tab="currentTab = $event"
   >
+    <!-- Without the settings of the folder, no field takes a change. -->
+    <ZtrAdmonition
+      v-if="loadFailure !== null"
+      type="error"
+      class="load-failure"
+      style="margin: 10px"
+    >
+      {{ loadFailure }}
+    </ZtrAdmonition>
     <div
-      v-show="currentTab === 0"
+      v-show="loadFailure === null && currentTab === 0"
       id="formats-panel"
       role="tabpanel"
     >
@@ -42,7 +51,7 @@
       />
     </div>
     <div
-      v-show="currentTab === 1"
+      v-show="loadFailure === null && currentTab === 1"
       id="profiles-panel"
       role="tabpanel"
     >
@@ -65,7 +74,7 @@
       />
     </div>
     <div
-      v-show="currentTab === 2"
+      v-show="loadFailure === null && currentTab === 2"
       id="files-panel"
       role="tabpanel"
     >
@@ -180,6 +189,7 @@
 import { trans } from "@common/i18n-renderer";
 import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
 import { reportError } from "@common/util/error-reporting";
+import { remoteErrorMessage } from "@common/util/ipc-rejection";
 import showToast from "@common/util/show-toast";
 import FileControl from "@common/vue/form/elements/FileControl.vue";
 import ListControl from "@common/vue/form/elements/ListControl.vue";
@@ -261,6 +271,8 @@ const searchParams = new URLSearchParams(window.location.search);
 const dirPath = searchParams.get("directory") ?? "";
 
 const updateLock = ref(true); // To ensure these defaults aren't written before the properties have been loaded
+/** Why the window has no settings of the folder: it then takes no change. */
+const loadFailure = ref<string | null>(null);
 const profiles = ref<PandocProfileMetadata[]>([]);
 const customCommands = configStore.config.export.customCommands;
 
@@ -397,7 +409,15 @@ ipcRenderer
   .catch((err) => reportError(err));
 
 // On startup, fetch the properties immediately
-onMounted(fetchProperties);
+onMounted(() => {
+  fetchProperties().catch((failure: Error) => {
+    reportError(failure);
+    loadFailure.value = trans(
+      "Could not load the Project settings: %s",
+      remoteErrorMessage(failure),
+    );
+  });
+});
 
 function selectExportProfile(newListVal: ExportProfile[]): void {
   const newProfiles = newListVal
@@ -437,33 +457,37 @@ function updateProperties(): void {
       command: "get-descriptor",
       payload: dirPath,
     })
-    .then((descriptor) => {
-      if (
-        descriptor === undefined ||
-        Array.isArray(descriptor) ||
-        descriptor.type !== "directory"
-      ) {
-        return refuseUpdate(
-          trans("Could not update project settings because the project folder is no longer open."),
+    .then(
+      (descriptor) => {
+        if (descriptor.type !== "directory") {
+          return refuseUpdate(
+            trans("Could not update the Project settings: %s is not a folder.", dirPath),
+          );
+        }
+
+        if (descriptor.settings.project == null) {
+          return refuseUpdate(
+            trans("Could not update project settings because this folder is no longer a Project."),
+          );
+        }
+
+        // The JSON round trip de-proxies the reactive settings object.
+        const deproxiedSettings = JSON.parse(
+          JSON.stringify(projectSettings.value),
+        ) as ProjectSettings;
+
+        return ipcRenderer.invoke("application", {
+          command: "update-project-properties",
+          payload: { properties: deproxiedSettings, path: dirPath },
+        });
+      },
+      // The FSAL is no command: its rejection has no message of its own.
+      (failure: Error) => {
+        refuseUpdate(
+          trans("Could not update the Project settings: %s", remoteErrorMessage(failure)),
         );
-      }
-
-      if (descriptor.settings.project == null) {
-        return refuseUpdate(
-          trans("Could not update project settings because this folder is no longer a Project."),
-        );
-      }
-
-      // The JSON round trip de-proxies the reactive settings object.
-      const deproxiedSettings = JSON.parse(
-        JSON.stringify(projectSettings.value),
-      ) as ProjectSettings;
-
-      return ipcRenderer.invoke("application", {
-        command: "update-project-properties",
-        payload: { properties: deproxiedSettings, path: dirPath },
-      });
-    })
+      },
+    )
     // The dispatcher shows the failure of the command in this window.
     .catch((err) => reportError(err))
     .finally(() => {
@@ -476,10 +500,8 @@ async function fetchProperties(): Promise<void> {
     command: "get-descriptor",
     payload: dirPath,
   });
-  if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== "directory") {
-    throw new Error(
-      "Could not load project settings because the project folder is no longer open.",
-    );
+  if (descriptor.type !== "directory") {
+    throw new Error(`${dirPath} is not a folder.`);
   }
   // Save the actually used formats.
   if (descriptor.settings.project !== null) {

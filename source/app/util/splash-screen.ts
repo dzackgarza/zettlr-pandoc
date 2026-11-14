@@ -18,6 +18,7 @@
  * END HEADER
  */
 
+import { sendIPCMessage } from "@common/util/broadcast-ipc-message";
 import errorToString from "@common/util/error-to-string";
 import type LogProvider from "@providers/log";
 import { BrowserWindow } from "electron";
@@ -89,6 +90,9 @@ export function showSplashScreen(logger: LogProvider): void {
   });
 }
 
+/** A `step-update` message to the splash screen: the step and its percentage. */
+export type SplashStepBroadcast = { currentStepMessage: string; currentStepPercentage: number };
+
 /**
  * Updates the splash screen's info panel with a step message and a step
  * percentage.
@@ -107,7 +111,12 @@ export function updateSplashScreen(
     return;
   }
 
-  splashScreen?.webContents.send("step-update", { currentStepMessage, currentStepPercentage });
+  if (splashScreen !== undefined) {
+    sendIPCMessage(splashScreen.webContents, "step-update", {
+      currentStepMessage,
+      currentStepPercentage,
+    });
+  }
 
   debounceTimeout = setTimeout(() => {
     debounceTimeout = undefined;

@@ -318,4 +318,180 @@ describe("cross-section proposal linkage", function () {
     assert.equal((await service.readSidecar(DOCUMENT_PATH))?.review?.packets.length, 1);
     assert.deepEqual(service.getAnnotations(DOCUMENT_ID).items[0].proposalActions, []);
   });
+
+  describe("the outcome of a linked proposal (#57)", function () {
+    const SWIFT = BASELINE.replace("quick", "swift");
+    const SWIFT_LEAPS = SWIFT.replace("jumps", "leaps");
+
+    /**
+     * Two threads, each answered by a packet of its own: "quick" for the
+     * first, "jumps" for the second.
+     */
+    async function twoAnsweredThreads(service: CollaborationApplicationService) {
+      const fox = await annotated(service);
+      const dog = committed(
+        await service.createAnnotation({
+          documentId: DOCUMENT_ID,
+          actor: "owner",
+          from: BASELINE.indexOf("lazy dog"),
+          to: BASELINE.indexOf("lazy dog") + "lazy dog".length,
+          instruction: "Is the dog really lazy?",
+          expectedAnnotationGeneration: 1,
+        }),
+      );
+      const submitted = await service.submitProposal({
+        documentId: DOCUMENT_ID,
+        baselineSha256: sha256Text(BASELINE),
+        claims: [
+          {
+            patch: patch(BASELINE, SWIFT),
+            description: "a faster fox",
+            addressesAnnotationIds: [fox.annotationId],
+          },
+          {
+            patch: patch(SWIFT, SWIFT_LEAPS),
+            description: "a livelier verb",
+            addressesAnnotationIds: [dog.annotationId],
+          },
+        ],
+        clientRequestId: "two-threads",
+        expectedReviewGeneration: 0,
+      });
+      assert.ok(submitted.ok);
+      return { fox, dog, submitted };
+    }
+
+    async function outcomes(service: CollaborationApplicationService) {
+      const inMemory = service
+        .getAnnotations(DOCUMENT_ID)
+        .items.map((annotation) => annotation.proposalActions.map((a) => a.terminalOutcome));
+      const onDisk = (await service.readSidecar(DOCUMENT_PATH))!.annotations.items.map(
+        (annotation) => annotation.proposalActions.map((a) => a.terminalOutcome),
+      );
+      assert.deepEqual(onDisk, inMemory, "the sidecar holds the outcomes of the state in memory");
+      return inMemory;
+    }
+
+    function precondition(
+      service: CollaborationApplicationService,
+      authority: Harness["authority"],
+    ) {
+      return {
+        expectedReviewGeneration: service.getReview(DOCUMENT_ID)!.generation,
+        expectedWorkingSha256: sha256Text(authority.readWorkingText(DOCUMENT_ID)!),
+      };
+    }
+
+    it("records the decision of the owner on the thread that the packet answers", async function () {
+      const { service, authority } = harness();
+      const { submitted } = await twoAnsweredThreads(service);
+      assert.deepEqual(await outcomes(service), [[undefined], [undefined]]);
+
+      const [quick] = service.getOutstandingChunks(DOCUMENT_ID)!;
+      const rejected = await service.decideChunk(
+        submitted.reviewId,
+        quick.chunkId,
+        "reject",
+        precondition(service, authority),
+      );
+      assert.equal("ok" in rejected && rejected.ok, true);
+      assert.deepEqual(
+        await outcomes(service),
+        [["rejected"], [undefined]],
+        "a decision settles its own packet only",
+      );
+
+      const accepted = await service.acceptAllChunks(
+        submitted.reviewId,
+        precondition(service, authority),
+      );
+      assert.equal("ok" in accepted && accepted.ok, true);
+      assert.deepEqual(await outcomes(service), [["rejected"], ["accepted"]]);
+    });
+
+    // 51a1b362b moved the review count out of the editor and deleted the
+    // test of the editor label with it (5dd05a4cb). The Annotations view
+    // counts a proposal as pending while it has no outcome
+    // (`proposalCardView`), so the rule holds here: text that the owner types
+    // is no decision.
+    it("gives no proposal an outcome for an ordinary edit of the owner", async function () {
+      const { service, authority } = harness();
+      await twoAnsweredThreads(service);
+      const working = authority.readWorkingText(DOCUMENT_ID)!;
+      const edit = authority.ownerEdit({
+        from: working.length,
+        to: working.length,
+        insert: "\nAn ordinary sentence of the owner.",
+      });
+      await service.applyWorkingTextEdit(DOCUMENT_ID, edit.nextText, edit.changes, edit.commit);
+
+      assert.equal(authority.readWorkingText(DOCUMENT_ID), edit.nextText);
+      assert.deepEqual(
+        await outcomes(service),
+        [[undefined], [undefined]],
+        "both proposals are still pending after the edit",
+      );
+    });
+
+    it("records a retracted packet as withdrawn and a cleared one as rejected", async function () {
+      const { service, authority } = harness();
+      const { submitted } = await twoAnsweredThreads(service);
+      const retracted = await service.retractProposal(
+        submitted.packetIds[0],
+        precondition(service, authority),
+      );
+      assert.equal("ok" in retracted && retracted.ok, true);
+      assert.deepEqual(await outcomes(service), [["withdrawn"], [undefined]]);
+
+      const cleared = await service.clearReview(
+        submitted.reviewId,
+        precondition(service, authority),
+      );
+      assert.equal("ok" in cleared && cleared.ok, true);
+      assert.deepEqual(await outcomes(service), [["withdrawn"], ["rejected"]]);
+    });
+
+    it("keeps the outcomes when a save ends the review", async function () {
+      const { service, authority } = harness();
+      const { submitted } = await twoAnsweredThreads(service);
+      const [quick] = service.getOutstandingChunks(DOCUMENT_ID)!;
+      await service.decideChunk(
+        submitted.reviewId,
+        quick.chunkId,
+        "reject",
+        precondition(service, authority),
+      );
+      await service.acceptAllChunks(submitted.reviewId, precondition(service, authority));
+
+      const saved = authority.readWorkingText(DOCUMENT_ID)!;
+      const save = await service.prepareSave(DOCUMENT_ID, sha256Text(saved));
+      await service.completeSave(save!, sha256Text(saved));
+      assert.equal(service.getReview(DOCUMENT_ID), undefined, "the save ends the review");
+      assert.deepEqual(await outcomes(service), [["rejected"], ["accepted"]]);
+    });
+
+    it("records each undecided proposal of a discarded review as cleared", async function () {
+      const { service, authority } = harness();
+      const { submitted } = await twoAnsweredThreads(service);
+      const [quick] = service.getOutstandingChunks(DOCUMENT_ID)!;
+      await service.decideChunk(
+        submitted.reviewId,
+        quick.chunkId,
+        "accept",
+        precondition(service, authority),
+      );
+      authority.setDiskText(SWIFT_LEAPS);
+      await service.invalidateOnDiskDrift(DOCUMENT_ID);
+      assert.equal(service.getReview(DOCUMENT_ID)?.invalidated, true);
+
+      const discarded = await service.discardInvalidatedReview({
+        documentId: DOCUMENT_ID,
+        documentPath: DOCUMENT_PATH,
+        reviewId: submitted.reviewId,
+        expectedReviewGeneration: service.getReview(DOCUMENT_ID)!.generation,
+      });
+      assert.equal(discarded.ok, true);
+      assert.deepEqual(await outcomes(service), [["accepted"], ["cleared"]]);
+    });
+  });
 });

@@ -64,7 +64,7 @@ describe("Quarto bibliography union in the editor", function () {
     config.export = { cslLibrary: sharedLibraryPath, cslStyle: "" };
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout(), {
+    const app = await attach(fixture.configDirectory, rendererEvents, {
       files: [chapterPath],
     });
     appProcess = app.appProcess;

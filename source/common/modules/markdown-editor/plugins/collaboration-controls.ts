@@ -40,7 +40,14 @@
  * END HEADER
  */
 
-import { type EditorState, type Extension, Facet, type Range, StateField } from "@codemirror/state";
+import {
+  type EditorState,
+  type Extension,
+  Facet,
+  type Range,
+  StateField,
+  type Transaction,
+} from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -49,6 +56,7 @@ import {
   showPanel,
   WidgetType,
 } from "@codemirror/view";
+import type { ReviewSuggestionView } from "@dts/common/review-diff";
 import {
   getReviewChunksState,
   type ReviewChunksFieldValue,
@@ -111,25 +119,29 @@ function applyInteractive(dom: HTMLElement, interactive: boolean): void {
   dom.classList.toggle("cm-collaborationControl-syncing", !interactive);
 }
 
+/** Whether the chunk blocks of a state take input. */
+function chunksInteractive(state: EditorState): boolean {
+  return getReviewChunksState(state)?.synced === true;
+}
+
+/**
+ * One block. Its widget compares by the control alone, so a block stays in
+ * the DOM while the review changes around it; the interactivity of a chunk
+ * block follows the review through `syncChunkBlocks`.
+ */
 class ControlBlockWidget extends WidgetType {
-  constructor(
-    readonly control: CollaborationControl,
-    readonly interactive: boolean,
-  ) {
+  constructor(readonly control: CollaborationControl) {
     super();
   }
 
   eq(other: ControlBlockWidget): boolean {
-    return (
-      controlKey(other.control) === controlKey(this.control) &&
-      other.interactive === this.interactive
-    );
+    return controlKey(other.control) === controlKey(this.control);
   }
 
   toDOM(view: EditorView): HTMLElement {
     const dom = document.createElement("div");
     dom.className = `cm-collaborationControl cm-collaborationControl-${this.control.kind}`;
-    applyInteractive(dom, this.interactive);
+    applyInteractive(dom, this.control.kind !== "review-chunk" || chunksInteractive(view.state));
     const unmount = requireMount(view.state)(dom, this.control);
     // The host renders into the block after CodeMirror measured it, and a
     // thread grows with every reply: re-measure so the height map follows.
@@ -139,16 +151,6 @@ class ControlBlockWidget extends WidgetType {
     resizeObserver.observe(dom);
     mountedBlocks.set(dom, { key: controlKey(this.control), unmount, resizeObserver });
     return dom;
-  }
-
-  /** Same block, new interactivity: keep the host's content (a half-typed
-   *  note survives), only lock or unlock it. */
-  updateDOM(dom: HTMLElement): boolean {
-    if (mountedBlocks.get(dom)?.key !== controlKey(this.control)) {
-      return false;
-    }
-    applyInteractive(dom, this.interactive);
-    return true;
   }
 
   destroy(dom: HTMLElement): void {
@@ -166,66 +168,142 @@ class ControlBlockWidget extends WidgetType {
   }
 }
 
+/**
+ * Locks or unlocks each chunk block in the DOM when the sync state of the
+ * review changes. The host's content stays, so a half-typed note survives.
+ */
+const syncChunkBlocks = EditorView.updateListener.of((update) => {
+  const interactive = chunksInteractive(update.state);
+  if (chunksInteractive(update.startState) === interactive) {
+    return;
+  }
+  for (const dom of update.view.contentDOM.querySelectorAll<HTMLElement>(
+    ".cm-collaborationControl-review-chunk",
+  )) {
+    applyInteractive(dom, interactive);
+  }
+});
+
+/** The suggestion id of each chunk block decoration. */
+const chunkBlockIds = new WeakMap<Decoration, string>();
+
+function chunkBlock(state: EditorState, suggestion: ReviewSuggestionView): Range<Decoration> {
+  const decoration = Decoration.widget({
+    widget: new ControlBlockWidget({ kind: "review-chunk", chunkId: suggestion.suggestionId }),
+    block: true,
+    side: 1,
+  });
+  chunkBlockIds.set(decoration, suggestion.suggestionId);
+  return decoration.range(suggestionLastLineEnd(state, suggestion));
+}
+
 interface ControlsFieldValue {
   review: ReviewChunksFieldValue | undefined;
   annotations: TextAnnotationsState | undefined;
-  decorations: DecorationSet;
+  chunkBlocks: DecorationSet;
+  thread: DecorationSet;
 }
 
-function buildControls(state: EditorState): ControlsFieldValue {
-  const review = getReviewChunksState(state);
-  const annotations = getTextAnnotationsState(state);
-  const blocks: Array<Range<Decoration>> = [];
-
-  if (review !== undefined) {
-    for (const suggestion of review.suggestions) {
-      blocks.push(
-        Decoration.widget({
-          widget: new ControlBlockWidget(
-            { kind: "review-chunk", chunkId: suggestion.suggestionId },
-            review.synced,
-          ),
-          block: true,
-          side: 1,
-        }).range(suggestionLastLineEnd(state, suggestion)),
-      );
-    }
+function allChunkBlocks(
+  state: EditorState,
+  review: ReviewChunksFieldValue | undefined,
+): DecorationSet {
+  if (review === undefined) {
+    return Decoration.none;
   }
+  return Decoration.set(
+    review.suggestions().map((suggestion) => chunkBlock(state, suggestion)),
+    true,
+  );
+}
 
+/**
+ * The chunk blocks after a transaction. When the review field states what
+ * the transaction changed (`baseId`), only the blocks of those chunks are
+ * made again; each other block moves with the text.
+ */
+function nextChunkBlocks(
+  value: ControlsFieldValue,
+  review: ReviewChunksFieldValue | undefined,
+  transaction: Transaction,
+): DecorationSet {
+  const before = value.review;
+  if (review === undefined || before === undefined) {
+    return allChunkBlocks(transaction.state, review);
+  }
+  if (review === before) {
+    return value.chunkBlocks.map(transaction.changes);
+  }
+  if (review.baseId !== before.id) {
+    return allChunkBlocks(transaction.state, review);
+  }
+  let blocks = value.chunkBlocks.map(transaction.changes);
+  for (const removed of review.delta.removed) {
+    blocks = blocks.update({
+      filterFrom: removed.from,
+      filterTo: removed.to,
+      filter: (_from, _to, decoration) => chunkBlockIds.get(decoration) !== removed.suggestionId,
+    });
+  }
+  return blocks.update({
+    add: review.delta.added.map((suggestion) => chunkBlock(transaction.state, suggestion)),
+    sort: true,
+  });
+}
+
+function threadBlock(
+  state: EditorState,
+  annotations: TextAnnotationsState | undefined,
+): DecorationSet {
   const thread =
     annotations === undefined ? undefined : activeAnnotationThreadAnchor(annotations, state.doc);
-  if (thread !== undefined) {
-    blocks.push(
-      Decoration.widget({
-        widget: new ControlBlockWidget(
-          { kind: "annotation-thread", annotationId: thread.annotationId },
-          true,
-        ),
-        block: true,
-        side: 2,
-      }).range(thread.position),
-    );
+  if (thread === undefined) {
+    return Decoration.none;
   }
-
-  return { review, annotations, decorations: Decoration.set(blocks, true) };
+  return Decoration.set(
+    Decoration.widget({
+      widget: new ControlBlockWidget({
+        kind: "annotation-thread",
+        annotationId: thread.annotationId,
+      }),
+      block: true,
+      side: 2,
+    }).range(thread.position),
+  );
 }
 
 const controlsField = StateField.define<ControlsFieldValue>({
-  create: buildControls,
-  update(value, tr) {
-    if (
-      !tr.docChanged &&
-      getReviewChunksState(tr.state) === value.review &&
-      getTextAnnotationsState(tr.state) === value.annotations
-    ) {
+  create(state) {
+    const review = getReviewChunksState(state);
+    const annotations = getTextAnnotationsState(state);
+    return {
+      review,
+      annotations,
+      chunkBlocks: allChunkBlocks(state, review),
+      thread: threadBlock(state, annotations),
+    };
+  },
+  update(value, transaction) {
+    const review = getReviewChunksState(transaction.state);
+    const annotations = getTextAnnotationsState(transaction.state);
+    if (!transaction.docChanged && review === value.review && annotations === value.annotations) {
       return value;
     }
-    return buildControls(tr.state);
+    return {
+      review,
+      annotations,
+      chunkBlocks: nextChunkBlocks(value, review, transaction),
+      thread:
+        transaction.docChanged || annotations !== value.annotations
+          ? threadBlock(transaction.state, annotations)
+          : value.thread,
+    };
   },
   provide: (field) => [
-    EditorView.decorations.from(field, (value) => value.decorations),
+    EditorView.decorations.from(field, (value) => value.chunkBlocks),
+    EditorView.decorations.from(field, (value) => value.thread),
     showPanel.from(field, (value) =>
-      value.review !== undefined && value.review.suggestions.length > 0 ? reviewBarPanel : null,
+      value.review !== undefined && value.review.count > 0 ? reviewBarPanel : null,
     ),
   ],
 });
@@ -258,7 +336,7 @@ function reviewBarPanel(view: EditorView): Panel {
 }
 
 export function collaborationControls(mount: MountCollaborationControl): Extension {
-  return [mountFacet.of(mount), controlsField, collaborationControlsTheme];
+  return [mountFacet.of(mount), controlsField, syncChunkBlocks, collaborationControlsTheme];
 }
 
 const collaborationControlsTheme = EditorView.baseTheme({

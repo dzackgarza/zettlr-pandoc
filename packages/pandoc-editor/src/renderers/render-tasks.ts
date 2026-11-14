@@ -38,10 +38,16 @@ class TaskWidget extends WidgetType {
     const elem = document.createElement("input");
     elem.setAttribute("type", "checkbox");
     elem.checked = this.isChecked;
-    elem.addEventListener("click", (event) => {
-      // A Shift-click extends the selection over the task marker (#181).
+    // A Shift-click extends the selection over the task marker (#181), on its
+    // mousedown (`clickAndSelect`), and does not toggle the task.
+    elem.addEventListener("mousedown", (event) => {
       if (event.shiftKey) {
         clickAndSelect(view)(event);
+      }
+    });
+    elem.addEventListener("click", (event) => {
+      if (event.shiftKey) {
+        event.preventDefault();
         return;
       }
       const insert = this.isChecked ? "[ ]" : "[x]";

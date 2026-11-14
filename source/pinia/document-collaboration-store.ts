@@ -56,7 +56,6 @@ import { defineStore } from "pinia";
 import type {
   AnnotationLifecycleIpcInput,
   BulkAnnotationIpcInput,
-  DocumentsUpdateContext,
 } from "source/app/service-providers/documents";
 import type {
   AnnotationFailure,
@@ -114,6 +113,11 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   const unreadableFiles = ref<UnreadableCollaborationFile[]>([]);
   /** The files of collaboration state whose document has no file. */
   const ownerlessFiles = ref<OwnerlessCollaborationFile[]>([]);
+  /**
+   * The closed documents whose working text is in no file: text that the
+   * author accepted from a review and did not save.
+   */
+  const unsavedDocuments = ref<ReadonlySet<string>>(new Set());
   const workspacePathSet = new Set<string>();
   let workspaceRefreshGeneration = 0;
 
@@ -177,26 +181,23 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   // caller joins the first caller's promise instead of starting its own.
   const pendingFetches = new Map<string, Promise<void>>();
 
-  ipcRenderer.on(
-    "documents-update",
-    (_event, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
-      const { event, context } = payload;
-      if (event === DP_EVENTS.DOCUMENT_COLLABORATION && context.filePath !== undefined) {
-        if (context.collaborationSession !== undefined) {
-          newestSourceByPath.set(context.filePath, ++sourceClock);
-          setSession(context.filePath, context.collaborationSession);
-        }
-      } else if (event === DP_EVENTS.CLOSE_FILE && context.filePath !== undefined) {
-        // Workspace panel state outlives editor panes. A closed workspace
-        // document keeps its last authoritative snapshot until the next
-        // workspace refresh projects its persisted sidecar.
-        if (!workspacePathSet.has(context.filePath)) {
-          dropSession(context.filePath);
-        }
-        pendingFetches.delete(context.filePath);
+  ipcRenderer.on("documents-update", (_event, payload) => {
+    const { event, context } = payload;
+    if (event === DP_EVENTS.DOCUMENT_COLLABORATION && context.filePath !== undefined) {
+      if (context.collaborationSession !== undefined) {
+        newestSourceByPath.set(context.filePath, ++sourceClock);
+        setSession(context.filePath, context.collaborationSession);
       }
-    },
-  );
+    } else if (event === DP_EVENTS.CLOSE_FILE && context.filePath !== undefined) {
+      // Workspace panel state outlives editor panes. A closed workspace
+      // document keeps its last authoritative snapshot until the next
+      // workspace refresh projects its persisted sidecar.
+      if (!workspacePathSet.has(context.filePath)) {
+        dropSession(context.filePath);
+      }
+      pendingFetches.delete(context.filePath);
+    }
+  });
 
   /**
    * Hydrate the cache for one document path. The first caller for a path —
@@ -256,15 +257,35 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
         payload: { paths: [documentPath] },
       })) as WorkspaceCollaborationListing;
       session = detached.sessions.find((candidate) => candidate.documentPath === documentPath);
-    }
-    if (!ownsPath(documentPath, sentAt)) {
-      return;
+      if (!ownsPath(documentPath, sentAt)) {
+        return;
+      }
+      markUnsaved(documentPath, detached.unsaved.includes(documentPath));
+    } else {
+      if (!ownsPath(documentPath, sentAt)) {
+        return;
+      }
+      markUnsaved(documentPath, false);
     }
     if (session === undefined) {
       dropSession(documentPath);
       return;
     }
     setSession(documentPath, session);
+  }
+
+  /** Records whether the closed document at `documentPath` holds text that is in no file. */
+  function markUnsaved(documentPath: string, unsaved: boolean): void {
+    if (unsavedDocuments.value.has(documentPath) === unsaved) {
+      return;
+    }
+    const next = new Set(unsavedDocuments.value);
+    if (unsaved) {
+      next.add(documentPath);
+    } else {
+      next.delete(documentPath);
+    }
+    unsavedDocuments.value = next;
   }
 
   function isStaleReviewFailure(result: ReviewFailure): boolean {
@@ -331,10 +352,13 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       workspacePathSet.add(path);
     }
 
-    const { sessions, unreadable, ownerless } = (await ipcRenderer.invoke("documents-provider", {
-      command: "get-workspace-collaboration-sessions",
-      payload: { paths: uniquePaths },
-    })) as WorkspaceCollaborationListing;
+    const { sessions, unreadable, ownerless, unsaved } = (await ipcRenderer.invoke(
+      "documents-provider",
+      {
+        command: "get-workspace-collaboration-sessions",
+        payload: { paths: uniquePaths },
+      },
+    )) as WorkspaceCollaborationListing;
     if (refreshGeneration !== workspaceRefreshGeneration) {
       return;
     }
@@ -343,6 +367,9 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     }
     if (!_.isEqual(ownerlessFiles.value, ownerless)) {
       ownerlessFiles.value = ownerless;
+    }
+    if (!_.isEqual(unsavedDocuments.value, new Set(unsaved))) {
+      unsavedDocuments.value = new Set(unsaved);
     }
     const returned = new Set(sessions.map((session) => session.documentPath));
 
@@ -802,6 +829,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     workspaceUnresolvedCount,
     unreadableFiles,
     ownerlessFiles,
+    unsavedDocuments,
     setAsideCollaborationFile,
     selectedAnnotationId,
     showResolved,

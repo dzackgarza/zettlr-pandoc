@@ -31,7 +31,7 @@ export interface FormatDocumentRequest {
 
 export default class FormatDocument extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "format-document");
+    super(app);
   }
 
   async run(evt: string, arg: FormatDocumentRequest): Promise<FlowmarkResult> {

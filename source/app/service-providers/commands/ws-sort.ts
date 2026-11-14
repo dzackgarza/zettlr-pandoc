@@ -17,7 +17,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class WorkspaceSort extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "sort-workspaces");
+    super(app);
   }
 
   /**

@@ -28,7 +28,6 @@ import {
   attach,
   createFixture,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -179,8 +178,6 @@ function onOneRow(a: Box, b: Box): boolean {
 }
 
 describe("assembled app: line breaks beside inline widgets", function () {
-  this.timeout(300_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
@@ -207,12 +204,12 @@ describe("assembled app: line breaks beside inline widgets", function () {
     const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
     config.export = { cslLibrary: libraryPath };
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.setViewportSize({ width: BASE_WIDTH, height: 900 });
     for (const selector of [
       "mjx-container",

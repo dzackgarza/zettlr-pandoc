@@ -198,6 +198,7 @@ function tagsOf(markdown: string): string[] {
     id: "",
     tags: [],
     links: [],
+    fileLinks: [],
     citekeys: [],
     bom: "",
     type: "file",

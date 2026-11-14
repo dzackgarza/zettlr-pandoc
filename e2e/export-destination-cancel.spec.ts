@@ -32,7 +32,6 @@ import {
   createFixture,
   delay,
   findEditorPage,
-  hideDevServerOverlay,
   preserveArtifacts,
   readAppLog,
   requireInitialized,
@@ -85,12 +84,12 @@ describe("an export whose folder dialog the author cancels", function () {
     });
     fixtureRoot = fixture.root;
     workspace = path.dirname(fixture.documentPath);
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;
     page = await findEditorPage(app.browser, this.timeout());
-    await hideDevServerOverlay(page);
+
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
     await flowmarkUpdateEnded(fixture.root, 120_000);
   });

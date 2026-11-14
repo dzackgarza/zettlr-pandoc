@@ -30,7 +30,7 @@ export type DirBindQuartoManifestOutcome =
 
 export default class DirBindQuartoManifest extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "dir-bind-quarto-manifest");
+    super(app);
   }
 
   /**

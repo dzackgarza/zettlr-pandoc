@@ -25,12 +25,12 @@ import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import { LogLevel, type LogMessage } from "source/app/service-providers/log";
 import writeFileAtomic from "write-file-atomic";
 import { bootFilteredFsal, bootFsal } from "./fsal-seam";
-import { ipcMainHandlers } from "./headless-electron-harness.cjs";
+import { invokeMain } from "./main-ipc";
 
-type LogChunkHandler = (
-  event: null,
-  payload: { command: "retrieve-log-chunk"; nextIndex: number },
-) => LogMessage[];
+/** The log that a window reads from the log provider of the FSAL. */
+async function readLog(): Promise<LogMessage[]> {
+  return await invokeMain("log-provider", { command: "retrieve-log-chunk", nextIndex: 0 });
+}
 
 /** The path of an event, whichever shape the event has. */
 function eventPath(payload: FSALEventPayload): string {
@@ -41,7 +41,6 @@ describe("FSAL watcher events", function () {
   let root: string;
   let document: string;
   let fsal: FSAL;
-  let readLog: () => LogMessage[];
   const published: FSALEventPayload[] = [];
 
   before(async function () {
@@ -50,8 +49,6 @@ describe("FSAL watcher events", function () {
     await writeFile(document, "# Note\n");
 
     fsal = await bootFsal(root);
-    const handler = ipcMainHandlers.get("log-provider") as LogChunkHandler;
-    readLog = () => handler(null, { command: "retrieve-log-chunk", nextIndex: 0 });
     fsal.on("fsal-events", (events) => published.push(...events));
   });
 
@@ -83,7 +80,7 @@ describe("FSAL watcher events", function () {
     assert.ok(sawTemporaryFile(), "the FSAL must publish the removal of the temporary file");
     assert.ok(sawDocumentChange(), "the FSAL must publish the change of the document");
 
-    const errors = readLog().filter((entry) => entry.level === LogLevel.error);
+    const errors = (await readLog()).filter((entry) => entry.level === LogLevel.error);
     assert.deepEqual(
       errors.map((entry) => entry.message),
       [],
@@ -169,6 +166,45 @@ describe("FSAL watcher events", function () {
     await watchdog.shutdown();
 
     assert.deepEqual(removals(), [source], "the source is reported as removed, the target is not");
+  });
+
+  it("gives the text of the second of two writes that follow each other at once", async function () {
+    // A workspace edit that fails writes a file and then writes its old
+    // text back (#6). The watcher reports one change of a path in 50 ms and
+    // drops the others, so the second write has no event of its own.
+    const burst = path.join(root, "burst.md");
+    await writeFile(burst, "# Burst\n\nStart #ready.\n");
+    const sawChange = (): boolean =>
+      published.some((payload) => payload.event === "change" && eventPath(payload) === burst);
+    const deadline = Date.now() + 20_000;
+    let writes = 0;
+    while (!sawChange() && Date.now() < deadline) {
+      writes += 1;
+      await writeFileAtomic(burst, `# Burst\n\nWrite ${writes} #ready.\n`);
+      await sleep(250);
+    }
+    assert.ok(sawChange(), "the FSAL must publish the change of the file");
+    await sleep(500);
+
+    await writeFileAtomic(burst, "# Burst\n\nEdited #edited.\n");
+    await writeFileAtomic(burst, "# Burst\n\nRestored #restored.\n");
+    // The time for each event of the two writes.
+    await sleep(1_000);
+
+    const descriptor = await fsal.getDescriptorFor(burst);
+    assert.equal(descriptor.type, "file");
+    assert.deepEqual(descriptor.type === "file" ? descriptor.tags : [], ["restored"]);
+    const lastPublished = published.filter(
+      (payload) => payload.event === "change" && eventPath(payload) === burst,
+    );
+    const last = lastPublished[lastPublished.length - 1];
+    assert.deepEqual(
+      last !== undefined && "descriptor" in last && last.descriptor.type === "file"
+        ? last.descriptor.tags
+        : [],
+      ["restored"],
+      "the last published change carries the text of the second write",
+    );
   });
 });
 

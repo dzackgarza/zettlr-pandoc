@@ -27,9 +27,7 @@ import DocumentLintProvider from "source/app/service-providers/document-lint";
 import type DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
 import { bootDocumentManager } from "./documents-provider-seam";
-import { ipcMainHandlers } from "./headless-electron-harness.cjs";
-
-type AuthorityHandler = (event: undefined, message: unknown) => Promise<unknown>;
+import { invokeMain } from "./main-ipc";
 
 const ACTIVE_TEXT = "The author types in this document.\n";
 const QUEUED_TEXT = "Residue ???\n";
@@ -105,14 +103,12 @@ describe("Background lint queue while an editor receives input", function () {
   });
 
   it("starts no queued document while the author types, and drains the queue afterwards", async function () {
-    const authority = ipcMainHandlers.get("documents-authority") as AuthorityHandler | undefined;
-    assert.ok(authority !== undefined, "the provider answers its editors");
     const { startVersion } = await documents.getDocument(activePath);
     let version = startVersion;
     let length = ACTIVE_TEXT.length;
 
     async function typeOneCharacter(): Promise<void> {
-      const accepted = await authority?.(undefined, {
+      const accepted = await invokeMain("documents-authority", {
         command: "push-updates",
         payload: {
           filePath: activePath,

@@ -57,7 +57,7 @@ function dispatch(events: FSALEventPayload[]): void {
  */
 export function followChildren(directoryPath: string, onChange: () => void): () => void {
   if (stopListening === undefined) {
-    stopListening = ipcRenderer.on("fsal-events", (_, events: FSALEventPayload[]) => {
+    stopListening = ipcRenderer.on("fsal-events", (_, events) => {
       dispatch(events);
     });
   }

@@ -22,6 +22,7 @@
  */
 
 import { hasMarkdownExt } from "@common/util/file-extention-checks";
+import isErrnoException from "@common/util/is-errno-exception";
 import { sha256Text } from "@common/util/sha256";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type {
@@ -76,6 +77,7 @@ import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
 import type { SearchProvider } from "@providers/search";
+import { isUtf8 } from "buffer";
 import crypto from "crypto";
 import { app } from "electron";
 import fs from "fs";
@@ -89,6 +91,7 @@ import path from "path";
 import { workspaceLintRows } from "source/app/util/workspace-lint-results";
 import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import { fileURLToPath } from "url";
+import writeFileAtomic from "write-file-atomic";
 import { type Document, parseDocument } from "yaml";
 import {
   CentralFigureAlreadyExistsError,
@@ -108,9 +111,10 @@ import {
   loadCanonicalMacroInventory,
   MacroSourcesUnavailableError,
 } from "../../util/load-mathjax-macros";
+import { canonicalPath } from "../../util/real-path";
 import { CollaborationSidecarUnreadableError } from "../documents/collaboration-sidecar-store";
+import { AGENT_API_DISCOVERY_FILE, formatAgentApiDiscovery } from "./discovery-file";
 import AgentDocumentQueries, {
-  canonicalPath,
   DocumentUnreadableError,
   SEARCH_DEADLINE_MS,
   SearchPatternError,
@@ -147,9 +151,11 @@ const REQUEST_BODY_DEADLINE_MS = 30_000;
 
 /**
  * The HTTP status an AgentErrorCode earns when a route has no code-specific
- * reason to answer otherwise. `Record<AgentErrorCode, number>` is exhaustive
- * over the OpenAPI contract's own enum, so a code added there without an
- * entry added here is a compile error instead of a silent 500.
+ * reason to answer otherwise. The map satisfies `Record<AgentErrorCode, number>`,
+ * which is exhaustive over the OpenAPI contract's own enum, so a code added
+ * there without an entry added here is a compile error. A status of this map
+ * reaches the wire only where the document declares it for the operation
+ * (`sendRefusal`).
  *
  * A route may still answer a particular code with something other than its
  * entry here when the status depends on more than the code alone. submitProposal
@@ -157,7 +163,7 @@ const REQUEST_BODY_DEADLINE_MS = 30_000;
  * concurrency precondition, not a generic conflict — and keeps that as its
  * own branch rather than folding it in here.
  */
-const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
+const STATUS_BY_CODE = {
   APP_NOT_RUNNING: 503,
   PROTOCOL_MISMATCH: 400,
   UNAUTHORIZED: 401,
@@ -176,6 +182,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   PATCH_NOT_APPLICABLE: 400,
   CLAIM_NOT_ATOMIC: 400,
   PACKET_NOT_RETRACTABLE: 409,
+  PROPOSAL_NOT_FOUND: 404,
   CHUNK_NOT_FOUND: 404,
   ANNOTATION_NOT_FOUND: 404,
   ANNOTATION_GENERATION_MISMATCH: 409,
@@ -213,7 +220,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   // A Zotero request that fails on the caller's input keeps the add-on's
   // 400 or 404 (ZoteroLibrary.request); a failure inside Zotero is a 502.
   ZOTERO_REQUEST_FAILED: 502,
-};
+} as const satisfies Record<AgentErrorCode, number>;
 
 class RequestTooLargeError extends Error {
   constructor() {
@@ -229,13 +236,52 @@ class RequestBodyTimeoutError extends Error {
 }
 
 /**
+ * The request target is no URL, or its path has a percent-encoding that is
+ * not UTF-8. The fault is in the request: the caller gets 400.
+ */
+class MalformedRequestTargetError extends Error {}
+
+/**
+ * The bytes of a path of a parsed URL: the percent-decode of the WHATWG URL
+ * Standard (https://url.spec.whatwg.org/#percent-decode). The parser
+ * percent-encodes each code point above U+007E, so the path is ASCII and
+ * each code unit after the replacement is one byte.
+ */
+function percentDecode(pathname: string): Buffer {
+  const units = pathname.replace(/%([0-9A-Fa-f]{2})/g, (_escape, hex: string) =>
+    String.fromCharCode(Number.parseInt(hex, 16)),
+  );
+  return Buffer.from(units, "latin1");
+}
+
+/**
+ * The URL of a request target, with a path that decodes. The router decodes
+ * each path parameter with decodeURIComponent, which throws for a `%` that
+ * two hex digits do not follow and for bytes that are not UTF-8 (ECMA-262,
+ * Decode); this check refuses the same paths before the router sees them.
+ */
+function requestTargetUrl(requestUrl: string): URL {
+  if (!URL.canParse(requestUrl, "http://127.0.0.1")) {
+    throw new MalformedRequestTargetError(`The request target ${requestUrl} is no URL`);
+  }
+  const url = new URL(requestUrl, "http://127.0.0.1");
+  if (/%(?![0-9A-Fa-f]{2})/.test(url.pathname) || !isUtf8(percentDecode(url.pathname))) {
+    throw new MalformedRequestTargetError(
+      `The path ${url.pathname} has a percent-encoding that is not UTF-8`,
+    );
+  }
+  return url;
+}
+
+/**
  * The connection died before the body completed. There is no caller left to
  * answer, so the dispatcher drops the exchange instead of manufacturing a 500
  * into a dead socket.
  */
 class RequestAbandonedError extends Error {
-  constructor() {
-    super("Client disconnected before the request body completed");
+  /** @param cause What the transport reported: a stream error or a close. */
+  constructor(cause: string) {
+    super(`The request body did not arrive: ${cause}`);
   }
 }
 
@@ -247,6 +293,37 @@ class RequestAbandonedError extends Error {
  * operation without a request body reads `undefined`, so a handler that needs
  * a body the document does not declare fails to compile.
  */
+type OperationId = keyof AgentApiOperations;
+
+/** The statuses that the document declares for an operation. */
+type DeclaredStatus<Op extends OperationId> = Extract<
+  keyof AgentApiOperations[Op]["responses"],
+  number
+>;
+
+/** The operations that the Agent API serves at /zotero/mcp. */
+type ZoteroOperation =
+  | "getZoteroExtractions"
+  | "importZoteroIdentifier"
+  | "importZoteroUrl"
+  | "searchZoteroItems";
+
+declare const replyOperation: unique symbol;
+
+/**
+ * The response of a request that the router matched to an operation. The
+ * handler table gives each handler the response of its operation, and
+ * `sendJson` and `sendError` take only a status that the document declares
+ * for that operation. A response of more than one operation (a helper that
+ * two operations call) takes the statuses that each of them declares; a
+ * response that names no operation takes the statuses that every operation
+ * declares. So a status that the server sends and the document does not
+ * declare is a compile error.
+ */
+type Reply<Op extends OperationId> = http.ServerResponse & {
+  readonly [replyOperation]?: Op;
+};
+
 type OperationContext<Id extends keyof AgentApiOperations> = Context<
   OperationBody<Id>,
   OrEmpty<AgentApiOperations[Id]["parameters"]["path"]>,
@@ -354,14 +431,6 @@ export class AgentApiTokenRequiredError extends Error {
     this.name = "AgentApiTokenRequiredError";
   }
 }
-
-/**
- * The endpoint-discovery file, written into userData next to config.json once
- * the listener is bound (the same pattern as Chromium's DevToolsActivePort).
- * It holds the actual bound port, which is the only way a client can learn
- * the endpoint when the config requests a kernel-assigned port (`port: 0`).
- */
-export const AGENT_API_PORT_FILE = "agent-api.port";
 
 export default class AgentHTTPProvider extends ProviderContract {
   private _server: http.Server | undefined;
@@ -566,7 +635,9 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     // The bind owner is the only process that knows the port when the config
     // requests a kernel-assigned one (`port: 0`), so publish the actual bound
-    // port where clients of this instance can read it. A discovery file that
+    // port and the id of this instance where its clients can read them
+    // (`discovery-file.ts`). The write is atomic, so a client that polls the
+    // file reads the whole text or no file. A discovery file that
     // cannot be written is a broken endpoint contract, exactly like a refused
     // bind: fail the boot rather than run an instance nobody can find.
     const address = this._server.address();
@@ -574,9 +645,13 @@ export default class AgentHTTPProvider extends ProviderContract {
       throw new Error("Agent API listener reports no TCP address");
     }
     const boundPort = address.port;
-    this._portFilePath = path.join(app.getPath("userData"), AGENT_API_PORT_FILE);
+    this._portFilePath = path.join(app.getPath("userData"), AGENT_API_DISCOVERY_FILE);
     try {
-      await fs.promises.writeFile(this._portFilePath, `${boundPort}\n`, "utf8");
+      await writeFileAtomic(
+        this._portFilePath,
+        formatAgentApiDiscovery({ port: boundPort, instanceId: this._instanceId }),
+        "utf8",
+      );
     } catch (error) {
       await this.shutdown();
       throw new Error(`Agent API could not publish its endpoint to ${this._portFilePath}`, {
@@ -697,32 +772,40 @@ export default class AgentHTTPProvider extends ProviderContract {
         );
         return;
       }
+      if (err instanceof MalformedRequestTargetError) {
+        this._log.warning(`[AgentHTTPProvider] Refused ${method}: ${err.message}`);
+        this.sendError(res, 400, "INVALID_PARAMS", err.message);
+        return;
+      }
       if (err instanceof DocumentUnreadableError) {
         // The author's file refuses its read: a state of that file, not a
         // defect of this provider.
         this._log.warning(`[AgentHTTPProvider] ${method} ${pathname}: ${err.message}`);
-        this.sendError(res, 409, "DOCUMENT_UNREADABLE", err.message);
+        this.sendRefusal(
+          this.operationOfRequest(req, method, requestUrl),
+          res,
+          "DOCUMENT_UNREADABLE",
+          err.message,
+        );
         return;
       }
       if (err instanceof CollaborationSidecarUnreadableError) {
         // A sidecar of the author that this version cannot read. The author
         // decides what happens to its bytes, so the answer names the action.
         this._log.warning(`[AgentHTTPProvider] ${method} ${pathname}: ${err.message}`);
-        this.sendError(
+        this.sendRefusal(
+          this.operationOfRequest(req, method, requestUrl),
           res,
-          409,
           "COLLABORATION_STATE_UNREADABLE",
           `${err.message}. The author can keep the bytes of each such file and free its document with "Move the file aside" in the Annotations view.`,
         );
         return;
       }
       if (err instanceof RequestAbandonedError) {
-        // The client hung up mid-body. There is no one left to answer and
-        // nothing failed on this side; an error logged here would be an
-        // invented fault.
-        this._log.verbose(
-          `[AgentHTTPProvider] Client disconnected before finishing ${method} ${pathname}; dropped the body read`,
-        );
+        // The connection ended mid-body. There is no one left to answer, and
+        // nothing failed on this side, but a caller (the tunnel too) lost a
+        // request: the operator sees which one and why.
+        this._log.warning(`[AgentHTTPProvider] ${method} ${pathname}: ${err.message}`);
         return;
       }
       // Log the stack and which operation failed; `${err}` alone drops both,
@@ -774,7 +857,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 401, "UNAUTHORIZED", "Authentication required.");
       return;
     }
-    const url = new URL(requestUrl, "http://127.0.0.1");
+    const url = requestTargetUrl(requestUrl);
     const rawBody = await this.readBody(req);
     let body: unknown;
     if (rawBody.trim().length > 0) {
@@ -811,7 +894,8 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
       if (url.pathname === "/health") {
-        this.sendJson(res, 200, this.instanceIdentity());
+        // A route outside the document, as the specification itself is.
+        this.writeJson(res, 200, this.instanceIdentity());
         return;
       }
       if (url.pathname === "/v1/help") {
@@ -892,7 +976,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    * @param formatQueryJson  Whether the `format` query parameter asks for JSON.
    */
   private serveHelp(
-    res: http.ServerResponse,
+    res: Reply<"getHelp">,
     accept: string | undefined,
     formatQueryJson: boolean,
   ): void {
@@ -918,16 +1002,14 @@ export default class AgentHTTPProvider extends ProviderContract {
    * mode, so a name here that the document does not declare stops the provider
    * at construction instead of quietly never being reached.
    */
-  private operationHandlers(): Record<
-    string,
-    (context: Context, req: http.IncomingMessage, res: http.ServerResponse) => unknown
-  > {
+  private operationHandlers(): {
+    [Op in OperationId]: (context: Context, req: http.IncomingMessage, res: Reply<Op>) => unknown;
+  } & {
+    validationFail: (context: Context, req: http.IncomingMessage, res: Reply<OperationId>) => void;
+    notFound: (context: Context, req: http.IncomingMessage, res: http.ServerResponse) => void;
+  } {
     return {
-      getHelp: (
-        c: DefaultedOperationContext<"getHelp", "resource" | "action">,
-        req,
-        res: http.ServerResponse,
-      ) => {
+      getHelp: (c: DefaultedOperationContext<"getHelp", "resource" | "action">, req, res) => {
         if (c.request.query.resource === "skills") {
           if (c.request.query.action === "read") {
             if (c.request.query.path === undefined || c.request.query.path === "") {
@@ -964,13 +1046,9 @@ export default class AgentHTTPProvider extends ProviderContract {
           "matchCase" | "wholeWord" | "regex" | "include" | "exclude" | "maxMatches"
         >,
         _req,
-        res: http.ServerResponse,
+        res,
       ) => this.handleSearchWorkspace(res, c.request.query),
-      listWorkspaces: (
-        c: DefaultedOperationContext<"listWorkspaces", "include">,
-        _req,
-        res: http.ServerResponse,
-      ) => {
+      listWorkspaces: (c: DefaultedOperationContext<"listWorkspaces", "include">, _req, res) => {
         const { include, query } = c.request.query;
         const workspaceId =
           c.request.query.workspaceId === "" ? undefined : c.request.query.workspaceId;
@@ -987,14 +1065,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         this.sendError(res, 400, "INVALID_PARAMS", `include=${include} requires workspaceId`);
       },
-      createWorkspaceEntry: (
-        c: OperationContext<"createWorkspaceEntry">,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleCreateWorkspaceEntry(res, c.request.requestBody),
+      createWorkspaceEntry: (c: OperationContext<"createWorkspaceEntry">, _req, res) =>
+        this.handleCreateWorkspaceEntry(res, c.request.requestBody),
 
       listDocuments: (_c, _req, res) => this.handleListDocuments(res),
-      getDocument: (c: OperationContext<"getDocument">, _req, res: http.ServerResponse) => {
+      getDocument: (c: OperationContext<"getDocument">, _req, res) => {
         if (c.request.query.includeContent) {
           return this.handleReadContent(res, c.request.params.documentId, {
             side: c.request.query.side as ReadSide | undefined,
@@ -1004,19 +1079,19 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         return this.handleGetDocument(res, c.request.params.documentId);
       },
-      searchDocument: (c: OperationContext<"searchDocument">, _req, res: http.ServerResponse) =>
+      searchDocument: (c: OperationContext<"searchDocument">, _req, res) =>
         this.handleSearch(res, c.request.params.documentId, c.request.requestBody),
-      submitProposal: (c: OperationContext<"submitProposal">, _req, res: http.ServerResponse) =>
+      submitProposal: (c: OperationContext<"submitProposal">, _req, res) =>
         this.handleSubmitProposal(
           res,
           c.request.params.documentId,
           c.request.requestBody,
           "REVISION_MISMATCH",
         ),
-      submitReview: (c: OperationContext<"submitReview">, _req, res: http.ServerResponse) =>
+      submitReview: (c: OperationContext<"submitReview">, _req, res) =>
         this.handleReviewSubmission(res, c.request.requestBody),
 
-      listAnnotations: (c: OperationContext<"listAnnotations">, _req, res: http.ServerResponse) => {
+      listAnnotations: (c: OperationContext<"listAnnotations">, _req, res) => {
         if (c.request.query.documentId) {
           return this.handleListDocumentAnnotations(
             res,
@@ -1026,21 +1101,13 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         return this.handleListAnnotations(res, c.request.query.state);
       },
-      getAnnotation: (c: OperationContext<"getAnnotation">, _req, res: http.ServerResponse) =>
+      getAnnotation: (c: OperationContext<"getAnnotation">, _req, res) =>
         this.handleGetAnnotation(res, c.request.params.annotationId),
-      addAnnotationMessage: (
-        c: OperationContext<"addAnnotationMessage">,
-        _req,
-        res: http.ServerResponse,
-      ) =>
+      addAnnotationMessage: (c: OperationContext<"addAnnotationMessage">, _req, res) =>
         this.handleAddAnnotationMessage(res, c.request.params.annotationId, c.request.requestBody),
 
       listReviews: (_c, _req, res) => this.handleListReviews(res),
-      getReview: (
-        c: DefaultedOperationContext<"getReview", "view">,
-        _req,
-        res: http.ServerResponse,
-      ) => {
+      getReview: (c: DefaultedOperationContext<"getReview", "view">, _req, res) => {
         const view = c.request.query.view;
         switch (view) {
           case "diff":
@@ -1057,37 +1124,34 @@ export default class AgentHTTPProvider extends ProviderContract {
           }
         }
       },
-      addReviewComment: (c: OperationContext<"addReviewComment">, _req, res: http.ServerResponse) =>
+      addReviewComment: (c: OperationContext<"addReviewComment">, _req, res) =>
         this.handleAddReviewComment(
           res,
           c.request.params.reviewId,
           c.request.requestBody.text,
           c.request.requestBody.expectedReviewGeneration,
         ),
-      reapplyReview: (c: OperationContext<"reapplyReview">, _req, res: http.ServerResponse) =>
+      reapplyReview: (c: OperationContext<"reapplyReview">, _req, res) =>
         this.handleReapplyReview(
           res,
           c.request.params.reviewId,
           c.request.requestBody.expectedReviewGeneration,
         ),
-      discardReview: (c: OperationContext<"discardReview">, _req, res: http.ServerResponse) =>
+      discardReview: (c: OperationContext<"discardReview">, _req, res) =>
         this.handleDiscardReview(
           res,
           c.request.params.reviewId,
           c.request.requestBody.expectedReviewGeneration,
         ),
-      retractProposal: (c: OperationContext<"retractProposal">, _req, res: http.ServerResponse) =>
+      retractProposal: (c: OperationContext<"retractProposal">, _req, res) =>
         this.handleRetractProposal(res, c.request.params.packetId, c.request.requestBody),
-      waitForReviewEvents: (
-        c: OperationContext<"waitForReviewEvents">,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleWaitForReviewEvents(res, c.request.params.reviewId, c.request.query),
+      waitForReviewEvents: (c: OperationContext<"waitForReviewEvents">, _req, res) =>
+        this.handleWaitForReviewEvents(res, c.request.params.reviewId, c.request.query),
 
       queryCitations: async (
         c: DefaultedOperationContext<"queryCitations", "database">,
         _req,
-        res: http.ServerResponse,
+        res,
       ) => {
         await this.citationDatabasesRead();
         if (c.request.query.citeKey) {
@@ -1098,11 +1162,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         return this.handleListCitationItems(res, c.request.query.database);
       },
-      renderCitations: async (
-        c: OperationContext<"renderCitations">,
-        _req,
-        res: http.ServerResponse,
-      ) => {
+      renderCitations: async (c: OperationContext<"renderCitations">, _req, res) => {
         await this.citationDatabasesRead();
         const body = c.request.requestBody;
         if (body.mode === "bibliography") {
@@ -1135,13 +1195,9 @@ export default class AgentHTTPProvider extends ProviderContract {
           composite: body.composite,
         });
       },
-      listMacros: (c: OperationContext<"listMacros">, _req, res: http.ServerResponse) =>
+      listMacros: (c: OperationContext<"listMacros">, _req, res) =>
         this.handleListMacros(res, c.request.query.query),
-      queryFigures: (
-        c: DefaultedOperationContext<"queryFigures", "action">,
-        _req,
-        res: http.ServerResponse,
-      ) => {
+      queryFigures: (c: DefaultedOperationContext<"queryFigures", "action">, _req, res) => {
         const action = c.request.query.action;
         if (action === "search") {
           if (c.request.query.query === undefined) {
@@ -1169,7 +1225,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         return this.handleListFigures(res);
       },
-      saveFigure: (c: OperationContext<"saveFigure">, _req, res: http.ServerResponse) => {
+      saveFigure: (c: OperationContext<"saveFigure">, _req, res) => {
         if (c.request.requestBody.action === "create") {
           return this.handleCreateFigure(res, {
             path: c.request.requestBody.path,
@@ -1184,44 +1240,32 @@ export default class AgentHTTPProvider extends ProviderContract {
       lintDocuments: (
         c: DefaultedOperationContext<"lintDocuments", "scope" | "minimumSeverity">,
         _req,
-        res: http.ServerResponse,
+        res,
       ) => this.handleLintDocuments(res, c.request.query),
 
       searchZoteroItems: async (
         c: DefaultedOperationContext<"searchZoteroItems", "limit">,
         _req,
-        res: http.ServerResponse,
+        res,
       ) => {
         const zotero = await this.zoteroLibrary(res);
         if (zotero !== undefined) {
           this.sendZoteroResult(res, await zotero.search(c.request.query.q, c.request.query.limit));
         }
       },
-      getZoteroExtractions: async (
-        c: OperationContext<"getZoteroExtractions">,
-        _req,
-        res: http.ServerResponse,
-      ) => {
+      getZoteroExtractions: async (c: OperationContext<"getZoteroExtractions">, _req, res) => {
         const zotero = await this.zoteroLibrary(res);
         if (zotero !== undefined) {
           this.sendZoteroResult(res, await zotero.extractions(c.request.params.itemKey));
         }
       },
-      importZoteroIdentifier: async (
-        c: OperationContext<"importZoteroIdentifier">,
-        _req,
-        res: http.ServerResponse,
-      ) => {
+      importZoteroIdentifier: async (c: OperationContext<"importZoteroIdentifier">, _req, res) => {
         const zotero = await this.zoteroLibrary(res);
         if (zotero !== undefined) {
           this.sendZoteroResult(res, await zotero.importIdentifier(c.request.requestBody));
         }
       },
-      importZoteroUrl: async (
-        c: OperationContext<"importZoteroUrl">,
-        _req,
-        res: http.ServerResponse,
-      ) => {
+      importZoteroUrl: async (c: OperationContext<"importZoteroUrl">, _req, res) => {
         const zotero = await this.zoteroLibrary(res);
         if (zotero !== undefined) {
           this.sendZoteroResult(res, await zotero.importUrl(c.request.requestBody));
@@ -1233,7 +1277,7 @@ export default class AgentHTTPProvider extends ProviderContract {
        * the offending field, which is more than the hand-written decoders
        * could say about a body they refused wholesale.
        */
-      validationFail: (c: Context, _req: http.IncomingMessage, res: http.ServerResponse) => {
+      validationFail: (c: Context, _req: http.IncomingMessage, res) => {
         // openapi-backend calls this handler only when validation produced
         // errors, and it nulls an empty error list; no errors here is a
         // contract break in the router, not an invalid request.
@@ -1253,8 +1297,8 @@ export default class AgentHTTPProvider extends ProviderContract {
         );
       },
 
-      notFound: (c: Context, req: http.IncomingMessage, res: http.ServerResponse) =>
-        this.sendError(
+      notFound: (c: Context, req: http.IncomingMessage, res) =>
+        this.writeError(
           res,
           404,
           "METHOD_NOT_FOUND",
@@ -1267,11 +1311,11 @@ export default class AgentHTTPProvider extends ProviderContract {
   // Route handlers
   // ==========================================================================
 
-  private async handleGetContext(res: http.ServerResponse): Promise<void> {
+  private async handleGetContext(res: Reply<"getContext">): Promise<void> {
     this.sendJson(res, 200, await this._queries.getContext());
   }
 
-  private async handleListDocuments(res: http.ServerResponse): Promise<void> {
+  private async handleListDocuments(res: Reply<"listDocuments">): Promise<void> {
     const documents = await this._queries.listDocuments();
     this.sendJson(res, 200, {
       documents: await Promise.all(
@@ -1280,11 +1324,11 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetViews(res: http.ServerResponse): Promise<void> {
+  private async handleGetViews(res: Reply<"listViews">): Promise<void> {
     this.sendJson(res, 200, { views: await this._queries.listViews() });
   }
 
-  private handleGetWorkspaces(res: http.ServerResponse): void {
+  private handleGetWorkspaces(res: Reply<"listWorkspaces">): void {
     this.sendJson(res, 200, { workspaces: this._queries.listWorkspaces() });
   }
 
@@ -1294,17 +1338,8 @@ export default class AgentHTTPProvider extends ProviderContract {
    * flat, open or not. Main already walks directories for the workspace
    * listings; this is a route over that walk, not a subsystem.
    */
-  private async handleListWorkspaceFiles(res: http.ServerResponse): Promise<void> {
-    try {
-      this.sendJson(res, 200, await this._queries.listWorkspaceFiles());
-    } catch (error) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+  private async handleListWorkspaceFiles(res: Reply<"listWorkspaces">): Promise<void> {
+    this.sendJson(res, 200, await this._queries.listWorkspaceFiles());
   }
 
   /**
@@ -1313,7 +1348,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    */
   /** One workspace's documents, directories or files, as `include` names. */
   private async handleListInWorkspace(
-    res: http.ServerResponse,
+    res: Reply<"listWorkspaces">,
     include: "documents" | "directories" | "files",
     workspaceId: string,
     query: string | undefined,
@@ -1329,24 +1364,15 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleListWorkspaceFilesInWorkspace(
-    res: http.ServerResponse,
+    res: Reply<"listWorkspaces">,
     workspaceId: string,
   ): Promise<void> {
-    try {
-      const listing = await this._queries.listWorkspaceFilesByWorkspace(workspaceId);
-      if (listing === undefined) {
-        this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
-        return;
-      }
-      this.sendJson(res, 200, listing);
-    } catch (error) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+    const listing = await this._queries.listWorkspaceFilesByWorkspace(workspaceId);
+    if (listing === undefined) {
+      this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
+      return;
     }
+    this.sendJson(res, 200, listing);
   }
 
   /**
@@ -1355,24 +1381,15 @@ export default class AgentHTTPProvider extends ProviderContract {
    * the files in it.
    */
   private async handleListWorkspaceDirectories(
-    res: http.ServerResponse,
+    res: Reply<"listWorkspaces">,
     workspaceId: string,
   ): Promise<void> {
-    try {
-      const directories = await this._queries.listWorkspaceDirectories(workspaceId);
-      if (directories === undefined) {
-        this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
-        return;
-      }
-      this.sendJson(res, 200, directories);
-    } catch (error) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+    const directories = await this._queries.listWorkspaceDirectories(workspaceId);
+    if (directories === undefined) {
+      this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
+      return;
     }
+    this.sendJson(res, 200, directories);
   }
 
   /**
@@ -1381,7 +1398,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    * only translates its outcome to the wire.
    */
   private async handleCreateWorkspaceEntry(
-    res: http.ServerResponse,
+    res: Reply<"createWorkspaceEntry">,
     body: WorkspaceEntryCreateRequest,
   ): Promise<void> {
     const outcome = await this._queries.createWorkspaceEntry(body);
@@ -1399,7 +1416,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    * take.
    */
   private async handleSearchWorkspace(
-    res: http.ServerResponse,
+    res: Reply<"searchWorkspace">,
     query: DefaultedQuery<
       "searchWorkspace",
       "matchCase" | "wholeWord" | "regex" | "include" | "exclude" | "maxMatches"
@@ -1453,28 +1470,19 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleListWorkspaceDocuments(
-    res: http.ServerResponse,
+    res: Reply<"listWorkspaces">,
     workspaceId: string,
     query: string | undefined,
   ): Promise<void> {
-    try {
-      const documents = await this._queries.listWorkspaceDocuments(workspaceId, query);
-      if (documents === undefined) {
-        this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
-        return;
-      }
-      this.sendJson(res, 200, documents);
-    } catch (error) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+    const documents = await this._queries.listWorkspaceDocuments(workspaceId, query);
+    if (documents === undefined) {
+      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
+      return;
     }
+    this.sendJson(res, 200, documents);
   }
 
-  private async handleGetDocument(res: http.ServerResponse, documentId: string): Promise<void> {
+  private async handleGetDocument(res: Reply<"getDocument">, documentId: string): Promise<void> {
     const summary = await this._queries.describeDocument(documentId);
     if (summary === "OUTSIDE_WORKSPACE") {
       this.sendError(
@@ -1510,7 +1518,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    * standing between a loopback client and an arbitrary path on disk.
    */
   private async handleReadContent(
-    res: http.ServerResponse,
+    res: Reply<"getDocument">,
     documentId: string,
     query: { side?: ReadSide; startLine?: number; endLine?: number },
   ): Promise<void> {
@@ -1545,7 +1553,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleWaitForReviewEvents(
-    res: http.ServerResponse,
+    res: Reply<"waitForReviewEvents">,
     reviewId: string,
     query: { waitSeconds?: number; wait?: number; afterGeneration?: number },
   ): Promise<void> {
@@ -1618,7 +1626,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleSearch(
-    res: http.ServerResponse,
+    res: Reply<"searchDocument">,
     documentId: string,
     searchRequest: SearchDocumentRequest,
   ): Promise<void> {
@@ -1658,7 +1666,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleReviewSubmission(
-    res: http.ServerResponse,
+    res: Reply<"submitReview">,
     request: ReviewSubmissionRequest,
   ): Promise<void> {
     const requestedPath = request.document.uri.startsWith("file://")
@@ -1713,7 +1721,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    *                                       revision the caller sent.
    */
   private async handleSubmitProposal(
-    res: http.ServerResponse,
+    res: Reply<"submitProposal" | "submitReview">,
     documentId: string,
     proposal: SubmitProposalRequest,
     staleBaselineCode: "REVISION_MISMATCH" | "BASELINE_MISMATCH",
@@ -1776,13 +1784,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         // submission (this claim's patch included) committed nothing (I2,
         // and the plan's "commits with the annotation change or not at
         // all") — earns its status from STATUS_BY_CODE like any other route.
-        //
-        // submitProposal's own return type widens its failure code to
-        // `string`: every value it actually produces is one of the OpenAPI
-        // contract's AgentErrorCode members, so the cast back is safe, and
-        // `?? 500` only guards a code genuinely outside that contract.
-        const code = result.code as AgentErrorCode;
-        this.sendError(res, STATUS_BY_CODE[code] ?? 500, code, result.message);
+        this.sendRefusal(this.operation("submitProposal"), res, result.code, result.message);
       }
       return;
     }
@@ -1816,14 +1818,14 @@ export default class AgentHTTPProvider extends ProviderContract {
   // ==========================================================================
 
   private async handleListAnnotations(
-    res: http.ServerResponse,
+    res: Reply<"listAnnotations">,
     state: "open" | "resolved" | undefined,
   ): Promise<void> {
     this.sendJson(res, 200, await this._queries.listAnnotations(state));
   }
 
   private async handleListDocumentAnnotations(
-    res: http.ServerResponse,
+    res: Reply<"listAnnotations">,
     documentId: string,
     state: "open" | "resolved" | undefined,
   ): Promise<void> {
@@ -1835,7 +1837,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, result);
   }
 
-  private async handleGetAnnotation(res: http.ServerResponse, annotationId: string): Promise<void> {
+  private async handleGetAnnotation(
+    res: Reply<"getAnnotation">,
+    annotationId: string,
+  ): Promise<void> {
     const annotation = await this._queries.getAnnotation(annotationId);
     if (annotation === undefined) {
       this.sendError(res, 404, "ANNOTATION_NOT_FOUND", "Annotation not found");
@@ -1850,7 +1855,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    * annotationId alone, since the request carries no documentId.
    */
   private async handleAddAnnotationMessage(
-    res: http.ServerResponse,
+    res: Reply<"addAnnotationMessage">,
     annotationId: string,
     body: AddAnnotationMessageRequest,
   ): Promise<void> {
@@ -1870,7 +1875,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         body.markActed,
       );
     if (!("messageId" in result)) {
-      this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message);
+      this.sendRefusal(this.operation("addAnnotationMessage"), res, result.code, result.message);
       return;
     }
     const annotation = await this._queries.getAnnotation(annotationId);
@@ -1886,7 +1891,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleListReviews(res: http.ServerResponse): Promise<void> {
+  private async handleListReviews(res: Reply<"listReviews">): Promise<void> {
     const reviews: ReviewListEntry[] = (
       await this._documents.reviewQueries.listReviewQueries()
     ).map((query) => {
@@ -1918,7 +1923,10 @@ export default class AgentHTTPProvider extends ProviderContract {
    * 409 when the id names a detached review (it exists — /v1/reviews just
    * listed it — but its file is closed), 404 only when no review carries it.
    */
-  private async sendReviewLookupFailure(res: http.ServerResponse, reviewId: string): Promise<void> {
+  private async sendReviewLookupFailure(
+    res: Reply<"addReviewComment" | "waitForReviewEvents">,
+    reviewId: string,
+  ): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found.");
@@ -1936,7 +1944,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found.");
   }
 
-  private async handleGetReview(res: http.ServerResponse, reviewId: string): Promise<void> {
+  private async handleGetReview(res: Reply<"getReview">, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1966,7 +1974,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewDiff(res: http.ServerResponse, reviewId: string): Promise<void> {
+  private async handleGetReviewDiff(res: Reply<"getReview">, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1998,22 +2006,6 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   /**
-   * The refusals that mean the caller's picture of the review is stale rather
-   * than wrong: the file closed, the review was invalidated by disk drift, or
-   * a precondition named a text or generation the review has moved past. All
-   * are 409, and keeping the list in one place is what stops a code meaning
-   * 409 on one route and 400 on another.
-   */
-  private static isConflict(code: AgentErrorCode): boolean {
-    return (
-      code === "DOCUMENT_CLOSED" ||
-      code === "REVIEW_INVALIDATED" ||
-      code === "REVISION_MISMATCH" ||
-      code === "REVIEW_GENERATION_MISMATCH"
-    );
-  }
-
-  /**
    * What a precondition refusal tells the caller to re-read from. Absent on
    * every other refusal, which has nothing to resynchronize against.
    */
@@ -2030,15 +2022,15 @@ export default class AgentHTTPProvider extends ProviderContract {
    * suggestions onto the current text, open or closed.
    */
   private async handleReapplyReview(
-    res: http.ServerResponse,
+    res: Reply<"reapplyReview">,
     reviewId: string,
     expectedReviewGeneration: number,
   ): Promise<void> {
     const result = await this._documents.reapplyReview(reviewId, expectedReviewGeneration);
     if (!result.ok) {
-      this.sendError(
+      this.sendRefusal(
+        this.operation("reapplyReview"),
         res,
-        STATUS_BY_CODE[result.code],
         result.code,
         result.message,
         AgentHTTPProvider.conflictDetail(result),
@@ -2056,7 +2048,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleDiscardReview(
-    res: http.ServerResponse,
+    res: Reply<"discardReview">,
     reviewId: string,
     expectedReviewGeneration: number,
   ): Promise<void> {
@@ -2065,9 +2057,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       expectedReviewGeneration,
     );
     if (!result.ok) {
-      this.sendError(
+      this.sendRefusal(
+        this.operation("discardReview"),
         res,
-        STATUS_BY_CODE[result.code],
         result.code,
         result.message,
         AgentHTTPProvider.conflictDetail(result),
@@ -2086,7 +2078,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    * generation advance is what wakes the agent's long-poll.
    */
   private async handleAddReviewComment(
-    res: http.ServerResponse,
+    res: Reply<"addReviewComment">,
     reviewId: string,
     text: string,
     expectedReviewGeneration: number,
@@ -2098,13 +2090,9 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
     const result = await this._documents.addReviewComment(reviewId, text, expectedReviewGeneration);
     if (!result.ok) {
-      this.sendError(
+      this.sendRefusal(
+        this.operation("addReviewComment"),
         res,
-        AgentHTTPProvider.isConflict(result.code)
-          ? 409
-          : result.code === "PERSISTENCE_FAILED"
-            ? 500
-            : 404,
         result.code,
         result.message,
         AgentHTTPProvider.conflictDetail(result),
@@ -2119,7 +2107,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewChunks(res: http.ServerResponse, reviewId: string): Promise<void> {
+  private async handleGetReviewChunks(res: Reply<"getReview">, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -2151,7 +2139,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewPackets(res: http.ServerResponse, reviewId: string): Promise<void> {
+  private async handleGetReviewPackets(res: Reply<"getReview">, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -2175,7 +2163,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleRetractProposal(
-    res: http.ServerResponse,
+    res: Reply<"retractProposal">,
     packetId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<void> {
@@ -2190,16 +2178,16 @@ export default class AgentHTTPProvider extends ProviderContract {
         unresolvedChunks: result.unresolvedChunks,
         documentRevision: result.documentRevision,
       });
-    } else {
-      // PACKET_NOT_RETRACTABLE and DOCUMENT_CLOSED both land on STATUS_BY_CODE's
-      // 409: the packet has already reached a terminal state, or its file is
-      // closed. Both name the review that owns the packet, which is the
-      // only thing the caller can re-read from — disposing of the suggestions
-      // is the reviewer's.
-      this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message, {
+    } else if ("reviewId" in result) {
+      // A refusal of a packet that a review holds names that review, which
+      // the caller can read again: the packet reached a terminal state, its
+      // file is closed, or the precondition is stale.
+      this.sendRefusal(this.operation("retractProposal"), res, result.code, result.message, {
         reviewId: result.reviewId,
         ...AgentHTTPProvider.conflictDetail(result),
       });
+    } else {
+      this.sendRefusal(this.operation("retractProposal"), res, result.code, result.message);
     }
   }
 
@@ -2221,7 +2209,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    * The Zotero operations report whether a citation key is citable, so they
    * need the main citation database. Without it the request is a 503.
    */
-  private async zoteroLibrary(res: http.ServerResponse): Promise<ZoteroLibrary | undefined> {
+  private async zoteroLibrary(res: Reply<ZoteroOperation>): Promise<ZoteroLibrary | undefined> {
     await this.citationDatabasesRead();
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
@@ -2233,12 +2221,18 @@ export default class AgentHTTPProvider extends ProviderContract {
       : undefined;
   }
 
-  private sendZoteroResult<Body extends AgentApiResponseBody>(
-    res: http.ServerResponse,
-    result: ZoteroResult<Body>,
+  /**
+   * Answers the result of a Zotero request. The failure statuses of the
+   * result are statuses that the operation declares, so a status of the
+   * add-on that the document does not name is a compile error.
+   */
+  private sendZoteroResult<Op extends ZoteroOperation, Body extends AgentApiResponseBody>(
+    res: Reply<Op>,
+    result: ZoteroResult<Body, NoInfer<DeclaredStatus<Op>>>,
   ): void {
     if (result.ok) {
-      this.sendJson(res, 200, result.body);
+      // Each Zotero operation declares 200.
+      this.sendJson<ZoteroOperation>(res, 200, result.body);
       return;
     }
     this.sendError(
@@ -2260,7 +2254,14 @@ export default class AgentHTTPProvider extends ProviderContract {
    * show too (`citeproc-problems`).
    */
   private citationDatabaseAvailable(
-    res: http.ServerResponse,
+    res: Reply<
+      | "getZoteroExtractions"
+      | "importZoteroIdentifier"
+      | "importZoteroUrl"
+      | "queryCitations"
+      | "renderCitations"
+      | "searchZoteroItems"
+    >,
     citeproc: CiteprocProvider,
     database: string,
   ): boolean {
@@ -2290,7 +2291,7 @@ export default class AgentHTTPProvider extends ProviderContract {
 
   /** Answers 404 when the database does not hold each cite key of a request. */
   private citekeysHeld(
-    res: http.ServerResponse,
+    res: Reply<"queryCitations" | "renderCitations">,
     citeproc: CiteprocProvider,
     database: string,
     citekeys: string[],
@@ -2310,7 +2311,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   /** Answers a render failure that the provider names; another error goes to the dispatcher. */
-  private sendRenderFailure(res: http.ServerResponse, err: unknown): void {
+  private sendRenderFailure(res: Reply<"renderCitations">, err: unknown): void {
     if (err instanceof CiteprocRenderInvariantError) {
       this.sendError(res, 500, "INTERNAL_ERROR", err.message);
       return;
@@ -2322,7 +2323,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     throw err;
   }
 
-  private handleListCitationDatabases(res: http.ServerResponse): void {
+  private handleListCitationDatabases(res: Reply<"queryCitations">): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
@@ -2333,7 +2334,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private handleListCitationItems(res: http.ServerResponse, database: string): void {
+  private handleListCitationItems(res: Reply<"queryCitations">, database: string): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
@@ -2345,7 +2346,11 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, { items, count: items.length });
   }
 
-  private handleGetCitationItem(res: http.ServerResponse, citeKey: string, database: string): void {
+  private handleGetCitationItem(
+    res: Reply<"queryCitations">,
+    citeKey: string,
+    database: string,
+  ): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
@@ -2360,7 +2365,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, item as AgentApiResponseBody);
   }
 
-  private handleRenderCitation(res: http.ServerResponse, body: RenderCitationRequest): void {
+  private handleRenderCitation(res: Reply<"renderCitations">, body: RenderCitationRequest): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
@@ -2402,7 +2407,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private handleRenderBibliography(
-    res: http.ServerResponse,
+    res: Reply<"renderCitations">,
     body: RenderBibliographyRequest,
   ): void {
     if (this._citeproc === undefined) {
@@ -2456,7 +2461,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleListMacros(
-    res: http.ServerResponse,
+    res: Reply<"listMacros">,
     query: string | undefined,
   ): Promise<void> {
     try {
@@ -2491,16 +2496,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 503, "MACROS_UNAVAILABLE", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw error;
     }
   }
 
-  private async handleListSkills(res: http.ServerResponse): Promise<void> {
+  private async handleListSkills(res: Reply<"getHelp">): Promise<void> {
     try {
       const { root, entries, notListed } = await listSkillTree(this.skillsDirectory());
       this.sendJson(res, 200, { root, count: entries.length, entries, notListed });
@@ -2509,16 +2509,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 503, "SKILLS_NOT_CONFIGURED", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw error;
     }
   }
 
-  private async handleReadSkill(res: http.ServerResponse, relativePath: string): Promise<void> {
+  private async handleReadSkill(res: Reply<"getHelp">, relativePath: string): Promise<void> {
     try {
       this.sendJson(res, 200, await readSkillMarkdown(this.skillsDirectory(), relativePath));
     } catch (error) {
@@ -2538,16 +2533,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 400, "INVALID_PARAMS", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw error;
     }
   }
 
-  private async handleListFigures(res: http.ServerResponse): Promise<void> {
+  private async handleListFigures(res: Reply<"queryFigures">): Promise<void> {
     const root = this.centralFiguresDirectory();
     try {
       const { entries, notListed } = await listCentralFigures(root);
@@ -2557,17 +2547,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 404, "FIGURES_DIRECTORY_NOT_FOUND", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw error;
     }
   }
 
   private async handleCreateFigure(
-    res: http.ServerResponse,
+    res: Reply<"saveFigure">,
     body: FigureCreateRequest,
   ): Promise<void> {
     try {
@@ -2586,16 +2571,16 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 400, "INVALID_PARAMS", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "PERSISTENCE_FAILED",
-        error instanceof Error ? error.message : String(error),
-      );
+      // A refusal of the filesystem is a failed write of the figure; any other
+      // error is a fault that the dispatcher logs.
+      if (!isErrnoException(error)) {
+        throw error;
+      }
+      this.sendError(res, 500, "PERSISTENCE_FAILED", error.message);
     }
   }
 
-  private async handleSearchFigures(res: http.ServerResponse, query: string): Promise<void> {
+  private async handleSearchFigures(res: Reply<"queryFigures">, query: string): Promise<void> {
     const root = this.centralFiguresDirectory();
     try {
       const result = await searchCentralFigures(root, query);
@@ -2605,16 +2590,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 404, "FIGURES_DIRECTORY_NOT_FOUND", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw error;
     }
   }
 
-  private async handleReadFigure(res: http.ServerResponse, relativePath: string): Promise<void> {
+  private async handleReadFigure(res: Reply<"queryFigures">, relativePath: string): Promise<void> {
     try {
       this.sendJson(
         res,
@@ -2638,17 +2618,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 400, "INVALID_PARAMS", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
+      throw error;
     }
   }
 
   private async handleWriteFigure(
-    res: http.ServerResponse,
+    res: Reply<"saveFigure">,
     relativePath: string,
     body: FigureWriteRequest,
   ): Promise<void> {
@@ -2665,12 +2640,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 400, "INVALID_PARAMS", error.message);
         return;
       }
-      this.sendError(
-        res,
-        500,
-        "PERSISTENCE_FAILED",
-        error instanceof Error ? error.message : String(error),
-      );
+      // A refusal of the filesystem is a failed write of the figure; any other
+      // error is a fault that the dispatcher logs.
+      if (!isErrnoException(error)) {
+        throw error;
+      }
+      this.sendError(res, 500, "PERSISTENCE_FAILED", error.message);
     }
   }
 
@@ -2683,7 +2658,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleLintDocuments(
-    res: http.ServerResponse,
+    res: Reply<"lintDocuments">,
     query: DefaultedQuery<"lintDocuments", "scope" | "minimumSeverity">,
   ): Promise<void> {
     const scope = query.scope;
@@ -2698,211 +2673,202 @@ export default class AgentHTTPProvider extends ProviderContract {
     };
     let targets: Target[] = [];
 
-    try {
-      if (scope === "focused") {
-        if (context.focusedDocument === undefined) {
-          this.sendError(res, 404, "NO_FOCUSED_DOCUMENT", "No document is focused");
+    if (scope === "focused") {
+      if (context.focusedDocument === undefined) {
+        this.sendError(res, 404, "NO_FOCUSED_DOCUMENT", "No document is focused");
+        return;
+      }
+      if (context.focusedDocument.type !== "markdown") {
+        this.sendError(res, 400, "INVALID_PARAMS", "The focused document is not Markdown");
+        return;
+      }
+      targets = [
+        {
+          documentId: context.focusedDocument.documentId,
+          path: context.focusedDocument.path,
+          name: context.focusedDocument.name,
+          open: true,
+          focused: true,
+        },
+      ];
+    } else if (scope === "open") {
+      targets = context.openDocuments
+        .filter((document) => document.type === "markdown")
+        .map((document) => ({
+          documentId: document.documentId,
+          path: document.path,
+          name: document.name,
+          open: true,
+          focused: document.documentId === focusedDocumentId,
+        }));
+    } else {
+      const workspaceFiles = (await this._queries.listWorkspaceFiles()).files;
+      if (scope === "document") {
+        if (query.documentId === undefined || query.documentId === "") {
+          this.sendError(res, 400, "INVALID_PARAMS", "scope=document requires documentId");
           return;
         }
-        if (context.focusedDocument.type !== "markdown") {
-          this.sendError(res, 400, "INVALID_PARAMS", "The focused document is not Markdown");
+        const open = context.openDocuments.find(
+          (document) => document.documentId === query.documentId,
+        );
+        const workspaceFile = workspaceFiles.find((file) => file.documentId === query.documentId);
+        if (open === undefined && workspaceFile === undefined) {
+          this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
+          return;
+        }
+        const documentPath = open?.path ?? workspaceFile!.path;
+        if (!hasMarkdownExt(documentPath)) {
+          this.sendError(res, 400, "INVALID_PARAMS", "The requested document is not Markdown");
           return;
         }
         targets = [
           {
-            documentId: context.focusedDocument.documentId,
-            path: context.focusedDocument.path,
-            name: context.focusedDocument.name,
-            open: true,
-            focused: true,
+            documentId: query.documentId,
+            path: documentPath,
+            name: open?.name ?? workspaceFile!.name,
+            open: open !== undefined || workspaceFile?.open === true,
+            focused: query.documentId === focusedDocumentId,
           },
         ];
-      } else if (scope === "open") {
-        targets = context.openDocuments
-          .filter((document) => document.type === "markdown")
-          .map((document) => ({
-            documentId: document.documentId,
-            path: document.path,
-            name: document.name,
-            open: true,
-            focused: document.documentId === focusedDocumentId,
+      } else {
+        if (scope === "workspace") {
+          if (query.workspaceId === undefined || query.workspaceId === "") {
+            this.sendError(res, 400, "INVALID_PARAMS", "scope=workspace requires workspaceId");
+            return;
+          }
+          if (
+            !this._queries
+              .listWorkspaces()
+              .some((workspace) => workspace.workspaceId === query.workspaceId)
+          ) {
+            this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
+            return;
+          }
+        }
+        const selected =
+          scope === "workspace"
+            ? workspaceFiles.filter((file) => file.workspaceId === query.workspaceId)
+            : workspaceFiles;
+        const seen = new Set<string>();
+        targets = selected
+          .filter((file) => hasMarkdownExt(file.path))
+          .filter((file) => {
+            if (seen.has(file.path)) {
+              return false;
+            }
+            seen.add(file.path);
+            return true;
+          })
+          .map((file) => ({
+            documentId: file.documentId,
+            path: file.path,
+            name: file.name,
+            open: file.open,
+            focused: file.documentId === focusedDocumentId,
           }));
-      } else {
-        const workspaceFiles = (await this._queries.listWorkspaceFiles()).files;
-        if (scope === "document") {
-          if (query.documentId === undefined || query.documentId === "") {
-            this.sendError(res, 400, "INVALID_PARAMS", "scope=document requires documentId");
-            return;
-          }
-          const open = context.openDocuments.find(
-            (document) => document.documentId === query.documentId,
-          );
-          const workspaceFile = workspaceFiles.find((file) => file.documentId === query.documentId);
-          if (open === undefined && workspaceFile === undefined) {
-            this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
-            return;
-          }
-          const documentPath = open?.path ?? workspaceFile!.path;
-          if (!hasMarkdownExt(documentPath)) {
-            this.sendError(res, 400, "INVALID_PARAMS", "The requested document is not Markdown");
-            return;
-          }
-          targets = [
-            {
-              documentId: query.documentId,
-              path: documentPath,
-              name: open?.name ?? workspaceFile!.name,
-              open: open !== undefined || workspaceFile?.open === true,
-              focused: query.documentId === focusedDocumentId,
-            },
-          ];
-        } else {
-          if (scope === "workspace") {
-            if (query.workspaceId === undefined || query.workspaceId === "") {
-              this.sendError(res, 400, "INVALID_PARAMS", "scope=workspace requires workspaceId");
-              return;
-            }
-            if (
-              !this._queries
-                .listWorkspaces()
-                .some((workspace) => workspace.workspaceId === query.workspaceId)
-            ) {
-              this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
-              return;
-            }
-          }
-          const selected =
-            scope === "workspace"
-              ? workspaceFiles.filter((file) => file.workspaceId === query.workspaceId)
-              : workspaceFiles;
-          const seen = new Set<string>();
-          targets = selected
-            .filter((file) => hasMarkdownExt(file.path))
-            .filter((file) => {
-              if (seen.has(file.path)) {
-                return false;
-              }
-              seen.add(file.path);
-              return true;
-            })
-            .map((file) => ({
-              documentId: file.documentId,
-              path: file.path,
-              name: file.name,
-              open: file.open,
-              focused: file.documentId === focusedDocumentId,
-            }));
-        }
       }
-
-      const severityWeight = { info: 0, warning: 1, error: 2 } as const;
-      const minimum = query.minimumSeverity;
-      const textOf = async (target: Target): Promise<string> => {
-        const read = await this._queries.readDocumentContent(
-          target.documentId,
-          "working",
-          1,
-          Number.MAX_SAFE_INTEGER,
-        );
-        if (read === undefined || read === "OUTSIDE_WORKSPACE") {
-          throw new Error(`Could not read selected lint document ${target.path}`);
-        }
-        return read.content;
-      };
-      const result = (
-        target: Target,
-        record: DocumentLintRecord,
-        current: boolean,
-      ): LintResponse["documents"][number] => {
-        const diagnostics: LintDiagnostic[] = record.diagnostics.filter(
-          (diagnostic) => severityWeight[diagnostic.severity] >= severityWeight[minimum],
-        );
-        return {
-          ...target,
-          revision: { sha256: record.revision },
-          current,
-          lintedAt: record.lintedAt,
-          diagnostics,
-          counts: AgentHTTPProvider.lintCounts(diagnostics),
-        };
-      };
-      const documents: LintResponse["documents"] = [];
-      const pending: LintResponse["pending"] = [];
-      const failed: LintResponse["failed"] = [];
-      if (scope === "workspace" || scope === "all") {
-        // A workspace answers from the lint cache; the background linter
-        // brings every outdated or pending document current. It does not
-        // lint again a document whose run gave no result, so the caller gets
-        // that document with the cause and does not wait for it.
-        // A document whose file gives no text is one of the documents that
-        // were not linted; the answer for the other documents stands.
-        const sources = await Promise.all(
-          targets.map(
-            async (target): Promise<DocumentLintSource> =>
-              await textOf(target).then(
-                (text) => ({ path: target.path, text }),
-                (error: unknown) => {
-                  if (!(error instanceof DocumentUnreadableError)) {
-                    throw error;
-                  }
-                  return { path: target.path, unreadable: error.message };
-                },
-              ),
-          ),
-        );
-        const lookups = await workspaceLintRows(this._app.documentLint, sources);
-        lookups.forEach((lookup, index) => {
-          const target = targets[index];
-          const identity = {
-            documentId: target.documentId,
-            path: target.path,
-            name: target.name,
-          };
-          if (lookup.failure !== undefined) {
-            failed.push({
-              ...identity,
-              kind: lookup.failure.kind,
-              cause: lookup.failure.message,
-              failedAt: lookup.failure.failedAt,
-            });
-          }
-          if (lookup.record !== undefined) {
-            documents.push(result(target, lookup.record, lookup.current));
-          } else if (lookup.failure === undefined) {
-            pending.push(identity);
-          }
-        });
-      } else {
-        const records = await Promise.all(
-          targets.map(
-            async (target) => await this._app.documentLint.lint(target.path, await textOf(target)),
-          ),
-        );
-        records.forEach((record, index) => {
-          documents.push(result(targets[index], record, true));
-        });
-      }
-
-      const allDiagnostics = documents.flatMap((document) => document.diagnostics);
-      const queueStopped = this._app.documentLint.queueStopped();
-      this.sendJson(res, 200, {
-        scope,
-        documents,
-        documentCount: documents.length,
-        pending,
-        failed,
-        ...(queueStopped === null ? {} : { queueStopped }),
-        diagnosticCount: allDiagnostics.length,
-        counts: AgentHTTPProvider.lintCounts(allDiagnostics),
-      });
-    } catch (error) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
     }
+
+    const severityWeight = { info: 0, warning: 1, error: 2 } as const;
+    const minimum = query.minimumSeverity;
+    const textOf = async (target: Target): Promise<string> => {
+      const read = await this._queries.readDocumentContent(
+        target.documentId,
+        "working",
+        1,
+        Number.MAX_SAFE_INTEGER,
+      );
+      if (read === undefined || read === "OUTSIDE_WORKSPACE") {
+        throw new Error(`Could not read selected lint document ${target.path}`);
+      }
+      return read.content;
+    };
+    const result = (
+      target: Target,
+      record: DocumentLintRecord,
+      current: boolean,
+    ): LintResponse["documents"][number] => {
+      const diagnostics: LintDiagnostic[] = record.diagnostics.filter(
+        (diagnostic) => severityWeight[diagnostic.severity] >= severityWeight[minimum],
+      );
+      return {
+        ...target,
+        revision: { sha256: record.revision },
+        current,
+        lintedAt: record.lintedAt,
+        diagnostics,
+        counts: AgentHTTPProvider.lintCounts(diagnostics),
+      };
+    };
+    const documents: LintResponse["documents"] = [];
+    const pending: LintResponse["pending"] = [];
+    const failed: LintResponse["failed"] = [];
+    if (scope === "workspace" || scope === "all") {
+      // A workspace answers from the lint cache; the background linter
+      // brings every outdated or pending document current. It does not
+      // lint again a document whose run gave no result, so the caller gets
+      // that document with the cause and does not wait for it.
+      // A document whose file gives no text is one of the documents that
+      // were not linted; the answer for the other documents stands.
+      const sources = await Promise.all(
+        targets.map(
+          async (target): Promise<DocumentLintSource> =>
+            await textOf(target).then(
+              (text) => ({ path: target.path, text }),
+              (error: unknown) => {
+                if (!(error instanceof DocumentUnreadableError)) {
+                  throw error;
+                }
+                return { path: target.path, unreadable: error.message };
+              },
+            ),
+        ),
+      );
+      const lookups = await workspaceLintRows(this._app.documentLint, sources);
+      lookups.forEach((lookup, index) => {
+        const target = targets[index];
+        const identity = {
+          documentId: target.documentId,
+          path: target.path,
+          name: target.name,
+        };
+        if (lookup.failure !== undefined) {
+          failed.push({
+            ...identity,
+            kind: lookup.failure.kind,
+            cause: lookup.failure.message,
+            failedAt: lookup.failure.failedAt,
+          });
+        }
+        if (lookup.record !== undefined) {
+          documents.push(result(target, lookup.record, lookup.current));
+        } else if (lookup.failure === undefined) {
+          pending.push(identity);
+        }
+      });
+    } else {
+      const records = await Promise.all(
+        targets.map(
+          async (target) => await this._app.documentLint.lint(target.path, await textOf(target)),
+        ),
+      );
+      records.forEach((record, index) => {
+        documents.push(result(targets[index], record, true));
+      });
+    }
+
+    const allDiagnostics = documents.flatMap((document) => document.diagnostics);
+    const queueStopped = this._app.documentLint.queueStopped();
+    this.sendJson(res, 200, {
+      scope,
+      documents,
+      documentCount: documents.length,
+      pending,
+      failed,
+      ...(queueStopped === null ? {} : { queueStopped }),
+      diagnosticCount: allDiagnostics.length,
+      counts: AgentHTTPProvider.lintCounts(allDiagnostics),
+    });
   }
 
   // ==========================================================================
@@ -2913,9 +2879,10 @@ export default class AgentHTTPProvider extends ProviderContract {
    * Reads the request body, bounded in size and time. The promise settles
    * exactly once: with the body on a completed read, RequestTooLargeError
    * past the size cap, RequestBodyTimeoutError when the client stalls past
-   * the deadline, or RequestAbandonedError when the connection dies first —
-   * any 'error' on an incoming request stream is the transport failing
-   * mid-body, which leaves nobody to answer. Every path clears the timer and
+   * the deadline, or RequestAbandonedError when the connection ends first.
+   * That error carries what the transport reported: the stream error (Node
+   * gives "aborted", ECONNRESET, for a client that hangs up) or a close
+   * without one. Nobody is left to answer. Every path clears the timer and
    * detaches all four listeners, so a request that never completes cannot
    * hold its buffers or closure alive beyond the deadline.
    */
@@ -2929,7 +2896,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         req.removeListener("data", onData);
         req.removeListener("end", onEnd);
         req.removeListener("error", onError);
-        req.removeListener("close", onError);
+        req.removeListener("close", onClose);
         outcome();
       };
       const onData = (chunk: Buffer): void => {
@@ -2947,8 +2914,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       const onEnd = (): void => {
         settle(() => resolve(Buffer.concat(chunks).toString("utf8")));
       };
-      const onError = (): void => {
-        settle(() => reject(new RequestAbandonedError()));
+      const onError = (err: NodeJS.ErrnoException): void => {
+        const code = err.code === undefined ? "" : ` (${err.code})`;
+        settle(() => reject(new RequestAbandonedError(`${err.message}${code}`)));
+      };
+      const onClose = (): void => {
+        settle(() =>
+          reject(new RequestAbandonedError("the connection closed before the body ended")),
+        );
       };
       deadline = setTimeout(() => {
         // No req.destroy() here: the 408 the dispatcher answers with must
@@ -2958,11 +2931,20 @@ export default class AgentHTTPProvider extends ProviderContract {
       req.on("data", onData);
       req.on("end", onEnd);
       req.on("error", onError);
-      req.on("close", onError);
+      req.on("close", onClose);
     });
   }
 
-  private sendJson(res: http.ServerResponse, status: number, body: AgentApiResponseBody): void {
+  private sendJson<Op extends OperationId>(
+    res: Reply<Op>,
+    status: NoInfer<DeclaredStatus<Op>>,
+    body: AgentApiResponseBody,
+  ): void {
+    this.writeJson(res, status, body);
+  }
+
+  /** Writes a JSON answer with any status: for a route that is no operation. */
+  private writeJson(res: http.ServerResponse, status: number, body: AgentApiResponseBody): void {
     const json = JSON.stringify(body);
     res.writeHead(status, {
       "Content-Type": "application/json",
@@ -2971,7 +2953,77 @@ export default class AgentHTTPProvider extends ProviderContract {
     res.end(json);
   }
 
-  private sendError(
+  private sendError<Op extends OperationId>(
+    res: Reply<Op>,
+    status: NoInfer<DeclaredStatus<Op>>,
+    code: AgentErrorCode,
+    message: string,
+    detail?: Omit<AgentError, "code" | "message">,
+  ): void {
+    this.writeError(res, status, code, message, detail);
+  }
+
+  /** The operation of the document with the id. */
+  private operation(operationId: OperationId): Operation {
+    const operation = this._api.getOperation(operationId);
+    if (operation === undefined) {
+      throw new Error(`The OpenAPI document declares no operation ${operationId}`);
+    }
+    return operation;
+  }
+
+  /**
+   * The operation that the router matches for the request, or undefined for a
+   * request target that matches none.
+   */
+  private operationOfRequest(
+    req: http.IncomingMessage,
+    method: string,
+    requestUrl: string,
+  ): Operation | undefined {
+    return this._api.matchOperation({
+      method,
+      path: requestTargetUrl(requestUrl).pathname,
+      headers: req.headers as Record<string, string | string[]>,
+    });
+  }
+
+  /**
+   * Answers a refusal with the status of its code (`STATUS_BY_CODE`) where
+   * the document declares that status for the operation. A code is a value
+   * of a domain transition, and the type of its result names every code of
+   * the API, so the compiler cannot prove the status; the document decides
+   * here. A status that the operation does not declare is a defect of this
+   * server, not of the request: the log names it, and the caller gets 500
+   * INTERNAL_ERROR with the code and the message of the refusal.
+   */
+  private sendRefusal(
+    operation: Operation | undefined,
+    res: http.ServerResponse,
+    code: AgentErrorCode,
+    message: string,
+    detail?: Omit<AgentError, "code" | "message">,
+  ): void {
+    const status = STATUS_BY_CODE[code];
+    const responses = operation?.responses;
+    if (responses !== undefined && String(status) in responses) {
+      this.writeError(res, status, code, message, detail);
+      return;
+    }
+    const name =
+      operation === undefined ? "a request that matches no operation" : operation.operationId;
+    this._log.error(
+      `[AgentHTTPProvider] The OpenAPI document declares no ${status} for ${name}, the status of ${code}: ${message}`,
+    );
+    this.writeError(res, 500, "INTERNAL_ERROR", `${code}: ${message}`);
+  }
+
+  /**
+   * Writes an error answer with any status. `sendError` checks the status at
+   * compile time and `sendRefusal` against the document; a request that
+   * matches no operation is answered here directly.
+   */
+  private writeError(
     res: http.ServerResponse,
     status: number,
     code: AgentErrorCode,

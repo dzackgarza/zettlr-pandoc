@@ -97,7 +97,6 @@ import {
 } from "@common/util/explorer-ordering";
 import { isAtOrInsideRoot } from "@common/util/renderer-path-polyfill";
 import type { AnyDescriptor } from "@dts/common/fsal";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from "source/pinia";
 import { useWorkspaceStore } from "source/pinia/workspace-store";
 import tippy, { type Instance } from "tippy.js";
@@ -285,7 +284,7 @@ function navigate(evt: KeyboardEvent): void {
             path: activeDescriptor.value.path,
             newTab: false,
           },
-        } as DocumentManagerIPCAPI)
+        })
         .catch((e) => reportError(e));
     }
     return; // Stop handling

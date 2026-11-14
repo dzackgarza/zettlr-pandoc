@@ -188,7 +188,7 @@ window.benchmarkReady = (async () => {
   collaborationStore.sessionsByDocumentPath[BENCHMARK_PATH] = benchmarkSession;
   documentCollaborationIpcDouble.setInvokeResponder(async (message) =>
     message.command === "get-workspace-collaboration-sessions"
-      ? { sessions: [benchmarkSession], unreadable: [], ownerless: [] }
+      ? { sessions: [benchmarkSession], unreadable: [], ownerless: [], unsaved: [] }
       : undefined,
   );
 

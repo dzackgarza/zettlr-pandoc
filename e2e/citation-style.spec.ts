@@ -89,7 +89,7 @@ describe("citation style in the editor", function () {
     const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
     config.export = { cslLibrary: libraryPath, cslStyle: stylePath };
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
     browser = app.browser;
     getOutput = app.getOutput;

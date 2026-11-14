@@ -59,6 +59,7 @@ documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
         sessions: sceneSession === undefined ? [] : [sceneSession],
         unreadable: sceneUnreadableFiles,
         ownerless: sceneOwnerlessFiles,
+        unsaved: [],
       };
     case "set-aside-collaboration-sidecar": {
       // The provider renames the file: it is in no later listing.

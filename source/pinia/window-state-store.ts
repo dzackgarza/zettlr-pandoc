@@ -90,7 +90,7 @@ export const useWindowStateStore = defineStore("window-state", () => {
     math: {},
     excludeChars: ["{", "(", "["],
     sourceFile: "",
-    diagnostics: [],
+    problem: undefined,
   });
   const phraseCompletions = ref<PhraseDictionaryEntry[]>([]);
   const writingTargets = ref<WritingTarget[]>([]);
@@ -153,7 +153,7 @@ export const useWindowStateStore = defineStore("window-state", () => {
   }
 
   // Snippets
-  ipcRenderer.on("assets-provider", (event, what: string) => {
+  ipcRenderer.on("assets-provider", (event, what) => {
     if (what === "snippets-updated") {
       updateSnippets(snippets, snippetDiagnostics).catch((e) => reportError(e));
     } else if (what === "quicktex-updated") {
@@ -168,15 +168,13 @@ export const useWindowStateStore = defineStore("window-state", () => {
   updatePhraseCompletions(phraseCompletions).catch((e) => reportError(e));
 
   // Writing targets
-  ipcRenderer.on("targets-provider", (event, what: string) => {
-    if (what === "writing-targets-updated") {
-      ipcRenderer
-        .invoke("targets-provider", { command: "get-targets" })
-        .then((targets: WritingTarget[]) => {
-          writingTargets.value = targets;
-        })
-        .catch((e) => reportError(e));
-    }
+  ipcRenderer.on("targets-provider", () => {
+    ipcRenderer
+      .invoke("targets-provider", { command: "get-targets" })
+      .then((targets: WritingTarget[]) => {
+        writingTargets.value = targets;
+      })
+      .catch((e) => reportError(e));
   });
 
   ipcRenderer
@@ -187,7 +185,7 @@ export const useWindowStateStore = defineStore("window-state", () => {
     .catch((e) => reportError(e));
 
   ipcRenderer.on("window-controls", (event, { command, payload }) => {
-    if (command === "fullscreen" && typeof payload === "boolean") {
+    if (command === "fullscreen") {
       isFullscreen.value = payload;
     }
   });

@@ -16,31 +16,14 @@
  */
 
 import { loadData } from "@common/i18n-renderer";
-import { reportError } from "@common/util/error-reporting";
 import { initializeMathJax } from "@common/util/mathtex-to-html";
 import showToast from "@common/util/show-toast";
-import { COMMAND_FAILED_CHANNEL, type CommandFailedBroadcast } from "@dts/common/command-failure";
+import { COMMAND_FAILED_CHANNEL } from "@dts/common/command-failure";
 import type { MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import loadIcons from "./load-icons";
 import registerDefaultContextMenu from "./register-default-context";
 import registerThemes from "./register-themes";
-
-let rendererErrorCaptureInstalled = false;
-
-/** Route otherwise-uncaught renderer failures into the durable application log. */
-export function registerRendererErrorCapture(): void {
-  if (rendererErrorCaptureInstalled) {
-    return;
-  }
-  rendererErrorCaptureInstalled = true;
-
-  window.addEventListener("error", (event) => {
-    reportError("[Renderer] Uncaught error", event.error ?? event.message);
-  });
-  window.addEventListener("unhandledrejection", (event) => {
-    reportError("[Renderer] Unhandled promise rejection", event.reason);
-  });
-}
+import { registerRendererErrorCapture } from "./renderer-error-capture";
 
 /**
  * This function is the renderer's counterpart to the main process's window
@@ -51,7 +34,7 @@ export default async function windowRegister(): Promise<void> {
   registerRendererErrorCapture();
   // A command of the application that this window started and that threw.
   // The dispatcher sends the cause to this window; the caller only logs it.
-  window.ipc.on(COMMAND_FAILED_CHANNEL, (_event, failure: CommandFailedBroadcast) => {
+  window.ipc.on(COMMAND_FAILED_CHANNEL, (_event, failure) => {
     showToast(failure.message, "error", 12000);
   });
   // Immediately load the translations
