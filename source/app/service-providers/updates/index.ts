@@ -19,12 +19,13 @@ import { initializeMathJax } from "@common/util/mathtex-to-html";
 import { showNativeNotification } from "@common/util/show-notification";
 import type ConfigProvider from "@providers/config";
 import crypto from "crypto";
-import { app, ipcMain, net } from "electron";
+import { app, net } from "electron";
 import { createWriteStream, promises as fs, type WriteStream } from "fs";
 import got, { RequestError, type Response } from "got";
 import path from "path";
 import semver from "semver";
 import { openPath } from "source/app/util/open-path";
+import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import { loadCanonicalMathJaxMacros } from "../../util/load-mathjax-macros";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
@@ -323,25 +324,23 @@ export default class UpdateProvider extends ProviderContract {
   }
 
   private _registerIpcHandler(): void {
-    ipcMain.handle("update-provider", async (event, data) => {
-      const { command, payload } = data;
-
-      if (command === "check-for-update") {
+    handleInvokeChannel("update-provider", {
+      "check-for-update": async () => {
         await this.check();
-      } else if (command === "update-status") {
-        // Just provide the caller with our response
-        return this._updateState;
-      } else if (command === "request-app-update") {
-        // We shall download the URL which is in the content variable
-        this._logger.info("[Update Provider] Requesting update " + (payload as string));
-        this._downloadAppUpdate(payload as string);
-      } else if (command === "begin-update") {
+      },
+      "update-status": () => this._updateState,
+      // The payload is the URL of the update to download
+      "request-app-update": (_event, { payload }) => {
+        this._logger.info("[Update Provider] Requesting update " + payload);
+        this._downloadAppUpdate(payload);
+      },
+      "begin-update": () => {
         // Begin the actual update process NOTE We're not blocking the handler
         this._beginUpdate().catch((e: Error) => {
           this._reportError("EUPDATE", trans("Could not start the update: %s", e.message), true);
         });
         return true;
-      }
+      },
     });
   }
 

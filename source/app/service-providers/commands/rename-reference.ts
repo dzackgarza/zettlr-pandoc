@@ -62,7 +62,7 @@ export default class RenameReference extends ZettlrCommand {
   private _previewed: { id: string; edit: WorkspaceReferenceEdit } | undefined;
 
   constructor(app: AppServiceContainer) {
-    super(app, ["preview-reference-rename", "commit-reference-rename", "undo-reference-rename"]);
+    super(app);
     this._previewed = undefined;
   }
 
@@ -81,15 +81,20 @@ export default class RenameReference extends ZettlrCommand {
     arg: CommandWireValue,
   ): Promise<IssuedReferenceRenamePreview | CommitRenameOutcome | UndoRenameOutcome> {
     if (evt === "preview-reference-rename") {
-      return await this._preview(arg);
+      return await this.preview(arg);
     } else if (evt === "commit-reference-rename") {
-      return await this._commit(arg);
+      return await this.commit(arg);
     } else {
-      return await this._app.references.undoRename();
+      return await this.undo();
     }
   }
 
-  private async _preview(arg: CommandWireValue): Promise<IssuedReferenceRenamePreview> {
+  /** Undoes the last rename. */
+  async undo(): Promise<UndoRenameOutcome> {
+    return await this._app.references.undoRename();
+  }
+
+  async preview(arg: CommandWireValue): Promise<IssuedReferenceRenamePreview> {
     if (
       typeof arg !== "object" ||
       arg === null ||
@@ -110,7 +115,7 @@ export default class RenameReference extends ZettlrCommand {
     return { ...preview, id };
   }
 
-  private async _commit(arg: CommandWireValue): Promise<CommitRenameOutcome> {
+  async commit(arg: CommandWireValue): Promise<CommitRenameOutcome> {
     if (typeof arg !== "object" || arg === null || !("id" in arg) || typeof arg.id !== "string") {
       throw new Error("commit-reference-rename requires the id of a preview");
     }

@@ -70,10 +70,11 @@
  */
 
 import { ipcMain } from "electron";
+import { handleInvokeChannel } from "source/app/util/handle-ipc-channel";
 import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
 import { v4 as uuid } from "uuid";
 import type LogProvider from "../log";
-import ProviderContract, { type IPCAPI, type IPCMessage } from "../provider-contract";
+import ProviderContract, { type IPCAPI } from "../provider-contract";
 import { LongRunningTask, type LRT_JSON, TaskStatus } from "./task";
 
 export type LRTIPCSyncMessage = IPCAPI<{
@@ -104,8 +105,6 @@ export type LRTIPCContract = {
     response: undefined;
   };
 };
-
-export type LRTIPCAsyncMessage = IPCMessage<LRTIPCContract>;
 
 export default class LongRunningTaskProvider extends ProviderContract {
   private tasks: LongRunningTask[];
@@ -143,15 +142,10 @@ export default class LongRunningTaskProvider extends ProviderContract {
       }
     });
 
-    ipcMain.handle("lrt-provider", (event, args: LRTIPCAsyncMessage) => {
-      if (args.command === "get-tasks") {
-        return this.tasks.map((task) => task.toJSON());
-      } else if (args.command === "delete-task") {
-        return this.deleteTask(args.payload.id);
-      }
-      // abort-task and interact-task are sent, not invoked (ipcMain.on above).
-      const unhandled: { command: unknown } = args satisfies never;
-      throw new Error(`lrt-provider has no invoke command "${String(unhandled.command)}"`);
+    // abort-task and interact-task are sent, not invoked (ipcMain.on above).
+    handleInvokeChannel("lrt-provider", {
+      "get-tasks": () => this.tasks.map((task) => task.toJSON()),
+      "delete-task": (_event, { payload }) => this.deleteTask(payload.id),
     });
   }
 

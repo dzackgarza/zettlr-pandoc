@@ -22,7 +22,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class RequestMove extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "request-move");
+    super(app);
   }
 
   /**

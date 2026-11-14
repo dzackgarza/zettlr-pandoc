@@ -30,7 +30,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class TikzRender extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "tikz-render");
+    super(app);
   }
 
   async run(evt: string, arg: TikzRenderRequest): Promise<TikzRenderResult> {

@@ -218,21 +218,6 @@ export default class ConfigProvider extends ProviderContract {
         }
       }
     });
-
-    // Handle config events
-    ipcMain.handle("config-provider", (event, message) => {
-      const { command } = message;
-
-      if (command === "set-config") {
-        // Sets the complete config object
-        const { payload } = message;
-        for (const opt in payload) {
-          assertConfigPath(this.config, opt);
-          this.set(opt, payload[opt]);
-        }
-        return true;
-      }
-    });
   }
 
   isFirstStart(): boolean {

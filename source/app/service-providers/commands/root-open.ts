@@ -23,7 +23,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class RootOpen extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, ["root-open-files", "root-open-workspaces", "roots-add"]);
+    super(app);
   }
 
   /**

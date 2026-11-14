@@ -22,7 +22,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class DirRename extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "dir-rename");
+    super(app);
   }
 
   /**

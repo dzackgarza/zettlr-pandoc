@@ -22,7 +22,7 @@ export enum ProgrammaticallyOpenableWindows {
 
 export default class OpenAuxWindow extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "open-aux-window");
+    super(app);
   }
 
   /**

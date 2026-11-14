@@ -15,12 +15,12 @@
 import { stderrError } from "@common/util/error-reporting";
 // @ts-expect-error Chalk's package metadata is incompatible with this project's legacy moduleResolution.
 import chalk from "chalk";
-import { app, ipcMain } from "electron";
+import { app } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
 import { inspect } from "util";
+import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import ProviderContract from "../provider-contract";
-import type { LogProviderIPCContract } from "./ipc-contract";
 
 /**
  * How many logfiles should the app keep at most?
@@ -77,11 +77,6 @@ export function renderLogDetails(details: LogDetails): string | null {
   return inspect(details, { depth: 6 });
 }
 
-/** One request of the log-provider channel, as its contract declares it. */
-type LogProviderRequest =
-  | ({ command: "retrieve-log-chunk" } & LogProviderIPCContract["retrieve-log-chunk"]["request"])
-  | ({ command: "record-error" } & LogProviderIPCContract["record-error"]["request"]);
-
 const debugConsole = {
   error: function (message: string) {
     stderrError(chalk.bold.red(message));
@@ -124,14 +119,12 @@ export default class LogProvider extends ProviderContract {
     this._activeWrite = null; // The write in flight, so callers can wait for it
 
     // Ensure message handling
-    ipcMain.handle("log-provider", (_event, request: LogProviderRequest) => {
-      switch (request.command) {
-        case "retrieve-log-chunk":
-          return this._log.slice(request.nextIndex);
-        case "record-error":
-          this.error(request.payload.message, request.payload.details);
-          return true;
-      }
+    handleInvokeChannel("log-provider", {
+      "retrieve-log-chunk": (_event, { nextIndex }) => this._log.slice(nextIndex),
+      "record-error": (_event, { payload }): true => {
+        this.error(payload.message, payload.details);
+        return true;
+      },
     });
   }
 

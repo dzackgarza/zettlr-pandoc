@@ -1853,17 +1853,29 @@ of an isolated instance are in the first comment of #132.
     carries the place of the caret in the editor that the pane shows, so
     the opposite move restores it, and a refusal shows one message. Proof:
     `e2e/menu-navigation-auxiliary-window.spec.ts`.
-- **The contract types each command.** `ApplicationIPCContract`
-  (`commands/index.ts`) names each command of the `application` channel
-  with its payload and its answer. The invoke of a window and
-  `CommandProvider.run` in the main process check a call against it. A
-  handler takes `ApplicationPayload<K>` (`file-duplicate`, `file-new`,
-  `dir-new`), so the contract, the callers and the handler name one set of
-  fields; a new handler does the same. A command that a provider channel
-  receives through `ipcMain.on` (`get-citation-sync`, `abort-task`) is no
-  invoke command, and the invoke handler of that channel throws for it.
-  Proof: `test/ipc-invoke-channels.contract.ts` (the typecheck),
-  `e2e/file-duplicate.spec.ts`.
+- **The contract types each command and its handler.**
+  `ApplicationIPCContract` (`commands/index.ts`) names each command of the
+  `application` channel with its payload and its answer. The invoke of a
+  window and `CommandProvider.run` in the main process check a call
+  against it. The handler map of `CommandProvider` (`ApplicationHandlers`)
+  has one handler for each command of the contract. A handler takes
+  `ApplicationPayload<K>` and gives the answer of the contract, so the
+  contract, the callers and the handler name one set of fields. Each other
+  invoke channel registers its handlers through `handleInvokeChannel`,
+  `handleFixedChannel` or `handleBareChannel`
+  (`app/util/handle-ipc-channel.ts`), which take their types from the
+  channel tables of `ipc-bridge.ts`. A handler map without a command of the
+  contract, with a command that the contract does not name, or with a
+  wrong answer does not compile. A message whose command has no handler is
+  an error that names the channel and the command. A new invoke channel
+  goes into a table and registers through one of these functions;
+  `CommandProvider` registers `application` itself, because main-process
+  code runs the same handlers through `run`. A command that a provider
+  channel receives through `ipcMain.on` (`get-citation-sync`,
+  `abort-task`) is no invoke command, and the invoke handler of that
+  channel throws for it. Proof: `e2e/file-duplicate.spec.ts`,
+  `test/ipc-invoke-channels.contract.ts` and
+  `test/ipc-invoke-handlers.contract.ts` (the typecheck).
 - **The contract types each broadcast.** `IpcBroadcastContracts`
   (`source/types/renderer/ipc-bridge.ts`) names each channel on which the
   main process sends a window a message, with the arguments of the

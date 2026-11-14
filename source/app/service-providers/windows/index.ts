@@ -31,6 +31,7 @@ import { app, BrowserWindow, type FileFilter, ipcMain, screen } from "electron";
 import EventEmitter from "events";
 import path from "path";
 import { checkedEnvironment } from "source/app/util/environment-check";
+import { handleBareChannel, handleFixedChannel } from "source/app/util/handle-ipc-channel";
 import { showRefusalInWindow } from "source/app/util/show-refusal-in-window";
 import { showStoreWriteFailure } from "source/app/util/show-store-write-failure";
 import type { PasteModalResult } from "../commands/save-image-from-clipboard";
@@ -72,8 +73,6 @@ export type CloseAllIPCContract = {
   request: { rootType: "workspace" | "file" };
   response: boolean;
 };
-
-export type CloseAllIPCAPI = CloseAllIPCContract["request"];
 
 // 'request-dir' takes no message at all, so it owns a response type only.
 export type RequestDirIPCResponse = string[];
@@ -258,19 +257,18 @@ export default class WindowProvider extends ProviderContract {
      * user for files corresponding to the given filters, and then return a list
      * of those selected.
      */
-    ipcMain.handle("request-files", async (event, message: RequestFilesIPCAPI) => {
+    handleFixedChannel("request-files", async (_event, message) => {
       const focusedWindow = BrowserWindow.getFocusedWindow();
       // The client only can choose what and how much it wants to get
       return await this.askFile(message.filters, message.multiSelection, focusedWindow);
     });
 
-    ipcMain.handle("request-dir", async (_event, _message) => {
+    handleBareChannel("request-dir", async () => {
       const focusedWindow = BrowserWindow.getFocusedWindow();
       return await this.askDir(trans("Open project folder"), focusedWindow);
     });
 
-    ipcMain.handle("close-all", async (event, message: CloseAllIPCAPI) => {
-      const { rootType } = message;
+    handleFixedChannel("close-all", async (_event, { rootType }) => {
       return await this.shouldCloseAll(rootType);
     });
 

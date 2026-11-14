@@ -70,7 +70,7 @@ export interface ExportIPCAPI {
 
 export default class Export extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, ["export", "custom-export"]);
+    super(app);
   }
 
   /**

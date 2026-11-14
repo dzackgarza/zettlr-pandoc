@@ -26,6 +26,7 @@ import {
   type MenuItemConstructorOptions,
   type WebFrameMain,
 } from "electron";
+import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import type CommandProvider from "../commands";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
@@ -222,14 +223,9 @@ export default class MenuProvider extends ProviderContract {
       }
     });
 
-    ipcMain.handle("menu-provider", async (event, message) => {
-      const { command, payload } = message;
-      if (command === "display-native-context-menu") {
-        const menu: Electron.MenuItemConstructorOptions[] = payload.menu;
-        const x: number = payload.x;
-        const y: number = payload.y;
-        return await this._displayNativeContextMenu(menu, x, y, event.senderFrame ?? undefined);
-      }
+    handleInvokeChannel("menu-provider", {
+      "display-native-context-menu": async (event, { payload: { menu, x, y } }) =>
+        await this._displayNativeContextMenu(menu, x, y, event.senderFrame ?? undefined),
     });
   }
 

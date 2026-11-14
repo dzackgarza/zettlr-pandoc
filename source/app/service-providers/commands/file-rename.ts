@@ -26,7 +26,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class FileRename extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "file-rename");
+    super(app);
   }
 
   /**

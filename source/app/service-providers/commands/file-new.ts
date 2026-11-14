@@ -29,7 +29,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class FileNew extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, ["file-new"]);
+    super(app);
   }
 
   /**

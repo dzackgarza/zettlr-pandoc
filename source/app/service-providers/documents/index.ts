@@ -76,12 +76,13 @@ import type { FolderNotListed } from "@providers/fsal/util/read-directory";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
-import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions } from "electron";
+import { app, type BrowserWindow, dialog, type MessageBoxOptions } from "electron";
 import EventEmitter from "events";
 import { existsSync, constants as FSConstants } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
 import { bibliographyFiles, documentBibliography } from "source/app/util/document-bibliographies";
+import { handleInvokeChannel } from "source/app/util/handle-ipc-channel";
 import { openPath } from "source/app/util/open-path";
 import { canonicalPath } from "source/app/util/real-path";
 import { throwFailures } from "source/app/util/run-each-step";
@@ -395,8 +396,6 @@ export type DocumentAuthorityIPCContract = {
     response: boolean;
   };
 };
-
-export type DocumentAuthorityIPCAPI = IPCMessage<DocumentAuthorityIPCContract>;
 
 /**
  * Why a save was refused. The provider never presents this itself: a blocking
@@ -977,22 +976,19 @@ export default class DocumentManager
     /**
      * Hook the event listener that directly communicates with the editors
      */
-    ipcMain.handle("documents-authority", async (event, message: DocumentAuthorityIPCAPI) => {
-      const { command, payload } = message;
-      // Loading a document reattaches its sidecar, and an authority update
-      // rewrites the reviewed working text: both are review writers, so both
-      // take the same per-document lock every other writer takes.
-      switch (command) {
-        case "pull-updates":
-          return await this.pullUpdates(payload.filePath, payload.version);
-        case "push-updates":
-          return await this.pushUpdates(payload.filePath, payload.version, payload.updates);
-        case "get-document":
-          return await this._reviewApplication.withDocumentLock(
-            this.ensureDocumentId(payload.filePath),
-            async () => await this.getDocument(payload.filePath),
-          );
-      }
+    // Loading a document reattaches its sidecar, and an authority update
+    // rewrites the reviewed working text: both are review writers, so both
+    // take the same per-document lock every other writer takes.
+    handleInvokeChannel("documents-authority", {
+      "pull-updates": async (_event, { payload }) =>
+        await this.pullUpdates(payload.filePath, payload.version),
+      "push-updates": async (_event, { payload }) =>
+        await this.pushUpdates(payload.filePath, payload.version, payload.updates),
+      "get-document": async (_event, { payload }) =>
+        await this._reviewApplication.withDocumentLock(
+          this.ensureDocumentId(payload.filePath),
+          async () => await this.getDocument(payload.filePath),
+        ),
     });
 
     // The document operations the renderer drives on their own channels. Each
@@ -1159,131 +1155,106 @@ export default class DocumentManager
     });
 
     // Finally, listen to events from the renderer
-    ipcMain.handle("documents-provider", async (event, message: DocumentManagerIPCAPI) => {
-      const { command, payload } = message;
-      switch (command) {
-        // A given tab should be set as pinned
-        case "set-pinned": {
-          const { windowId, leafId, path, pinned } = payload;
-          this.setPinnedStatus(windowId, leafId, path, pinned);
-          return;
+    handleInvokeChannel("documents-provider", {
+      // A given tab should be set as pinned
+      "set-pinned": (_event, { payload }) => {
+        const { windowId, leafId, path, pinned } = payload;
+        this.setPinnedStatus(windowId, leafId, path, pinned);
+      },
+      // Some main window has requested its tab/split view state
+      "retrieve-tab-config": (_event, { payload }) => this._windows[payload.windowId].toJSON(),
+      "open-file": async (event, { payload }) => {
+        const { windowId, leafId, path, newTab, targetRange, sourceLocation } = payload;
+        return await this.openFile(windowId, leafId, path, newTab, {
+          targetRange,
+          sourceLocation,
+        }).catch((error: unknown) => {
+          showRefusalInWindow(event.sender, "open-file", error);
+          throw error;
+        });
+      },
+      "close-file": async (_event, { payload }) => {
+        const { windowId, leafId, path } = payload;
+        return await this.closeFile(windowId, leafId, path);
+      },
+      "reopen-closed-tab": async (_event, { payload }) =>
+        await this.reopenClosedTab(payload.windowId),
+      "close-other-tabs": async (_event, { payload }) => {
+        const { windowId, leafId, path } = payload;
+        return await this.closeOtherTabs(windowId, leafId, path);
+      },
+      "close-all-tabs": async (_event, { payload }) =>
+        await this.closeAllTabs(payload.windowId, payload.leafId),
+      "save-all": async (_event, { payload }) => await this.saveAll(payload.windowId),
+      "save-all-and-close": async (_event, { payload }) =>
+        await this.saveAllAndClose(payload.windowId),
+      "close-file-everywhere": async (_event, { payload }) =>
+        await this.closeFileEverywhere(payload.path),
+      "load-from-disk": async (_event, { payload }) => {
+        if (!this.documents.some((doc) => doc.filePath === payload.path)) {
+          return; // The document was closed; the next open reads the disk.
         }
-        // Some main window has requested its tab/split view state
-        case "retrieve-tab-config": {
-          return this._windows[payload.windowId].toJSON();
+        await this.notifyRemoteChange(payload.path);
+      },
+      "close-without-review": async (_event, { payload }) =>
+        await this.closeWithoutReview(payload.documentId),
+      "save-copy": async (_event, { payload }) => await this.saveCopy(payload.path),
+      "sort-open-files": (_event, { payload }) => {
+        const { windowId, leafId, newOrder } = payload;
+        this.sortOpenFiles(windowId, leafId, newOrder);
+      },
+      "get-file-modification-status": () =>
+        this.documents.filter((x) => this.isModified(x.filePath)).map((x) => x.filePath),
+      "get-collaboration-session": (_event, { payload }) => {
+        const docId = this.getDocumentId(payload.path);
+        return docId === undefined ? undefined : this._collaborationSessionFor(docId, payload.path);
+      },
+      "get-workspace-collaboration-sessions": async (_event, { payload }) =>
+        await this._workspaceCollaborationSessions(payload.paths),
+      "set-aside-collaboration-sidecar": async (_event, { payload }) =>
+        await this._reviewApplication.setAsideCollaborationSidecar(payload.file),
+      "move-file": async (_event, { payload }) => {
+        const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
+        return await this.moveFile(originWindow, targetWindow, originLeaf, targetLeaf, path);
+      },
+      "split-leaf": async (_event, { payload }) => {
+        const { originWindow, originLeaf, direction, insertion, path, fromWindow, fromLeaf } =
+          payload;
+        return await this.splitLeaf(
+          originWindow,
+          originLeaf,
+          direction,
+          insertion,
+          path,
+          fromWindow,
+          fromLeaf,
+        );
+      },
+      "close-leaf": (_event, { payload }) => {
+        return this.closeLeaf(payload.windowId, payload.leafId);
+      },
+      "focus-leaf": (_event, { payload }) => {
+        return this._updateFocusLeaf(payload.windowId, payload.leafId);
+      },
+      "set-branch-sizes": (_event, { payload }) => {
+        // NOTE that in this particular instance we do not emit an event. The
+        // reason is that we need to prevent frequent reloads during resizing.
+        // For as long as the window is open, the window will have the correct
+        // sizes, and will only update those sizes here in the main process.
+        // As soon as the window is closed, however, it will automatically
+        // grab the correct sizes again.
+        const branch = this._windows[payload.windowId].findBranch(payload.branchId);
+        if (branch !== undefined) {
+          branch.sizes = payload.sizes;
+          this.syncToConfig();
         }
-        case "open-file": {
-          const { windowId, leafId, path, newTab, targetRange, sourceLocation } = payload;
-          return await this.openFile(windowId, leafId, path, newTab, {
-            targetRange,
-            sourceLocation,
-          }).catch((error: unknown) => {
-            showRefusalInWindow(event.sender, "open-file", error);
-            throw error;
-          });
-        }
-        case "close-file": {
-          const { windowId, leafId, path } = payload;
-          return await this.closeFile(windowId, leafId, path);
-        }
-        case "reopen-closed-tab": {
-          return await this.reopenClosedTab(payload.windowId);
-        }
-        case "close-other-tabs": {
-          const { windowId, leafId, path } = payload;
-          return await this.closeOtherTabs(windowId, leafId, path);
-        }
-        case "close-all-tabs": {
-          return await this.closeAllTabs(payload.windowId, payload.leafId);
-        }
-        case "save-all": {
-          return await this.saveAll(payload.windowId);
-        }
-        case "save-all-and-close": {
-          return await this.saveAllAndClose(payload.windowId);
-        }
-        case "close-file-everywhere": {
-          const { path } = payload;
-          return this.closeFileEverywhere(path);
-        }
-        case "load-from-disk": {
-          if (!this.documents.some((doc) => doc.filePath === payload.path)) {
-            return; // The document was closed; the next open reads the disk.
-          }
-          await this.notifyRemoteChange(payload.path);
-          return;
-        }
-        case "close-without-review": {
-          return await this.closeWithoutReview(payload.documentId);
-        }
-        case "save-copy": {
-          return await this.saveCopy(payload.path);
-        }
-        case "sort-open-files": {
-          const { windowId, leafId, newOrder } = payload;
-          this.sortOpenFiles(windowId, leafId, newOrder);
-          return;
-        }
-        case "get-file-modification-status": {
-          return this.documents.filter((x) => this.isModified(x.filePath)).map((x) => x.filePath);
-        }
-        case "get-collaboration-session": {
-          const docId = this.getDocumentId(payload.path);
-          return docId === undefined
-            ? undefined
-            : this._collaborationSessionFor(docId, payload.path);
-        }
-        case "get-workspace-collaboration-sessions": {
-          return await this._workspaceCollaborationSessions(payload.paths);
-        }
-        case "set-aside-collaboration-sidecar": {
-          return await this._reviewApplication.setAsideCollaborationSidecar(payload.file);
-        }
-        case "move-file": {
-          const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
-          return await this.moveFile(originWindow, targetWindow, originLeaf, targetLeaf, path);
-        }
-        case "split-leaf": {
-          const { originWindow, originLeaf, direction, insertion, path, fromWindow, fromLeaf } =
-            payload;
-
-          return await this.splitLeaf(
-            originWindow,
-            originLeaf,
-            direction,
-            insertion,
-            path,
-            fromWindow,
-            fromLeaf,
-          );
-        }
-        case "close-leaf": {
-          return this.closeLeaf(payload.windowId, payload.leafId);
-        }
-        case "focus-leaf": {
-          return this._updateFocusLeaf(payload.windowId, payload.leafId);
-        }
-        case "set-branch-sizes": {
-          // NOTE that in this particular instance we do not emit an event. The
-          // reason is that we need to prevent frequent reloads during resizing.
-          // For as long as the window is open, the window will have the correct
-          // sizes, and will only update those sizes here in the main process.
-          // As soon as the window is closed, however, it will automatically
-          // grab the correct sizes again.
-          const branch = this._windows[payload.windowId].findBranch(payload.branchId);
-          if (branch !== undefined) {
-            branch.sizes = payload.sizes;
-            this.syncToConfig();
-          }
-          return;
-        }
-        case "navigate-forward": {
-          return await this.navigateForward(payload.windowId, payload.leafId, payload.location);
-        }
-        case "navigate-back": {
-          return await this.navigateBack(payload.windowId, payload.leafId, payload.location);
-        }
-      }
+      },
+      "navigate-forward": async (_event, { payload }) => {
+        return await this.navigateForward(payload.windowId, payload.leafId, payload.location);
+      },
+      "navigate-back": async (_event, { payload }) => {
+        return await this.navigateBack(payload.windowId, payload.leafId, payload.location);
+      },
     });
 
     // Listen to the before-quit event by which we make sure to only quit the

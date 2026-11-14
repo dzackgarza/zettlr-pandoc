@@ -18,65 +18,37 @@
 import { type AppServiceContainer } from "../../app-service-container";
 
 /**
- * A payload or result as it crosses the dispatch seam of
- * `CommandProvider.run()`, which receives untyped IPC payloads. Each command
- * declares the precise shape it accepts and returns in its own `run()`.
+ * A payload or result of `ZettlrCommand.run()`. The handler map of
+ * `CommandProvider` gives each command the payload of the contract; each
+ * command declares the precise shape it accepts and returns in its own
+ * `run()`.
  */
 export type CommandWireValue = unknown;
-
-/** A command as the dispatcher holds it, whatever services the command uses. */
-export type DispatchedCommand = Pick<
-  ZettlrCommand,
-  "run" | "respondsTo" | "getEvents" | "shutdown"
->;
 
 /**
  * A command of the application. `Services` is the part of the service
  * container that the command uses; a command that states none gets the whole
- * container.
+ * container. The handler map of `CommandProvider` names the commands of the
+ * contract that a command answers.
  */
 export default abstract class ZettlrCommand<Services = AppServiceContainer> {
   protected readonly _app: Services;
-  protected readonly _bind: string[];
 
   /**
    * Derived classes must implement this method which will be called upon request.
    *
-   * @param   {string}        evt  Accepts any one of the events declared in _bind
+   * @param   {string}        evt  The command of the contract that runs
    * @param   {CommandWireValue}           arg  The payload the command requires
    *
    * @return  {Promise<CommandWireValue>}       The run method must run asynchronously.
    */
   abstract run(evt: string, arg: CommandWireValue): Promise<CommandWireValue>;
 
-  constructor(app: Services, bindEvent: string | string[]) {
+  constructor(app: Services) {
     // The app is the api entry point for all things we can do.
     this._app = app;
-
-    // The bind event is the event that is sent from the renderer
-    if (!Array.isArray(bindEvent)) {
-      bindEvent = [bindEvent];
-    }
-    this._bind = bindEvent;
   }
 
   /** Called when the app stops. A command that owns a process stops it here. */
   async shutdown(): Promise<void> {}
-
-  /**
-   * Returns the event name this thing binds to
-   * @return {String} The event name
-   */
-  getEvents(): string[] {
-    return this._bind.map((event) => event);
-  }
-
-  /**
-   * Returns true, if this command responds to the given event name
-   * @param  {String} evt The event name.
-   * @return {Boolean}     True or false, depending on the bind events.
-   */
-  respondsTo(evt: string): boolean {
-    return this._bind.includes(evt);
-  }
 }

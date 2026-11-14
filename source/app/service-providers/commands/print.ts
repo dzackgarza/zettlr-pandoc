@@ -17,7 +17,7 @@ import ZettlrCommand from "./zettlr-command";
 
 export default class Print extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
-    super(app, "print");
+    super(app);
   }
 
   /**
