@@ -50,13 +50,15 @@ import {
   type SaveRefusedBroadcast,
 } from "source/types/common/documents";
 import { bootDocumentManager, emitWatchdogEvent } from "./documents-provider-seam";
-import { sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+import { messageBoxes, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
 import { invokeMain } from "./main-ipc";
 
 const SOURCE = "A lattice is a free abelian group with a bilinear form.\n";
 const TARGET = SOURCE.replace("bilinear", "symmetric bilinear");
 const PREFIX = "Definition. ";
 const SIDECARS = path.join(userData, "review-sidecars");
+// The second button of the close prompt: discard the unsaved text.
+const DISCARD = 1;
 
 describe("Documents-provider removed file", function () {
   let root: string;
@@ -94,6 +96,8 @@ describe("Documents-provider removed file", function () {
     mkdirSync(path.join(userData, "logs"), { recursive: true });
     await rm(path.join(userData, "documents.yaml"), { force: true });
     await rm(SIDECARS, { recursive: true, force: true });
+    messageBoxes.shown.length = 0;
+    messageBoxes.answer = undefined;
     provider = await bootDocumentManager([root]);
     windowId = provider.windowKeys()[0];
     leafId = provider.leafIds(windowId)[0];
@@ -236,6 +240,32 @@ describe("Documents-provider removed file", function () {
     }
     assert.equal(submitted.code, "DOCUMENT_UNREADABLE");
     assert.equal(provider.readMarkdownBufferContent(filePath), working, "the text stays");
+  });
+
+  it("closes a kept document when the author discards its unsaved text", async function () {
+    await provider.applyWorkspaceTextEdits([
+      { documentPath: filePath, range: { from: 0, to: 0 }, insert: PREFIX },
+    ]);
+    await removeOnDisk();
+
+    messageBoxes.answer = DISCARD;
+    assert.equal(
+      await provider.closeFile(windowId, leafId, filePath),
+      true,
+      "the text that the author discards needs no file",
+    );
+
+    assert.deepEqual(
+      closedFiles.map((context) => context.filePath),
+      [filePath],
+    );
+    assert.deepEqual(
+      sentMessagesFor(window).filter(([channel]) => channel === SAVE_REFUSED_CHANNEL),
+      [],
+      "no close is refused",
+    );
+    assert.equal(provider.readMarkdownBufferContent(filePath), undefined);
+    assert.equal(existsSync(filePath), false, "the discard writes no file");
   });
 
   it("closes a document whose text is on disk", async function () {
