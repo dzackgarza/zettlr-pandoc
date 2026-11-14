@@ -73,6 +73,28 @@ describe("Document-authority sync guard (format-on-save ordering)", function () 
     assert.equal(state.doc.toString(), "The cat sat.\nThe dog ran.\n");
   });
 
+  it("fails when the editor loads the document again while the update is unsent (#57)", async function () {
+    let state = stateWithUnsentFormat();
+    const synced = whenAuthoritySynced(() => state, 2000);
+
+    // A lost synchronization, a setting change or a kept remote change load
+    // the document again (`MarkdownEditor.loadDocument`): a new state with a
+    // new collab session over the text of the authority, which does not have
+    // the reformat. The new session has nothing to send.
+    setTimeout(() => {
+      state = EditorState.create({
+        doc: "The cat sat.  The dog ran.\n",
+        extensions: [collab({ startVersion: 1 })],
+      });
+    }, 40);
+
+    await assert.rejects(
+      synced,
+      /loaded the document again/,
+      "the reformat never reached the authority, so a save after the wait writes the old text",
+    );
+  });
+
   it("resolves immediately when there is nothing left to send", async function () {
     const state = confirmPending(stateWithUnsentFormat());
 
