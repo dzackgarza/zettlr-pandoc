@@ -48,12 +48,18 @@ trap 'rm -r -- "${setup_dir}"' EXIT
 readonly downloads_dir="${HOME}/ci-downloads"
 mkdir --parents "${downloads_dir}"
 
+# A download has 20 s for its connection and three more attempts after a
+# failure that can pass (no connection, a timeout, a 5xx answer). Without
+# these a server that does not answer holds the job for the connect time of
+# the kernel (134 s in run 43628110120) and fails it at the first attempt.
+readonly -a download=(curl --fail --location --silent --show-error --connect-timeout 20 --retry 3)
+
 # fetch URL SHA256 NAME: print the path of the verified file NAME in the
 # download cache, and download it first when it is absent or does not match.
 fetch() {
   local -r url="$1" sha256="$2" file="${downloads_dir}/$3"
   if [[ ! -f "${file}" ]] || ! printf '%s  %s\n' "${sha256}" "${file}" | sha256sum --check --status; then
-    curl --fail --location --silent --show-error "${url}" --output "${file}" || return
+    "${download[@]}" "${url}" --output "${file}" || return
     printf '%s  %s\n' "${sha256}" "${file}" | sha256sum --check >&2 || return
   fi
   printf '%s\n' "${file}"
@@ -82,7 +88,7 @@ readonly texlive_repository='https://mirrors.mit.edu/CTAN/systems/texlive/tlnet'
 readonly texlive_dir="${HOME}/texlive"
 readonly tlmgr="${texlive_dir}/bin/x86_64-linux/tlmgr"
 if [[ ! -x "${tlmgr}" ]]; then
-curl --fail --location --silent --show-error \
+"${download[@]}" \
   "${texlive_repository}/install-tl-unx.tar.gz" \
   --output "${setup_dir}/install-tl.tar.gz"
 mkdir "${setup_dir}/install-tl"
