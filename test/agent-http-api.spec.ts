@@ -61,6 +61,7 @@ import AgentHTTPProvider, {
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
+import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
 import type FSAL from "source/app/service-providers/fsal";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import {
@@ -219,6 +220,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   let configuredSkillsDirectory: string | null;
   let saveDialogResponse = 2;
   let peerServers: http.Server[] = [];
+  /** The sidecar files that a case made unreadable; afterEach removes them. */
+  let unreadableSidecars: string[] = [];
   // The configured workspace set, read live by the config seam so a test can
   // exercise the no-workspace-open profile the app ships with.
   let openWorkspaces: string[] = [];
@@ -636,6 +639,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
     peerServers = [];
     saveDialogResponse = 2;
+    for (const file of unreadableSidecars) {
+      rmSync(file, { force: true });
+    }
+    unreadableSidecars = [];
     await fsal?.shutdown();
     fsal = undefined;
     walk = walkWorkspace;
@@ -2428,6 +2435,67 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(await provider.openFile(windowId, reopenedLeafId, filePath), true);
     assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 1);
     assert.equal(provider.reviewQueries.getReview(documentId)?.reviewId, submitted.reviewId);
+  });
+
+  it("reads the review of a closed document while the sidecar of another document cannot be read", async function () {
+    const windowId = provider.windowKeys()[0];
+    const leafId = provider.leafIds(windowId)[0];
+    assert.ok(leafId !== undefined);
+
+    const reviewedPath = path.join(scratch, "closed-review.md");
+    const documentId = await openInPane(reviewedPath, "before\n");
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text("before\n"),
+      [
+        {
+          description: "closed review",
+          patch: createPatch("document", "before\n", "after\n", "", "", { context: 0 }),
+        },
+      ],
+      "closed-review",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The review proposal was refused: ${submitted.code}`);
+    }
+    saveDialogResponse = 0;
+    assert.equal(await provider.closeFile(windowId, leafId, reviewedPath), true);
+
+    // Another document's sidecar, as a later version of the app writes it.
+    const laterPath = path.join(scratch, "later.md");
+    const laterId = await openInPane(laterPath, "Written by a later version.\n");
+    const annotated = await provider.createAnnotation(laterId, "owner", 0, 7, "Later.", 0);
+    assert.ok("annotationId" in annotated);
+    assert.equal(
+      await provider.closeFile(windowId, provider.leafIds(windowId)[0], laterPath),
+      true,
+    );
+    const laterSidecar = collaborationSidecarFilePath(
+      path.join(userData, "review-sidecars"),
+      laterPath,
+    );
+    const written: { version: number } = JSON.parse(readFileSync(laterSidecar, "utf8"));
+    writeFileSync(
+      laterSidecar,
+      JSON.stringify({ ...written, version: written.version + 1 }),
+      "utf8",
+    );
+    unreadableSidecars.push(laterSidecar);
+
+    // The review lives in its own file; a file of another document does not
+    // decide whether it can be read.
+    const chunks = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}?view=chunks`);
+    assert.equal(chunks.status, 200, chunks.body);
+    assert.equal(parseAs(chunks.body, "ReviewChunksResponse").chunks.length, 1);
+
+    // A review that no readable file holds can be in the unreadable one.
+    const unknown = await httpRequest("GET", `/v1/reviews/${randomUUID()}`);
+    assert.equal(unknown.status, 409, unknown.body);
+    assert.equal(
+      parseAs(unknown.body, "AgentErrorResponse").error.code,
+      "COLLABORATION_STATE_UNREADABLE",
+    );
   });
 
   it("reads a review frozen by disk drift, and reapplies it onto the current file", async function () {
