@@ -24,8 +24,15 @@
  * slowest first, with its result, and the wall time of the run. The runner
  * exits 1 when a file failed.
  *
+ * A run can take one shard of its files (`--shard <index>/<count>`, the
+ * form of the `--shard` option of Jest and of Playwright), so that the
+ * machines of a hosted run each take a part. The runner sorts the files and
+ * deals them to the shards in turn: each file is in one shard, and the
+ * shards differ by one file at most.
+ *
  * Usage: node --import tsx e2e/support/run-lanes.ts
- *          --file-limit-seconds <seconds> <spec file>...
+ *          --file-limit-seconds <seconds> [--shard <index>/<count>]
+ *          <spec file>...
  */
 
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
@@ -215,23 +222,41 @@ function printTable(results: FileResult[], wallSeconds: number): void {
   }
 }
 
+/**
+ * The files of one shard of a run: the sorted files, dealt to the shards
+ * in turn.
+ */
+function filesOfShard(files: string[], shard: string): string[] {
+  const parts = /^(\d+)\/(\d+)$/.exec(shard);
+  if (parts === null) {
+    throw new Error(`run-lanes: give the shard as <index>/<count>, not ${shard}`);
+  }
+  const index = Number(parts[1]);
+  const count = Number(parts[2]);
+  if (count < 1 || index < 1 || index > count) {
+    throw new Error(`run-lanes: the shard ${shard} is not one of 1/${count} to ${count}/${count}`);
+  }
+  return [...files].sort().filter((_, position) => position % count === index - 1);
+}
+
 /** The files that no lane took yet. A stop of the run empties it. */
 const queue: string[] = [];
 /** The signal that stopped the run. */
 let stoppedBy: NodeJS.Signals | undefined;
 
 async function main(): Promise<number> {
-  const { values, positionals: files } = parseArgs({
-    options: { "file-limit-seconds": { type: "string" } },
+  const { values, positionals } = parseArgs({
+    options: { "file-limit-seconds": { type: "string" }, shard: { type: "string" } },
     allowPositionals: true,
   });
   const fileLimitSeconds = Number(values["file-limit-seconds"]);
   if (!(fileLimitSeconds > 0)) {
     throw new Error("run-lanes: give the time limit of a file (--file-limit-seconds <seconds>)");
   }
-  if (files.length === 0) {
+  if (positionals.length === 0) {
     throw new Error("run-lanes: name at least one spec file");
   }
+  const files = values.shard === undefined ? positionals : filesOfShard(positionals, values.shard);
   queue.push(...files);
   const results: FileResult[] = [];
   const startedAt = Date.now();

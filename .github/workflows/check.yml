@@ -18,55 +18,23 @@ env:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
+# The unit job and the shards of the assembled-app run are jobs of their own,
+# so the time of a run is the time of its slowest job and not their sum (#70).
+# Without a limit, a step that does not end holds a runner for 6 hours.
 jobs:
-  check:
-    name: Unit Tests / Lint
+  unit:
+    name: Unit tests
     runs-on: ubuntu-latest
-    # A run of the job takes 25 minutes. Without a limit, a step that does
-    # not end holds the runner for 6 hours.
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           # Always fetch the branch that triggered the event (develop or master)
           ref: ${{ github.ref }}
           submodules: true
-      - name: Setup Bun 1.3.11
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
-        with:
-          bun-version: 1.3.11
-      - name: Setup NodeJS ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      - uses: ./.github/actions/setup-ci
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - name: Setup just
-        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b
-      # `just setup-ci` installs Flowmark from its main branch as a uv tool.
-      - name: Setup uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
-      - name: Key the CI toolchain cache by the week
-        id: toolchain-week
-        run: echo "week=$(date --utc +%G-W%V)" >> "$GITHUB_OUTPUT"
-      - name: Restore the CI toolchain
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/texlive
-            ~/ci-downloads
-          key: ci-toolchain-${{ steps.toolchain-week.outputs.week }}-${{ hashFiles('scripts/setup-ci-toolchain.sh', 'scripts/pandoc-reference.json') }}
-        id: toolchain-cache
-      - name: Provision real export toolchain
-        run: just setup-ci
-      - name: Save the CI toolchain
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/texlive
-            ~/ci-downloads
-          key: ${{ steps.toolchain-cache.outputs.cache-primary-key }}
-      - name: Install packages
-        run: bun ci
       - name: Verify pinned Pandoc parser reference data
         run: bun run check:pandoc-reference-data
       - name: Typecheck the sources and the contract fixtures
@@ -77,38 +45,68 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/dzackgarza/ai-review-ci "$HOME/ai-review-ci"
           bun run check:agent-api-types
-      # The electron package downloads its distribution at the first require.
-      - name: Configure Electron SUID sandbox
-        run: |
-          node -e "require('electron')"
-          bash scripts/configure-electron-sandbox-ci.sh node_modules/electron/dist
       - name: Run unit tests
         run: bun run test
+      - name: Test CSL update
+        run: bun run update:csl
+      - name: Test Citation update
+        run: bun run update:citation
+  e2e:
+    name: Assembled-app E2E (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # A failed shard does not stop the other shards: a run names each
+      # failed file.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.ref }}
+          submodules: true
+      - uses: ./.github/actions/setup-ci
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       # Compile the real webpack bundles (main + renderer + preload). tsc/eslint
       # type-check but never bundle, so a renderer file importing a main-only
       # module (e.g. `from 'electron'`, which drags in `child_process`) passes
       # lint yet breaks `bun run start`. `just package` runs the same webpack
       # compile as launching the app, minus the installer makers, and fails
-      # when the build wrote no app.asar of this commit. Each start of the
-      # assembled-app E2E step runs this build, so the build comes first.
+      # when the build wrote no app.asar of this commit. Each shard builds the
+      # package itself: a build takes less time than the wait for a build job
+      # and the transfer of its package.
       - name: Build app bundle
         run: just package
       # The packaged app holds a copy of the Electron distribution. The
       # launch-delivery cases start that binary itself.
       - name: Configure the SUID sandbox of the packaged app
         run: bash scripts/configure-electron-sandbox-ci.sh out/Zettlr-Pandoc-linux-x64
-      # The step takes 16 minutes (931 s in run 43494293902).
       - name: Run assembled-app E2E
-        timeout-minutes: 20
-        run: just test-e2e
+        timeout-minutes: 8
+        run: just test-e2e ${{ matrix.shard }}/4
       - name: Upload assembled-app E2E logs
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          name: e2e-${{ github.run_id }}-${{ github.run_attempt }}-shard-${{ matrix.shard }}
           path: /tmp/zettlr-*-e2e-latest
           retention-days: 7
-      - name: Test CSL update
-        run: bun run update:csl
-      - name: Test Citation update
-        run: bun run update:citation
+  # The check that the protection of develop requires. It passes when each
+  # other job of the run passed.
+  check:
+    name: Unit Tests / Lint
+    needs: [unit, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Each job of the run passed
+        env:
+          UNIT: ${{ needs.unit.result }}
+          E2E: ${{ needs.e2e.result }}
+        run: |
+          echo "unit: $UNIT; e2e: $E2E"
+          test "$UNIT" = success
+          test "$E2E" = success

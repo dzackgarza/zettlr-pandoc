@@ -225,9 +225,11 @@ test: sync-dependencies
 
 # Run the assembled Electron app against its isolated document workspace.
 # Portable: runs on hosted CI and locally alike.
-test-e2e: _current-package
+# `shard` is the part of the files that the run takes (`2/4`: the second of
+# four parts); a job of the hosted run takes one part.
+test-e2e shard="1/1": _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _e2e-run node --import tsx "{{justfile_directory()}}/e2e/support/run-lanes.ts" --file-limit-seconds {{e2e_file_limit_seconds}} e2e/*.spec.ts
+    @just _e2e-run node --import tsx "{{justfile_directory()}}/e2e/support/run-lanes.ts" --file-limit-seconds {{e2e_file_limit_seconds}} --shard {{shard}} e2e/*.spec.ts
 
 # Run the workstation-owned desktop-launcher proofs (e2e/desktop/). These
 # drive the installed desktop entry through a live Hyprland compositor and

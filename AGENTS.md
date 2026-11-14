@@ -1084,10 +1084,20 @@ of an isolated instance are in the first comment of #132.
   `exit` of `.mocharc.js` for the unit suite). A spec file of the lanes has
   180 s (`e2e_file_limit_seconds` of the justfile; the slowest file takes
   69 s): at the limit the runner ends the file with each of its processes
-  and reports it as failed. The hosted job has 30 minutes and its
-  assembled-app step 20 (`timeout-minutes`, `check.yml`); a run of the job
-  takes 25 minutes, the step 16. A new step or runner that waits for a
-  process states the limit of that wait.
+  and reports it as failed. Each job of the hosted run has 15 minutes and
+  the assembled-app step of a shard 8 (`timeout-minutes`, `check.yml`). A
+  new step or runner that waits for a process states the limit of that
+  wait.
+- **The hosted run is jobs that run at the same time.** `check.yml` has the
+  job `unit` (the typecheck and the unit suite) and four jobs `e2e`, each
+  with one shard of the spec files (`just test-e2e <index>/4`; the lanes
+  runner sorts the files and deals them to the shards in turn). Each job
+  sets up the toolchain through `.github/actions/setup-ci`, and each shard
+  builds the package itself. The job `Unit Tests / Lint` is the check that
+  the protection of `develop` requires: it passes when each other job
+  passed. A new part of the hosted run is a job of its own that this job
+  needs; a step that goes into a job adds its time to the run (#70). Proof
+  of the shards: `test/e2e-run-lanes.spec.ts`.
 - **A provider that cannot start is in the log before its error box.** The
   native box of `_informativeBoot` stops the main process, and the app exits
   after it; the log has the cause first (`LogProvider.flush`). Proof:

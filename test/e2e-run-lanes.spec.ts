@@ -11,7 +11,9 @@
  *                  its processes. A first start of the app binds the default
  *                  Agent API port, so two such files in two lanes each bind
  *                  it. A file that leaves a process holds no lane, and the
- *                  process does not outlive the file.
+ *                  process does not outlive the file. A run can take one
+ *                  shard of its files; the shards of a run hold each file
+ *                  one time.
  *
  * END HEADER
  */
@@ -93,6 +95,11 @@ it("does not end", function (done) {
 });
 `;
 
+// A spec file whose one test passes.
+const PASSING_SPEC_SOURCE = `
+it("passes", function () {});
+`;
+
 /** Answers whether a connection to the path is accepted, or the error code. */
 async function connectOutcome(socketPath: string): Promise<string> {
   const client = connect(socketPath);
@@ -124,10 +131,11 @@ describe("E2E lanes runner", function () {
     files: string[],
     fileLimitSeconds: number,
     timeoutMs: number,
+    options: string[] = [],
   ): SpawnSyncReturns<string> {
     const runner = [process.execPath, "--import", "tsx", RUNNER];
     const limit = ["--file-limit-seconds", String(fileLimitSeconds)];
-    return spawnSync("just", ["_e2e-run", ...runner, ...limit, ...files], {
+    return spawnSync("just", ["_e2e-run", ...runner, ...limit, ...options, ...files], {
       cwd: REPOSITORY,
       encoding: "utf8",
       env: { ...process.env, RUN_LANES_PROOF_DIRECTORY: directory },
@@ -166,6 +174,37 @@ describe("E2E lanes runner", function () {
       "ECONNREFUSED",
       "the process that the file left does not run after the file",
     );
+  });
+
+  it("runs each file in one shard of the run", async function () {
+    const names = ["a.cjs", "b.cjs", "c.cjs", "d.cjs", "e.cjs"];
+    const files = names.map((name) => path.join(directory, name));
+    for (const file of files) {
+      await writeFile(file, PASSING_SPEC_SOURCE, "utf8");
+    }
+    // The order of the arguments is not the order of the shards.
+    const given = [...files].reverse();
+
+    const filesOfShard = (shard: string): string[] => {
+      const run = runLanes(given, 60, 60_000, ["--shard", shard]);
+      assert.equal(run.status, 0, `shard ${shard} passes: ${run.stdout}${run.stderr}`);
+      return Array.from(run.stdout.matchAll(/^== (\S+) \(/gm), (match) =>
+        path.basename(match[1]),
+      ).sort();
+    };
+
+    assert.deepEqual(filesOfShard("1/2"), ["a.cjs", "c.cjs", "e.cjs"]);
+    assert.deepEqual(filesOfShard("2/2"), ["b.cjs", "d.cjs"]);
+  });
+
+  it("refuses a shard that the run does not have", async function () {
+    const file = path.join(directory, "a.cjs");
+    await writeFile(file, PASSING_SPEC_SOURCE, "utf8");
+
+    const run = runLanes([file], 60, 60_000, ["--shard", "3/2"]);
+
+    assert.notEqual(run.status, 0, `the run fails: ${run.stdout}${run.stderr}`);
+    assert.match(run.stderr, /run-lanes: the shard 3\/2 is not one of 1\/2 to 2\/2/);
   });
 
   it("ends a file at its time limit and reports it as failed", async function () {
