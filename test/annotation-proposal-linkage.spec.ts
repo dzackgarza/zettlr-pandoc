@@ -409,6 +409,30 @@ describe("cross-section proposal linkage", function () {
       assert.deepEqual(await outcomes(service), [["rejected"], ["accepted"]]);
     });
 
+    // 51a1b362b moved the review count out of the editor and deleted the
+    // test of the editor label with it (5dd05a4cb). The Annotations view
+    // counts a proposal as pending while it has no outcome
+    // (`proposalCardView`), so the rule holds here: text that the owner types
+    // is no decision.
+    it("gives no proposal an outcome for an ordinary edit of the owner", async function () {
+      const { service, authority } = harness();
+      await twoAnsweredThreads(service);
+      const working = authority.readWorkingText(DOCUMENT_ID)!;
+      const edit = authority.ownerEdit({
+        from: working.length,
+        to: working.length,
+        insert: "\nAn ordinary sentence of the owner.",
+      });
+      await service.applyWorkingTextEdit(DOCUMENT_ID, edit.nextText, edit.changes, edit.commit);
+
+      assert.equal(authority.readWorkingText(DOCUMENT_ID), edit.nextText);
+      assert.deepEqual(
+        await outcomes(service),
+        [[undefined], [undefined]],
+        "both proposals are still pending after the edit",
+      );
+    });
+
     it("records a retracted packet as withdrawn and a cleared one as rejected", async function () {
       const { service, authority } = harness();
       const { submitted } = await twoAnsweredThreads(service);
