@@ -2258,6 +2258,14 @@ of an isolated instance are in the first comment of #132.
   commit. 51a1b362b deleted the test that an ordinary edit is no review
   decision with the editor label, and the rule had no test until
   ed4346a48.
+- The unit suite runs its spec files in four worker processes
+  (`.mocharc.js`), and a worker loads a file after files that no serial run
+  put before it. A spec file therefore owns the state that it reads: a
+  temporary directory of its own, and no module state that another file
+  set. `test/setup.js` installs what each file needs before the first one
+  (the `electron` stub, the browser globals, the IPC double). A file that
+  passes in the suite and fails alone (`just test-file`) reads state of
+  another file.
 - An install goes through `just sync-dependencies`, which uses the bun that
   `package.json` declares. The bun of the system (1.4) puts a second copy of
   the vendored `@lezer/markdown` into

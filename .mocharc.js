@@ -12,6 +12,13 @@ module.exports = {
   // handle after the last test. A handle that a spec left would hold the run
   // without a limit, so the process ends with the last test.
   exit: true,
+  // The spec files run in four worker processes (#70). A spec file owns the
+  // state that it reads: a worker loads a file after files that no serial
+  // run put before it. The count is stated: Mocha's default is one worker
+  // less than the cores of the machine, which is more memory than a
+  // workstation gives a test run.
+  parallel: true,
+  jobs: 4,
   "node-option": ["import=tsx"],
   require: ["./test/setup.js"],
   extension: ["ts"],
