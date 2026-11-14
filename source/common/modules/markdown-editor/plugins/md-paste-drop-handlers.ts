@@ -24,7 +24,6 @@ import {
   pathExtname,
   relativePath,
 } from "@common/util/renderer-path-polyfill";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { configField } from "../util/configuration";
 import { normalizePathForInsertion, saveClipboardImage } from "../util/save-clipboard-image";
 
@@ -197,7 +196,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<void> = {
                 path: filePath,
                 newTab: true,
               },
-            } as DocumentManagerIPCAPI)
+            })
             .catch((e) => reportError(e));
         } else {
           // Unsupported file type -> ignore

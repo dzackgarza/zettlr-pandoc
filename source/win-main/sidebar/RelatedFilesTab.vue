@@ -63,8 +63,8 @@
 <script setup lang="ts">
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
+import { mainWindowId } from "@common/util/main-window-id";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { useDocumentTreeStore, useTagsStore, useWorkspaceStore } from "source/pinia";
 import { computed, ref, watch } from "vue";
 import { RecycleScroller } from "vue-virtual-scroller";
@@ -83,12 +83,7 @@ const workspaceStore = useWorkspaceStore();
 const tagStore = useTagsStore();
 const documentTreeStore = useDocumentTreeStore();
 
-const searchParams = new URLSearchParams(window.location.search);
-const windowId = searchParams.get("window_id");
-
-if (windowId === null) {
-  throw new Error("windowID was null");
-}
+const windowId = mainWindowId();
 
 const relatedFiles = ref<RelatedFile[]>([]);
 
@@ -266,7 +261,7 @@ function requestFile(event: MouseEvent, filePath: string): void {
         leafId: lastLeafId.value,
         newTab: event.type === "mousedown" && event.button === 1,
       },
-    } as DocumentManagerIPCAPI)
+    })
     .catch((e) => reportError(e));
 }
 

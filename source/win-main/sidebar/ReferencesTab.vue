@@ -31,7 +31,6 @@ import { reportError } from "@common/util/error-reporting";
 import { uncitedItems } from "@common/util/nocite";
 import type { CitationResourceProblem } from "@dts/common/citeproc";
 import { DP_EVENTS } from "@dts/common/documents";
-import type { CiteprocProviderIPCAPI } from "source/app/service-providers/citeproc";
 import { type DocumentsUpdateContext } from "source/app/service-providers/documents";
 import { hasMarkdownExt } from "source/common/util/file-extention-checks";
 import localiseNumber from "source/common/util/localise-number";
@@ -171,14 +170,14 @@ async function updateBibliography(): Promise<void> {
     const items: CSLItem[] = await ipcRenderer.invoke("citeproc-provider", {
       command: "get-items",
       payload: { database },
-    } as Extract<CiteprocProviderIPCAPI, { command: "get-items" }>);
+    });
     keys.push(...items.map((item) => item.id));
   }
 
   bibliography.value = await ipcRenderer.invoke("citeproc-provider", {
     command: "get-bibliography",
     payload: { database, citations: [...new Set(keys)] },
-  } as Extract<CiteprocProviderIPCAPI, { command: "get-bibliography" }>);
+  });
 }
 </script>
 

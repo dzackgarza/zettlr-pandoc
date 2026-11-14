@@ -190,8 +190,6 @@
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { sortExplorerChildren } from "@common/util/explorer-ordering";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
-import type { CloseAllIPCAPI } from "source/app/service-providers/windows";
 import showPopupMenu, {
   type AnyMenuItem,
 } from "source/common/modules/window-register/application-menu-helper";
@@ -447,7 +445,7 @@ function closeAllFiles(): void {
   ipcRenderer
     .invoke("close-all", {
       rootType: "file",
-    } as CloseAllIPCAPI)
+    })
     .then((confirm: boolean) => {
       if (!confirm) {
         return;
@@ -479,7 +477,7 @@ function closeAllWorkspaces(): void {
   ipcRenderer
     .invoke("close-all", {
       rootType: "workspace",
-    } as CloseAllIPCAPI)
+    })
     .then((confirm: boolean) => {
       if (!confirm) {
         return;
@@ -627,7 +625,7 @@ function navigate(event: KeyboardEvent): void {
             leafId: lastLeafId.value,
             newTab: false,
           },
-        } as DocumentManagerIPCAPI)
+        })
         .catch((e) => reportError(e));
     }
   }

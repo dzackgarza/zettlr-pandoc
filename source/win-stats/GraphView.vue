@@ -54,7 +54,6 @@ import SelectElement from "@common/vue/form/elements/SelectControl.vue";
 import TextElement from "@common/vue/form/elements/TextControl.vue";
 import * as d3 from "d3";
 import { type SimulationNodeDatum } from "d3";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import type { WikilinkEdge } from "source/app/service-providers/links/ipc-contract";
 import getDocumentTitle from "source/win-main/util/get-document-title";
 import tippy from "tippy.js";
@@ -460,7 +459,7 @@ function startSimulation(): void {
                   path: vertex.id,
                   newTab: event.altKey === true ? true : undefined,
                 },
-              } as DocumentManagerIPCAPI)
+              })
               .catch((err) => reportError(err));
           })
           .attr("data-tippy-content", (vertex) => {

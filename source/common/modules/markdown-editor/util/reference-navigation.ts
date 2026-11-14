@@ -40,7 +40,6 @@ import {
 } from "@dts/common/references";
 import { NODES } from "@dzack/pandoc-editor/parser/citation-parser";
 import type { SyntaxNode } from "@lezer/common";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { editorMetadataFacet } from "../plugins/editor-metadata";
 import { workspaceReferencesField } from "../plugins/workspace-references-field";
 import { configField } from "./configuration";
@@ -352,7 +351,7 @@ export function followReferenceNavigationIntent(
         targetRange: intent.target.range,
         sourceLocation: intent.source,
       },
-    } as DocumentManagerIPCAPI)
+    })
     .catch((error: unknown) => {
       reportError("Following the reference failed", error);
     });

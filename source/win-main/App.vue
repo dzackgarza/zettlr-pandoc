@@ -217,6 +217,7 @@ import { reportError } from "@common/util/error-reporting";
 import generateId from "@common/util/generate-id";
 import { loadFromDiskAction } from "@common/util/load-document-from-disk";
 import localiseNumber from "@common/util/localise-number";
+import { mainWindowId } from "@common/util/main-window-id";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import { recordRendererError } from "@common/util/run-recoverably";
 import {
@@ -338,10 +339,9 @@ const SOUND_EFFECTS = [
   },
 ];
 
-const searchParams = new URLSearchParams(window.location.search);
 // The window number indicates which main window this one here is. This is only
 // necessary for the documents and split views to show up.
-const windowId = searchParams.get("window_id")!;
+const windowId = mainWindowId();
 
 const fileManagerVisible = computed<boolean>(() => windowStateStore.navigationSidebarShown);
 const isUpdateAvailable = ref(false);

@@ -177,7 +177,7 @@ onMounted(() => {
               leafId: props.leafId,
               windowId: props.windowId,
             },
-          } as DocumentManagerIPCAPI)
+          })
           .catch((e) => reportError(e));
       } else {
         // No more open files, so request closing of the window
@@ -346,7 +346,7 @@ function handleClickClose(event: MouseEvent, file: OpenDocument): void {
         windowId: props.windowId,
         leafId: props.leafId,
       },
-    } as DocumentManagerIPCAPI)
+    })
     .catch((e) => reportError(e));
 }
 
@@ -391,7 +391,7 @@ function selectFile(file: OpenDocument): void {
     .invoke("documents-provider", {
       command: "open-file",
       payload: { path: file.path, windowId: props.windowId, leafId: props.leafId },
-    } as DocumentManagerIPCAPI)
+    })
     .catch((e) => reportError(e));
 }
 
@@ -406,7 +406,7 @@ function handleTabbarContext(event: MouseEvent): void {
             leafId: props.leafId,
             windowId: props.windowId,
           },
-        } as DocumentManagerIPCAPI)
+        })
         .catch((e) => reportError(e));
     }
   });
@@ -839,7 +839,7 @@ function handleExternalDrop(event: DragEvent): void {
         targetLeaf: props.leafId,
         path: filePath.join(DELIM),
       },
-    } as DocumentManagerIPCAPI)
+    })
     .catch((err) => reportError(err));
 }
 

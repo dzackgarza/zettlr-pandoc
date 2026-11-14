@@ -150,7 +150,6 @@ import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plu
 import { reportError } from "@common/util/error-reporting";
 import { hasImageExt, hasPDFExt } from "@common/util/file-extention-checks";
 import { type LeafNodeJSON, type OpenDocument } from "@dts/common/documents";
-import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { useDocumentTreeStore, useWindowStateStore } from "source/pinia";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { CreateReferenceLabelDialogPrompt, EditorCommands } from "./component-contracts";
@@ -247,7 +246,7 @@ function handleDrop(
             targetLeaf: props.leafId,
             path: filePath.join(DELIM),
           },
-        } as DocumentManagerIPCAPI)
+        })
         .catch((err) => reportError(err));
     } else {
       const dir = ["left", "right"].includes(where) ? "horizontal" : "vertical";
@@ -264,7 +263,7 @@ function handleDrop(
             fromWindow: originWindow,
             fromLeaf: originLeaf,
           },
-        } as DocumentManagerIPCAPI)
+        })
         .catch((err) => reportError(err));
     }
   }
