@@ -1466,7 +1466,7 @@ export default class FSAL extends ProviderContract {
       throw new Error(`[FSAL] Cannot load file ${absPath} as it is a directory`);
     }
 
-    throw new Error(`[FSAL] Cannot load file ${absPath}: Not found`);
+    throw new Error(`There is no file or folder at ${absPath}.`);
   }
 
   /**
