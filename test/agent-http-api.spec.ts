@@ -255,8 +255,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   }
 
   async function createProvider(): Promise<DocumentManager> {
-    const userData = path.join(os.tmpdir(), "zettlr-pandoc-http-api-test");
-    mkdirSync(userData, { recursive: true });
+    // The provider stores its tabs in the userData of the harness, which
+    // each spec file of the run shares: a boot starts with no tab.
     mkdirSync(path.join(userData, "logs"), { recursive: true });
     rmSync(path.join(userData, "documents.yaml"), { force: true });
 
