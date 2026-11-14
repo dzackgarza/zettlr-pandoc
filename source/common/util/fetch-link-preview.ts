@@ -62,22 +62,16 @@ interface MediaWikiAPIResponse {
  */
 async function fetchHeaders(rawUrl: string): Promise<IncomingHttpHeaders> {
   return await new Promise((resolve, reject) => {
-    // Initiate request
-    const promise = got(rawUrl);
-
-    // Hook three listeners: As soon as 'response' is fired the headers are
-    // available and the download begins. At that point, resolve with the
-    // headers and cancel the request to abort the download. Add an additional
-    // then in case there is no body (because the promise resolution and the
-    // event response will be simultaneous), and finally add a catch for good
-    // measure.
-    promise
-      .on("response", (response) => {
-        resolve(response.headers);
-        promise.cancel();
-      })
-      .then((response) => resolve(response.headers))
-      .catch((err) => reject(err));
+    // The stream of a request gives its `response` event when the headers
+    // arrive and the download begins. The promise of a request gives it only
+    // after the body. Resolve with the headers and destroy the stream, which
+    // ends the download.
+    const download = got.stream(rawUrl);
+    download.on("response", (response) => {
+      resolve(response.headers);
+      download.destroy();
+    });
+    download.once("error", reject);
   });
 }
 

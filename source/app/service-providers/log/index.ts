@@ -13,7 +13,6 @@
  */
 
 import { stderrError } from "@common/util/error-reporting";
-// @ts-expect-error Chalk's package metadata is incompatible with this project's legacy moduleResolution.
 import chalk from "chalk";
 import { app } from "electron";
 import { promises as fs } from "fs";

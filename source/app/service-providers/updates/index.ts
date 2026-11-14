@@ -631,7 +631,7 @@ export default class UpdateProvider extends ProviderContract {
     try {
       const response = await got(this._updateState.checksumFile.browser_download_url, {
         method: "GET",
-        timeout: 5000,
+        timeout: { request: 5000 },
       });
 
       // Now we need to parse the data. It looks like this:

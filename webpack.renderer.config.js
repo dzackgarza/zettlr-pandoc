@@ -90,7 +90,7 @@ module.exports = {
       "@dts": [path.resolve(__dirname, "source/types")],
       // fzf publishes `"type": "module"` yet routes require() to a UMD file,
       // which webpack then parses as an ESM file with zero exports. Since
-      // ts-loader emits CommonJS (tsconfig `module`), `import { Fzf }` becomes
+      // ts-loader emits CommonJS (webpack.rules.js), `import { Fzf }` becomes
       // exactly such a require. Point the bare specifier straight at the ES
       // build (the package's exports map blocks deep imports, an alias does
       // not) so webpack's interop serves the real named exports.
