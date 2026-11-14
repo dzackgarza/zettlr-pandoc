@@ -29,14 +29,14 @@
 
 import showPopupMenu, {
   type AnyMenuItem,
-  type SubmenuItem,
 } from "@common/modules/window-register/application-menu-helper";
 import { reportError } from "@common/util/error-reporting";
+import type { SerializedSubmenu } from "@dts/common/serialized-menu";
 import { onBeforeMount, ref } from "vue";
 
 const ipcRenderer = window.ipc;
 
-const menu = ref<SubmenuItem[]>([]);
+const menu = ref<SerializedSubmenu[]>([]);
 const currentSubmenu = ref<string | null>(null);
 const menuCloseCallback = ref<null | (() => void) | null>(null);
 
@@ -45,17 +45,18 @@ const targetElement = ref<HTMLElement | null>(null);
 
 onBeforeMount(() => {
   // Listen to messages from the menu provider
-  type MenuMessage = { command: "application-menu"; payload: SubmenuItem[] };
-  type SubmenuMessage = {
-    command: "application-submenu";
-    payload: { id: string; submenu: SubmenuItem[] };
-  };
-
-  ipcRenderer.on("menu-provider", (event, { command, payload }: MenuMessage | SubmenuMessage) => {
-    if (command === "application-menu") {
-      menu.value = payload;
-    } else if (command === "application-submenu") {
-      showSubmenu(payload.submenu, payload.id);
+  ipcRenderer.on("menu-provider", (event, message) => {
+    if (message.command === "application-menu") {
+      menu.value = message.payload.map((item) => {
+        if (item.type !== "submenu") {
+          throw new Error(
+            `The menu bar shows submenus only, and the application menu has a top-level ${item.type} item.`,
+          );
+        }
+        return item;
+      });
+    } else {
+      showSubmenu(message.payload.submenu, message.payload.id);
     }
   });
 

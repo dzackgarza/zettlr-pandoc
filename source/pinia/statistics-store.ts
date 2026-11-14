@@ -111,7 +111,7 @@ export const useStatisticsStore = defineStore("statistics", () => {
     .catch((err) => reportError(err));
 
   // Listen to subsequent updates
-  ipcRenderer.on("stats-updated", (event, data: Stats) => {
+  ipcRenderer.on("stats-updated", (event, data) => {
     stats.value = data;
   });
 

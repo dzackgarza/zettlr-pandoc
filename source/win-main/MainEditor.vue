@@ -178,7 +178,6 @@ import {
 import TikzPreviewPane from "@dzack/tikz-render/ui/TikzPreviewPane.vue";
 import { storeToRefs } from "pinia";
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
-import type { DocumentsUpdateContext } from "source/app/service-providers/documents";
 import type { WikilinkEdge } from "source/app/service-providers/links/ipc-contract";
 import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
 import type { CustomEditorShortcut } from "source/common/modules/markdown-editor/keymaps/shortcuts";
@@ -493,37 +492,34 @@ function applyReviewDiffSession(session: ReviewDiffSession): void {
 }
 
 // EVENT LISTENERS
-const stopCiteprocUpdates = ipcRenderer.on(
-  "citeproc-database-updated",
-  (_event, _dbPath: string) => {
-    if (!isActiveTab.value) {
-      return;
-    }
-    const descriptor = activeFileDescriptor.value;
+const stopCiteprocUpdates = ipcRenderer.on("citeproc-database-updated", (_event, _dbPath) => {
+  if (!isActiveTab.value) {
+    return;
+  }
+  const descriptor = activeFileDescriptor.value;
 
-    if (descriptor === undefined || descriptor.type !== "file") {
-      return; // Nothing to do
-    }
+  if (descriptor === undefined || descriptor.type !== "file") {
+    return; // Nothing to do
+  }
 
-    documentCitationDatabase(descriptor.path)
-      .then(async (library) => {
-        await updateCitationKeys(library);
-        if (activeFileDescriptor.value?.path !== descriptor.path) {
-          return;
-        }
+  documentCitationDatabase(descriptor.path)
+    .then(async (library) => {
+      await updateCitationKeys(library);
+      if (activeFileDescriptor.value?.path !== descriptor.path) {
+        return;
+      }
 
-        currentEditor?.setMetadata({
-          path: descriptor.path,
-          id: descriptor.id,
-          library,
-        });
-        currentEditor?.syncCitationData();
-      })
-      .catch((e) => {
-        reportError("Could not update citation keys", e);
+      currentEditor?.setMetadata({
+        path: descriptor.path,
+        id: descriptor.id,
+        library,
       });
-  },
-);
+      currentEditor?.syncCitationData();
+    })
+    .catch((e) => {
+      reportError("Could not update citation keys", e);
+    });
+});
 
 // Combined @-completion label feed (issue #1). Mirrors the citation-keys
 // feed above: whenever main broadcasts changed workspace references, fetch
@@ -622,78 +618,73 @@ const stopShortcuts = ipcRenderer.on("shortcut", (event, command) => {
   }
 });
 
-const stopDocumentUpdates = ipcRenderer.on(
-  "documents-update",
-  (e, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
-    const { event, context } = payload;
-    if (
-      event === DP_EVENTS.ACTIVE_FILE &&
-      context.leafId === props.leafId &&
-      context.filePath !== undefined &&
-      (context.location !== undefined || context.targetRange !== undefined)
-    ) {
-      // The activation carries a navigation payload (issue #1 Phase 5): a
-      // Back/Forward-restored DocumentLocation or a cross-file reference jump
-      // landing range. Record it, and apply it right away when the editor for
-      // that file is already loaded (otherwise the 'loaded' hook applies it
-      // after the remount).
-      pendingNavigation = {
-        filePath: context.filePath,
-        location: context.location,
-        targetRange: context.targetRange,
-      };
-      applyPendingNavigation();
-    }
+const stopDocumentUpdates = ipcRenderer.on("documents-update", (e, payload) => {
+  const { event, context } = payload;
+  if (
+    event === DP_EVENTS.ACTIVE_FILE &&
+    context.leafId === props.leafId &&
+    context.filePath !== undefined &&
+    (context.location !== undefined || context.targetRange !== undefined)
+  ) {
+    // The activation carries a navigation payload (issue #1 Phase 5): a
+    // Back/Forward-restored DocumentLocation or a cross-file reference jump
+    // landing range. Record it, and apply it right away when the editor for
+    // that file is already loaded (otherwise the 'loaded' hook applies it
+    // after the remount).
+    pendingNavigation = {
+      filePath: context.filePath,
+      location: context.location,
+      targetRange: context.targetRange,
+    };
+    applyPendingNavigation();
+  }
 
-    if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
-      // The currently loaded document has been changed remotely. This event indicates
-      // that the document provider has already reloaded the document and we only
-      // need to tell the main editor to reload it as well.
-      //
-      // Drop the review first. notifyRemoteChange closed the provider-owned review
-      // when it accepted the external edit, so this pane's session is already dead;
-      // leaving it set would let the reload restore accept/reject controls over the
-      // externally reloaded text. Rejecting one of those phantom chunks would
-      // reinstate the stale review reference, and with the provider's review gone
-      // the save gate would not stop that text being written over the external
-      // edit.
-      currentEditor?.clearReviewDiffSession();
-      currentEditor?.reload().catch(reportDocumentLoadError);
-    } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
-      // The file has been saved to disk. This means we should probably update the
-      // descriptor to know of, e.g., library changes.
-      ipcRenderer
-        .invoke("fsal", { command: "get-descriptor", payload: props.file.path })
-        .then(async (descriptor) => {
-          if (descriptor.type !== "file" && descriptor.type !== "code") {
-            throw new Error(`${props.file.path} is not a Markdown or code file`);
-          }
+  if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
+    // The currently loaded document has been changed remotely. This event indicates
+    // that the document provider has already reloaded the document and we only
+    // need to tell the main editor to reload it as well.
+    //
+    // Drop the review first. notifyRemoteChange closed the provider-owned review
+    // when it accepted the external edit, so this pane's session is already dead;
+    // leaving it set would let the reload restore accept/reject controls over the
+    // externally reloaded text. Rejecting one of those phantom chunks would
+    // reinstate the stale review reference, and with the provider's review gone
+    // the save gate would not stop that text being written over the external
+    // edit.
+    currentEditor?.clearReviewDiffSession();
+    currentEditor?.reload().catch(reportDocumentLoadError);
+  } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
+    // The file has been saved to disk. This means we should probably update the
+    // descriptor to know of, e.g., library changes.
+    ipcRenderer
+      .invoke("fsal", { command: "get-descriptor", payload: props.file.path })
+      .then(async (descriptor) => {
+        if (descriptor.type !== "file" && descriptor.type !== "code") {
+          throw new Error(`${props.file.path} is not a Markdown or code file`);
+        }
 
-          activeFileDescriptor.value = descriptor;
-          const library =
-            descriptor.type === "file"
-              ? await documentCitationDatabase(descriptor.path)
-              : undefined;
-          if (library !== undefined) {
-            updateCitationKeys(library).catch((e) =>
-              reportError("Could not update citation keys", e),
-            );
-          }
+        activeFileDescriptor.value = descriptor;
+        const library =
+          descriptor.type === "file" ? await documentCitationDatabase(descriptor.path) : undefined;
+        if (library !== undefined) {
+          updateCitationKeys(library).catch((e) =>
+            reportError("Could not update citation keys", e),
+          );
+        }
 
-          // Provide the editor instance with updated metadata
-          currentEditor?.setMetadata({
-            path: props.file.path,
-            id: descriptor.type === "file" ? descriptor.id : "",
-            library: library ?? CITEPROC_MAIN_DB,
-          });
-        })
-        .catch((err) => reportError(err));
-    }
-    // Collaboration state (annotations, review) is not handled here: it
-    // reaches this pane through the document-collaboration store and the
-    // `collaborationSession` watcher below, not through this raw event.
-  },
-);
+        // Provide the editor instance with updated metadata
+        currentEditor?.setMetadata({
+          path: props.file.path,
+          id: descriptor.type === "file" ? descriptor.id : "",
+          library: library ?? CITEPROC_MAIN_DB,
+        });
+      })
+      .catch((err) => reportError(err));
+  }
+  // Collaboration state (annotations, review) is not handled here: it
+  // reaches this pane through the document-collaboration store and the
+  // `collaborationSession` watcher below, not through this raw event.
+});
 
 const stopReloads = ipcRenderer.on("reload-editors", (_e) => {
   currentEditor?.reload().catch(reportDocumentLoadError);

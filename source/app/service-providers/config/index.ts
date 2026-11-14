@@ -116,6 +116,12 @@ const guardOptions = {
 };
 
 /**
+ * A `config-provider` message to the windows: the path of the option that
+ * changed, or undefined when the whole configuration changed.
+ */
+export type ConfigProviderBroadcast = { command: "update"; payload: string | undefined };
+
+/**
  * This class represents the configuration of Zettlr, represented by the
  * config.json file in the user's data directory as well as some environment
  * variables. Basically, this class tells Zettlr what the user wants and what

@@ -16,8 +16,6 @@
  * END HEADER
  */
 
-import { z } from "zod";
-
 /** The commands the Markdown editor runs by name (runCommand). */
 export const EDITOR_COMMAND_NAMES = [
   "markdownComment",
@@ -68,7 +66,6 @@ export const WINDOW_SHORTCUT_NAMES = [
   "insert-id",
   "insert-pandoc-div",
   "insert-pandoc-span",
-  "insert-table",
   "navigate-back",
   "navigate-forward",
   "new-dir",
@@ -99,14 +96,11 @@ export type WindowShortcutName = (typeof WINDOW_SHORTCUT_NAMES)[number];
 
 export type ShortcutName = WindowShortcutName | EditorCommandName;
 
-export function isShortcutName(value: string): value is ShortcutName {
-  return WINDOW_SHORTCUT_NAMES.some((name) => name === value) || isEditorCommandName(value);
-}
+/** The arguments of a message on the `shortcut` channel: the name. */
+export type ShortcutBroadcast = [name: ShortcutName];
 
-/** The one shortcut that carries a payload: the table size to insert. */
-export const insertTablePayloadSchema = z.object({
-  rows: z.number().int().min(1).max(12),
-  cols: z.number().int().min(1).max(12),
-});
-
-export type InsertTablePayload = z.infer<typeof insertTablePayloadSchema>;
+/**
+ * The arguments of a message on the `insert-table` channel: the size of the
+ * table that an item of Insert › Table names.
+ */
+export type InsertTableBroadcast = [size: { rows: number; cols: number }];

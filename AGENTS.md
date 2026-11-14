@@ -1857,6 +1857,18 @@ of an isolated instance are in the first comment of #132.
   invoke command, and the invoke handler of that channel throws for it.
   Proof: `test/ipc-invoke-channels.contract.ts` (the typecheck),
   `e2e/file-duplicate.spec.ts`.
+- **The contract types each broadcast.** `IpcBroadcastContracts`
+  (`source/types/renderer/ipc-bridge.ts`) names each channel on which the
+  main process sends a window a message, with the arguments of the
+  message. The table imports each type from its sender. `window.ipc.on`,
+  `broadcastIPCMessage`, `sendIPCMessage`, `replyIPCMessage` and
+  `tellMainWindows` check a channel and its arguments against it. A new
+  sender uses one of these functions, not `webContents.send`. A new
+  listener takes the arguments that the table declares, without an
+  annotation. A channel with more than one message declares the union of
+  its messages; `insert-table` is a channel of its own, as a shortcut is
+  its name only. Proof: `test/ipc-broadcast-channels.contract.ts` (the
+  typecheck).
 - **A context menu has the width of its labels.** `.application-menu` has
   `width: max-content`; `positionMenu` reads that width to put the menu
   where it fits, also at the right edge of the window.

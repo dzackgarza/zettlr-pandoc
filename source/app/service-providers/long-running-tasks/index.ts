@@ -81,14 +81,15 @@ export type LRTIPCSyncMessage = IPCAPI<{
   "get-tasks": unknown;
   // Abort the provided task
   "abort-task": { id: string };
-  // Add a new task
-  "new-task": { task: LRT_JSON };
-  // Updates an existing task
-  "update-task": { task: LRT_JSON };
-  // Deletes a task
-  "delete-task": { id: string };
   // The user initiates an interaction with the task
   "interact-task": { id: string };
+}>;
+
+/** An `lrt-provider` message to the windows: a task started, changed or went away. */
+export type LRTBroadcast = IPCAPI<{
+  "new-task": { task: LRT_JSON };
+  "update-task": { task: LRT_JSON };
+  "delete-task": { id: string };
 }>;
 
 export type LRTIPCContract = {
@@ -203,7 +204,7 @@ export default class LongRunningTaskProvider extends ProviderContract {
     broadcastIPCMessage("lrt-provider", {
       command: "new-task",
       payload: { task: task.toJSON() },
-    } as LRTIPCSyncMessage);
+    });
     return task;
   }
 
@@ -237,7 +238,7 @@ export default class LongRunningTaskProvider extends ProviderContract {
       broadcastIPCMessage("lrt-provider", {
         command: "delete-task",
         payload: { id },
-      } as LRTIPCSyncMessage);
+      });
     }
   }
 }

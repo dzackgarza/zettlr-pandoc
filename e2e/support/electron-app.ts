@@ -346,14 +346,11 @@ export function readApplicationMenu(page: Page): Promise<SerializedMenuNode[]> {
   return page.evaluate(
     () =>
       new Promise<SerializedMenuNode[]>((resolve) => {
-        window.ipc.on(
-          "menu-provider",
-          (_event: unknown, message: { command: string; payload: SerializedMenuNode[] }) => {
-            if (message.command === "application-menu") {
-              resolve(message.payload);
-            }
-          },
-        );
+        window.ipc.on("menu-provider", (_event, message) => {
+          if (message.command === "application-menu") {
+            resolve(message.payload);
+          }
+        });
         window.ipc.send("menu-provider", { command: "get-application-menu" });
       }),
   );

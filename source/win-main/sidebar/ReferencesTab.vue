@@ -32,7 +32,6 @@ import { uncitedItems } from "@common/util/nocite";
 import type { CitationResourceProblem } from "@dts/common/citeproc";
 import { DP_EVENTS } from "@dts/common/documents";
 import type { CiteprocProviderIPCAPI } from "source/app/service-providers/citeproc";
-import { type DocumentsUpdateContext } from "source/app/service-providers/documents";
 import { hasMarkdownExt } from "source/common/util/file-extention-checks";
 import localiseNumber from "source/common/util/localise-number";
 import { useDocumentTreeStore } from "source/pinia";
@@ -121,20 +120,17 @@ onMounted(() => {
     styleProblem.value = problems.find((problem) => problem.resource === "style");
   });
 
-  ipcRenderer.on(
-    "documents-update",
-    (e, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
-      const { event, context } = payload;
-      // Update the bibliography if the active file has been saved
-      if (event === DP_EVENTS.FILE_SAVED) {
-        const { filePath } = context;
+  ipcRenderer.on("documents-update", (e, payload) => {
+    const { event, context } = payload;
+    // Update the bibliography if the active file has been saved
+    if (event === DP_EVENTS.FILE_SAVED) {
+      const { filePath } = context;
 
-        if (filePath === activeFile.value?.path) {
-          refreshBibliography();
-        }
+      if (filePath === activeFile.value?.path) {
+        refreshBibliography();
       }
-    },
-  );
+    }
+  });
 
   // Initial bibliography update
   refreshBibliography();

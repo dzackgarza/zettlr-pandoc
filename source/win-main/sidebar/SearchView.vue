@@ -350,7 +350,6 @@ import type {
   ReplaceTarget,
   SearchFailure,
   SearchMatch,
-  SearchProviderBroadcast,
   SearchProviderIPCAPI,
   SearchQuery,
   UnsearchedFile,
@@ -654,42 +653,39 @@ let seenGeneration = 0;
 // The drawer creates this view every time the owner comes back to it, so
 // the listener has to go when the view does: a second copy would add every
 // result to the list twice.
-const stopListening = ipcRenderer.on(
-  "search-provider",
-  (event, message: SearchProviderBroadcast) => {
-    if (message.generation < seenGeneration) {
+const stopListening = ipcRenderer.on("search-provider", (event, message) => {
+  if (message.generation < seenGeneration) {
+    return;
+  }
+  if (message.generation > seenGeneration) {
+    seenGeneration = message.generation;
+    windowStateStore.clearSearchResults();
+    notSearched.value = [];
+  }
+  switch (message.type) {
+    case "search-result":
+      progress.value = message.progress;
+      windowStateStore.addSearchResult(message.result);
       return;
-    }
-    if (message.generation > seenGeneration) {
-      seenGeneration = message.generation;
-      windowStateStore.clearSearchResults();
-      notSearched.value = [];
-    }
-    switch (message.type) {
-      case "search-result":
-        progress.value = message.progress;
-        windowStateStore.addSearchResult(message.result);
-        return;
-      case "search-progress":
-        progress.value = message.progress;
-        return;
-      case "search-unread":
-        progress.value = message.progress;
-        notSearched.value = [...notSearched.value, message.file];
-        return;
-      case "search-failed":
-        windowStateStore.flushSearchResults();
-        searching.value = false;
-        progress.value = 1;
-        searchError.value = failureMessage(message.failure);
-        return;
-      case "search-end":
-        windowStateStore.flushSearchResults();
-        searching.value = false;
-        progress.value = 1;
-    }
-  },
-);
+    case "search-progress":
+      progress.value = message.progress;
+      return;
+    case "search-unread":
+      progress.value = message.progress;
+      notSearched.value = [...notSearched.value, message.file];
+      return;
+    case "search-failed":
+      windowStateStore.flushSearchResults();
+      searching.value = false;
+      progress.value = 1;
+      searchError.value = failureMessage(message.failure);
+      return;
+    case "search-end":
+      windowStateStore.flushSearchResults();
+      searching.value = false;
+      progress.value = 1;
+  }
+});
 
 /** What the view reads out in place of a count it cannot honestly give. */
 function failureMessage(failure: SearchFailure): string {

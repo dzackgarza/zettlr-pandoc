@@ -16,6 +16,9 @@
 
 import type { WritingTarget } from "./index";
 
+/** A `targets-provider` message to the windows: the writing targets changed. */
+export type TargetProviderBroadcast = "writing-targets-updated";
+
 export type TargetProviderIPCContract = {
   "get-targets": {
     request: { payload?: undefined };

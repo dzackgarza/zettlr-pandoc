@@ -92,7 +92,7 @@ const offShortcut = ipcRenderer.on("shortcut", (_event, shortcut) => {
   }
 });
 
-const offAssets = ipcRenderer.on("assets-provider", (_event, what: string) => {
+const offAssets = ipcRenderer.on("assets-provider", (_event, what) => {
   if (what === "snippets-updated" && (codeEditor.value == null || codeEditor.value.isClean())) {
     loadSource();
   }

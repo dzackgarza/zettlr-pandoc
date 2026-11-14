@@ -17,9 +17,10 @@
 
 import { trans } from "@common/i18n-main";
 import PersistentDataContainer from "@common/modules/persistent-data-container";
+import { replyIPCMessage, sendIPCMessage } from "@common/util/broadcast-ipc-message";
 import { DP_EVENTS } from "@dts/common/documents";
-import type { Cloneable, IpcArgument } from "@dts/common/ipc";
 import type { PreferenceNavigationTarget } from "@dts/common/preferences";
+import type { IpcBroadcastArgs, IpcBroadcastContracts } from "@dts/renderer/ipc-bridge";
 import { getCLIArgument } from "@providers/cli-provider";
 import type ConfigProvider from "@providers/config";
 import type DocumentManager from "@providers/documents";
@@ -90,6 +91,18 @@ export type WindowControlsIPCAPI = IPCAPI<{
   "inspect-element": { x: number; y: number };
   "drag-start": { filePath: string };
 }>;
+
+/**
+ * A `window-controls` message to a window: the direction of the traffic
+ * lights, whether the window is maximised, and whether it is in full screen.
+ */
+export type WindowControlsBroadcast = {
+  command: "traffic-lights-rtl" | "get-maximised-status" | "fullscreen";
+  payload: boolean;
+};
+
+/** A `jump-to-line` message: the main window shows this line of this file. */
+export type JumpToLineBroadcast = { filePath: string; line: number };
 
 export default class WindowProvider extends ProviderContract {
   private readonly _mainWindows: Record<string, BrowserWindow>;
@@ -202,7 +215,7 @@ export default class WindowProvider extends ProviderContract {
           break;
         // This event is only important for macOS
         case "get-traffic-lights-rtl":
-          event.reply("window-controls", {
+          replyIPCMessage(event, "window-controls", {
             command: "traffic-lights-rtl",
             payload: this._hasRTLLocale, // if RTL then also RTL traffic lights
           });
@@ -639,7 +652,7 @@ export default class WindowProvider extends ProviderContract {
       };
 
       this._updateWindowPosition(stateId, newPosition);
-      window.webContents.send("window-controls", {
+      sendIPCMessage(window.webContents, "window-controls", {
         command: "get-maximised-status",
         payload: window.isMaximized(),
       });
@@ -755,7 +768,7 @@ export default class WindowProvider extends ProviderContract {
     if (window === undefined) {
       throw new Error(`No main window ${windowId}`);
     }
-    window.webContents.send("jump-to-line", { filePath, line });
+    sendIPCMessage(window.webContents, "jump-to-line", { filePath, line });
   }
 
   /**
@@ -763,10 +776,10 @@ export default class WindowProvider extends ProviderContract {
    * renderer. When none of them has one, the main window that the author
    * used last gets the message.
    */
-  tellMainWindows<A extends readonly IpcArgument[]>(
+  tellMainWindows<C extends keyof IpcBroadcastContracts>(
     windowIds: readonly string[],
-    channel: string,
-    ...args: A & Cloneable<A>
+    channel: C,
+    ...args: IpcBroadcastArgs<C>
   ): void {
     tellMainWindows(
       windowIds.map((windowId) => this._mainWindows[windowId]),
@@ -861,7 +874,7 @@ export default class WindowProvider extends ProviderContract {
   showPreferences(target?: PreferenceNavigationTarget): void {
     const navigate = (): void => {
       if (target !== undefined && this._preferences !== null && !this._preferences.isDestroyed()) {
-        this._preferences.webContents.send("preferences-navigate", target);
+        sendIPCMessage(this._preferences.webContents, "preferences-navigate", target);
       }
     };
     if (this._preferences === null) {

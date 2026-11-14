@@ -208,13 +208,7 @@ ipcRenderer
 
 // Whenever the update state changes in the provider, we must update it here
 const offCallback = ipcRenderer.on("update-provider", (event, command, newUpdateState) => {
-  if (command === "state-changed") {
-    if (newUpdateState !== undefined) {
-      updateState.value = newUpdateState;
-    } else {
-      reportError("ERROR: Expected an update state, received undefined!");
-    }
-  }
+  updateState.value = newUpdateState;
 });
 
 onUnmounted(offCallback);

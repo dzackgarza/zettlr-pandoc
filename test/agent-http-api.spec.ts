@@ -331,11 +331,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         }),
         getFirstMainWindow: () => undefined,
         // The spec has no main window, so no window gets a message.
-        tellMainWindows: (
-          _windowIds: readonly string[],
-          _channel: string,
-          ..._args: readonly unknown[]
-        ) => {},
+        tellMainWindows: () => {},
         getMainWindowKey: (_window: unknown) => activeWindowId,
         // No operation of this spec asks the author for a file.
         saveFile: async (_filePath: string): Promise<string | undefined> => {
