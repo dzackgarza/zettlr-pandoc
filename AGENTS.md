@@ -2177,6 +2177,19 @@ of an isolated instance are in the first comment of #132.
   commit. 51a1b362b deleted the test that an ordinary edit is no review
   decision with the editor label, and the rule had no test until
   ed4346a48.
+- An install goes through `just sync-dependencies`, which uses the bun that
+  `package.json` declares. The bun of the system (1.4) puts a second copy of
+  the vendored `@lezer/markdown` into
+  `node_modules/@codemirror/lang-markdown/node_modules`, and an install with
+  the declared bun does not remove that copy. CodeMirror then has another
+  `MarkdownParser` class than the app, the bundles hold one more copy of the
+  parser, and `test/pandoc-lezer-fork-integration.spec.ts` fails. Move that
+  folder to the trash and install again.
+- The grammar oracle specs need the Pandoc release of
+  `scripts/pandoc-reference.json`, not the Pandoc of the system. A local run
+  gives its binary in `PANDOC_REFERENCE_BIN`; without it each oracle spec
+  fails with "Pandoc grammar oracle mismatch". `scripts/setup-ci-toolchain.sh`
+  has the download address and the checksum.
 - The raw production command can report success without a fresh asar. Use `just
   package` or `just verify-build` so the verifier checks the current fingerprint.
 - `userData/defaults` is copied once and never pruned. A surface that offers or
