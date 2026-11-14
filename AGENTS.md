@@ -1151,6 +1151,16 @@ of an isolated instance are in the first comment of #132.
   runner. A spec of a window that shows the tree starts a role query at the
   locator of its surface (`page.locator(".popover").getByRole(...)`;
   `e2e/global-search-dispatch-failure.spec.ts`).
+- **A spec assumes no time between two of its actions.** A hosted runner is
+  about two times slower than a workstation, so two actions of a spec can be
+  more than a debounce of the app apart, and an answer of the main process
+  can arrive after the surface that shows it. A spec reads a list that an
+  asynchronous source fills when the list holds the entry that it reads
+  (`completionLabelsAfter`, `e2e/autocomplete-language-sources.spec.ts`). A
+  spec does not count events that a timer of the app can add between two
+  actions: the query field of the Search view starts a search 200 ms after a
+  change of its text, and the Enter key starts one more
+  (`e2e/global-search-dispatch-failure.spec.ts`).
 - **Shared helpers.** `e2e/support/native-dialog.ts` finds, captures and
   answers a native window. `e2e/support/panes.ts` gives the panes of a
   window and opens a document in one.
