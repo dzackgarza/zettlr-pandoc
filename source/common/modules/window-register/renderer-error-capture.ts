@@ -31,7 +31,7 @@ export function registerRendererErrorCapture(): void {
     reportError("[Renderer] Uncaught error", event.error ?? event.message);
   });
   window.addEventListener("unhandledrejection", (event) => {
-    if (event.reason instanceof RendererLogFailure && false) {
+    if (event.reason instanceof RendererLogFailure) {
       return;
     }
     reportError("[Renderer] Unhandled promise rejection", event.reason);
