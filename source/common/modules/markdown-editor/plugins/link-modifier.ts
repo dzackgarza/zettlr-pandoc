@@ -16,8 +16,14 @@
 
 import { EditorView, ViewPlugin } from "@codemirror/view";
 
-/** The label of the Mod key of this platform. */
-export const MOD_KEY_LABEL = process.platform === "darwin" ? "Cmd" : "Ctrl";
+/**
+ * The label of the Mod key of this platform. It reads the platform when it
+ * is called, as each handler of the editor does: a page that only loads
+ * the editor modules has no `process`.
+ */
+export function modKeyLabel(): string {
+  return process.platform === "darwin" ? "Cmd" : "Ctrl";
+}
 
 function modIsDown(event: MouseEvent | KeyboardEvent): boolean {
   return process.platform === "darwin" ? event.metaKey : event.ctrlKey;

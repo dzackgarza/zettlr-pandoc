@@ -60,7 +60,7 @@ import {
 } from "@dts/common/references";
 import { NODES } from "@dzack/pandoc-editor/parser/citation-parser";
 import { type SyntaxNode } from "@lezer/common";
-import { MOD_KEY_LABEL } from "../plugins/link-modifier";
+import { modKeyLabel } from "../plugins/link-modifier";
 import { workspaceReferencesField } from "../plugins/workspace-references-field";
 import { configField } from "../util/configuration";
 import { renderReferencePreview } from "../util/reference-preview";
@@ -219,7 +219,7 @@ function getPreviewElement(
   wrapper.appendChild(excerpt);
   wrapper.appendChild(expand);
   wrapper.appendChild(
-    linkGestureLine(view, trans("%s+Click to go to definition", MOD_KEY_LABEL), {
+    linkGestureLine(view, trans("%s+Click to go to definition", modKeyLabel()), {
       selector: ".reference-chip-cluster",
       sourceFrom: clusterStart(view, keyFrom),
     }),

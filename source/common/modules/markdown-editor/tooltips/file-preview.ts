@@ -27,7 +27,7 @@ import type { ForceOpenAPI } from "source/app/service-providers/commands/force-o
 import { documentCitationDatabase } from "source/common/util/document-citation-database";
 import { imageSourceUri } from "source/common/util/image-source-uri";
 import { pathDirname } from "source/common/util/renderer-path-polyfill";
-import { MOD_KEY_LABEL } from "../plugins/link-modifier";
+import { modKeyLabel } from "../plugins/link-modifier";
 import { configField } from "../util/configuration";
 import { linkGestureLine, linkGestureTheme } from "./link-gesture";
 
@@ -77,7 +77,7 @@ async function filePreviewTooltip(
       if (res.status === "resolved") {
         const dom = getPreviewElement(res, fileToDisplay, sourcePath, zknLinkFormat);
         dom.appendChild(
-          linkGestureLine(view, trans("%s+Click to open", MOD_KEY_LABEL), {
+          linkGestureLine(view, trans("%s+Click to open", modKeyLabel()), {
             selector: ".wikilink-chip",
             sourceFrom: linkFrom,
           }),
