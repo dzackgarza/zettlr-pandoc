@@ -199,7 +199,9 @@ export default function getMenu(
           id: "menu.open",
           label: trans("Open file…"),
           click: function (_menuitem, _focusedWindow) {
-            commands.run("root-open-files", undefined).catch((e: Error) => logger.error(e.message, e));
+            commands
+              .run("root-open-files", undefined)
+              .catch((e: Error) => logger.error(e.message, e));
           },
         },
         {
@@ -481,18 +483,18 @@ export default function getMenu(
           id: "menu.toggle_theme",
           label: trans("Dark mode"),
           type: "checkbox",
-          checked: config.get("darkMode") === true,
+          checked: config.get("darkMode"),
           click: function (_menuitem, _focusedWindow) {
-            config.set("darkMode", config.get("darkMode") === false);
+            config.set("darkMode", !config.get("darkMode"));
           },
         },
         {
           id: "menu.toggle_file_meta",
           label: trans("Additional information"),
           type: "checkbox",
-          checked: config.get("fileMeta") === true,
+          checked: config.get("fileMeta"),
           click: function (_menuitem, _focusedWindow) {
-            config.set("fileMeta", config.get("fileMeta") === false);
+            config.set("fileMeta", !config.get("fileMeta"));
           },
         },
         {
@@ -795,7 +797,7 @@ export default function getMenu(
   ];
 
   // Finally, before returning, make sure to remove the debug menu if applicable
-  if (config.get("debug") === false) {
+  if (!config.get("debug")) {
     const debugMenuIndex = menu.findIndex((item) => item.id === "debug-menu");
     if (debugMenuIndex >= 0) {
       menu.splice(debugMenuIndex, 1);

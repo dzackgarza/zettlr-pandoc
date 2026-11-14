@@ -1,4 +1,5 @@
 import type CommandProvider from "@providers/commands";
+import type { ConfigValue } from "@providers/config/get-config-template";
 import type DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
 import type RecentDocumentsProvider from "@providers/recent-docs";
@@ -19,9 +20,10 @@ export type MenuWindows = Pick<
 >;
 export type MenuDocuments = Pick<DocumentManager, "newWindow" | "openFile">;
 
-type MenuConfigWrite =
-  | [key: "darkMode" | "fileMeta", value: boolean]
-  | [key: "editor.fontSize", value: number];
+/** The settings that the menu reads by key. */
+export type MenuConfigKey = "system.zoomBehavior" | "darkMode" | "fileMeta" | "debug";
+/** The settings that the menu changes. */
+type MenuConfigWriteKey = "darkMode" | "fileMeta" | "editor.fontSize";
 
 /**
  * The application menu reads a handful of configuration fields and can toggle
@@ -38,7 +40,7 @@ export interface MenuConfig {
         quickTexFile: string;
       };
     };
-    (key: "system.zoomBehavior" | "darkMode" | "fileMeta" | "debug"): unknown;
+    <K extends MenuConfigKey>(key: K): ConfigValue<K>;
   };
-  set: (...args: MenuConfigWrite) => void;
+  set: <K extends MenuConfigWriteKey>(key: K, value: ConfigValue<K>) => void;
 }
