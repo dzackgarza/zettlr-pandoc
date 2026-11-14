@@ -63,6 +63,7 @@ import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
 import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
 import type FSAL from "source/app/service-providers/fsal";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import {
   type DirectoryListing,
@@ -298,6 +299,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       },
       fsal: {
         getWatchdog: () => watcherSeam,
+        // This spec drives no FSAL event: the provider subscribes and hears nothing.
+        on: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
+        off: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
         testAccess: async () => true,
         getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
         loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),

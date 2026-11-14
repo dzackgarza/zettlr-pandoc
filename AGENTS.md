@@ -812,7 +812,9 @@ of an isolated instance are in the first comment of #132.
   and marks matches (`is-ignored`).
 - **A filter hides; it does not close.** An open document that a rule or a
   file type hides stays open, and it saves to its path. The documents
-  provider has its own watcher and does not read `fsal-events`.
+  provider closes tabs through its own watcher; it reads `fsal-events`
+  only to end the document ids of removed files (§14), and a hidden file
+  is on disk and keeps its id.
 - **A filter does not remove a chapter.** A Project export takes each
   chapter of its settings that is a file on disk (`exportProject`), also a
   chapter that a rule or a file type hides; the message of the export names
@@ -1082,6 +1084,13 @@ of an isolated instance are in the first comment of #132.
   collaboration state under the document lock (`_movePathOfDocument`, then
   `renameCollaboration`). A new transition that changes the path of a
   document goes through them; it must not assign a new id to the new path.
+- **An id lasts while the app can name its path.** A listing of the Agent
+  API gives an id to each file of a workspace (`ensureDocumentId`). The id
+  goes when the FSAL reports the removal of a file that no loaded document
+  and no tab holds, when the last holder of a removed file closes
+  (`syncWatchedFilePaths`), and when its workspace closes
+  (`closeDocumentsInside`). The maps of ids follow the files that exist.
+  Proof: `test/document-id-lifetime.spec.ts`.
 - **The sidecar follows the file.** The sidecar of a closed document moves
   with the file too: `hasMovedDir` reads `listCollaborationSidecars()` for the
   documents that are not loaded. A document whose file a move replaced is

@@ -25,6 +25,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import DocumentManager from "source/app/service-providers/documents";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import LogProvider from "source/app/service-providers/log";
@@ -131,6 +132,9 @@ async function createScratchBoundary(): Promise<ScratchBoundary> {
     },
     fsal: {
       getWatchdog: () => watcher,
+      // This spec drives no FSAL event: the provider subscribes and hears nothing.
+      on: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
+      off: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
       getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
       loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, "utf-8"),
       getDescriptorFor: async (filePath: string) => descriptorFor(filePath),

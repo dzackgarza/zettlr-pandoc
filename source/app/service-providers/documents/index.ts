@@ -70,13 +70,14 @@ import type { DocumentLocation, SourceRange, WorkspaceTextEdit } from "@dts/comm
 import { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
+import type { FSALEventPayload } from "@providers/fsal";
 import type { FolderNotListed } from "@providers/fsal/util/read-directory";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
 import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions } from "electron";
 import EventEmitter from "events";
-import { constants as FSConstants } from "fs";
+import { constants as FSConstants, existsSync } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
 import { bibliographyFiles, documentBibliography } from "source/app/util/document-bibliographies";
@@ -175,6 +176,8 @@ type DocumentManagerApp = {
     | "getDescriptorFor"
     | "getDescriptorForAnySupportedFile"
     | "loadAnySupportedFile"
+    | "off"
+    | "on"
     | "readDirectoryRecursively"
     | "testAccess"
     | "writeTextFile"
@@ -797,11 +800,22 @@ export default class DocumentManager
 
   /**
    * The id of each document path, and the path of each document id. The
-   * two maps change together (_assignDocumentId, _moveDocumentId): an id
-   * names one path, and a path has one id.
+   * two maps change together (_assignDocumentId, _moveDocumentId,
+   * _forgetDocumentId): an id names one path, and a path has one id. An id
+   * lasts while the application can name its path: a file on disk in an
+   * open workspace, a loaded document, a tab. A listing of the Agent API
+   * names each file of a workspace, so the maps follow the files that
+   * exist, not each file that a listing ever named (#57).
    */
   private readonly _documentIdByPath: Map<string, string>;
   private readonly _documentPathById: Map<string, string>;
+
+  /**
+   * The paths that the FSAL reported as removed while a loaded document or
+   * a tab held them. The id of such a path goes when its last holder
+   * closes and the file is still absent (syncWatchedFilePaths).
+   */
+  private readonly _removedHeldPaths: Set<string>;
 
   /**
    * The closes that the provider refused, by the id of the document that
@@ -878,6 +892,7 @@ export default class DocumentManager
     });
     this._documentIdByPath = new Map();
     this._documentPathById = new Map();
+    this._removedHeldPaths = new Set();
     this._refusedCloses = new Map();
     this.documents = [];
     this._shuttingDown = false;
@@ -956,6 +971,8 @@ export default class DocumentManager
         });
       }
     });
+
+    this._app.fsal.on("fsal-events", this._onFsalEvents);
 
     /**
      * Hook the event listener that directly communicates with the editors
@@ -1733,8 +1750,41 @@ export default class DocumentManager
     // every chokidar process we utilize. Otherwise, the fsevents dylib will
     // still hold on to some memory after the Electron process itself shuts down
     // which will result in a crash report appearing on macOS.
+    this._app.fsal.off("fsal-events", this._onFsalEvents);
     await this._watcher.shutdown();
     await this._config.shutdown();
+  }
+
+  /**
+   * A removal that the FSAL reports ends the id of each path at or inside
+   * it whose file is absent. A path that a loaded document or a tab holds
+   * keeps its id until it closes: the document can outlive its file (§14).
+   * A path that a rule hides is a removal for the FSAL; its file is on
+   * disk and keeps its id.
+   */
+  private readonly _onFsalEvents = (events: FSALEventPayload[]): void => {
+    const removed = events.flatMap((event) =>
+      event.event === "unlink" || event.event === "unlinkDir" ? [event.path] : [],
+    );
+    if (removed.length === 0) {
+      return;
+    }
+    const held = this._heldPaths();
+    for (const filePath of [...this._documentIdByPath.keys()]) {
+      if (!removed.some((removedPath) => isAtOrInsideRoot(filePath, removedPath))) {
+        continue;
+      }
+      if (held.has(filePath)) {
+        this._removedHeldPaths.add(filePath);
+      } else if (!existsSync(filePath)) {
+        this._forgetDocumentId(filePath);
+      }
+    }
+  };
+
+  /** The paths of the loaded documents and of the tabs of each pane. */
+  private _heldPaths(): Set<string> {
+    return new Set([...this.documents.map((doc) => doc.filePath), ...this._pathsShownInPanes()]);
   }
 
   /**
@@ -2788,6 +2838,13 @@ current contents from the editor somewhere else, and restart the application.`,
         return false;
       }
     }
+    // The application names no path of a closed workspace.
+    const held = this._heldPaths();
+    for (const filePath of [...this._documentIdByPath.keys()]) {
+      if (inside(filePath) && !held.has(filePath)) {
+        this._forgetDocumentId(filePath);
+      }
+    }
     return true;
   }
 
@@ -3128,6 +3185,19 @@ current contents from the editor somewhere else, and restart the application.`,
     for (const openFile of openFiles) {
       if (!watchedFiles.includes(openFile)) {
         this._watcher.watchPath(openFile);
+      }
+    }
+
+    // Fifth, a removed file that nothing holds now has no id (#57). A file
+    // that a save wrote again keeps its id.
+    for (const removedPath of [...this._removedHeldPaths]) {
+      if (openFiles.includes(removedPath)) {
+        continue;
+      }
+      if (existsSync(removedPath)) {
+        this._removedHeldPaths.delete(removedPath);
+      } else {
+        this._forgetDocumentId(removedPath);
       }
     }
   }
@@ -4147,8 +4217,8 @@ current contents from the editor somewhere else, and restart the application.`,
   // ==========================================================================
 
   /**
-   * Get or assign the opaque documentId for a loaded document path.
-   * The documentId is stable for the lifetime of a loaded document.
+   * The documentId of a path, when the path has one. An id lasts while the
+   * application can name its path (_documentIdByPath).
    */
   public getDocumentId(filePath: string): string | undefined {
     return this._documentIdByPath.get(filePath);
@@ -4644,6 +4714,17 @@ current contents from the editor somewhere else, and restart the application.`,
     this._documentIdByPath.set(filePath, id);
     this._documentPathById.set(id, filePath);
     return id;
+  }
+
+  /** The path and its id name nothing from here on. */
+  private _forgetDocumentId(filePath: string): void {
+    this._removedHeldPaths.delete(filePath);
+    const documentId = this._documentIdByPath.get(filePath);
+    if (documentId === undefined) {
+      return;
+    }
+    this._documentIdByPath.delete(filePath);
+    this._documentPathById.delete(documentId);
   }
 
   /**

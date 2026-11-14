@@ -41,6 +41,7 @@ import { strict as assert } from "assert";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import DocumentManager, {
   type CreateAnnotationIpcInput,
@@ -113,6 +114,9 @@ describe("Document annotation IPC (M6, WU-14)", function () {
       },
       fsal: {
         getWatchdog: () => watcherSeam,
+        // This spec drives no FSAL event: the provider subscribes and hears nothing.
+        on: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
+        off: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
         testAccess: async () => true,
         getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
         loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),

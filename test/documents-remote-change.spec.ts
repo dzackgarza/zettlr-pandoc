@@ -23,6 +23,7 @@ import { DP_EVENTS } from "@dts/common/documents";
 import { strict as assert } from "assert";
 import { mkdirSync, rmSync } from "fs";
 import path from "path";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import DocumentManager, {
   type DocumentsUpdateContext,
@@ -76,6 +77,9 @@ describe("Documents-provider remote changes", function () {
       },
       fsal: {
         getWatchdog: () => watcherSeam,
+        // This spec drives no FSAL event: the provider subscribes and hears nothing.
+        on: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
+        off: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
         testAccess: async () => true,
       },
       citeproc: {

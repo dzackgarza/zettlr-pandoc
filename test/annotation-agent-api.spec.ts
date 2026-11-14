@@ -42,6 +42,7 @@ import {
   AGENT_API_DISCOVERY_FILE,
   parseAgentApiDiscovery,
 } from "source/app/service-providers/agent-api/discovery-file";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
@@ -124,6 +125,9 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       },
       fsal: {
         getWatchdog: () => watcherSeam,
+        // This spec drives no FSAL event: the provider subscribes and hears nothing.
+        on: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
+        off: (_evt: "fsal-events", _callback: (events: FSALEventPayload[]) => void) => {},
         testAccess: async () => true,
         getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
         loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),
