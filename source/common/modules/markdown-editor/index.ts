@@ -36,6 +36,7 @@ import {
 // CodeMirror imports
 import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import type { PhraseDictionaryEntry } from "@common/util/phrase-dictionary";
+import { boundedChangesBetween } from "@common/util/text-changes";
 import type { AnnotationSet } from "@dts/common/annotation-domain";
 import { DocumentType } from "@dts/common/documents";
 import type { QuickTexCatalogue } from "@dts/common/quicktex";
@@ -575,10 +576,14 @@ export default class MarkdownEditor extends EventEmitter {
 
   /**
    * Loads the document from main and sets up everything required to display and
-   * edit it.
+   * edit it. A load into an editor that shows the document is a reload: the
+   * author keeps their place (the caret, the scroll position, the folds) and
+   * the focus stays where it is.
    */
   async loadDocument(persistentState?: EditorViewPersistentState): Promise<void> {
     const { content, type, startVersion } = await this.authority.fetchDoc(this.representedDocument);
+    const isReload = this._documentLoaded;
+    const place = isReload ? this.placeIn(content) : persistentState;
 
     // The documents contents have changed, so we must recreate the state
     const extensions = this._getExtensions(this.representedDocument, type, startVersion);
@@ -602,7 +607,7 @@ export default class MarkdownEditor extends EventEmitter {
       this._instance.dispatch({ effects: markReviewChunksStale.of(null) });
     }
 
-    if (persistentState !== undefined) {
+    if (place !== undefined) {
       // Now that the correct document has been loaded, there will be content
       // and we can restore the persisted information.
       //
@@ -613,7 +618,7 @@ export default class MarkdownEditor extends EventEmitter {
       // end, and the throw would land as a document-load error — the file
       // would simply refuse to open, over a cursor. So bring the positions
       // into this document instead of trusting them.
-      const { scrollSnapshot, selection, foldedRanges } = persistentState;
+      const { scrollSnapshot, selection, foldedRanges } = place;
       const end = this._instance.state.doc.length;
 
       const effects: StateEffect<unknown>[] = [scrollSnapshot];
@@ -673,10 +678,32 @@ export default class MarkdownEditor extends EventEmitter {
     // do not wait for an unrelated later edit to retry activation.
     this.activatePendingReviewDiffSession();
 
-    this._instance.focus();
+    // A reload can come while the author types in another field of the window.
+    if (!isReload) {
+      this._instance.focus();
+    }
 
     this._documentLoaded = true;
     this.emit("loaded");
+  }
+
+  /**
+   * The place of the author in the text that the editor shows, as a place in
+   * `content`: each position goes through the changes from the shown text to
+   * `content`.
+   */
+  private placeIn(content: string): EditorViewPersistentState {
+    const { scrollSnapshot, selection, foldedRanges } = this.persistentState;
+    const changes = boundedChangesBetween(this._instance.state.doc.toString(), content);
+    const mappedSnapshot = scrollSnapshot.map(changes);
+    if (mappedSnapshot === undefined) {
+      throw new Error("The scroll position of the editor has no place in the new text.");
+    }
+    return {
+      scrollSnapshot: mappedSnapshot,
+      selection: selection.map(changes),
+      foldedRanges: foldedRanges.map(changes),
+    };
   }
 
   /**
@@ -696,8 +723,9 @@ export default class MarkdownEditor extends EventEmitter {
   }
 
   /**
-   * This function allows to reload the full editor contents. This is useful if
-   * a setting has changed that requires extensions to be fully reloaded.
+   * This function allows to reload the full editor contents: after a setting
+   * changed that requires extensions to be fully reloaded, and after another
+   * program changed the file of the document.
    */
   async reload(): Promise<void> {
     await this.loadDocument();

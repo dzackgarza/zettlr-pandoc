@@ -36,11 +36,11 @@
 import { ChangeSet, Text } from "@codemirror/state";
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
 import isErrnoException from "@common/util/is-errno-exception";
+import { changesBetween } from "@common/util/text-changes";
 import { editedText } from "@common/util/workspace-edit-preview";
 import type { SaveFileResult, UnsavedDocument } from "@dts/common/documents";
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import { randomUUID } from "crypto";
-import { diffChars } from "diff";
 import { readFile, unlink } from "fs/promises";
 import path from "path";
 import writeFileAtomic from "write-file-atomic";
@@ -124,26 +124,6 @@ function changeSetOf(source: string, edits: WorkspaceTextEdit[]): ChangeSet {
     edits.map((edit) => ({ from: edit.range.from, to: edit.range.to, insert: edit.insert })),
     source.length,
   );
-}
-
-/**
- * The changes that take `before` to `after`, from a character diff (jsdiff's
- * `diffChars`, the Myers algorithm).
- */
-function changesBetween(before: string, after: string): ChangeSet {
-  const changes: Array<{ from: number; to?: number; insert?: string }> = [];
-  let position = 0;
-  for (const part of diffChars(before, after)) {
-    if (part.added) {
-      changes.push({ from: position, insert: part.value });
-    } else if (part.removed) {
-      changes.push({ from: position, to: position + part.value.length });
-      position += part.value.length;
-    } else {
-      position += part.value.length;
-    }
-  }
-  return ChangeSet.of(changes, before.length);
 }
 
 /**

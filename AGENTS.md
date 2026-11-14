@@ -1322,6 +1322,19 @@ of an isolated instance are in the first comment of #132.
   review loads a document that no tab shows, and a change of its file
   freezes the review and sends the message of a kept change as for a
   document in a tab. Proof: `e2e/accepted-text-of-closed-document.spec.ts`.
+- **A reload keeps the place of the author.** A load into an editor that
+  shows its document (`MarkdownEditor.loadDocument`: a change on disk, "Load
+  from disk", a setting that makes the extensions again) maps the caret, the
+  scroll position and the folds through the changes from the shown text to
+  the new text, and leaves the focus where it is. `boundedChangesBetween`
+  (`common/util/text-changes.ts`) gives the changes: a line diff, then a
+  character diff in each replaced run of lines, each with a fixed limit of
+  edits; above the limit of the line diff each place goes to the start of
+  the text. A program that writes an open document again and again (a
+  recorder of a conversation) therefore does not move the view and does not
+  take the keys of the author. Only the first load of an editor takes the
+  focus. Proof: `e2e/remote-change-keeps-place.spec.ts`,
+  `test/text-changes.spec.ts`.
 - **"Close anyway" at a window close offers no proposal for a save.** The
   buffer of a document with an undecided proposal takes the text of the
   file; the review and its working text stay in the sidecar. `pullUpdates`
