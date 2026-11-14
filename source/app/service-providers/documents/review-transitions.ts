@@ -61,13 +61,14 @@ export interface AgentEventDraft {
 }
 
 /**
- * The complete candidate outcome of one review mutation. `nextReview` is
- * undefined when the transition ends the review. `nextWorkingText` is what
- * the document must show afterwards — equal to the current text for a
- * transition that moves no document bytes.
+ * The complete candidate outcome of one review mutation. `nextReview` is the
+ * review afterwards: no transition ends a review (a clear keeps it, without
+ * its unresolved suggestions). `nextWorkingText` is what the document must show
+ * afterwards — equal to the current text for a transition that moves no
+ * document bytes.
  */
 export interface ReviewMutationPlan<Response> {
-  nextReview: ActiveReviewState | undefined;
+  nextReview: ActiveReviewState;
   nextWorkingText: string;
   response: Response;
   events: AgentEventDraft[];

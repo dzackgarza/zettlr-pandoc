@@ -629,14 +629,14 @@ export class CollaborationApplicationService {
       this.sidecarFor(documentId, {
         documentPath,
         workingText: nextWorkingText,
-        review: reviewPlan?.nextReview ?? review,
+        review: reviewPlan === undefined ? review : reviewPlan.nextReview,
         annotations: annotationPlan?.nextAnnotations,
       }),
     );
 
     commitDocument();
     if (reviewPlan !== undefined) {
-      this.reviews.replaceReview(documentId, reviewPlan.nextReview!);
+      this.reviews.replaceReview(documentId, reviewPlan.nextReview);
     }
     if (annotationPlan !== undefined) {
       this.commitAnnotations(documentId, {
@@ -691,7 +691,7 @@ export class CollaborationApplicationService {
           documentPath,
           workingText,
           diskFenceSha256: sidecar.diskFenceSha256,
-          review: reviewPlan?.nextReview ?? review,
+          review: reviewPlan === undefined ? review : reviewPlan.nextReview,
           endedReview: undefined,
           annotations: annotationPlan?.nextAnnotations ?? sidecar.annotations,
           pendingSave: sidecar.pendingSave,
@@ -948,14 +948,14 @@ export class CollaborationApplicationService {
         this.sidecarFor(documentId, {
           documentPath,
           workingText: normalizedDisk,
-          review: reviewPlan?.nextReview ?? review,
+          review: reviewPlan === undefined ? review : reviewPlan.nextReview,
           annotations: annotationPlan?.nextAnnotations,
           diskFenceSha256: persisted.diskFenceSha256,
           pendingSave: persisted.pendingSave,
         }),
       );
       if (reviewPlan !== undefined) {
-        this.reviews.replaceReview(documentId, reviewPlan.nextReview!);
+        this.reviews.replaceReview(documentId, reviewPlan.nextReview);
       }
       if (annotationPlan !== undefined) {
         this.commitAnnotations(documentId, {
@@ -1322,11 +1322,7 @@ export class CollaborationApplicationService {
       return persistenceFailure("the mutation", error);
     }
 
-    if (plan.nextReview === undefined) {
-      this.reviews.removeReview(context.documentId);
-    } else {
-      this.reviews.replaceReview(context.documentId, plan.nextReview);
-    }
+    this.reviews.replaceReview(context.documentId, plan.nextReview);
     if (annotationPlan !== undefined) {
       this.commitAnnotations(context.documentId, {
         ...annotationState!,
@@ -1340,7 +1336,7 @@ export class CollaborationApplicationService {
     }
     if (broadcast === "cleared") {
       this.deps.authority.broadcastReviewCleared(context.documentId, context.review.reviewId);
-    } else if (plan.nextReview !== undefined) {
+    } else {
       this.deps.authority.broadcastCollaborationState(context.documentId);
     }
     return plan.response;
@@ -1645,7 +1641,7 @@ export class CollaborationApplicationService {
           );
     const linkage = prepareAnnotationProposalLinkage({
       annotations: mapped?.nextAnnotations ?? annotationState?.annotations ?? emptyAnnotationSet(),
-      reviewId: plan.nextReview!.reviewId,
+      reviewId: plan.nextReview.reviewId,
       links: plan.response.packetIds.map((packetId, index) => ({
         packetId,
         annotationIds: input.claims[index]?.addressesAnnotationIds ?? [],
@@ -1668,7 +1664,7 @@ export class CollaborationApplicationService {
     } catch (error) {
       return persistenceFailure("the proposal", error);
     }
-    this.reviews.replaceReview(input.documentId, plan.nextReview!);
+    this.reviews.replaceReview(input.documentId, plan.nextReview);
     if (nextAnnotations !== undefined && annotationState !== undefined) {
       this.commitAnnotations(input.documentId, {
         ...annotationState,
@@ -1919,7 +1915,7 @@ export class CollaborationApplicationService {
       if (isTransitionError(plan)) {
         return plan;
       }
-      const nextReview = plan.nextReview!;
+      const nextReview = plan.nextReview;
 
       if (attached) {
         const annotationState = this.annotationStates.get(input.documentId);
@@ -2058,7 +2054,7 @@ export class CollaborationApplicationService {
         workingText,
         text: RETURNED_REVIEW_COMMENT,
       });
-      const nextReview = plan.nextReview!;
+      const nextReview = plan.nextReview;
       try {
         await this.sidecars.write(
           located.attached

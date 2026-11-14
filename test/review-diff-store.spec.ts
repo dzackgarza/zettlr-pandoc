@@ -67,7 +67,7 @@ function committedProposal(baseline: string, proposed: string, clientRequestId =
 
 function withReview(baseline: string, proposed: string) {
   const plan = committedProposal(baseline, proposed);
-  return { review: plan.nextReview!, workingText: plan.nextWorkingText };
+  return { review: plan.nextReview, workingText: plan.nextWorkingText };
 }
 
 function assertTransitionError(value: unknown, code: string): void {
@@ -213,7 +213,7 @@ describe("pure review transitions", function () {
     assert.equal(noted.nextReview?.chunkComments.length, 1);
 
     const decided = prepareChunkDecision({
-      review: noted.nextReview!,
+      review: noted.nextReview,
       workingText,
       chunkId: outstanding[0].chunkId,
       decision: "accept",
@@ -230,13 +230,13 @@ describe("pure review transitions", function () {
 
   it("retracts an older unresolved packet without discarding a later overlapping proposal", function () {
     const first = committedProposal("alpha\n", "ALPHA\n");
-    const firstPacket = first.nextReview!.packets.at(-1)!.packetId;
+    const firstPacket = first.nextReview.packets.at(-1)!.packetId;
     const second = prepareProposalSubmission({
       review: first.nextReview,
       documentId: DOCUMENT_ID,
       documentPath: DOCUMENT_PATH,
       workingText: first.nextWorkingText,
-      diskSha256: first.nextReview!.diskFenceSha256,
+      diskSha256: first.nextReview.diskFenceSha256,
       claims: [
         {
           patch: patch(first.nextWorkingText, "AL-PHA\n"),
@@ -247,9 +247,9 @@ describe("pure review transitions", function () {
       requestFingerprint: sha256Text("request-2"),
     });
     assert.ok(!isTransitionError(second));
-    const laterPacket = second.nextReview!.packets.at(-1)!.packetId;
+    const laterPacket = second.nextReview.packets.at(-1)!.packetId;
     const retracted = prepareRetraction({
-      review: second.nextReview!,
+      review: second.nextReview,
       workingText: second.nextWorkingText,
       packetId: firstPacket,
     });
@@ -258,7 +258,7 @@ describe("pure review transitions", function () {
     assert.equal(retracted.nextReview?.packets.length, 1);
     assert.equal(retracted.nextReview?.packets[0].packetId, laterPacket);
     const store = new ReviewDiffStore();
-    store.replaceReview(DOCUMENT_ID, retracted.nextReview!);
+    store.replaceReview(DOCUMENT_ID, retracted.nextReview);
     assert.equal(
       store.getOutstandingChunks(DOCUMENT_ID, retracted.nextWorkingText)?.[0].workingText,
       "-",
@@ -280,7 +280,7 @@ describe("pure review transitions", function () {
     assert.ok(!isTransitionError(accepted));
 
     const refused = prepareRetraction({
-      review: accepted.nextReview!,
+      review: accepted.nextReview,
       workingText: accepted.nextWorkingText,
       packetId,
     });
@@ -327,9 +327,9 @@ describe("suggestions through owner edits and later claims", function () {
       text: "keep this context",
     });
     assert.ok(!isTransitionError(noted));
-    const before = structuredClone(noted.nextReview!);
+    const before = structuredClone(noted.nextReview);
     const edit = prepareWorkingTextEdit({
-      review: noted.nextReview!,
+      review: noted.nextReview,
       workingText: baseline,
       changes: ChangeSet.of(
         { from: 0, to: workingText.length, insert: baseline },
@@ -359,7 +359,7 @@ describe("suggestions through owner edits and later claims", function () {
     assert.ok(edit !== undefined);
 
     const rejected = prepareClear({
-      review: edit.nextReview!,
+      review: edit.nextReview,
       workingText: edited,
     });
     assert.ok(!isTransitionError(rejected));
@@ -411,7 +411,7 @@ describe("suggestions through owner edits and later claims", function () {
     });
     assert.ok(!isTransitionError(submitted));
     const store = new ReviewDiffStore();
-    store.replaceReview(DOCUMENT_ID, submitted.nextReview!);
+    store.replaceReview(DOCUMENT_ID, submitted.nextReview);
     const chunks = store.getOutstandingChunks(DOCUMENT_ID, final)!;
     const capitalized = chunks.find((chunk) => chunk.descriptions.includes("capitalize alpha"));
     const prefixed = chunks.find((chunk) => chunk.descriptions.includes("add prefix"));
@@ -419,7 +419,7 @@ describe("suggestions through owner edits and later claims", function () {
     assert.equal(prefixed?.workingText, "prefix ");
 
     const prefixRejected = prepareChunkDecision({
-      review: submitted.nextReview!,
+      review: submitted.nextReview,
       workingText: final,
       chunkId: prefixed!.chunkId,
       decision: "reject",
@@ -428,7 +428,7 @@ describe("suggestions through owner edits and later claims", function () {
     assert.equal(prefixRejected.nextWorkingText, first);
 
     const capitalRejected = prepareChunkDecision({
-      review: prefixRejected.nextReview!,
+      review: prefixRejected.nextReview,
       workingText: prefixRejected.nextWorkingText,
       chunkId: capitalized!.chunkId,
       decision: "reject",
@@ -473,7 +473,7 @@ describe("suggestions through owner edits and later claims", function () {
     assert.deepEqual(firstRejected.nextReview?.suggestions[1].anchors, [{ from: 0, to: 1 }]);
 
     const secondRejected = prepareChunkDecision({
-      review: firstRejected.nextReview!,
+      review: firstRejected.nextReview,
       workingText: firstRejected.nextWorkingText,
       chunkId: "second-a",
       decision: "reject",
@@ -496,7 +496,7 @@ describe("suggestions through owner edits and later claims", function () {
     assert.ok(edit !== undefined);
     assert.equal(edit.nextReview?.suggestions[0].state, "withdrawn");
     const store = new ReviewDiffStore();
-    store.replaceReview(DOCUMENT_ID, edit.nextReview!);
+    store.replaceReview(DOCUMENT_ID, edit.nextReview);
     assert.deepEqual(store.getOutstandingChunks(DOCUMENT_ID, edited), []);
   });
 
