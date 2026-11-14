@@ -1316,6 +1316,13 @@ of an isolated instance are in the first comment of #132.
   When no editor of the window holds it (the focus is on a message, in the
   file manager or in a sidebar), the save is for the active document of the
   pane that the author used last (`savesThisDocument` in `MainEditor.vue`).
+- **A save writes only text that the document holds.** `saveBuffer` waits
+  until the document authority took each change of the editor
+  (`whenAuthoritySynced`). The wait follows the collab session of its start
+  (the client id): when the editor loads the document again before the
+  authority took the changes, the changes are gone with the old state, and
+  the save is refused with that cause. Proof:
+  `test/editor-authority-sync-guard.spec.ts`.
 - **A refused action of the Annotations view is shown.** An action of the
   view on one document ("Resolve all", "Clear resolved", "Accept all", the
   recovery of a review) that the main process rejects shows the cause with

@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import { sendableUpdates } from "@codemirror/collab";
+import { getClientID, sendableUpdates } from "@codemirror/collab";
 import type { EditorState } from "@codemirror/state";
 
 /**
@@ -30,6 +30,13 @@ import type { EditorState } from "@codemirror/state";
  * keeps retrying, so the caller can refuse the save, say so, and let the author
  * press save again.
  *
+ * The wait follows one collab session: the client id of the state at its
+ * start (each `collab()` extension has its own). When the editor loads the
+ * document again while updates are unsent (a lost synchronization, a setting
+ * change, a kept remote change), the new state has a new session over the
+ * text of the authority and nothing to send. The unsent updates are gone, not
+ * confirmed, so the wait throws.
+ *
  * @param   {() => EditorState}  getState  Reads the current editor state. It is
  *                                         a callback because the state is
  *                                         replaced while we wait.
@@ -42,18 +49,27 @@ export async function whenAuthoritySynced(
   timeout = 2000,
 ): Promise<void> {
   const start = Date.now();
+  const session = getClientID(getState());
   let unsent = sendableUpdates(getState()).length;
 
   while (unsent > 0) {
     const elapsed = Date.now() - start;
     if (elapsed >= timeout) {
       throw new Error(
-        `The document authority has not confirmed ${unsent} pending update(s) ` +
-          `after ${elapsed} ms; the buffer and the authority still differ`,
+        `The document has not taken ${unsent} change(s) of the editor after ` +
+          `${elapsed} ms. The editor sends them again; save again to write them.`,
       );
     }
 
     await new Promise((resolve) => setTimeout(resolve, 20));
-    unsent = sendableUpdates(getState()).length;
+    const state = getState();
+    if (getClientID(state) !== session) {
+      throw new Error(
+        `The editor loaded the document again before the document took ` +
+          `${unsent} change(s) of the editor. The editor shows the text of the ` +
+          `document now, without those changes.`,
+      );
+    }
+    unsent = sendableUpdates(state).length;
   }
 }

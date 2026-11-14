@@ -55,7 +55,7 @@ describe("Document-authority sync guard (format-on-save ordering)", function () 
       async () => {
         await whenAuthoritySynced(() => state, 60);
       },
-      /has not confirmed 1 pending update/,
+      /has not taken 1 change/,
       "an unmet ordering guarantee must throw; resolving lets the caller save the pre-format text as an ordinary success",
     );
   });
