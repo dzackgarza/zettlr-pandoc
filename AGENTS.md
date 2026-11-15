@@ -601,6 +601,14 @@ Zettlr starts it on one diagram.
   the author sees the edit before it is made, §28).
   `[[#heading]]` (empty target) resolves to the linking document; backlinks and
   the graph leave that self link out.
+- **A line that arrives before the text waits for it.** The window gets the
+  line of a `[[file#heading]]` link (`jump-to-line`) when the tab of the
+  file exists; the editor of the tab gets the text of the file later. A pane
+  whose editor has no document keeps the line (`pendingJumpLine`,
+  `MainEditor.vue`) and jumps when its load ended; a jump in an editor
+  without the text finds no such line and leaves the cursor on line 1.
+  Proof: `e2e/jump-to-heading-while-loading.spec.ts` (a document of 15,000
+  lines, by a Mod-click and by the key of "Follow link").
 - **One reading of a link.** A wikilink is a `ZettelkastenLink` of the Markdown
   AST, read with the setting `zkn.linkFormat`: in `[[a|b]]` the target is `a`
   for `link|title` and `b` for `title|link`, and `[[x]]` in code is no link.
@@ -1160,7 +1168,13 @@ of an isolated instance are in the first comment of #132.
   defined`. A callback that is an argument has no name and is not wrapped.
 - **A native message box is not a page.** Playwright does not see it. A spec
   finds the box by its title with `xdotool`, captures it with ImageMagick
-  `import`, and presses a key in it (`e2e/quit-with-open-review.spec.ts`). The
+  `import`, and presses a key in it (`e2e/quit-with-open-review.spec.ts`). A
+  start that shows a box keeps the programs of the system on its PATH: on
+  the hosted image GTK loads the icon of a box through `bwrap`, and a start
+  whose PATH has no `bwrap` aborts in GTK before the box shows. A spec that
+  takes one command away replaces the directory that holds it by links to
+  its other entries (`pathWithout`,
+  `e2e/start-without-required-tool.spec.ts`). The
   CI toolchain installs both tools (`scripts/setup-ci-toolchain.sh`). Such a
   spec runs through the lanes only: a Mocha run on the display of the
   environment presses its keys on the desktop of the author.

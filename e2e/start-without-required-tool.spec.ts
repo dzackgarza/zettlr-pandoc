@@ -9,9 +9,8 @@
  *
  * Description: The app does not start without the tools and the files of its
  *              export pipeline (AGENTS.md §5). The spec starts the packaged
- *              app two times: with a PATH that has each required command but
- *              `biber`, and with a home folder whose `.pandoc` has no
- *              justfile. Each start stops at a native error box, names what
+ *              app two times: with the PATH of the run without `biber`,
+ *              and with a home folder whose `.pandoc` has no justfile. Each start stops at a native error box, names what
  *              is missing in its output, opens no window of the app, and
  *              ends with exit code 1 when the author answers the box (#47).
  *
@@ -20,11 +19,10 @@
 
 import { strict as assert } from "node:assert";
 import type { ChildProcess } from "node:child_process";
-import { constants } from "node:fs";
-import { access, mkdir, readdir, rm, symlink } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readdir, rm, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
-import { REQUIRED_COMMANDS } from "source/app/util/preflight";
 import {
   createFixture,
   delay,
@@ -42,26 +40,42 @@ const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-start-without-required-to
 const ERROR_BOX_TITLE = "Error";
 const ABSENT_COMMAND = "biber";
 
-/** The file of a command on the PATH of this run. */
-async function commandOnPath(command: string): Promise<string> {
+/**
+ * The PATH of this run with one command taken out. A directory that holds
+ * the command is replaced by a directory of links to its other entries, so
+ * each other program of the PATH stays: the error box of the app needs
+ * programs of the system (GTK loads its icon through `bwrap`).
+ */
+async function pathWithout(command: string, scratch: string): Promise<string> {
   const searchPath = process.env.PATH;
   if (searchPath === undefined) {
     throw new Error("The run has no PATH");
   }
-  for (const directory of searchPath.split(path.delimiter)) {
-    if (directory === "") {
+  const directories: string[] = [];
+  let held = 0;
+  for (const [index, directory] of searchPath.split(path.delimiter).entries()) {
+    if (directory === "" || !existsSync(directory)) {
       continue;
     }
-    const candidate = path.join(directory, command);
-    const executable = await access(candidate, constants.X_OK).then(
-      () => true,
-      () => false,
-    );
-    if (executable) {
-      return candidate;
+    const entries = await readdir(directory);
+    if (!entries.includes(command)) {
+      directories.push(directory);
+      continue;
     }
+    held += 1;
+    const links = path.join(scratch, `path-${index}`);
+    await mkdir(links);
+    for (const entry of entries) {
+      if (entry !== command) {
+        await symlink(path.join(directory, entry), path.join(links, entry));
+      }
+    }
+    directories.push(links);
   }
-  throw new Error(`The run has no ${command} on its PATH`);
+  if (held === 0) {
+    throw new Error(`The run has no ${command} on its PATH`);
+  }
+  return directories.join(path.delimiter);
 }
 
 interface Start {
@@ -156,17 +170,10 @@ describe("assembled app: a start without a required tool or file (#47)", functio
     console.log(`E2E artifacts: ${ARTIFACT_DIRECTORY}`);
   });
 
-  it(`names ${ABSENT_COMMAND} and ends with exit code 1 when the PATH has each other required command`, async function () {
+  it(`names ${ABSENT_COMMAND} and ends with exit code 1 when the PATH has each other program`, async function () {
     const created = requireInitialized(fixture, "the fixture exists");
-    const bin = path.join(created.root, "bin");
-    await mkdir(bin);
-    for (const { command } of REQUIRED_COMMANDS) {
-      if (command !== ABSENT_COMMAND) {
-        await symlink(await commandOnPath(command), path.join(bin, command));
-      }
-    }
 
-    const started = await start({ PATH: bin });
+    const started = await start({ PATH: await pathWithout(ABSENT_COMMAND, created.root) });
     const code = await answerBoxAndExit(started, "missing-command.png");
 
     const output = started.output();
