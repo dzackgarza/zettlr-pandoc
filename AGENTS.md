@@ -144,8 +144,11 @@ Desktop entry → wrapper → splash → boot script:
   script starts the binary under `direnv exec "$HOME"`: the app gets the
   variables of `~/.envrc`, the Agent API token among them (§6). The script
   stops when `direnv` or `~/.envrc` is absent. It retains focus-if-running (intentional — do not
-  "fix"), Hyprland window-class detection (`class == zettlr-pandoc`), and
-  fail-loud behavior on build or launch failure.
+  "fix") and fail-loud behavior on build or launch failure. An app "already
+  runs" when it holds the `SingletonLock` of the profile of the start
+  (`profile_running`); a window of the class `zettlr-pandoc` does not decide,
+  as an app of another profile has the same class. The class is only how the
+  script sees that the window of its own start is up.
 - Launcher log: `~/.cache/zettlr-pandoc-dev.log`.
 
 ## Shared Markdown editor
@@ -286,6 +289,14 @@ they must be threaded through **four** layers:
   (`writeDefaults`). Proof: `test/export-document.spec.ts`,
   `test/project-export.spec.ts`.
 - The Chromium "Simple PDF" export was removed; every export now goes through pandoc.
+- **Proof through the window.** `e2e/pdf-export.spec.ts` exports with the real
+  recipe, pandoc and pdflatex: the active document from the PDF row of the
+  export launcher, and a Project from "Export Project" in the menu of its
+  folder. It reads the text of each PDF (`pdftotext`), so the chapters are
+  proven in the order of the Project, and it shows the error window and the
+  log entry of a recipe that fails. The recipe runs latexmk in force mode: a
+  TeX error in a document does not fail it, so the spec forces the failure
+  with a template that the recipe does not have.
 - **One list of export profiles.** `exportProfiles`
   (`commands/exporter/index.ts`) joins the defaults files of
   `userData/defaults` and the custom profiles (`getCustomProfiles`); a custom
@@ -366,6 +377,9 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   is the one that starts a second compositor when `WAYLAND_DISPLAY` is unset.
 - The command checks and the three gates of the preflight run at the same time.
   The preflight costs the time of the slowest tool, not the sum.
+- Proof in the assembled app: `e2e/start-without-required-tool.spec.ts` (a
+  PATH without `biber`, a home folder without `~/.pandoc/justfile`: the
+  native box, what the output names, and exit code 1).
 
 ### 6. Agent API MCP tunnel
 
@@ -426,6 +440,15 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   stops without it, and a development start (`just launch`,
   `just launch-desktop`) takes it from the shell. An e2e run makes a token of
   its own (`AGENT_API_TOKEN` in `e2e/support/electron-app.ts`).
+- **The review CLI sends the baseline of the producer of the patch.**
+  `baselineSha256` of a proposal pins the text that the patch was made from.
+  `zettlr-pandoc-review-diff` requires `--baseline-sha256` and refuses a
+  call without it before the first request; it sends no hash of a read of
+  its own, and it holds no copy of the comparison: the editor refuses a
+  baseline that is not its working text (`REVISION_MISMATCH`). A new field
+  that a request requires is an option that the CLI requires, not a value
+  that the CLI fills in. Proof: `test/agent-http-api.spec.ts` ("sends
+  nothing from the external CLI when no baseline of the patch is given").
 - Operations tagged `zotero` in `openapi.yaml` are served at `/zotero/mcp` (MCP
   server `zettlr-pandoc-zotero`), not at `/mcp`, and the served `/openapi.json`
   leaves out their routes; the Custom GPT Action imports that document and has
@@ -2409,7 +2432,7 @@ gh api graphql -f query='query { repository(owner:"dzackgarza", name:"zettlr-pan
 
 `thread-resolution` is red while any thread is unresolved, so a red `thread-resolution` says the triage loop has not been run. Triage every substantive thread through `pr-feedback-triage`: a disposition and its evidence on the thread itself, a commit behind any accepted finding, and no thread resolved on intent. Policy findings (`POLICY.FAIL_OPEN`, `POLICY.NO_ERROR_DISCARD`, `POLICY.RUNTIME_DEFAULT`, `POLICY.NO_HIDDEN_CONFIG`, `POLICY.NO_TYPE_ESCAPE`) are the global bridge-burning rules; they are not style notes and they are not waivable by a sentence in the PR body.
 
-The local commit hook exempts this fork from verification. The hosted `Unit Tests / Lint` job builds the packaged app and runs the assembled-app E2E suite on it. Neither a clean commit nor a green local run is evidence about the PR; the run over the branch head is.
+The local commit hook exempts this fork from verification. The hosted check `Unit Tests / Lint` passes when the jobs `unit` and `e2e` passed; each `e2e` shard builds the packaged app and runs its part of the assembled-app suite on it (§13). Neither a clean commit nor a green local run is evidence about the PR; the run over the branch head is.
 
 ## When Acting on Review Feedback
 
