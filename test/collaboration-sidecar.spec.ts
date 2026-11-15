@@ -335,6 +335,33 @@ describe("CollaborationSidecarStore", function () {
     await assert.rejects(store.read(documentPath), /duplicate suggestion id suggestion-1/);
   });
 
+  it("rejects a packet of another review, on a read and on a write (#57)", async function () {
+    // A review owns each packet of its sidecar. A packet that names another
+    // review would bring the proposals of that review into this one.
+    const valid = sidecar(documentPath);
+    const review = valid.review!;
+    const foreign = {
+      ...valid,
+      review: { ...review, packets: [{ ...review.packets[0], reviewId: "review-2" }] },
+    };
+
+    await assert.rejects(store.write(foreign), /packet packet-1 belongs to another review/);
+    assert.equal(existsSync(collaborationSidecarFilePath(sidecarDirectory, documentPath)), false);
+
+    persistRaw(foreign);
+    await assert.rejects(store.read(documentPath), /packet packet-1 belongs to another review/);
+  });
+
+  it("rejects two packets with one id (#57)", async function () {
+    const valid = sidecar(documentPath);
+    const review = valid.review!;
+    persistRaw({
+      ...valid,
+      review: { ...review, packets: [review.packets[0], review.packets[0]] },
+    });
+    await assert.rejects(store.read(documentPath), /duplicate packet id packet-1/);
+  });
+
   it("rejects a suggestion without an owning packet", async function () {
     const valid = sidecar(documentPath);
     const review = valid.review!;
