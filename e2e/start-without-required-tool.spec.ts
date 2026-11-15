@@ -27,13 +27,14 @@ import path from "node:path";
 import { REQUIRED_COMMANDS } from "source/app/util/preflight";
 import {
   createFixture,
+  delay,
   type Fixture,
   launchElectron,
   preserveArtifacts,
   requireInitialized,
   terminateProcess,
 } from "./support/electron-app";
-import { captureWindow, nativeDialog, pressKey, searchWindows } from "./support/native-dialog";
+import { captureWindow, pressKey, searchWindows } from "./support/native-dialog";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-start-without-required-tool-e2e-latest");
 // On Linux, Electron gives the window of each `dialog.showErrorBox` the title
@@ -71,7 +72,8 @@ interface Start {
 describe("assembled app: a start without a required tool or file (#47)", function () {
   let fixture: Fixture | undefined;
   let appProcess: ChildProcess | undefined;
-  let lastOutput = "";
+  /** The output of each start of the spec, for the artifacts. */
+  const outputs: string[] = [];
   const screenshots = new Map<string, Buffer>();
 
   async function start(environment: NodeJS.ProcessEnv): Promise<Start> {
@@ -79,29 +81,50 @@ describe("assembled app: a start without a required tool or file (#47)", functio
     const started = await launchElectron(created.configDirectory, { environment });
     appProcess = started;
     let output = "";
+    const index = outputs.length;
+    outputs.push("");
     const appendOutput = (chunk: Buffer): void => {
       output = `${output}${chunk.toString()}`.slice(-200_000);
-      lastOutput = output;
+      outputs[index] = output;
     };
     started.stdout?.on("data", appendOutput);
     started.stderr?.on("data", appendOutput);
     return { appProcess: started, output: () => output };
   }
 
-  /** Answers the error box and gives the exit code of the app. */
+  /**
+   * Answers the error box and gives the exit code of the app. A start that
+   * ends before it shows a box fails here with its exit code and its output.
+   */
   async function answerBoxAndExit(started: Start, screenshot: string): Promise<number | null> {
-    const box = await nativeDialog(ERROR_BOX_TITLE, 60_000);
+    let ended: { code: number | null } | undefined;
+    const exited = new Promise<number | null>((resolve) => {
+      started.appProcess.once("exit", (code) => {
+        ended = { code };
+        resolve(code);
+      });
+    });
+    const deadline = Date.now() + 60_000;
+    let boxes: string[] = [];
+    while (boxes.length === 0 && ended === undefined && Date.now() < deadline) {
+      boxes = await searchWindows(["--name", `^${ERROR_BOX_TITLE}$`]);
+      if (boxes.length === 0) {
+        await delay(250);
+      }
+    }
+    const state = ended === undefined ? "the app still runs" : `the app ended with ${ended.code}`;
+    assert.equal(
+      boxes.length,
+      1,
+      `the start shows one error box (${state}); its output:\n${started.output()}`,
+    );
+    const [box] = boxes;
     screenshots.set(screenshot, await captureWindow(box));
     assert.deepEqual(
       await searchWindows(["--name", "Zettlr"]),
       [],
       "no window of the app is on the screen while the box shows",
     );
-    const exited = new Promise<number | null>((resolve) => {
-      started.appProcess.once("exit", (code) => {
-        resolve(code);
-      });
-    });
     await pressKey(box, "Return");
     return await exited;
   }
@@ -123,7 +146,13 @@ describe("assembled app: a start without a required tool or file (#47)", functio
   });
 
   after(async function () {
-    await preserveArtifacts(ARTIFACT_DIRECTORY, undefined, lastOutput, [], screenshots);
+    await preserveArtifacts(
+      ARTIFACT_DIRECTORY,
+      undefined,
+      outputs.map((output, start) => `== start ${start + 1}\n${output}`).join("\n"),
+      [],
+      screenshots,
+    );
     console.log(`E2E artifacts: ${ARTIFACT_DIRECTORY}`);
   });
 
