@@ -17,13 +17,16 @@ import errorToString from "@common/util/error-to-string";
 import { COMMAND_FAILED_CHANNEL, type CommandFailedBroadcast } from "@dts/common/command-failure";
 import type { WebContents } from "electron";
 
+/** The window of a refusal: what the refusal needs of its web contents. */
+export type RefusalTarget = Pick<WebContents, "isDestroyed" | "isCrashed" | "send">;
+
 /**
  * Sends the refusal of a request to the window that made it, which shows the
  * message one time (`window-register`). The caller in the window logs the
  * rejection and stops (AGENTS.md §15). A window without a renderer gets
  * nothing (§17). The message is the message of the error, without its stack.
  */
-export function showRefusalInWindow(window: WebContents, request: string, error: unknown): void {
+export function showRefusalInWindow(window: RefusalTarget, request: string, error: unknown): void {
   if (window.isDestroyed() || window.isCrashed()) {
     return;
   }

@@ -1293,7 +1293,14 @@ of an isolated instance are in the first comment of #132.
   outside every open workspace is not named.
 - **`closeWindow` answers whether the window may close.** The window
   provider closes the `BrowserWindow` only for `true`, and gives the
-  documents provider the function that repeats the close.
+  documents provider the function that repeats the close. The window
+  provider does this in `closeWithDocuments`
+  (`windows/close-with-documents.ts`). A close that rejects keeps the
+  window and shows "The window was not closed: <cause>" in it; the window
+  is never closed without its documents. Proof:
+  `test/window-close-with-documents.spec.ts` (each answer of the documents
+  provider, and a rejection), `e2e/window-close.spec.ts` (the real
+  provider).
 - **`closeFileEverywhere` answers whether the document closed.** It
   detaches before it closes a tab, so a refused close leaves the tabs and
   the buffer. A caller that removes the file afterwards (`file-delete`, the

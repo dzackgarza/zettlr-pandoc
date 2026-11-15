@@ -32,9 +32,9 @@ import EventEmitter from "events";
 import path from "path";
 import { checkedEnvironment } from "source/app/util/environment-check";
 import { handleBareChannel, handleFixedChannel } from "source/app/util/handle-ipc-channel";
-import { showRefusalInWindow } from "source/app/util/show-refusal-in-window";
 import { showStoreWriteFailure } from "source/app/util/show-store-write-failure";
 import type { PasteModalResult } from "../commands/save-image-from-clipboard";
+import { closeWithDocuments } from "./close-with-documents";
 import createAboutWindow from "./create-about-window";
 import createAssetsWindow from "./create-assets-window";
 import createErrorModal from "./create-error-modal";
@@ -433,45 +433,10 @@ export default class WindowProvider extends ProviderContract {
       // changes shows the save-or-discard prompt first. askUserToCloseWindow drops the
       // window itself once answered, so the close it then permits comes back
       // through here with nothing left to ask about.
-      // What repeats this close after the documents provider refused it.
-      const closeAgain = async (): Promise<void> => {
-        window.close();
-      };
-      // A close that fails keeps the window: its documents are in an unknown
-      // state, and a close without them can lose text. The window shows the
-      // cause, so the author knows why it stays (#57).
-      const showCloseFailure = (err: unknown): void => {
-        this._logger.error("[WindowManager] Could not close the window", err);
-        const cause = err instanceof Error ? err.message : String(err);
-        showRefusalInWindow(
-          window.webContents,
-          "close-window",
-          new Error(trans("The window was not closed: %s", cause)),
-        );
-      };
-      if (!this._documents.isClean(key)) {
-        event.preventDefault();
-        this._documents
-          .askUserToCloseWindow(key, closeAgain)
-          .then((canCloseWindow) => {
-            if (canCloseWindow) {
-              documentCloseReady = true;
-              window.close();
-            }
-          })
-          .catch(showCloseFailure);
-      } else {
-        event.preventDefault();
-        this._documents
-          .closeWindow(key, closeAgain)
-          .then((closed) => {
-            if (closed) {
-              documentCloseReady = true;
-              window.close();
-            }
-          })
-          .catch(showCloseFailure);
-      }
+      event.preventDefault();
+      void closeWithDocuments(window, key, this._documents, this._logger, () => {
+        documentCloseReady = true;
+      });
     });
 
     window.on("closed", () => {
