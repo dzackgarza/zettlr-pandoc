@@ -1512,6 +1512,18 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(body.openDocuments.length > 0);
   });
 
+  it("GET /v1/context names no focused view and no focused document while no document is open (#57)", async function () {
+    // The schema of a focused view requires the id of a document. Without a
+    // document in a pane, the answer has no focused view: not a view with an
+    // empty id.
+    const response = await httpRequest("GET", "/v1/context");
+    assert.equal(response.status, 200);
+    const body = parseAs(response.body, "EditorContext");
+    assert.deepEqual(body, { openDocuments: [] });
+    assert.equal(JSON.parse(response.body).focusedView, undefined);
+    assert.equal(JSON.parse(response.body).focusedDocument, undefined);
+  });
+
   it("GET /v1/documents lists open documents", async function () {
     const filePath = path.join(scratch, "list.md");
     await openFile(filePath, "content\n");
@@ -1606,6 +1618,31 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     } finally {
       await client.close();
     }
+  });
+
+  it("POST /v1/documents/{id}/search stops a pattern that does not end, and the server answers the next request (#57)", async function () {
+    // The pattern backtracks 2^40 times on this line. The search runs on the
+    // thread of the main process, so only its own deadline ends it.
+    const docId = await openFile(path.join(scratch, "stall-document.md"), `${"a".repeat(40)}!\n`);
+    const stalled = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+      body: JSON.stringify({ literal: "/(a+)+$/", context: 0 }),
+    });
+    assert.equal(stalled.status, 422);
+    const refusal = parseAs(stalled.body, "AgentErrorResponse");
+    assert.equal(refusal.error.code, "SEARCH_TIMEOUT");
+
+    const next = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+      body: JSON.stringify({ literal: "/a+!/", context: 0 }),
+    });
+    assert.equal(next.status, 200);
+    assert.deepEqual(
+      parseAs(next.body, "SearchDocumentResponse").hits.map((hit) => [
+        hit.line,
+        hit.column,
+        hit.length,
+      ]),
+      [[1, 1, 41]],
+    );
   });
 
   it("POST /v1/documents/{id}/search gives each hit up to the limit and says when it stopped (#57)", async function () {
