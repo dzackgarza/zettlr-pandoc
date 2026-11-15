@@ -58,21 +58,25 @@ interface VisibleEditor {
   text: string | null;
 }
 
+/** The element of an editor, with the CodeMirror view that it carries. */
+interface EditorContent extends HTMLElement {
+  cmTile?: { root?: { view?: { state: { doc: { toString(): string } } } } };
+}
+
 /** The text of the editor that the window shows. */
 async function visibleEditor(page: Page): Promise<VisibleEditor> {
   return await page.evaluate(() => {
-    const shown = Array.from(document.querySelectorAll<HTMLElement>(".cm-content")).filter(
+    const shown = Array.from(document.querySelectorAll<EditorContent>(".cm-content")).filter(
       (content) => content.offsetParent !== null,
     );
     if (shown.length !== 1) {
       return { count: shown.length, text: null };
     }
-    const tile = (
-      shown[0] as HTMLElement & {
-        cmTile?: { root?: { view?: { state?: { doc?: { toString(): string } } } } };
-      }
-    ).cmTile;
-    return { count: 1, text: tile?.root?.view?.state?.doc?.toString() ?? null };
+    const view = shown[0].cmTile?.root?.view;
+    if (view === undefined) {
+      return { count: 1, text: null };
+    }
+    return { count: 1, text: view.state.doc.toString() };
   });
 }
 

@@ -20,7 +20,6 @@
 
 import { strict as assert } from "node:assert";
 import type { ChildProcess } from "node:child_process";
-import { once } from "node:events";
 import { constants } from "node:fs";
 import { access, mkdir, readdir, rm, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -44,7 +43,11 @@ const ABSENT_COMMAND = "biber";
 
 /** The file of a command on the PATH of this run. */
 async function commandOnPath(command: string): Promise<string> {
-  for (const directory of (process.env.PATH ?? "").split(path.delimiter)) {
+  const searchPath = process.env.PATH;
+  if (searchPath === undefined) {
+    throw new Error("The run has no PATH");
+  }
+  for (const directory of searchPath.split(path.delimiter)) {
     if (directory === "") {
       continue;
     }
@@ -94,10 +97,13 @@ describe("assembled app: a start without a required tool or file (#47)", functio
       [],
       "no window of the app is on the screen while the box shows",
     );
-    const exited = once(started.appProcess, "exit") as Promise<[number | null, string | null]>;
+    const exited = new Promise<number | null>((resolve) => {
+      started.appProcess.once("exit", (code) => {
+        resolve(code);
+      });
+    });
     await pressKey(box, "Return");
-    const [code] = await exited;
-    return code;
+    return await exited;
   }
 
   beforeEach(async function () {
