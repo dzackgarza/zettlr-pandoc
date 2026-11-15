@@ -29,7 +29,7 @@ const KNOWN_OPTIONS = new Set([
 
 function usage() {
   return [
-    `Usage: ${PROGRAM} --document FILE --patch FILE --description TEXT --port N [options]`,
+    `Usage: ${PROGRAM} --document FILE --patch FILE --description TEXT --baseline-sha256 HEX --port N`,
     "",
     "Submit one unified-diff proposition to the running Zettlr-Pandoc editor.",
     "The editor validates and applies the patch. The review appears in the",
@@ -39,10 +39,13 @@ function usage() {
     "  --document FILE       Target document path.",
     "  --patch FILE          Unified-diff proposition file.",
     "  --description TEXT    Provenance shown with the review chunk.",
+    "  --baseline-sha256 HEX SHA-256 of the working text that the patch was made",
+    "                        from: revision.sha256 of the working-content read,",
+    "                        or the SHA-256 of the file when it has no unsaved",
+    "                        text. The editor refuses a patch for other text.",
     "  --port N              Agent API loopback port.",
     "",
     "Optional:",
-    "  --baseline-sha256 HEX Expected SHA-256 of the working document.",
     "  -h, --help            Show this help.",
     "",
     "Environment:",
@@ -52,8 +55,9 @@ function usage() {
     "  A refusal is one JSON line {ok:false,error:{code,message,status?}} on",
     "  stderr. Exit 2: an invocation error (INVALID_INVOCATION, TOKEN_REQUIRED,",
     "  INPUT_NOT_FILE, INPUT_EMPTY). Exit 1: a refusal of the editor (its own",
-    "  code), PROTOCOL_VERSION_UNSUPPORTED, DOCUMENT_NOT_FOUND, REVISION_MISMATCH,",
-    "  CLI_FAILURE (a defect of the CLI), or a refusal of the transport:",
+    "  code; REVISION_MISMATCH for a working text that is not the baseline),",
+    "  PROTOCOL_VERSION_UNSUPPORTED, DOCUMENT_NOT_FOUND, CLI_FAILURE (a defect",
+    "  of the CLI), or a refusal of the transport:",
     "  INSTANCE_UNREACHABLE  No connection, or a connection lost before an answer.",
     "  REQUEST_TIMEOUT       No answer within 30 seconds.",
     "  RESPONSE_INCOMPLETE   The answer stopped after its headers.",
@@ -98,7 +102,7 @@ function parseArguments(argv) {
       index += 1;
     }
   }
-  for (const name of ["document", "patch", "description", "port"]) {
+  for (const name of ["document", "patch", "description", "baseline-sha256", "port"]) {
     if (options[name] === undefined || options[name].length === 0) {
       fail("INVALID_INVOCATION", `Option --${name} is required\n\n${usage()}`, undefined, 2);
     }
@@ -262,7 +266,7 @@ async function main() {
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     fail("INVALID_INVOCATION", `Option --port must be a TCP port number: ${options.port}`, undefined, 2);
   }
-  if (options["baseline-sha256"] !== undefined && !/^[0-9a-f]{64}$/.test(options["baseline-sha256"])) {
+  if (!/^[0-9a-f]{64}$/.test(options["baseline-sha256"])) {
     fail("INVALID_INVOCATION", "Option --baseline-sha256 must contain 64 lowercase hexadecimal characters", undefined, 2);
   }
 
@@ -328,17 +332,7 @@ async function main() {
     200,
     "working document read",
   );
-  const revision = requireRecord(content.revision, "working document revision", 200);
-  const workingSha256 = requireString(revision.sha256, "working document revision SHA-256", 200);
   const reviewGeneration = requireInteger(content.reviewGeneration, "working document review generation", 200);
-  const declaredSha256 = options["baseline-sha256"];
-  if (declaredSha256 !== undefined && declaredSha256 !== workingSha256) {
-    fail(
-      "REVISION_MISMATCH",
-      `The working document does not match --baseline-sha256 for ${documentPath}`,
-      412,
-    );
-  }
 
   const proposal = success(
     await request(
@@ -347,7 +341,11 @@ async function main() {
       "POST",
       `/v1/documents/${encodeURIComponent(documentId)}/proposals`,
       {
-        baselineSha256: declaredSha256 ?? workingSha256,
+        // The baseline is the text that the producer of the patch read. The
+        // editor compares it with its working text and refuses another text
+        // as REVISION_MISMATCH; this command holds no copy of that rule and
+        // sends no hash of a read of its own.
+        baselineSha256: options["baseline-sha256"],
         expectedReviewGeneration: reviewGeneration,
         clientRequestId: crypto.randomUUID(),
         claims: [{ description: options.description, patch }],
