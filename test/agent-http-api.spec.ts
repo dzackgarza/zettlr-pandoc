@@ -2261,6 +2261,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         patchPath,
         "--description",
         "no token",
+        "--baseline-sha256",
+        sha256Text("before\n"),
         "--port",
         String(address.port),
       ],
@@ -2272,6 +2274,100 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(refusal.ok, false);
     assert.equal(refusal.error.code, "TOKEN_REQUIRED");
     assert.equal(requestCount, 0);
+  });
+
+  it("sends nothing from the external CLI when no baseline of the patch is given (#57)", async function () {
+    // The request of a proposal requires the hash of the text that the patch
+    // was made from. A command without it has no value to send: it must not
+    // read the working text itself and send the hash of that read.
+    let requestCount = 0;
+    const peer = http.createServer((_request, response) => {
+      requestCount += 1;
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ protocolVersion: openApiDocument.info.version }));
+    });
+    peerServers.push(peer);
+    await new Promise<void>((resolve) => {
+      peer.listen(0, "127.0.0.1", resolve);
+    });
+    const address = peer.address();
+    assert.ok(address !== null && typeof address !== "string");
+
+    const filePath = path.join(scratch, "no-baseline.md");
+    const patchPath = path.join(scratch, "no-baseline.diff");
+    writeFileSync(filePath, "before\n", "utf8");
+    writeFileSync(patchPath, "a non-empty proposition\n", "utf8");
+
+    const result = await runReviewDiffCli([
+      "--document",
+      filePath,
+      "--patch",
+      patchPath,
+      "--description",
+      "no baseline",
+      "--port",
+      String(address.port),
+    ]);
+    assert.equal(result.code, 2);
+    assert.equal(result.stdout, "");
+    const refusal = JSON.parse(result.stderr) as {
+      ok: boolean;
+      error: { code: string; message: string };
+    };
+    assert.equal(refusal.ok, false);
+    assert.equal(refusal.error.code, "INVALID_INVOCATION");
+    assert.match(refusal.error.message, /^Option --baseline-sha256 is required/);
+    assert.equal(requestCount, 0);
+  });
+
+  it("opens no review through the external CLI for a patch of another text than the working text (#57)", async function () {
+    // The author changed the document after the producer of the patch read
+    // it. The patch still applies to the changed text, so only the baseline
+    // tells the editor that the patch was made from another text.
+    const filePath = path.join(scratch, "cli-stale-baseline.md");
+    const read = "first line\nsecond line\n";
+    const working = "first line\nsecond line\nA line that the author added.\n";
+    const documentId = await openFile(filePath, working);
+    const patchPath = path.join(scratch, "cli-stale-baseline.diff");
+    writeFileSync(
+      patchPath,
+      createPatch("document", read, "FIRST line\nsecond line\n", "", "", { context: 0 }),
+      "utf8",
+    );
+
+    const result = await runReviewDiffCli([
+      "--document",
+      filePath,
+      "--patch",
+      patchPath,
+      "--description",
+      "a patch of an earlier text",
+      "--baseline-sha256",
+      sha256Text(read),
+      "--port",
+      String(httpPort),
+    ]);
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    const refusal = JSON.parse(result.stderr) as {
+      ok: boolean;
+      error: { code: string; status: number };
+    };
+    assert.equal(refusal.ok, false);
+    assert.equal(refusal.error.code, "REVISION_MISMATCH");
+    assert.equal(refusal.error.status, 412);
+
+    const content = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
+    assert.equal(content.status, 200);
+    assert.equal(parseAs(content.body, "ReadDocumentResponse").content, working);
+    const reviews = await httpRequest("GET", "/v1/reviews");
+    assert.equal(reviews.status, 200);
+    assert.deepEqual(
+      parseAs(reviews.body, "ReviewListResponse").reviews.filter(
+        (review) => review.documentPath === filePath,
+      ),
+      [],
+    );
   });
 
   it("submits a review through the standalone external CLI process without changing the selected tab", async function () {
@@ -2372,6 +2468,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       patchPath,
       "--description",
       "incompatible protocol",
+      "--baseline-sha256",
+      sha256Text("before\n"),
       "--port",
       String(address.port),
     ]);
@@ -2449,6 +2547,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         patchPath,
         "--description",
         failure,
+        "--baseline-sha256",
+        sha256Text("before\n"),
         "--port",
         String(port),
       ]);
@@ -3085,6 +3185,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       patchPath,
       "--description",
       "malformed proposition",
+      "--baseline-sha256",
+      sha256Text("unchanged\n"),
       "--port",
       String(httpPort),
     ]);
