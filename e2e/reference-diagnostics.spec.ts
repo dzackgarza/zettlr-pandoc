@@ -88,10 +88,16 @@ describe("assembled app: the diagnostics of labels and references (#47)", functi
       .locator(".problems-finding");
     await findings.filter({ hasText: part }).first().waitFor({ state: "visible", timeout: 90_000 });
     return await findings.evaluateAll((rows) =>
-      rows.map((row) => ({
-        severity: row.getAttribute("data-severity"),
-        text: (row.textContent ?? "").replace(/\s+/g, " ").trim(),
-      })),
+      rows.map((row) => {
+        const text = row.textContent;
+        if (text === null) {
+          throw new Error("a finding of the Problems view has no text");
+        }
+        return {
+          severity: row.getAttribute("data-severity"),
+          text: text.replace(/\s+/g, " ").trim(),
+        };
+      }),
     );
   }
 
