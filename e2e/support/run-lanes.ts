@@ -50,7 +50,23 @@ import { parseArgs } from "node:util";
 const LANES = 3;
 
 /** A test or a hook has 90 s (AGENTS.md §13). */
-const MOCHA_ARGS = ["--no-config", "--node-option", "import=tsx", "--timeout", "90000", "--exit"];
+/**
+ * The arguments of mocha for one spec file. `--forbid-only` fails a file
+ * with an exclusive test (`.only`), which would pass with the other tests
+ * of the file not run. `--file` loads the hooks of each file: the
+ * screenshots of a failed test and the renderer gate (`root-hooks.ts`).
+ */
+const MOCHA_ARGS = [
+  "--no-config",
+  "--node-option",
+  "import=tsx",
+  "--timeout",
+  "90000",
+  "--exit",
+  "--forbid-only",
+  "--file",
+  "e2e/support/root-hooks.ts",
+];
 
 /**
  * The namespaces of one spec file (unshare(1)), inside those of the run

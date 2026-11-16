@@ -335,6 +335,17 @@ export async function preserveArtifacts(
   for (const [filename, screenshot] of screenshots) {
     await writeFile(path.join(artifactDirectory, filename), screenshot);
   }
+  // The windows at each failed test of the file (`captureFailedTest`).
+  for (const [filename, screenshot] of failureScreenshots) {
+    await writeFile(path.join(artifactDirectory, filename), screenshot);
+  }
+  if (failureNotes.length > 0) {
+    await writeFile(
+      path.join(artifactDirectory, "failures.txt"),
+      `${failureNotes.join("\n")}\n`,
+      "utf8",
+    );
+  }
 
   if (fixtureRoot !== undefined) {
     const appLogs = path.join(fixtureRoot, "config", "logs");
@@ -738,10 +749,95 @@ function forgePortsOfLane(): { rendererPort: number; loggerPort: number } {
   return { rendererPort, loggerPort: rendererPort + 1 };
 }
 
+/** One app of the file: the events of its windows, and its open windows. */
+interface WatchedApp {
+  rendererEvents: string[];
+  pages: () => Page[];
+}
+
+/** Each app that a file started with `attach`. */
+const watchedApps: WatchedApp[] = [];
+
+/** The renderer events that the tests of the file provoke on purpose. */
+const provokedRendererEvents: RegExp[] = [];
+
+/** The screenshots of the windows at each failed test of the file, by file name. */
+const failureScreenshots = new Map<string, Buffer>();
+
+/** One line for each failed test of the file: its number, its title, and each window without a screenshot. */
+const failureNotes: string[] = [];
+
+/**
+ * Puts the windows of an app under the renderer gate of the file
+ * (`root-hooks.ts`): an error that a window reports and that no test of the
+ * file provokes fails the file. `attach` calls this for each app.
+ */
+export function watchRendererEvents(rendererEvents: string[], pages: () => Page[]): void {
+  watchedApps.push({ rendererEvents, pages });
+}
+
+/**
+ * Declares renderer events that a test of the file provokes: a spec of a
+ * failure makes the window report it. An event that matches no pattern
+ * fails the file, so a pattern names the one message that the spec causes.
+ */
+export function provokesRendererEvents(...patterns: RegExp[]): void {
+  provokedRendererEvents.push(...patterns);
+}
+
+/** The events that match no pattern, in their order. */
+export function unprovokedEvents(events: readonly string[], provoked: readonly RegExp[]): string[] {
+  return events.filter((event) => !provoked.some((pattern) => pattern.test(event)));
+}
+
+/** The renderer events of each app of the file that no test of the file provokes. */
+export function unprovokedRendererEventsOfFile(): string[] {
+  return unprovokedEvents(
+    watchedApps.flatMap((app) => app.rendererEvents),
+    provokedRendererEvents,
+  );
+}
+
+/**
+ * Takes a screenshot of each open window of each app of the file, for a test
+ * that failed. `preserveArtifacts` writes them into the artifacts of the
+ * file. A window that gives no screenshot is named in `failures.txt` with
+ * the cause: the failure of the test is what the file reports.
+ */
+export async function captureFailedTest(title: string): Promise<void> {
+  const test = failureNotes.filter((note) => note.startsWith("test ")).length + 1;
+  failureNotes.push(`test ${test}: ${title}`);
+  let window = 0;
+  for (const app of watchedApps) {
+    for (const page of app.pages()) {
+      window += 1;
+      const name = `failure-${test}-window-${window}.png`;
+      await page.screenshot({ timeout: 10_000 }).then(
+        (screenshot) => {
+          failureScreenshots.set(name, screenshot);
+          failureNotes.push(`  ${name}: ${page.url()}`);
+        },
+        (error: unknown) => {
+          failureNotes.push(
+            `  window ${window} (${page.url()}) gave no screenshot: ${String(error)}`,
+          );
+        },
+      );
+    }
+  }
+}
+
 export function observeRenderer(page: Page, rendererEvents: string[]): void {
   page.on("console", (message) => {
     if (message.type() === "error") {
-      rendererEvents.push(`console-error: ${message.text()}`);
+      // A resource that did not load is an error without the resource in its
+      // text; the location of the message is the address of the resource.
+      const { url } = message.location();
+      rendererEvents.push(
+        url === ""
+          ? `console-error: ${message.text()}`
+          : `console-error: ${message.text()} (${url})`,
+      );
     }
   });
   page.on("pageerror", (error) => {
@@ -812,6 +908,14 @@ export async function attach(
       context.pages().forEach((page) => observeRenderer(page, rendererEvents));
       context.on("page", (page) => observeRenderer(page, rendererEvents));
     }
+    watchRendererEvents(rendererEvents, () =>
+      connectedBrowser.isConnected()
+        ? connectedBrowser
+            .contexts()
+            .flatMap((context) => context.pages())
+            .filter((page) => !page.isClosed())
+        : [],
+    );
 
     attached = true;
     return {
