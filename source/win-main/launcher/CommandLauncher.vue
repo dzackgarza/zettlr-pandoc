@@ -356,9 +356,12 @@ function rememberExportProfile(profile: string): void {
   if (filePath === undefined) {
     return;
   }
+  // An item of the store is a reactive proxy, and the IPC of the setting
+  // cannot clone a proxy: the value for the main process has plain items.
   const previous = configStore.config.export.selectedProfiles
     .filter((item) => item.filePath !== filePath)
-    .slice(-(rememberedProfilesLimit - 1));
+    .slice(-(rememberedProfilesLimit - 1))
+    .map((item) => ({ filePath: item.filePath, profile: item.profile }));
   configStore.setConfigValue("export.selectedProfiles", [...previous, { filePath, profile }]);
   configStore.setConfigValue("export.lastUsedProfile", profile);
 }
