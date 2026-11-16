@@ -32,7 +32,7 @@ import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
 } from "../util/range-in-preview-suppression";
-import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
+import { syntaxTreeChanged, visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
 
 function hideHeadingMarks(view: EditorView): RangeSet<Decoration> {
   const ranges: Array<Range<Decoration>> = [];
@@ -103,7 +103,7 @@ const headingLevelPresentation = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate): void {
-      if (update.docChanged || update.viewportChanged) {
+      if (update.docChanged || update.viewportChanged || syntaxTreeChanged(update)) {
         this.decorations = headingLevelDecorations(update.view);
       }
     }
@@ -124,6 +124,7 @@ export const renderHeadings = ViewPlugin.fromClass(
         update.docChanged ||
         update.viewportChanged ||
         update.selectionSet ||
+        syntaxTreeChanged(update) ||
         reviewSuppressionChanged(update)
       ) {
         this.decorations = hideHeadingMarks(update.view);

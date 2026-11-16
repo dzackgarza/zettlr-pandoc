@@ -18,7 +18,7 @@
 
 // The renderer aggregate reads the preload bridge when it is imported.
 import "./provision-renderer-window-seams";
-import { ensureSyntaxTree, forceParsing } from "@codemirror/language";
+import { ensureSyntaxTree, forceParsing, syntaxTree } from "@codemirror/language";
 import { EditorSelection, EditorState, type TransactionSpec } from "@codemirror/state";
 import { type Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
@@ -69,6 +69,29 @@ function parsed(state: EditorState): EditorState {
     "the document must parse",
   );
   return state.update({}).state;
+}
+
+/**
+ * Runs a change while the time of the parser passes after one step.
+ *
+ * The parser of a state works for a set time after a change and goes on in
+ * the background. During `run`, each reading of the clock is a second later
+ * than the one before, so the parser stops after its first step, as on a
+ * machine under load. The tree of the changed state then ends before the
+ * document does.
+ */
+function withParserTimePassed<T>(run: () => T): T {
+  const realNow = Date.now;
+  let now = realNow.call(Date);
+  Date.now = () => {
+    now += 1000;
+    return now;
+  };
+  try {
+    return run();
+  } finally {
+    Date.now = realNow;
+  }
 }
 
 function countedEditor(doc: string, anchor: number): CountedEditor {
@@ -140,6 +163,36 @@ describe("Block widgets follow the size of a change", function () {
     const long = widgetsMadeByTypedCharacter(4000);
     assert.equal(long, short);
     assert.ok(short <= 4, `a typed character made ${short} widgets`);
+  });
+
+  it("keeps each widget below a change that the parser has not reached yet", function () {
+    const count = 400;
+    const doc = paragraphs(count);
+    const editor = countedEditor(doc, 0);
+    const position = doc.indexOf("holds", doc.length / 2);
+    editor.reset();
+    const typed = withParserTimePassed(
+      () =>
+        editor.state.update({
+          changes: { from: position, insert: "x" },
+          selection: { anchor: position + 1 },
+        }).state,
+    );
+
+    assert.ok(
+      syntaxTree(typed).length < typed.doc.length,
+      "the parser did not reach the end of the document",
+    );
+    assert.equal(
+      widgets(typed).length,
+      2 * count,
+      "each formula keeps its widget while the parser has not reached it",
+    );
+    assert.ok(editor.made() <= 4, `a typed character made ${editor.made()} widgets`);
+
+    // When the parser has reached the end, the widgets are those of the text.
+    const whole = countedEditor(typed.doc.toString(), position + 1);
+    assert.deepEqual(widgets(parsed(typed)), widgets(whole.state));
   });
 
   it("makes no widget when the cursor moves through text", function () {
@@ -356,7 +409,14 @@ describe("The production renderers", function () {
     }
   }
 
-  it("draw an edited document as a new editor draws it, after each of a sequence of edits and caret moves", function () {
+  /**
+   * Makes each of a sequence of edits and caret moves in one editor, and
+   * compares its drawing with that of a new editor of the same text after
+   * each step. With `parserBehind`, the parser of the edit stops after one
+   * step, as on a machine under load, and reaches the end of the document
+   * in a later update that changes no text.
+   */
+  function assertEditedEditorDrawsAsNewEditor(parserBehind: boolean): void {
     const at = (needle: string, state: EditorState): number => {
       const position = state.sliceDoc().indexOf(needle);
       assert.notEqual(position, -1, `the document must contain ${needle}`);
@@ -486,13 +546,25 @@ describe("The production renderers", function () {
     const edited = createEditor(AGGREGATE_DOC, EditorSelection.single(AGGREGATE_DOC.length));
     assert.ok(drawn(edited).length > 20, "the renderers must draw the document");
     for (const [step, spec] of steps) {
-      edited.dispatch(spec(edited.state));
+      if (parserBehind) {
+        withParserTimePassed(() => edited.dispatch(spec(edited.state)));
+      } else {
+        edited.dispatch(spec(edited.state));
+      }
       parsedView(edited);
       const fresh = createEditor(edited.state.sliceDoc(), edited.state.selection);
       assertSameDrawing(edited, fresh, step);
       fresh.destroy();
       views.pop();
     }
+  }
+
+  it("draw an edited document as a new editor draws it, after each of a sequence of edits and caret moves", function () {
+    assertEditedEditorDrawsAsNewEditor(false);
+  });
+
+  it("draw an edited document as a new editor draws it when the parser is behind after each edit", function () {
+    assertEditedEditorDrawsAsNewEditor(true);
   });
 
   it("stay in place for a configuration update that changes no renderer setting", function () {

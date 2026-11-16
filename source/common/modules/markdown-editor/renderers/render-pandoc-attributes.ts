@@ -32,7 +32,10 @@ import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
 } from "@dzack/pandoc-editor/util/range-in-preview-suppression";
-import { visitVisibleSyntaxNodes } from "@dzack/pandoc-editor/util/visible-syntax-nodes";
+import {
+  syntaxTreeChanged,
+  visitVisibleSyntaxNodes,
+} from "@dzack/pandoc-editor/util/visible-syntax-nodes";
 import { parsePandocAttributes } from "source/common/pandoc-util/parse-pandoc-attributes";
 import { configField } from "../util/configuration";
 
@@ -114,6 +117,7 @@ export const renderPandocAttributes = ViewPlugin.fromClass(
         update.docChanged ||
         update.viewportChanged ||
         update.selectionSet ||
+        syntaxTreeChanged(update) ||
         reviewSuppressionChanged(update)
       ) {
         this.decorations = hideAttributeBlocks(update.view);

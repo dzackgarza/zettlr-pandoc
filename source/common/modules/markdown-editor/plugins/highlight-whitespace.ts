@@ -30,6 +30,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
+import { syntaxTreeChanged } from "@dzack/pandoc-editor/util/visible-syntax-nodes";
 import { configField, configUpdateEffect } from "../util/configuration";
 
 const extensionCompartment = new Compartment();
@@ -114,7 +115,7 @@ const pilcrowPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) {
+      if (update.docChanged || update.viewportChanged || syntaxTreeChanged(update)) {
         this.decorations = showLineEndings(update.view);
       }
     }

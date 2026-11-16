@@ -39,7 +39,7 @@ import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
 } from "../util/range-in-preview-suppression";
-import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
+import { syntaxTreeChanged, visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
 
 /**
  * Whether a state value that a renderer's `createWidget` reads changed between
@@ -402,6 +402,7 @@ export function renderInlineWidgets(
           update.docChanged ||
           update.viewportChanged ||
           update.selectionSet ||
+          syntaxTreeChanged(update) ||
           reviewSuppressionChanged(update)
         ) {
           this.decorations = Decoration.set(

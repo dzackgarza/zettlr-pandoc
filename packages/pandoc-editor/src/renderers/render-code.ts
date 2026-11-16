@@ -20,7 +20,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
+import { syntaxTreeChanged, visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
 
 const codeDecorator = Decoration.mark({ class: "code" });
 
@@ -47,7 +47,7 @@ const renderCodePlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate): void {
-      if (update.docChanged || update.viewportChanged) {
+      if (update.docChanged || update.viewportChanged || syntaxTreeChanged(update)) {
         this.decorations = getCodeHighlighter(update.view);
       }
     }

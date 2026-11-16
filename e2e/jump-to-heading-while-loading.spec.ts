@@ -113,14 +113,28 @@ describe("assembled app: a wikilink to a heading of a document that is not open"
       }
     }
     assert.ok(shown !== undefined, `an editor shows ${name}`);
-    // The line goes to the editor when the editor has the text; nothing
-    // moves the cursor afterwards.
-    await delay(1_000);
-    const settled = (await editorStates(activePage)).find((state) => state.text === text);
+    // The window sends the line when its list of panes has the document,
+    // which can be after the editor has the text: the window asks the main
+    // process for that list, and tries again each 100 ms until the list has
+    // it. The wait is for the cursor on the heading, with no set time for
+    // the arrival of the line. A jump that is lost leaves the cursor on line
+    // 1 until the limit.
+    const cursorLine = async (): Promise<number | undefined> =>
+      (await editorStates(activePage)).find((state) => state.text === text)?.cursorLine;
+    while ((await cursorLine()) !== headingLine && Date.now() < deadline) {
+      await delay(50);
+    }
     assert.equal(
-      settled?.cursorLine,
+      await cursorLine(),
       headingLine,
       `the cursor of ${name} is on "${HEADING}", line ${headingLine}`,
+    );
+    // Nothing moves the cursor afterwards: a load that ends later keeps it.
+    await delay(1_000);
+    assert.equal(
+      await cursorLine(),
+      headingLine,
+      `the cursor of ${name} stays on "${HEADING}", line ${headingLine}`,
     );
   }
 

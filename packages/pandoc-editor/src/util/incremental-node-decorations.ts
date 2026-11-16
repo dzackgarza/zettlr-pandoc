@@ -206,7 +206,17 @@ export function incrementalNodeDecorations(
       let blocks = value.blocks;
       if (tree !== value.tree) {
         blocks = topLevelBlocks(tree);
-        dirty.push(...changedRanges(value.blocks, blocks, state.doc.length));
+        // The parser works for a set time after a change and goes on in the
+        // background, so the tree can end before the document does. The
+        // text after the end of the tree is not known yet: its decorations
+        // stay, mapped through the change, until the tree reaches it. A
+        // later tree has those blocks as new blocks and decorates them.
+        const parsedTo = Math.min(tree.length, state.doc.length);
+        for (const range of changedRanges(value.blocks, blocks, parsedTo)) {
+          if (range.from < range.to) {
+            dirty.push(range);
+          }
+        }
       }
       // One position more on each side: a decoration that meets the reach
       // depends on it, and `inRegion` leaves out a decoration that only

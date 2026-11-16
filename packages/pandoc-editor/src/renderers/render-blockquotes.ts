@@ -22,7 +22,7 @@ import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
 } from "../util/range-in-preview-suppression";
-import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
+import { syntaxTreeChanged, visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
 
 function showBlockquoteWrappers(view: EditorView): RangeSet<BlockWrapper> {
   const ranges: Range<BlockWrapper>[] = [];
@@ -83,6 +83,7 @@ const blockquotePlugin = ViewPlugin.fromClass(
         update.docChanged ||
         update.viewportChanged ||
         update.selectionSet ||
+        syntaxTreeChanged(update) ||
         reviewSuppressionChanged(update)
       ) {
         this.blockWrappers = showBlockquoteWrappers(update.view);
