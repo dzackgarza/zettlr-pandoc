@@ -3276,6 +3276,13 @@ current contents from the editor somewhere else, and restart the application.`,
       this._unload(document);
     }
     this._announcedRemoteModtime.delete(filePath);
+    // The unload dropped the unsaved text of the document. Each window reads
+    // the list of documents with unsaved text again on this event; without
+    // it the tab keeps its mark of unsaved text.
+    this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
+      filePath,
+      status: "modification",
+    });
     // Indicate to all affected editors that they should reload the file
     this.broadcastEvent(DP_EVENTS.FILE_REMOTELY_CHANGED, { filePath });
   }
