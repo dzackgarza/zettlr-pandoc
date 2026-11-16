@@ -212,4 +212,42 @@ describe("assembled app: a reference rename shows its edits before it changes a 
     );
     assert.equal(await textOnceItIs(definitionsPath, buffer), buffer);
   });
+
+  it("puts each use back when the author clicks Undo (#47)", async function () {
+    const activePage = requireInitialized(page, "The editor window must be open");
+    const usesBefore = await readFile(usesPath, "utf8");
+    assert.ok(usesBefore.includes("@sec:methods "), `the use of the key is there: ${usesBefore}`);
+
+    await extendKeyOnLine(activePage, 3, "x");
+    const offer = activePage.locator(OFFER);
+    await offer.waitFor({ state: "visible", timeout: 30_000 });
+    await offer.click();
+    const preview = activePage.locator(PREVIEW);
+    await preview.waitFor({ state: "visible", timeout: 30_000 });
+    await preview.locator("[data-apply]").click();
+    await preview.waitFor({ state: "detached", timeout: 30_000 });
+    const renamed = usesBefore.replace("@sec:methods ", "@sec:methodsx ");
+    assert.equal(await textOnceItIs(usesPath, renamed), renamed);
+
+    await activePage
+      .locator("#zettlr-toast-container .zettlr-toast")
+      .filter({ hasText: "sec:methodsx" })
+      .locator("[data-toast-action]")
+      .first()
+      .click();
+
+    assert.equal(
+      await textOnceItIs(usesPath, usesBefore),
+      usesBefore,
+      "the file of the uses has the text that it had before the rename",
+    );
+    screenshots.set("reference-rename-undone.png", await activePage.screenshot());
+
+    // The open document keeps what the author typed; the author saves it, so
+    // the app quits without a prompt.
+    await activePage.evaluate(
+      async (pathInPage) => await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+      definitionsPath,
+    );
+  });
 });
