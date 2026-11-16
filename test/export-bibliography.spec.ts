@@ -157,6 +157,10 @@ describe("Bibliography of a PDF export", function () {
     await writeFile(path.join(notes, "forms.md"), NOTE);
 
     await mkdir(path.join(userData, "logs"), { recursive: true });
+    // The folder of the defaults files of the author, which the app makes
+    // at its start. The list of export items reads it; the PDF item of this
+    // spec is no defaults file, so the folder has no file.
+    await mkdir(path.join(userData, "defaults"), { recursive: true });
     await rm(path.join(userData, "documents.yaml"), { force: true });
 
     const log = new LogProvider();
