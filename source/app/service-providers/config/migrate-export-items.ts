@@ -24,6 +24,8 @@ export interface StoredExportItems {
   items?: ConfigOptions["export"]["items"];
   customCommands?: Array<{ displayName: string; command: string }>;
   scripts?: Array<{ name: string; profile: string; command: string; extension: string }>;
+  /** The setting of the math headers of the application, from before the template owned the math */
+  injectMathHeaders?: boolean;
 }
 
 /**
@@ -59,4 +61,15 @@ export function migrateExportItems(stored: StoredExportItems): void {
   ];
   delete stored.customCommands;
   delete stored.scripts;
+}
+
+/**
+ * Removes the setting of the math headers of the application from a stored
+ * configuration, in place. The template of an export owns its math
+ * (`exporter/export-math.ts`), so the setting decides nothing any more.
+ *
+ * @param   {StoredExportItems}  stored  The `export` section of the stored configuration
+ */
+export function dropExportMathSetting(stored: StoredExportItems): void {
+  delete stored.injectMathHeaders;
 }

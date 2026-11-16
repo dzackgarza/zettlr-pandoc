@@ -8,12 +8,15 @@
  * License:         GNU GPL v3
  *
  * Description:     Starts the packaged app and exports a document with the
- *                  HTML profile. The export gives Pandoc the MathJax of the
- *                  application, which Pandoc puts into the file; Pandoc is a
+ *                  HTML profile. The export uses the template of ~/.pandoc
+ *                  for the writer, which owns the math and its macros, and
+ *                  gives it the MathJax of the application; Pandoc is a
  *                  process of its own and reads no file inside `app.asar`.
  *                  The exported file, opened in Chromium, shows each formula
- *                  of the document as typeset math, also a formula between
- *                  \( and \) (#199).
+ *                  of the document as typeset math: a formula between \( and
+ *                  \) (#199), a macro of ~/.pandoc, and a command of a
+ *                  MathJax extension. The page asks no other machine for
+ *                  anything.
  *
  * END HEADER
  */
@@ -42,7 +45,10 @@ import {
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-html-export-packaged-e2e-latest");
 const PROFILE = "HTML.yaml";
-const DOCUMENT = "# Genus\n\nThe real line $\\mathbb{R}$ holds the variable \\(x\\).\n";
+// `\ZZ` is a macro of ~/.pandoc; `\ce` is of a MathJax extension that the
+// page loads when it meets the command.
+const DOCUMENT =
+  "# Genus\n\nThe real line $\\mathbb{R}$ holds the variable \\(x\\). The integers are $\\ZZ$, and water is $\\ce{H2O}$.\n";
 
 /** The scene of the visual specs: Electron's Chromium in a window of its own. */
 interface Scene {
@@ -135,23 +141,46 @@ describe("packaged app: an HTML export typesets its math", function () {
       height: 600,
       userData: path.join(requireInitialized(fixtureRoot, "The fixture exists"), "scene"),
     });
+    // Each request of the page that goes to another machine. A file, data of
+    // the page and a blob that a script of the page made are the page's own.
+    const requestsToOtherMachines: string[] = [];
+    scene.page.on("request", (request) => {
+      const url = request.url();
+      if (!["file:", "data:", "about:", "blob:"].some((scheme) => url.startsWith(scheme))) {
+        requestsToOtherMachines.push(url);
+      }
+    });
     await scene.page.goto(pathToFileURL(exported).href);
     await scene.page.waitForFunction(
-      () => document.querySelectorAll("mjx-container").length === 2,
+      () => document.querySelectorAll("mjx-container").length === 4,
       undefined,
       { timeout: 30_000 },
     );
     screenshots.set("exported-html.png", await scene.page.screenshot());
     const typeset = await scene.page.evaluate(() =>
-      [...document.querySelectorAll("mjx-container")].map((math) => ({
-        latex: math.querySelector("[data-latex]")?.getAttribute("data-latex"),
-        errors: math.querySelectorAll("mjx-merror").length,
-      })),
+      [...document.querySelectorAll("mjx-container")].map((math) => {
+        const latex = math.querySelector("[data-latex]")?.getAttribute("data-latex");
+        return {
+          latex,
+          errors: math.querySelectorAll("mjx-merror").length,
+          // MathJax shows a command that it does not know as its own text.
+          shownAsText: [...math.querySelectorAll("mjx-mtext[data-latex]")].some(
+            (text) => text.getAttribute("data-latex") === latex,
+          ),
+        };
+      }),
     );
     await scene.close();
     assert.deepEqual(typeset, [
-      { latex: "\\mathbb{R}", errors: 0 },
-      { latex: "x", errors: 0 },
+      { latex: "\\mathbb{R}", errors: 0, shownAsText: false },
+      { latex: "x", errors: 0, shownAsText: false },
+      { latex: "\\ZZ", errors: 0, shownAsText: false },
+      { latex: "\\ce{H2O}", errors: 0, shownAsText: false },
     ]);
+    assert.deepEqual(
+      requestsToOtherMachines,
+      [],
+      "the exported page asks no other machine for anything",
+    );
   });
 });

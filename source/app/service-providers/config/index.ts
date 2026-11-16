@@ -40,7 +40,11 @@ import {
   getConfigTemplate,
   systemAppLang,
 } from "./get-config-template";
-import { migrateExportItems, type StoredExportItems } from "./migrate-export-items";
+import {
+  dropExportMathSetting,
+  migrateExportItems,
+  type StoredExportItems,
+} from "./migrate-export-items";
 import { showOnboardingWindow } from "./onboarding-window";
 import { consolidateRootPaths, rootPathsOnDisk } from "./root-paths";
 
@@ -350,6 +354,7 @@ export default class ConfigProvider extends ProviderContract {
     // before the export items become the items of `export.items`.
     if (typeof readConfig.export === "object" && readConfig.export !== null) {
       migrateExportItems(readConfig.export);
+      dropExportMathSetting(readConfig.export);
     }
 
     // After version 4.0.0, we have split up `openPaths` into separate file and

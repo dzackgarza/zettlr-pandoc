@@ -31,7 +31,6 @@ const config = {
     stripTags: false,
     stripLinks: "no" as const,
     enforceMarkSupport: false,
-    injectMathHeaders: true,
     htmlTemplate: "",
     latexTemplate: "",
   },
@@ -62,7 +61,6 @@ describe("Pipeline-integrated export scripts", function () {
         ) as Record<string, unknown>;
         return await writeDefaults(profile, overrides, config, [], directory, {
           mathJaxDirectory: path.join(directory, "unused-mathjax"),
-          macros,
           pandocDirectory: MACRO_TREE,
         });
       },

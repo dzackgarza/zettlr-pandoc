@@ -32,13 +32,12 @@ import { promises as fs } from "fs";
 // Modules
 import path from "path";
 import YAML from "yaml";
-import { loadCanonicalMathJaxMacros } from "../../../util/load-mathjax-macros";
 import { runPandoc } from "../../../util/run-pandoc";
 import { runCommandExport } from "./command-exporter";
 import { plugin as DefaultExporter } from "./default-exporter";
 // Exporters
 import type { ExportItem } from "./export-items";
-import { type ExportMath, injectPandocMathHeaders } from "./pandoc-math-headers";
+import { type ExportMath, setMathPlaces } from "./export-math";
 import { runRecipeExport } from "./recipe-exporter";
 import {
   type DeclaredDefaults,
@@ -104,7 +103,6 @@ type DefaultsWriterConfig = {
     | "stripTags"
     | "stripLinks"
     | "enforceMarkSupport"
-    | "injectMathHeaders"
     | "htmlTemplate"
     | "latexTemplate"
   >;
@@ -133,10 +131,10 @@ export async function makeExport(
   // its working directory, not against the folder of an input.
   const inputFiles = options.sourceFiles.map((file) => file.textFile);
 
-  // Load the central ~/.pandoc MathJax projection once for this export.
+  // The places of the math of this export: the MathJax that the
+  // application brings, and ~/.pandoc, whose templates own the math.
   const math: ExportMath = {
     mathJaxDirectory: assets.exportMathJaxDirectory,
-    macros: await loadCanonicalMathJaxMacros(app.getPath("home")),
     pandocDirectory: path.join(app.getPath("home"), ".pandoc"),
   };
 
@@ -342,15 +340,30 @@ export async function writeDefaults(
 
   // The template of the export (a Project), then the template of the
   // defaults file, then the template of the settings for the family of the
-  // writer (`effectiveTemplate`). A configured file browses to an absolute
-  // path, or a name is resolved from ~/.pandoc/templates.
+  // writer, then the template of ~/.pandoc for the writer
+  // (`effectiveTemplate`). A configured file browses to an absolute path,
+  // or a name is resolved from ~/.pandoc/templates.
   const template = effectiveTemplate(
     defaults.writer as string,
     typeof defaults.template === "string" ? defaults.template : undefined,
     override,
     config.export,
   );
-  if (template !== undefined) {
+  if (template?.from === "pandoc-directory") {
+    // The template of ~/.pandoc for the writer owns the math of the export.
+    // Without it the export would have Pandoc's own template and no macro,
+    // so the export stops and names the file.
+    const file = path.join(math.pandocDirectory, "templates", template.value);
+    if (!isFile(file)) {
+      throw new Error(
+        trans(
+          "The template %s of the Pandoc directory is no file. An export without a template of its own uses it.",
+          file,
+        ),
+      );
+    }
+    defaults.template = file;
+  } else if (template !== undefined) {
     defaults.template = template.value;
   }
 
@@ -365,11 +378,9 @@ export async function writeDefaults(
     defaults[key] = properties[key];
   }
 
-  // Inject the fork's local MathJax config/preamble unless the user defers math
-  // to the profile's template (e.g. a ~/.pandoc template that owns MathJax).
-  if (config.export.injectMathHeaders) {
-    await injectPandocMathHeaders(defaults as Record<string, unknown>, temporaryDirectory, math);
-  }
+  // The template owns the math. The application names the MathJax that it
+  // brings and where its fonts are (`export-math.ts`).
+  setMathPlaces(defaults as Record<string, unknown>, math);
 
   const YAMLOptions = {
     indent: 4,

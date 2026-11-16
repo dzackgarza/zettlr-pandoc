@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>$pagetitle$</title>
+$-- A small page template in the place of the one of ~/.pandoc: it has a
+$-- MathJax configuration with macros, takes the folder of MathJax from
+$-- `mathjax-root` and the folder of its fonts from `mathjax-fonts`, and
+$-- loads the MathJax of `$math$` after it.
+$if(math)$
+<script>
+window.MathJax = {
+  loader: {
+    paths: {
+$if(mathjax-root)$
+      mathjax: "$mathjax-root$",
+$endif$
+$if(mathjax-fonts)$
+      fonts: "$mathjax-fonts$",
+$endif$
+    }
+  },
+  tex: {
+    macros: {"RR":"\\mathbb{R}"},
+    tags: "ams"
+  }
+};
+</script>
+  $math$
+$endif$
+$for(header-includes)$
+$header-includes$
+$endfor$
+</head>
+<body>
+$body$
+</body>
+</html>

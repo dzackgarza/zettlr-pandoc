@@ -196,23 +196,44 @@ that source text (#131). Proof: `e2e/shift-click-widgets.spec.ts`.
   CommonHTML), wired in `source/common/modules/window-register/index.ts`.
 - **TikZ:** TeX compilation follows the real central `dzg-tikz` template/include
   graph.
-- **TeX export:** a TeX writer of `writeDefaults` gets the macro package
-  `~/.pandoc/styles/dzg-mathjax.sty` and the files it inputs, flattened by
-  `latexpand` into the header (`texMacroHeader`, `pandoc-math-headers.ts`). The
-  MathJax projection is for MathJax only: a projection of a macro that LaTeX
-  already defines (`\AA`) is no TeX definition. An absent package refuses the
-  export. Proof: `test/export-document.spec.ts` (a LaTeX export, pdflatex).
-- **HTML export:** an HTML writer of `writeDefaults` gets the math method
-  `mathjax` with the component of the app, and a header with the MathJax
-  configuration (the central projection, the extensions, the fonts). Pandoc
+- **The template owns the math of an export.** The application assembles no
+  MathJax configuration and no TeX preamble for an export
+  (`exporter/export-math.ts`); there is no setting that turns such a path on.
+  An export without a template of its own uses the template of
+  `~/.pandoc/templates` for its writer (`PANDOC_DIRECTORY_TEMPLATES` in
+  `exporter/resolve-export.ts`): `pandoc_preview_template.html` for `html`,
+  `pandoc_revealjs_template.html` for `revealjs`, `research_draft.tex` for
+  `latex`. A template of a Project, of the defaults file or of the settings
+  goes before it and then owns the math. A listed template that is no file
+  stops the export with its path. A writer that is not listed gets the
+  template of Pandoc and no macro of `~/.pandoc`.
+- **HTML export:** the two HTML templates hold a MathJax configuration whose
+  macro line `~/.pandoc/bin/generate-mathjax-config.py` writes. The
+  application gives them places and nothing else: the math method `mathjax`
+  with its own MathJax component, and the Pandoc variables `mathjax-root`
+  (the folder of the component) and `mathjax-fonts` (the folder of the font
+  packages). The HTML profile makes a self-contained page, so Pandoc puts
+  the component into the page, and the page cannot tell the folder from the
+  address of the component: that is why the folder has a variable. Pandoc
   and the browser of the exported file are no Electron processes and read no
   file inside `app.asar`: `scripts/export-mathjax.js` names the MathJax
-  files, webpack copies them to `.webpack/main/assets/mathjax`, and the
-  package keeps that folder in `app.asar.unpacked` (`BUNDLED_EXPORT_MATHJAX`,
+  files in the layout that MathJax expects around a component, webpack
+  copies them to `.webpack/main/assets/mathjax`, and the package keeps that
+  folder in `app.asar.unpacked` (`BUNDLED_EXPORT_MATHJAX`,
   `AssetsProvider.exportMathJaxDirectory`). The exported file loads the
-  extensions and fonts from that folder at run time. Proof:
-  `e2e/html-export-packaged.spec.ts` (the packaged app),
-  `test/pandoc-math-headers.spec.ts`.
+  extensions and fonts from that folder at run time and asks no other
+  machine for anything. Proof: `e2e/html-export-packaged.spec.ts` (the
+  packaged app, with a macro of `~/.pandoc`), `test/export-math.spec.ts`
+  (real Pandoc, the real templates, Chromium).
+- **TeX export:** `research_draft.tex` loads the style of the macro tree, as
+  it does for the PDF recipe. The exported `.tex` file needs the styles of
+  `~/.pandoc` on the path of TeX. The MathJax projection is for MathJax
+  only: a projection of a macro that LaTeX already defines (`\AA`) is no TeX
+  definition. Proof: `test/export-document.spec.ts` (a LaTeX export,
+  pdflatex).
+- **A change of a template of `~/.pandoc` is a change of `pandoc-config`.**
+  The hosted runner clones its `main`, so a change there lands before the
+  change of this repository that needs it.
 - **Semantic invariant:** macro meanings and arities are owned by `~/.pandoc`; Zettlr
   may project or adapt them to a renderer but must not redefine their mathematics. See
   `~/.pandoc/AGENTS.md` for the object-valued/atomic macro rule.

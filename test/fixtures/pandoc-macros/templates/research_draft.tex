@@ -1,0 +1,10 @@
+% A small LaTeX template in the place of the one of ~/.pandoc: it loads the
+% macro style of the directory and takes the headers of a defaults file.
+\documentclass{report}
+\usepackage{dzg-mathjax}
+$for(header-includes)$
+$header-includes$
+$endfor$
+\begin{document}
+$body$
+\end{document}

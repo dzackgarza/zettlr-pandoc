@@ -385,15 +385,19 @@ describe("Export of one document", function () {
     assert.equal(tex.includes("\n\\[\n\\Delta = 4\n\\]\n"), true, "display math");
   });
 
-  it("exports a macro to LaTeX with the definition of the macro tree", async function () {
+  it("exports a macro to LaTeX with the template of ~/.pandoc, whose style defines the macro", async function () {
     const adeles = path.join(root, "Adeles.md");
     await writeFile(adeles, "# Adeles\n\nThe ring $\\AA$ of adeles.\n");
 
     await exportDocument(services, { file: adeles, item: LATEX, exportTo: "cwd" });
 
     assert.deepEqual(errorWindows, []);
+    // The template of ~/.pandoc loads the macro style of that directory, as
+    // the PDF recipe does. TeX finds the style where the author's TeX finds
+    // it: in the styles of ~/.pandoc.
     execFileSync("pdflatex", ["-interaction=nonstopmode", "-halt-on-error", "Adeles.tex"], {
       cwd: root,
+      env: { ...process.env, TEXINPUTS: `${path.join(macroHome, "styles")}//:` },
     });
     const text = execFileSync("pdftotext", [path.join(root, "Adeles.pdf"), "-"], {
       encoding: "utf8",

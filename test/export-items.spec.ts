@@ -25,6 +25,7 @@ import {
   type SettingsExportItem,
 } from "source/app/service-providers/commands/exporter/export-items";
 import {
+  dropExportMathSetting,
   migrateExportItems,
   type StoredExportItems,
 } from "source/app/service-providers/config/migrate-export-items";
@@ -251,5 +252,13 @@ describe("The export items of a configuration from before the export items", fun
     migrateExportItems(stored);
 
     assert.deepEqual(stored, {});
+  });
+
+  it("removes the setting of the math headers of the application, which the template replaced", function () {
+    const stored: StoredExportItems = { items: [HANDOUT], injectMathHeaders: false };
+
+    dropExportMathSetting(stored);
+
+    assert.deepEqual(stored, { items: [HANDOUT] });
   });
 });

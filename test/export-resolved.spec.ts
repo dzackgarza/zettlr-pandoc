@@ -38,7 +38,6 @@ const SETTINGS: ExportSettings = {
   latexTemplate: "",
   cslStyle: "",
   cslLibrary: "",
-  injectMathHeaders: true,
 };
 
 describe("The resolved form of an export", function () {
@@ -99,10 +98,10 @@ describe("The resolved form of an export", function () {
       value: "settings.html",
       from: "settings",
     });
-    assert.equal(
+    assert.deepEqual(
       templateOf(undefined, undefined, SETTINGS),
-      undefined,
-      "without a template Pandoc uses its own for the writer",
+      { value: "pandoc_preview_template.html", from: "pandoc-directory" },
+      "without a template the export uses the template of ~/.pandoc for the writer",
     );
   });
 
@@ -129,13 +128,45 @@ describe("The resolved form of an export", function () {
     assert.deepEqual(styleOf(undefined), { value: "/styles/settings.csl", from: "settings" });
   });
 
-  it("names who gives a Pandoc export its math", function () {
-    const item = exportItem("HTML.yaml", [HTML]);
-    const mathOf = (injectMathHeaders: boolean): unknown => {
+  it("uses the template of ~/.pandoc for the writer when no template is set", function () {
+    const templateOfWriter = (writer: string): unknown => {
+      const name = `${writer}.yaml`;
       const [stage] = resolveExport(
-        item,
+        exportItem(name, [{ name, reader: "markdown", writer }]),
         { filters: [], template: undefined },
-        { ...SETTINGS, injectMathHeaders },
+        SETTINGS,
+        NO_OVERRIDE,
+        PANDOC_DIRECTORY,
+        WIKILINK_FILTER,
+      ).stages;
+      assert.ok(stage.kind === "pandoc");
+      return stage.template;
+    };
+
+    assert.deepEqual(templateOfWriter("html"), {
+      value: "pandoc_preview_template.html",
+      from: "pandoc-directory",
+    });
+    assert.deepEqual(templateOfWriter("revealjs"), {
+      value: "pandoc_revealjs_template.html",
+      from: "pandoc-directory",
+    });
+    assert.deepEqual(templateOfWriter("latex"), {
+      value: "research_draft.tex",
+      from: "pandoc-directory",
+    });
+    // A writer without a template in ~/.pandoc gets the template of Pandoc.
+    assert.equal(templateOfWriter("beamer"), undefined);
+    assert.equal(templateOfWriter("docx"), undefined);
+  });
+
+  it("names who gives a Pandoc export its math", function () {
+    const mathOfWriter = (writer: string): unknown => {
+      const name = `${writer}.yaml`;
+      const [stage] = resolveExport(
+        exportItem(name, [{ name, reader: "markdown", writer }]),
+        { filters: [], template: undefined },
+        SETTINGS,
         NO_OVERRIDE,
         PANDOC_DIRECTORY,
         WIKILINK_FILTER,
@@ -144,21 +175,21 @@ describe("The resolved form of an export", function () {
       return stage.math;
     };
 
-    assert.deepEqual(mathOf(true), { owner: "application", pandocDirectory: PANDOC_DIRECTORY });
-    assert.deepEqual(mathOf(false), { owner: "template", pandocDirectory: PANDOC_DIRECTORY });
-
-    // The headers of the application are for HTML and for TeX: a Word
-    // document gets what Pandoc makes of the math.
-    const [word] = resolveExport(
-      exportItem("Word.yaml", [{ name: "Word.yaml", reader: "markdown", writer: "docx" }]),
-      { filters: [], template: undefined },
-      SETTINGS,
-      NO_OVERRIDE,
-      PANDOC_DIRECTORY,
-      WIKILINK_FILTER,
-    ).stages;
-    assert.ok(word.kind === "pandoc");
-    assert.equal(word.math.owner, "pandoc");
+    // The template owns the math of an HTML page and of a TeX document.
+    assert.deepEqual(mathOfWriter("html"), {
+      owner: "template",
+      pandocDirectory: PANDOC_DIRECTORY,
+    });
+    assert.deepEqual(mathOfWriter("revealjs"), {
+      owner: "template",
+      pandocDirectory: PANDOC_DIRECTORY,
+    });
+    assert.deepEqual(mathOfWriter("latex"), {
+      owner: "template",
+      pandocDirectory: PANDOC_DIRECTORY,
+    });
+    // A Word document gets what Pandoc makes of the math.
+    assert.deepEqual(mathOfWriter("docx"), { owner: "pandoc", pandocDirectory: PANDOC_DIRECTORY });
   });
 
   it("puts the command of an item after its Pandoc stage", function () {
@@ -270,7 +301,7 @@ describe("The resolved form of an export", function () {
       "filters: wikilinks.lua › amsthm.lua › own.lua › citeproc",
       "template: research_draft.tex (defaults file)",
       "citation style: ams.csl (settings)",
-      `math: headers of the application, macros of ${PANDOC_DIRECTORY}`,
+      "math: the template",
       "then make-handout → .pdf",
     ]);
     assert.deepEqual(
