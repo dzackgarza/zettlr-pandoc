@@ -32,6 +32,7 @@ import {
   delay,
   findEditorPage,
   preserveArtifacts,
+  readAppLog,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -268,6 +269,13 @@ describe("assembled app: a format that does not finish in its time (#47)", funct
     );
     assert.equal(await editorText(activePage), UNFORMATTED, "the editor keeps its text");
     assert.equal(await readFile(documentPath, "utf8"), UNFORMATTED, "the file keeps its text");
+    // The log file of the app keeps the failure of the subprocess.
+    assert.ok(
+      (await readAppLog(requireInitialized(fixtureRoot, "the fixture exists"))).includes(
+        "flowmark did not end within 1 ms",
+      ),
+      "the app log has the cause of the failed format",
+    );
     assert.equal(
       await activePage.locator('.editor-pane [role="tab"].modified').count(),
       0,
