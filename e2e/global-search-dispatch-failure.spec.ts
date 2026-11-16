@@ -32,6 +32,8 @@ declare global {
   interface Window {
     /** "<generation> <type>" of each search broadcast, in the order of arrival. */
     searchBroadcasts: string[];
+    /** The broadcasts up to the first result of the first query; undefined before it. */
+    searchBroadcastsBeforeEdit: string[] | undefined;
   }
 }
 
@@ -283,26 +285,42 @@ describe("global-search and project-properties failure recovery", function () {
     assert.ok(running.browser, "The application must be running");
     const page = await findEditorPage(running.browser, this.timeout());
     await openSearchPane(page, 30_000);
-    await page.evaluate(() => {
+    // The first query matches each corpus file. The author replaces it at
+    // its first result, while the first search still reads the corpus. The
+    // page itself writes the new query and presses Enter when that result
+    // arrives: the step from this process to the window takes a time that
+    // the machine decides, and the first search can end in it.
+    await page.evaluate((querySelector) => {
       window.searchBroadcasts = [];
+      window.searchBroadcastsBeforeEdit = undefined;
       window.ipc.on("search-provider", (_event, message) => {
         window.searchBroadcasts.push(`${message.generation} ${message.type}`);
+        if (message.type !== "search-result" || window.searchBroadcastsBeforeEdit !== undefined) {
+          return;
+        }
+        window.searchBroadcastsBeforeEdit = [...window.searchBroadcasts];
+        const input = document.querySelector<HTMLInputElement>(querySelector);
+        if (input === null) {
+          throw new Error("The search pane has no query field");
+        }
+        input.value = "replacementtoken";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+        );
       });
-    });
+    }, QUERY_INPUT);
 
-    // The first query matches each corpus file. The edited query starts at
-    // the first result of the first, while the first still reads the corpus.
     const queryInput = page.locator(QUERY_INPUT);
     await queryInput.fill("ordinary");
     await queryInput.press("Enter");
-    await page.waitForFunction(
-      () => window.searchBroadcasts.some((entry) => entry.endsWith(" search-result")),
-      undefined,
-      { polling: "raf", timeout: 60_000 },
-    );
-    const beforeEdit = await page.evaluate(() => window.searchBroadcasts);
-    await queryInput.fill("replacementtoken");
-    await queryInput.press("Enter");
+    await page.waitForFunction(() => window.searchBroadcastsBeforeEdit !== undefined, undefined, {
+      polling: "raf",
+      timeout: 60_000,
+    });
+    const beforeEdit = await page.evaluate(() => window.searchBroadcastsBeforeEdit);
+    assert.ok(beforeEdit !== undefined, "the first query sent a result");
+    assert.equal(await queryInput.inputValue(), "replacementtoken", "the field has the new query");
     // The pane labels a result with the name of its file.
     await page
       .locator(REPLACEMENT_RESULT)
