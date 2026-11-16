@@ -2,15 +2,17 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Agent HTTP API integration tests
+ * Contains:        The HTTP boundary of the Agent API
  * CVM-Role:        Test
  * Maintainer:      D. Zack Garza
- * License:          GNU GPL v3
+ * License:         GNU GPL v3
  *
- * Description:     Drives only the embedded HTTP protocol boundary against
- *                  the OpenAPI specification. Review state and persistence
- *                  are tested at the service boundary; assembled Electron
- *                  behavior is covered by the real Electron capture probes.
+ * Description:     Drives the embedded HTTP server against the OpenAPI
+ *                  contract, with the providers of the main process and no
+ *                  window. Review state and persistence are tested at the
+ *                  service boundary. The calls on the launched app are in
+ *                  `e2e/` (`agent-api-operations.spec.ts` and the specs of
+ *                  the reviews, the annotations and the workspaces).
  *
  * END HEADER
  */

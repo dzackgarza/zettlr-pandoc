@@ -63,12 +63,11 @@
     "cslLibrary": "",
     "cslStyle": "",
     "exportQmdWithQuarto": false,
-    "customCommands": [],
     "filters": [],
     "injectMathHeaders": true,
     "htmlTemplate": "",
     "latexTemplate": "",
-    "scripts": [],
+    "items": [],
     "selectedProfiles": [],
     "lastUsedProfile": "HTML.yaml"
   },
