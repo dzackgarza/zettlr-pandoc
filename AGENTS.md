@@ -1580,7 +1580,11 @@ of an isolated instance are in the first comment of #132.
   (`service-providers/commands/`) throws an `Error` whose message names the
   file or folder and the cause. It does not write the cause to the log and
   answer `false`: `false` is a value of the contract of some commands, and a
-  caller cannot tell it from a failure.
+  caller cannot tell it from a failure. The one exception is a command that
+  showed the cause itself, in a native dialog or in the error window ("A
+  command that prompts answers its contract", below): `dir-new`,
+  `dir-rename`, `file-duplicate`, `file-rename`, `request-move` and the
+  Project export return after their prompt.
 - **The dispatcher shows each failure once, in the window that started the
   command.** `CommandProvider.run` (`commands/index.ts`) logs the error,
   sends it on `command-failed` (`types/common/command-failure.ts`) to the
