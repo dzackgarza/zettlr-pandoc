@@ -139,7 +139,25 @@ describe("Rename from the key and from the menu of a row (#202)", function () {
     const field = activePage.locator(".file-rename input");
     await field.waitFor({ state: "visible", timeout: 5_000 });
     assert.equal(await field.inputValue(), "form.md", "the field holds the name");
-    await field.fill("discriminant-form.md");
+    // The field selects the name without its extension when its popup is
+    // shown, which is after the field is visible. The author types over that
+    // selection. A text that is written before the selection is there loses
+    // a part to it: the field then holds the extension two times.
+    await activePage.waitForFunction(
+      () => {
+        const input = document.querySelector<HTMLInputElement>(".file-rename input");
+        return (
+          input !== null &&
+          document.activeElement === input &&
+          input.selectionStart === 0 &&
+          input.selectionEnd === input.value.lastIndexOf(".")
+        );
+      },
+      undefined,
+      { timeout: 5_000 },
+    );
+    await activePage.keyboard.type("discriminant-form");
+    assert.equal(await field.inputValue(), "discriminant-form.md", "the extension stays");
     await field.press("Enter");
     assert.deepEqual(await namesOnceHolding(lattices, "discriminant-form.md"), [
       "discriminant-form.md",
