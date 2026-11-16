@@ -18,7 +18,7 @@
 
 // The renderer aggregate reads the preload bridge when it is imported.
 import "./provision-renderer-window-seams";
-import { ensureSyntaxTree, forceParsing } from "@codemirror/language";
+import { ensureSyntaxTree, forceParsing, syntaxTree } from "@codemirror/language";
 import { EditorSelection, EditorState, type TransactionSpec } from "@codemirror/state";
 import { type Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
@@ -140,6 +140,47 @@ describe("Block widgets follow the size of a change", function () {
     const long = widgetsMadeByTypedCharacter(4000);
     assert.equal(long, short);
     assert.ok(short <= 4, `a typed character made ${short} widgets`);
+  });
+
+  it("keeps each widget below a change that the parser has not reached yet", function () {
+    // The parser of a state works for a set time after a change and goes on
+    // in the background. This clock passes that time after one step of the
+    // parser, as a machine under load does.
+    const count = 400;
+    const doc = paragraphs(count);
+    const editor = countedEditor(doc, 0);
+    const position = doc.indexOf("holds", doc.length / 2);
+    editor.reset();
+    const realNow = Date.now;
+    let now = realNow.call(Date);
+    Date.now = () => {
+      now += 1000;
+      return now;
+    };
+    let typed: EditorState;
+    try {
+      typed = editor.state.update({
+        changes: { from: position, insert: "x" },
+        selection: { anchor: position + 1 },
+      }).state;
+    } finally {
+      Date.now = realNow;
+    }
+
+    assert.ok(
+      syntaxTree(typed).length < typed.doc.length,
+      "the parser did not reach the end of the document",
+    );
+    assert.equal(
+      widgets(typed).length,
+      2 * count,
+      "each formula keeps its widget while the parser has not reached it",
+    );
+    assert.ok(editor.made() <= 4, `a typed character made ${editor.made()} widgets`);
+
+    // When the parser has reached the end, the widgets are those of the text.
+    const whole = countedEditor(typed.doc.toString(), position + 1);
+    assert.deepEqual(widgets(parsed(typed)), widgets(whole.state));
   });
 
   it("makes no widget when the cursor moves through text", function () {
