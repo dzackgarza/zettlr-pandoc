@@ -248,8 +248,12 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
   // ... and we listen to subsequent changes.
   ipcRenderer.on("documents-update", (evt, payload) => {
     const { event, context } = payload;
-    // A file has been saved or modified
-    if (event === DP_EVENTS.CHANGE_FILE_STATUS && context.status === "modification") {
+    // A file has been saved or modified, or a load from disk dropped the
+    // unsaved text of a document.
+    if (
+      (event === DP_EVENTS.CHANGE_FILE_STATUS && context.status === "modification") ||
+      event === DP_EVENTS.FILE_REMOTELY_CHANGED
+    ) {
       ipcRenderer
         .invoke("documents-provider", { command: "get-file-modification-status" })
         .then((modifiedFiles: string[]) => {
