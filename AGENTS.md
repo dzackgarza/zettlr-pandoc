@@ -1108,9 +1108,10 @@ of an isolated instance are in the first comment of #132.
   run uploads `/tmp/zettlr-*-e2e-latest`.
 - **No exclusive and no skipped test passes.** mocha runs with
   `--forbid-only` in the lanes runner and in `scripts/run-unit-tests.sh`,
-  and with `--forbid-pending` in the lanes runner: a file with `.only`, with
-  a skipped test or with a test without a body fails. Proof of these rules:
-  `test/e2e-run-lanes.spec.ts`.
+  and with `--forbid-pending` and `--fail-zero` in the lanes runner: a file
+  with `.only`, with a skipped test, with a test without a body or with no
+  test fails, and so does a file name that names no file. Proof of these
+  rules: `test/e2e-run-lanes.spec.ts`.
 - `just test-e2e` and `just test-e2e-file <spec>` run the specs of `e2e/`.
   The recipes first make the packaged build of the tree when it is not
   current (`_current-package`: `verify-build.py --if-stale`), one build for

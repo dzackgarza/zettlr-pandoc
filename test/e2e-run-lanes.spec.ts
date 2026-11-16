@@ -387,6 +387,18 @@ describe("E2E lanes runner", function () {
     assert.match(run.stdout, /\.only/, `the run names the exclusive test: ${run.stdout}`);
   });
 
+  it("fails a file name that names no file, and a file without a test (#47)", async function () {
+    const absent = path.join(directory, "no-such-file.cjs");
+    const empty = path.join(directory, "has-no-test.cjs");
+    await writeFile(empty, "// A spec file without a test.\n", "utf8");
+
+    for (const file of [absent, empty]) {
+      const run = runLanes([file], 60, 60_000);
+
+      assert.notEqual(run.status, 0, `the run of ${file} fails: ${run.stdout}${run.stderr}`);
+    }
+  });
+
   it("fails a file with a skipped test (#47)", async function () {
     const file = path.join(directory, "has-a-skipped-test.cjs");
     await writeFile(file, SKIPPED_SPEC_SOURCE, "utf8");
