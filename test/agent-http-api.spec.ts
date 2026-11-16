@@ -655,6 +655,43 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     rmSync(authoringHome, { recursive: true, force: true });
   });
 
+  it("review-submission takes the text of a file with a byte order mark as its baseline (#57)", async function () {
+    // The file starts with a byte order mark. The mark is no text of the
+    // document: a reader of the document gets the text without it, so the
+    // baseline of a patch is the hash of that text.
+    const filePath = path.join(scratch, "with-bom.md");
+    const before = "A lattice is even when each norm is even.\n";
+    const after = "A lattice is even when the norm of each vector is even.\n";
+    writeFileSync(filePath, `\uFEFF${before}`);
+
+    const response = await httpRequest("POST", "/v1/review-submissions", {
+      body: JSON.stringify({
+        document: { uri: filePath },
+        baseline: { sha256: sha256Text(before) },
+        patch: createPatch(filePath, before, after),
+        description: "Name the vectors.",
+        clientRequestId: "bom-submission",
+      }),
+    });
+
+    assert.equal(response.status, 200, response.body);
+    const result = parseAs(response.body, "ReviewSubmissionResponse");
+    const content = await httpRequest(
+      "GET",
+      `/v1/documents/${result.documentId}?includeContent=true`,
+    );
+    assert.equal(
+      parseAs(content.body, "ReadDocumentResponse").content,
+      after,
+      "the proposed text has no byte order mark in it",
+    );
+    assert.equal(
+      readFileSync(filePath, "utf8"),
+      `\uFEFF${before}`,
+      "a proposal writes no file: the file keeps its mark and its text",
+    );
+  });
+
   it("review-submission applies a closed-file patch without changing focus and refuses a stale baseline", async function () {
     const filePath = path.join(scratch, "submission.md");
     const before = "A bilinear form is symmetric.\n";
