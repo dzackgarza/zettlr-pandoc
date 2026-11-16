@@ -106,6 +106,12 @@ export interface ExportItemRow {
   kind: "export-item";
   item: ExportItem;
   label: string;
+  /**
+   * What the item runs with the current settings, one entry for each fact
+   * (`describeResolvedExport`): the filter chain, the template, the math,
+   * each stage.
+   */
+  facts: readonly string[];
 }
 
 export interface JustRecipeRow extends JustRecipeCommand {

@@ -36,6 +36,7 @@
           v-bind:value="rowKey(row)"
           v-bind:label="row.label"
           v-bind:breadcrumb="rowBreadcrumb(row)"
+          v-bind:facts="row.kind === 'export-item' ? row.facts : undefined"
           :accelerator="
             row.kind === 'menu-leaf' || row.kind === 'registered-command'
               ? row.accelerator

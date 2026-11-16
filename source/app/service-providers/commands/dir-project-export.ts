@@ -36,6 +36,7 @@ import {
   exportItemKind,
   exportItemOfProjectEntry,
 } from "./exporter/export-items";
+import { projectOverride } from "./exporter/resolve-export";
 import type { ExporterOptions } from "./exporter/types";
 import ZettlrCommand from "./zettlr-command";
 
@@ -312,13 +313,15 @@ async function exportUsingItem(
     cwd: dir.path,
     // A command gets the folder of the Project and runs in it.
     commandSubject: { argument: dir.path, cwd: dir.path },
+    // The template and the citation style of the Project for this item
+    // (`projectOverride`): the record that the Project window shows for the
+    // item is made of the same values.
     defaultsOverride: {
       title: config.title,
-      csl:
-        typeof config.cslStyle === "string" && config.cslStyle.length > 0
-          ? config.cslStyle
-          : undefined,
-      template: templateOf(config, item),
+      ...projectOverride(item, {
+        templates: config.templates,
+        cslStyle: typeof config.cslStyle === "string" ? config.cslStyle : "",
+      }),
     },
   };
 
@@ -364,37 +367,6 @@ async function exportUsingItem(
   });
   task.endTask("success");
   return result.texErrors;
-}
-
-/**
- * The template of a Project for an export with an item. The LaTeX template
- * is for each export that goes through TeX: the TeX writers of Pandoc and
- * the PDF recipe. The HTML template is for the HTML writers of Pandoc. These
- * are the families of the settings `export.latexTemplate` and
- * `export.htmlTemplate`.
- *
- * @param   {ProjectSettings}  config  The Project settings
- * @param   {ExportItem}       item    The export item
- *
- * @return  {string|undefined}         The template, or undefined when the
- *                                     Project sets none for the item
- */
-function templateOf(config: ProjectSettings, item: ExportItem): string | undefined {
-  const { engine } = item;
-  const goesThroughTex =
-    engine.kind === "recipe" ||
-    (engine.kind === "pandoc" && isTexWriter(parseReaderWriter(engine.writer).name));
-  if (goesThroughTex && config.templates.tex !== "") {
-    return config.templates.tex;
-  }
-  if (
-    engine.kind === "pandoc" &&
-    isHtmlWriter(parseReaderWriter(engine.writer).name) &&
-    config.templates.html !== ""
-  ) {
-    return config.templates.html;
-  }
-  return undefined;
 }
 
 /**

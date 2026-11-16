@@ -279,6 +279,13 @@ describe("assembled app: a PDF export through the window (#47)", function () {
     );
     assert.equal(await readFile(notePath, "utf8"), NOTE, "the export changes no text");
     assert.deepEqual(await errorWindows(runningBrowser), [], "no error window is shown");
+    // The log keeps what the export ran: the record that the row showed.
+    const log = await readAppLog(requireInitialized(fixtureRoot, "the fixture exists"));
+    assert.ok(
+      log.includes("[Export] PDF.yaml runs:") &&
+        log.includes("recipe compile-pandoc of ~/.pandoc (its filters, its flags)"),
+      "the app log has the resolved export of the PDF item",
+    );
     screenshots.set("document-exported.png", await activePage.screenshot());
   });
 

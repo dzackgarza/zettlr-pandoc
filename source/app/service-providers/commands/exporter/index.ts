@@ -36,11 +36,23 @@ import { loadCanonicalMathJaxMacros } from "../../../util/load-mathjax-macros";
 import { runPandoc } from "../../../util/run-pandoc";
 import { runCommandExport } from "./command-exporter";
 import { plugin as DefaultExporter } from "./default-exporter";
+// Exporters
+import type { ExportItem } from "./export-items";
 import { type ExportMath, injectPandocMathHeaders } from "./pandoc-math-headers";
 import { runRecipeExport } from "./recipe-exporter";
+import {
+  type DeclaredDefaults,
+  describeResolvedExport,
+  type ExportOverride,
+  effectiveCitationStyle,
+  effectiveFilters,
+  effectiveTemplate,
+  leadingFilters,
+  type ResolvedExport,
+  resolveExport,
+} from "./resolve-export";
 import { runScriptExport } from "./script-exporter";
 import { plugin as TextbundleExporter } from "./textbundle-exporter";
-// Exporters
 import type { DefaultsOverride, ExporterAPI, ExporterOptions, ExporterOutput } from "./types";
 import { exportInputs, withWikilinkMap } from "./wikilink-map-file";
 
@@ -134,10 +146,18 @@ export async function makeExport(
   // filter, which can add headings.
   const inputs = await exportInputs(options.sourceFiles);
   const reading = { index: wikilinks, linkFormat: config.get().zkn.linkFormat };
-  const filters = [
-    path.join(math.pandocDirectory, "filters", "wikilinks.lua"),
-    ...config.get().export.filters,
-  ];
+  const filters = leadingFilters(
+    wikilinkFilterOf(math.pandocDirectory),
+    config.get().export.filters,
+  );
+
+  // The log keeps what this export runs: the same record that a window
+  // shows for the item.
+  const resolved = await resolveExportItem(options.item, assets, config.get(), {
+    template: options.defaultsOverride?.template,
+    csl: options.defaultsOverride?.csl,
+  });
+  logger.info(`[Export] ${options.item.id} runs:`, describeResolvedExport(resolved));
 
   // This is basically the "plugin API"
   const ctx: ExporterAPI = {
@@ -192,6 +212,49 @@ export async function makeExport(
         ? await PLUGINS.pandoc(options, inputFiles, ctx)
         : await runScriptExport(options, inputFiles, ctx, engine, post);
   }
+}
+
+/** The wikilink filter of the Pandoc directory; it runs before each other filter. */
+function wikilinkFilterOf(pandocDirectory: string): string {
+  return path.join(pandocDirectory, "filters", "wikilinks.lua");
+}
+
+/**
+ * Resolves an export item into what it runs with the current settings
+ * (`resolveExport`). The defaults writer of an export makes the same
+ * decisions with the same functions.
+ *
+ * @param   {ExportItem}       item      The item
+ * @param   {AssetsProvider}   assets    Reads the defaults file of a Pandoc engine
+ * @param   {ConfigOptions}    config    The settings
+ * @param   {ExportOverride}   override  What the export sets itself (a Project)
+ */
+export async function resolveExportItem(
+  item: ExportItem,
+  assets: Pick<AssetsProvider, "getDefaultsFile">,
+  config: Pick<ConfigOptions, "export">,
+  override: ExportOverride,
+): Promise<ResolvedExport> {
+  const pandocDirectory = path.join(app.getPath("home"), ".pandoc");
+  let declared: DeclaredDefaults | undefined;
+  if (item.engine.kind === "pandoc") {
+    const defaults = normalizePandocDefaults(
+      await assets.getDefaultsFile(item.engine.defaultsFile),
+      item.engine.defaultsFile,
+    );
+    declared = {
+      filters: defaults.filters,
+      template: typeof defaults.template === "string" ? defaults.template : undefined,
+    };
+  }
+  return resolveExport(
+    item,
+    declared,
+    config.export,
+    override,
+    pandocDirectory,
+    wikilinkFilterOf(pandocDirectory),
+  );
 }
 
 // REFERENCE: Full defaults file here: https://pandoc.org/MANUAL.html#default-files
@@ -253,12 +316,16 @@ export async function writeDefaults(
   }
 
   // The style of the export (that of a Project) goes before the setting.
-  const style = defaultsOverride?.csl !== undefined ? defaultsOverride.csl : cslStyle;
-  if (style !== "") {
-    if (!isFile(style)) {
-      throw new Error(trans("The citation style %s is no file.", style));
+  const override: ExportOverride = {
+    template: defaultsOverride?.template,
+    csl: defaultsOverride?.csl,
+  };
+  const style = effectiveCitationStyle(override, { cslStyle });
+  if (style !== undefined) {
+    if (!isFile(style.value)) {
+      throw new Error(trans("The citation style %s is no file.", style.value));
     }
-    defaults.csl = style;
+    defaults.csl = style.value;
   }
 
   // Now add metadata values for our GUI settings the user can choose. NOTE that
@@ -273,26 +340,24 @@ export async function writeDefaults(
     defaults.metadata.title = defaultsOverride.title;
   }
 
-  if (defaultsOverride?.template !== undefined) {
-    defaults.template = defaultsOverride.template;
+  // The template of the export (a Project), then the template of the
+  // defaults file, then the template of the settings for the family of the
+  // writer (`effectiveTemplate`). A configured file browses to an absolute
+  // path, or a name is resolved from ~/.pandoc/templates.
+  const template = effectiveTemplate(
+    defaults.writer as string,
+    typeof defaults.template === "string" ? defaults.template : undefined,
+    override,
+    config.export,
+  );
+  if (template !== undefined) {
+    defaults.template = template.value;
   }
 
-  // Apply a configured default template per writer family when the profile (and
-  // any override) leave the template unset. A configured file browses to an
-  // absolute path, or a name is resolved from ~/.pandoc/templates.
-  if (defaults.template === undefined || defaults.template === "") {
-    const writerName = parseReaderWriter(defaults.writer as string).name;
-    if (isHtmlWriter(writerName) && config.export.htmlTemplate !== "") {
-      defaults.template = config.export.htmlTemplate;
-    } else if (isTexWriter(writerName) && config.export.latexTemplate !== "") {
-      defaults.template = config.export.latexTemplate;
-    }
-  }
-
-  // Prepend the declared, ordered export filter chain before the profile's own
-  // filters, so structural filters (e.g. amsthm-env conversion) run before the
-  // profile's citeproc rather than in filesystem order.
-  defaults.filters = [...filters, ...defaults.filters];
+  // The declared, ordered filters of each export run before the filters of
+  // the defaults file, so structural filters (e.g. amsthm-env conversion)
+  // run before the citeproc of the defaults file.
+  defaults.filters = effectiveFilters(filters, defaults.filters);
 
   // After we have added our default keys, let the plugin add their keys, which
   // enables them to override certain keys if necessary.

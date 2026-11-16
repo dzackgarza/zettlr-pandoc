@@ -106,6 +106,10 @@ import {
   type ExportItemEntry,
   exportItemKind,
 } from "@providers/commands/exporter/export-items";
+import {
+  describeResolvedExport,
+  type ResolvedExport,
+} from "@providers/commands/exporter/resolve-export";
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
 import type { RecentFiles } from "source/app/service-providers/recent-docs";
 import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
@@ -293,6 +297,9 @@ async function loadJustfileCommands(): Promise<boolean> {
 // (`exporter/export-items.ts`), fetched when the view opens.
 const exportItems = ref<ExportItem[]>([]);
 
+/** What each export item runs with the current settings, by the identity of the item. */
+const resolvedExports = ref<Map<string, ResolvedExport>>(new Map());
+
 /** Loads the export items that can run on a document of the editor. */
 async function loadExportItems(): Promise<boolean> {
   const listed: ExportItemEntry[] = await ipcRenderer.invoke("assets-provider", {
@@ -305,6 +312,13 @@ async function loadExportItems(): Promise<boolean> {
         item.engine.kind !== "pandoc" ||
         SUPPORTED_READERS.includes(parseReaderWriter(item.engine.reader).name),
     );
+  // The main process resolves each item with the functions that an export
+  // runs with: a row shows what its export runs.
+  const resolved: ResolvedExport[] = await ipcRenderer.invoke("assets-provider", {
+    command: "resolve-exports",
+    payload: { project: undefined },
+  });
+  resolvedExports.value = new Map(resolved.map((entry) => [entry.item, entry]));
   return true;
 }
 
@@ -329,11 +343,15 @@ const rememberedExportItem = computed<string>(() => {
 
 /** The export rows, the remembered item first so Enter re-exports. */
 const exportRows = computed<LauncherRow[]>(() => {
-  const rows: ExportItemRow[] = exportItems.value.map((item) => ({
-    kind: "export-item",
-    item,
-    label: exportItemLabel(item),
-  }));
+  const rows: ExportItemRow[] = exportItems.value.map((item) => {
+    const resolved = resolvedExports.value.get(item.id);
+    return {
+      kind: "export-item",
+      item,
+      label: exportItemLabel(item),
+      facts: resolved === undefined ? [] : describeResolvedExport(resolved),
+    };
+  });
   const remembered = rememberedExportItem.value;
   const first = rows.findIndex((row) => row.item.id === remembered);
   if (first <= 0) {

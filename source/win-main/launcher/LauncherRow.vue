@@ -4,6 +4,7 @@
     v-bind:text-value="props.label"
     v-bind:disabled="props.disabled"
     class="chrome-row launcher-row"
+    v-bind:class="{ 'launcher-row-with-facts': props.facts.length > 0 }"
     data-launcher-row
     v-on:select.prevent="emit('run')"
   >
@@ -25,6 +26,11 @@
       v-bind:shortcut="shortcut"
       display="muted"
     ></ShortcutDisplay>
+    <span
+      v-if="props.facts.length > 0"
+      class="chrome-row-detail launcher-row-facts"
+      data-launcher-row-facts
+    >{{ props.facts.join(' · ') }}</span>
   </ComboboxItem>
 </template>
 
@@ -58,6 +64,11 @@ const props = withDefaults(
     value: string;
     label: string;
     breadcrumb?: readonly string[];
+    /**
+     * Facts about what the row runs, on a line of their own below the
+     * label: an export item shows its filters, its template and its stages.
+     */
+    facts?: readonly string[];
     /** An Electron accelerator, rendered as a shortcut chip. */
     accelerator?: string;
     disabled?: boolean;
@@ -65,6 +76,7 @@ const props = withDefaults(
   }>(),
   {
     breadcrumb: () => [],
+    facts: () => [],
     accelerator: undefined,
     disabled: false,
     checked: undefined,
@@ -77,3 +89,22 @@ const shortcut = computed(() =>
   props.accelerator === undefined ? undefined : explodeAccelerator(props.accelerator),
 );
 </script>
+
+<style lang="less">
+// A row with facts has two lines: the label, and below it the facts in
+// full. The facts wrap, so no fact is cut off.
+.launcher-row.launcher-row-with-facts {
+  flex-wrap: wrap;
+  padding-top: 4px;
+  padding-bottom: 4px;
+
+  .launcher-row-facts {
+    flex: 0 0 100%;
+    margin-right: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+</style>

@@ -187,7 +187,7 @@
  */
 
 import { trans } from "@common/i18n-renderer";
-import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
+import { SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
 import { reportError } from "@common/util/error-reporting";
 import { remoteErrorMessage } from "@common/util/ipc-rejection";
 import showToast from "@common/util/show-toast";
@@ -199,6 +199,10 @@ import { type WindowTab } from "@common/vue/window/WindowTabbar.vue";
 import ZtrAdmonition from "@common/vue/ZtrAdmonition.vue";
 import type { CodeFileDescriptor, MDFileDescriptor, ProjectSettings } from "@dts/common/fsal";
 import type { ExportItem, ExportItemEntry } from "@providers/commands/exporter/export-items";
+import {
+  describeResolvedExport,
+  type ResolvedExport,
+} from "@providers/commands/exporter/resolve-export";
 import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
 import { pathToUnix } from "source/common/util/path-to-unix";
 import { isInsideRoot } from "source/common/util/renderer-path-polyfill";
@@ -271,6 +275,8 @@ const updateLock = ref(true); // To ensure these defaults aren't written before 
 const loadFailure = ref<string | null>(null);
 /** The export items of the application (`exporter/export-items.ts`). */
 const exportItems = ref<ExportItemEntry[]>([]);
+/** What each item runs as an export of this Project, by the identity of the item. */
+const resolvedExports = ref<Map<string, ResolvedExport>>(new Map());
 
 const projectSettings = ref<ProjectSettings>({
   manifest: { kind: "zettlr" },
@@ -383,30 +389,29 @@ function isSelected(item: ExportItem): boolean {
   );
 }
 
-/** What an item converts, for the column of the list. */
+/**
+ * What an item runs as an export of this Project, for the column of the
+ * list: the record of the main process (`resolve-exports`), which an export
+ * of the Project makes with the same functions.
+ */
 function conversionOf(item: ExportItem): string {
-  const { engine } = item;
-  switch (engine.kind) {
-    case "command":
-      return engine.command;
-    case "recipe":
-      return `Markdown → PDF (${engine.recipe})`;
-    case "bundle":
-      return `Markdown → ${engine.format}`;
-    case "pandoc": {
-      const plainReader = parseReaderWriter(engine.reader).name;
-      const plainWriter = parseReaderWriter(engine.writer).name;
-      const reader = plainReader in PANDOC_READERS ? PANDOC_READERS[plainReader] : plainReader;
-      const writer = plainWriter in PANDOC_WRITERS ? PANDOC_WRITERS[plainWriter] : plainWriter;
-      const readerFull = plainReader !== engine.reader ? `${reader} (${engine.reader})` : reader;
-      const writerFull = plainWriter !== engine.writer ? `${writer} (${engine.writer})` : writer;
-      const stages = [readerFull, writerFull];
-      if (item.post !== undefined) {
-        stages.push(`${item.post.command} (.${item.post.extension})`);
-      }
-      return stages.join(" → ");
-    }
-  }
+  const resolved = resolvedExports.value.get(item.id);
+  return resolved === undefined ? "" : describeResolvedExport(resolved).join(" · ");
+}
+
+/** Reads what each item runs with the templates and the style of this Project. */
+async function resolveExports(): Promise<void> {
+  const { templates, cslStyle } = projectSettings.value;
+  const resolved: ResolvedExport[] = await ipcRenderer.invoke("assets-provider", {
+    command: "resolve-exports",
+    payload: {
+      project: {
+        templates: { tex: templates.tex, html: templates.html },
+        cslStyle: typeof cslStyle === "string" ? cslStyle : "",
+      },
+    },
+  });
+  resolvedExports.value = new Map(resolved.map((entry) => [entry.item, entry]));
 }
 
 const exportFormatList = computed<ExportProfile[]>(() => {
@@ -418,6 +423,20 @@ const exportFormatList = computed<ExportProfile[]>(() => {
 });
 
 watch(projectSettings, updateProperties, { deep: true });
+
+// The list shows what each item runs with the templates and the citation
+// style of this Project, so each change of them reads the record again.
+watch(
+  () => [
+    projectSettings.value.templates.tex,
+    projectSettings.value.templates.html,
+    projectSettings.value.cslStyle,
+  ],
+  () => {
+    resolveExports().catch((err) => reportError(err));
+  },
+  { immediate: true },
+);
 
 // First, we need to get the available export formats
 ipcRenderer

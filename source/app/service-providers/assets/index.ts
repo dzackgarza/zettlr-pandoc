@@ -24,7 +24,13 @@ import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import type { PhraseDictionaryEntry } from "@common/util/phrase-dictionary";
 import type { QuickTexCatalogue, QuickTexProblem } from "@dts/common/quicktex";
 import type { SnippetCatalogue, SnippetFileDiagnostic, UserSnippet } from "@dts/common/snippets";
+import { resolveExportItem } from "@providers/commands/exporter";
 import { type ExportItemEntry, exportItems } from "@providers/commands/exporter/export-items";
+import {
+  type ProjectExportSettings,
+  projectOverride,
+  type ResolvedExport,
+} from "@providers/commands/exporter/resolve-export";
 import { FSWatcher } from "chokidar";
 import { app } from "electron";
 import { promises as fs } from "fs";
@@ -196,6 +202,12 @@ export type AssetsProviderIPCContract = {
   "list-export-items": {
     request: { payload?: undefined };
     response: ExportItemEntry[];
+  };
+  // What each export item that can run runs with the current settings; with
+  // `project`, as an export of a Project with these settings runs it.
+  "resolve-exports": {
+    request: { payload: { project: ProjectExportSettings | undefined } };
+    response: ResolvedExport[];
   };
   "list-available-filters": {
     request: { payload?: undefined };
@@ -456,6 +468,7 @@ export default class AssetsProvider extends ProviderContract {
         await this.removeDefaultsFile(payload.filename),
       "list-defaults": async () => await this.listDefaults(),
       "list-export-items": async () => await this.listExportItems(),
+      "resolve-exports": async (_event, { payload }) => await this.resolveExports(payload.project),
       "list-available-filters": async () => await this.listAvailableFilters(),
       "open-defaults-directory": async () => {
         this._logger.info(`[AssetsProvider] Opening path ${this._defaultsPath}`);
@@ -910,6 +923,31 @@ export default class AssetsProvider extends ProviderContract {
    */
   async listExportItems(): Promise<ExportItemEntry[]> {
     return exportItems(await this.listDefaults(), this._config.get().export.items);
+  }
+
+  /**
+   * What each export item that can run runs with the current settings
+   * (`resolveExportItem`): the record that a window shows beside the item.
+   * The export makes the same decisions with the same functions.
+   *
+   * @param   {ProjectExportSettings|undefined}  project  The settings of a Project,
+   *                                                      for its exports
+   *
+   * @return  {Promise<ResolvedExport[]>}                 One record for each item
+   */
+  async resolveExports(project: ProjectExportSettings | undefined): Promise<ResolvedExport[]> {
+    const resolved: ResolvedExport[] = [];
+    for (const item of await this.listExportItems()) {
+      if (item.isInvalid) {
+        continue;
+      }
+      const override =
+        project === undefined
+          ? { template: undefined, csl: undefined }
+          : projectOverride(item, project);
+      resolved.push(await resolveExportItem(item, this, this._config.get(), override));
+    }
+    return resolved;
   }
 
   /**

@@ -269,6 +269,30 @@ describe("the window header", function () {
         elements.map((element) => element.getAttribute("data-export-item")),
       );
     assert.deepEqual([...rows].sort(), expected, "the export view lists exactly the usable items");
+    // Each row shows what its export runs, as the main process resolves it:
+    // the filter chain, the template and the math of a Pandoc item, and the
+    // recipe of the PDF item.
+    const factsOf = async (item: string): Promise<string> =>
+      await activePage
+        .locator(
+          `${LAUNCHER} [data-launcher-row][data-export-item=${JSON.stringify(item)}] [data-launcher-row-facts]`,
+        )
+        .innerText();
+    const htmlFacts = await factsOf("HTML.yaml");
+    for (const fact of [
+      "(HTML.yaml)",
+      "filters: wikilinks.lua",
+      "template: Pandoc default",
+      "math: headers of the application",
+    ]) {
+      assert.ok(htmlFacts.includes(fact), `the HTML row shows "${fact}": ${htmlFacts}`);
+    }
+    const pdfFacts = await factsOf("PDF.yaml");
+    assert.ok(
+      pdfFacts.includes("recipe compile-pandoc of ~/.pandoc") &&
+        pdfFacts.includes("template: default of the recipe"),
+      `the PDF row shows the recipe and its template: ${pdfFacts}`,
+    );
     screenshots.set("window-header-export.png", await activePage.screenshot());
     await activePage.keyboard.press("Escape");
     await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
