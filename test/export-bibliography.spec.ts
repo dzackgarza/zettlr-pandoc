@@ -24,10 +24,7 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import AssetsProvider, {
-  BUNDLED_EXPORT_MATHJAX,
-  type ValidPandocProfile,
-} from "source/app/service-providers/assets";
+import AssetsProvider, { BUNDLED_EXPORT_MATHJAX } from "source/app/service-providers/assets";
 import {
   type DocumentExportServices,
   exportDocument,
@@ -45,12 +42,8 @@ import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 const run = promisify(execFile);
 
-const PDF: ValidPandocProfile = {
-  name: "PDF.yaml",
-  reader: "markdown",
-  writer: "compile-pandoc",
-  isInvalid: false,
-};
+/** The identity of the PDF item of the application. */
+const PDF = "PDF.yaml";
 
 /** The main library of the settings. */
 const MAIN_LIBRARY = [
@@ -217,7 +210,7 @@ describe("Bibliography of a PDF export", function () {
 
   it("cites a chapter of a Quarto book from the bibliography of the book", async function () {
     const chapter = path.join(root, "book", "packings.md");
-    await exportDocument(services, { file: chapter, profile: PDF, exportTo: "cwd" });
+    await exportDocument(services, { file: chapter, item: PDF, exportTo: "cwd" });
 
     assert.deepEqual(errorWindows, []);
     const text = await pdfText(path.join(root, "book", "packings.pdf"));
@@ -233,7 +226,7 @@ describe("Bibliography of a PDF export", function () {
 
   it("cites a note from the bibliography that its front matter names", async function () {
     const note = path.join(root, "notes", "forms.md");
-    await exportDocument(services, { file: note, profile: PDF, exportTo: "cwd" });
+    await exportDocument(services, { file: note, item: PDF, exportTo: "cwd" });
 
     assert.deepEqual(errorWindows, []);
     const text = await pdfText(path.join(root, "notes", "forms.pdf"));

@@ -36,10 +36,7 @@ import {
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
-import AssetsProvider, {
-  BUNDLED_EXPORT_MATHJAX,
-  type ValidPandocProfile,
-} from "source/app/service-providers/assets";
+import AssetsProvider, { BUNDLED_EXPORT_MATHJAX } from "source/app/service-providers/assets";
 import {
   type DocumentExportServices,
   exportDocument,
@@ -87,36 +84,13 @@ function declaring(workingDirectory: string): string {
 /** The recipe file that a PDF export runs. */
 const RECIPE_FILE = path.join(homedir(), ".pandoc", "justfile");
 
-const PDF: ValidPandocProfile = {
-  name: "PDF.yaml",
-  reader: "markdown",
-  writer: "compile-pandoc",
-  isInvalid: false,
-};
-const TEXTBUNDLE: ValidPandocProfile = {
-  name: "Textbundle.yaml",
-  reader: "markdown",
-  writer: "textbundle",
-  isInvalid: false,
-};
-const LATEX: ValidPandocProfile = {
-  name: "LaTeX.yaml",
-  reader: "markdown",
-  writer: "latex",
-  isInvalid: false,
-};
-const WORD: ValidPandocProfile = {
-  name: "Microsoft Word.yaml",
-  reader: "markdown",
-  writer: "docx",
-  isInvalid: false,
-};
-const WORKING_DIRECTORY: ValidPandocProfile = {
-  name: "Working directory",
-  reader: "markdown",
-  writer: "script",
-  isInvalid: false,
-};
+// The identities of the export items of the spec: the PDF item and the
+// bundle of the application, two defaults files, and an item of the settings.
+const PDF = "PDF.yaml";
+const TEXTBUNDLE = "Textbundle.yaml";
+const LATEX = "LaTeX.yaml";
+const WORD = "Microsoft Word.yaml";
+const WORKING_DIRECTORY = "Working directory";
 
 /** An error window that the export opened. */
 interface ErrorWindow {
@@ -190,8 +164,8 @@ describe("Export of one document", function () {
     config = new ConfigProvider(log, [path.resolve("static", "lang")], unexpectedStoreWriteFailure);
     // The open of an exported file is proved in the assembled app.
     config.set("export.autoOpenExportedFiles", false);
-    config.set("export.scripts", [
-      { name: WORKING_DIRECTORY.name, profile: LATEX.name, command: script, extension: "txt" },
+    config.set("export.items", [
+      { name: WORKING_DIRECTORY, base: LATEX, command: script, extension: "txt" },
     ]);
     assets = new AssetsProvider(log, config, BUNDLED_EXPORT_MATHJAX);
   });
@@ -258,7 +232,7 @@ describe("Export of one document", function () {
     });
 
     it("puts the unsaved text and the figures of the document into a textbundle", async function () {
-      await exportDocument(services, { file: document, profile: TEXTBUNDLE, exportTo: "cwd" });
+      await exportDocument(services, { file: document, item: TEXTBUNDLE, exportTo: "cwd" });
 
       assert.deepEqual(errorWindows, []);
       const bundle = path.join(root, "Lattices.textbundle");
@@ -272,7 +246,7 @@ describe("Export of one document", function () {
     });
 
     it("runs the PDF recipe on the unsaved text in the folder of the document", async function () {
-      await exportDocument(services, { file: document, profile: PDF, exportTo: "cwd" });
+      await exportDocument(services, { file: document, item: PDF, exportTo: "cwd" });
 
       assert.deepEqual(errorWindows, []);
       assert.equal((await just.onlyRun()).cwd, root);
@@ -281,7 +255,7 @@ describe("Export of one document", function () {
     });
 
     it("resolves a wikilink of the unsaved text to the document", async function () {
-      await exportDocument(services, { file: document, profile: PDF, exportTo: "cwd" });
+      await exportDocument(services, { file: document, item: PDF, exportTo: "cwd" });
 
       assert.deepEqual(JSON.parse(await just.wikilinkMap()), {
         inputs: [{ headings: 2 }],
@@ -303,7 +277,7 @@ describe("Export of one document", function () {
     );
     process.env.TMPDIR = temporaryDirectoryOfExport;
     try {
-      await exportDocument(services, { file: notes, profile: PDF, exportTo: "cwd" });
+      await exportDocument(services, { file: notes, item: PDF, exportTo: "cwd" });
     } finally {
       process.env.TMPDIR = temporaryDirectoryOfRun;
     }
@@ -313,7 +287,7 @@ describe("Export of one document", function () {
   });
 
   it("gives the PDF recipe the name of a document whose text is on disk", async function () {
-    await exportDocument(services, { file: document, profile: PDF, exportTo: "cwd" });
+    await exportDocument(services, { file: document, item: PDF, exportTo: "cwd" });
 
     assert.deepEqual(errorWindows, []);
     assert.deepEqual(await just.onlyRun(), {
@@ -325,7 +299,7 @@ describe("Export of one document", function () {
   it("tells the author of a PDF without a TeX error that it is exported", async function () {
     notifications.shown.length = 0;
 
-    await exportDocument(services, { file: document, profile: PDF, exportTo: "cwd" });
+    await exportDocument(services, { file: document, item: PDF, exportTo: "cwd" });
 
     assert.deepEqual(errorWindows, []);
     assert.equal(notifications.shown.length, 1, "one notification of the export");
@@ -335,7 +309,7 @@ describe("Export of one document", function () {
     notifications.shown.length = 0;
     await just.print(RECIPE_OUTPUT_WITH_TEX_ERROR);
 
-    await exportDocument(services, { file: document, profile: PDF, exportTo: "cwd" });
+    await exportDocument(services, { file: document, item: PDF, exportTo: "cwd" });
 
     assert.equal(existsSync(path.join(root, "Lattices.pdf")), true, "the export wrote the PDF");
     assert.deepEqual(errorWindows, [
@@ -353,7 +327,7 @@ describe("Export of one document", function () {
   it("reads a declared working directory from the folder of the document", async function () {
     await exportDocument(services, {
       file: path.join(root, "Sections.md"),
-      profile: WORKING_DIRECTORY,
+      item: WORKING_DIRECTORY,
       exportTo: "cwd",
     });
 
@@ -367,7 +341,7 @@ describe("Export of one document", function () {
   it("refuses an export whose declared working directory is absent", async function () {
     await exportDocument(services, {
       file: path.join(root, "Absent.md"),
-      profile: PDF,
+      item: PDF,
       exportTo: "cwd",
     });
 
@@ -380,7 +354,7 @@ describe("Export of one document", function () {
     const style = path.join(root, "no-such-style.csl");
     config.set("export.cslStyle", style);
 
-    await exportDocument(services, { file: document, profile: LATEX, exportTo: "cwd" });
+    await exportDocument(services, { file: document, item: LATEX, exportTo: "cwd" });
 
     assert.equal(errorWindows.length, 1, "one refused export opens one error window");
     assert.equal(shownText().includes(style), true);
@@ -391,7 +365,7 @@ describe("Export of one document", function () {
     const library = path.join(root, "no-such-library.bib");
     config.set("export.cslLibrary", library);
 
-    await exportDocument(services, { file: document, profile: LATEX, exportTo: "cwd" });
+    await exportDocument(services, { file: document, item: LATEX, exportTo: "cwd" });
 
     assert.equal(errorWindows.length, 1, "one refused export opens one error window");
     assert.equal(shownText().includes(library), true);
@@ -402,7 +376,7 @@ describe("Export of one document", function () {
     const forms = path.join(root, "Forms.md");
     await writeFile(forms, BRACKET_MATH);
 
-    await exportDocument(services, { file: forms, profile: LATEX, exportTo: "cwd" });
+    await exportDocument(services, { file: forms, item: LATEX, exportTo: "cwd" });
 
     assert.deepEqual(errorWindows, []);
     const tex = await readFile(path.join(root, "Forms.tex"), "utf8");
@@ -415,7 +389,7 @@ describe("Export of one document", function () {
     const adeles = path.join(root, "Adeles.md");
     await writeFile(adeles, "# Adeles\n\nThe ring $\\AA$ of adeles.\n");
 
-    await exportDocument(services, { file: adeles, profile: LATEX, exportTo: "cwd" });
+    await exportDocument(services, { file: adeles, item: LATEX, exportTo: "cwd" });
 
     assert.deepEqual(errorWindows, []);
     execFileSync("pdflatex", ["-interaction=nonstopmode", "-halt-on-error", "Adeles.tex"], {
@@ -429,7 +403,7 @@ describe("Export of one document", function () {
   });
 
   it("exports a wikilink to LaTeX as a link to the heading that the editor resolves", async function () {
-    await exportDocument(services, { file: document, profile: LATEX, exportTo: "cwd" });
+    await exportDocument(services, { file: document, item: LATEX, exportTo: "cwd" });
 
     assert.deepEqual(errorWindows, []);
     const tex = await readFile(path.join(root, "Lattices.tex"), "utf8");
@@ -447,7 +421,7 @@ describe("Export of one document", function () {
       index: new WikilinkIndex([{ path: local, root, id: "", title: undefined, aliases: [] }]),
     };
 
-    await exportDocument(services, { file: local, profile: LATEX, exportTo: "cwd" });
+    await exportDocument(services, { file: local, item: LATEX, exportTo: "cwd" });
 
     assert.deepEqual(errorWindows, []);
     const tex = await readFile(path.join(root, "Local.tex"), "utf8");
@@ -469,7 +443,7 @@ describe("Export of one document", function () {
       ),
     };
 
-    await exportDocument(services, { file: genera, profile: LATEX, exportTo: "cwd" });
+    await exportDocument(services, { file: genera, item: LATEX, exportTo: "cwd" });
 
     assert.deepEqual(errorWindows, []);
     const tex = await readFile(path.join(root, "Genera.tex"), "utf8");
@@ -480,7 +454,7 @@ describe("Export of one document", function () {
     const forms = path.join(root, "Forms.md");
     await writeFile(forms, BRACKET_MATH);
 
-    await exportDocument(services, { file: forms, profile: WORD, exportTo: "cwd" });
+    await exportDocument(services, { file: forms, item: WORD, exportTo: "cwd" });
 
     assert.deepEqual(errorWindows, []);
     const xml = execFileSync("unzip", ["-p", path.join(root, "Forms.docx"), "word/document.xml"], {

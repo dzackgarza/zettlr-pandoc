@@ -23,7 +23,6 @@ import {
 import isFile from "@common/util/is-file";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type AssetsProvider from "@providers/assets";
-import { type PandocProfileMetadata, type ValidPandocProfile } from "@providers/assets";
 import type ConfigProvider from "@providers/config";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import type FSAL from "@providers/fsal";
@@ -35,6 +34,7 @@ import path from "path";
 import YAML from "yaml";
 import { loadCanonicalMathJaxMacros } from "../../../util/load-mathjax-macros";
 import { runPandoc } from "../../../util/run-pandoc";
+import { runCommandExport } from "./command-exporter";
 import { plugin as DefaultExporter } from "./default-exporter";
 import { type ExportMath, injectPandocMathHeaders } from "./pandoc-math-headers";
 import { runRecipeExport } from "./recipe-exporter";
@@ -43,73 +43,6 @@ import { plugin as TextbundleExporter } from "./textbundle-exporter";
 // Exporters
 import type { DefaultsOverride, ExporterAPI, ExporterOptions, ExporterOutput } from "./types";
 import { exportInputs, withWikilinkMap } from "./wikilink-map-file";
-
-/**
- * This function returns faux metadata for the custom export formats the
- * exporter supports which circumvent (or build upon) the Pandoc exporter. These
- * are not defined as regular defaults files, therefore we need to output them
- * here.
- *
- * @return  {ValidPandocProfile[]}   The additional profiles
- */
-export function getCustomProfiles(
-  scripts: ConfigOptions["export"]["scripts"] = [],
-): ValidPandocProfile[] {
-  return [
-    {
-      // PDF export is not a Pandoc-defaults export: it delegates to the
-      // authoritative ~/.pandoc `compile-pandoc` recipe (see recipe-exporter).
-      name: "PDF.yaml",
-      reader: "markdown",
-      writer: "compile-pandoc",
-      isInvalid: false,
-    },
-    {
-      name: "Textbundle.yaml", // Fake name
-      reader: "markdown", // Not completely the truth
-      writer: "textbundle", // Not even supported by Pandoc
-      isInvalid: false, // IT'S ALL FAKE!
-    },
-    {
-      name: "Textpack.yaml",
-      reader: "markdown",
-      writer: "textpack",
-      isInvalid: false,
-    },
-    // User-declared pipeline-integrated export scripts (config.export.scripts),
-    // passed by callers that have config access.
-    ...scripts.map(
-      (script): ValidPandocProfile => ({
-        name: script.name,
-        reader: "markdown",
-        writer: "script",
-        isInvalid: false,
-      }),
-    ),
-  ];
-}
-
-/**
- * The export profiles of the application: the defaults files of the author
- * and the custom profiles. A custom profile replaces a defaults file of the
- * same name. userData/defaults is copied once and never pruned, so it can
- * hold a PDF.yaml of a version before the PDF recipe; that file must not
- * replace the recipe profile.
- *
- * @param   {Profile[]}  defaults  The defaults files of the author: all of them
- *                                (the menu), or the valid ones (the harness)
- * @param   {ConfigOptions["export"]["scripts"]}  scripts  The export scripts of the settings
- *
- * @return  {Array<Profile | ValidPandocProfile>}  The profiles, one for each name
- */
-export function exportProfiles<Profile extends PandocProfileMetadata>(
-  defaults: Profile[],
-  scripts: ConfigOptions["export"]["scripts"],
-): Array<Profile | ValidPandocProfile> {
-  const custom = getCustomProfiles(scripts);
-  const customNames = new Set(custom.map((profile) => profile.name));
-  return [...defaults.filter((profile) => !customNames.has(profile.name)), ...custom];
-}
 
 const PLUGINS = {
   pandoc: DefaultExporter,
@@ -233,34 +166,31 @@ export async function makeExport(
         options.defaultsOverride,
       );
     },
-    listDefaults: async () => {
-      return await assets.listDefaults();
-    },
   };
 
-  // Search for the correct plugin to run, and run it. First the custom ones ...
-  if (["textbundle", "textpack"].includes(options.profile.writer)) {
-    return await PLUGINS.textbundle(options, inputFiles, ctx);
-  } else if (options.profile.writer === "compile-pandoc") {
-    // PDF: delegate to the authoritative ~/.pandoc compile-pandoc recipe.
-    // A template of the export (the LaTeX template of a Project) goes before
-    // the template of the setting, as it does for a Pandoc profile.
-    const ownTemplate = options.defaultsOverride?.template;
-    return await runRecipeExport(options, {
-      latexTemplate: ownTemplate !== undefined ? ownTemplate : config.get().export.latexTemplate,
-      wikilinks: reading,
-      fsal,
-      mainLibrary: config.get().export.cslLibrary,
-    });
-  } else if (options.profile.writer === "script") {
-    const script = config.get().export.scripts.find((s) => s.name === options.profile.name);
-    if (script === undefined) {
-      throw new Error(`Cannot run export script "${options.profile.name}": not found in config`);
+  // The engine of the item decides which exporter runs.
+  const { engine, post } = options.item;
+  switch (engine.kind) {
+    case "bundle":
+      return await PLUGINS.textbundle(options, inputFiles, ctx);
+    case "recipe": {
+      // PDF: the ~/.pandoc compile-pandoc recipe owns each flag. A template
+      // of the export (the LaTeX template of a Project) goes before the
+      // template of the setting, as it does for a Pandoc engine.
+      const ownTemplate = options.defaultsOverride?.template;
+      return await runRecipeExport(options, {
+        latexTemplate: ownTemplate !== undefined ? ownTemplate : config.get().export.latexTemplate,
+        wikilinks: reading,
+        fsal,
+        mainLibrary: config.get().export.cslLibrary,
+      });
     }
-    return await runScriptExport(options, inputFiles, ctx, script);
-  } else {
-    // ... otherwise run the regular Pandoc exporter.
-    return await PLUGINS.pandoc(options, inputFiles, ctx);
+    case "command":
+      return await runCommandExport(options, engine.command);
+    case "pandoc":
+      return post === undefined
+        ? await PLUGINS.pandoc(options, inputFiles, ctx)
+        : await runScriptExport(options, inputFiles, ctx, engine, post);
   }
 }
 

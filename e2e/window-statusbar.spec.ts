@@ -224,7 +224,7 @@ describe("the window status bar", function () {
     assert.ok(activeDocument !== null, "an active document tab");
     await clickMenuItem(activePage, "menu.export");
     await activePage
-      .locator(`${LAUNCHER} [data-launcher-row][data-highlighted][data-export-profile]`)
+      .locator(`${LAUNCHER} [data-launcher-row][data-highlighted][data-export-item]`)
       .waitFor({ timeout: 10_000 });
     await activePage.keyboard.press("Enter");
     await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });

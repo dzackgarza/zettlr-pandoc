@@ -170,7 +170,7 @@ describe("assembled app: a PDF export through the window (#47)", function () {
       window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu.export" });
     });
     const profileRow = activePage.locator(
-      `${LAUNCHER} [data-launcher-row][data-export-profile=${JSON.stringify(PDF_PROFILE)}]`,
+      `${LAUNCHER} [data-launcher-row][data-export-item=${JSON.stringify(PDF_PROFILE)}]`,
     );
     await profileRow.waitFor({ state: "visible", timeout: 10_000 });
     await profileRow.click();
@@ -257,7 +257,7 @@ describe("assembled app: a PDF export through the window (#47)", function () {
       window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu.export" });
     });
     const profileRow = activePage.locator(
-      `${LAUNCHER} [data-launcher-row][data-export-profile=${JSON.stringify(PDF_PROFILE)}]`,
+      `${LAUNCHER} [data-launcher-row][data-export-item=${JSON.stringify(PDF_PROFILE)}]`,
     );
     await profileRow.waitFor({ state: "visible", timeout: 10_000 });
     assert.equal((await profileRow.innerText()).trim(), "PDF (compile-pandoc)");

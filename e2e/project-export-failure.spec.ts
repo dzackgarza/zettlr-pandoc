@@ -88,6 +88,9 @@ describe("a Project export with profiles that did not export", function () {
     const fixture = await createFixture("zettlr-project-export-failure-e2e-", {
       documentName: "note.md",
       documentContents: NOTE,
+      // The configuration file holds the commands as a version before the
+      // export items wrote them (`export.customCommands`): the start of the
+      // app makes them items of `export.items`.
       config: { darkMode: false, export: { customCommands: COMMANDS } },
     });
     fixtureRoot = fixture.root;

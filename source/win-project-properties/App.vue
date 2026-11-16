@@ -198,7 +198,7 @@ import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import { type WindowTab } from "@common/vue/window/WindowTabbar.vue";
 import ZtrAdmonition from "@common/vue/ZtrAdmonition.vue";
 import type { CodeFileDescriptor, MDFileDescriptor, ProjectSettings } from "@dts/common/fsal";
-import type { PandocProfileMetadata, ValidPandocProfile } from "@providers/assets";
+import type { ExportItem, ExportItemEntry } from "@providers/commands/exporter/export-items";
 import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
 import { pathToUnix } from "source/common/util/path-to-unix";
 import { isInsideRoot } from "source/common/util/renderer-path-polyfill";
@@ -212,10 +212,6 @@ interface ExportProfile {
   selected: boolean;
   name: string;
   conversion: string;
-}
-interface CustomCommand {
-  displayName: string;
-  command: string;
 }
 
 const exportFormatLabel = trans("Export project to:");
@@ -273,8 +269,8 @@ const dirPath = searchParams.get("directory") ?? "";
 const updateLock = ref(true); // To ensure these defaults aren't written before the properties have been loaded
 /** Why the window has no settings of the folder: it then takes no change. */
 const loadFailure = ref<string | null>(null);
-const profiles = ref<PandocProfileMetadata[]>([]);
-const customCommands = configStore.config.export.customCommands;
+/** The export items of the application (`exporter/export-items.ts`). */
+const exportItems = ref<ExportItemEntry[]>([]);
 
 const projectSettings = ref<ProjectSettings>({
   manifest: { kind: "zettlr" },
@@ -359,52 +355,75 @@ const currentTab = ref(0);
 
 const windowTitle = computed(() => projectSettings.value.title);
 
-const exportFormatList = computed<ExportProfile[]>(() => {
-  // We need to return a list of { selected: boolean, name: string, conversion: string }
-  // A project builds by running its profiles, so only profiles Zettlr can
-  // actually run may be offered here.
-  return profiles.value
-    .filter((e): e is ValidPandocProfile => !e.isInvalid)
-    .filter((e) => {
-      return SUPPORTED_READERS.includes(parseReaderWriter(e.reader).name);
-    })
-    .map((e) => {
-      const plainReader = parseReaderWriter(e.reader).name;
-      const plainWriter = parseReaderWriter(e.writer).name;
+/**
+ * The items that a Project can export with: each item that can run, with a
+ * reader of Pandoc that the editor writes. A bundle holds one document, so
+ * a Project has no bundle.
+ */
+const offeredItems = computed<ExportItem[]>(() => {
+  return exportItems.value
+    .filter((item): item is ExportItem => !item.isInvalid)
+    .filter((item) => item.engine.kind !== "bundle")
+    .filter(
+      (item) =>
+        item.engine.kind !== "pandoc" ||
+        SUPPORTED_READERS.includes(parseReaderWriter(item.engine.reader).name),
+    );
+});
 
-      const hasReaderExtensions = plainReader !== e.reader;
-      const hasWriterExtensions = plainWriter !== e.writer;
+/**
+ * Whether the Project exports with the item. A Project file from before the
+ * export items names an export command by its command line.
+ */
+function isSelected(item: ExportItem): boolean {
+  const selected = projectSettings.value.profiles;
+  return (
+    selected.includes(item.id) ||
+    (item.engine.kind === "command" && selected.includes(item.engine.command))
+  );
+}
 
+/** What an item converts, for the column of the list. */
+function conversionOf(item: ExportItem): string {
+  const { engine } = item;
+  switch (engine.kind) {
+    case "command":
+      return engine.command;
+    case "recipe":
+      return `Markdown → PDF (${engine.recipe})`;
+    case "bundle":
+      return `Markdown → ${engine.format}`;
+    case "pandoc": {
+      const plainReader = parseReaderWriter(engine.reader).name;
+      const plainWriter = parseReaderWriter(engine.writer).name;
       const reader = plainReader in PANDOC_READERS ? PANDOC_READERS[plainReader] : plainReader;
       const writer = plainWriter in PANDOC_WRITERS ? PANDOC_WRITERS[plainWriter] : plainWriter;
+      const readerFull = plainReader !== engine.reader ? `${reader} (${engine.reader})` : reader;
+      const writerFull = plainWriter !== engine.writer ? `${writer} (${engine.writer})` : writer;
+      const stages = [readerFull, writerFull];
+      if (item.post !== undefined) {
+        stages.push(`${item.post.command} (.${item.post.extension})`);
+      }
+      return stages.join(" → ");
+    }
+  }
+}
 
-      const readerFull = hasReaderExtensions ? reader + ` (${e.reader})` : reader;
-      const writerFull = hasWriterExtensions ? writer + ` (${e.writer})` : writer;
-
-      return {
-        selected: projectSettings.value.profiles.includes(e.name),
-        name: getDisplayText(e.name),
-        conversion: [readerFull, writerFull].join(" → "),
-      };
-    })
-    .concat(
-      customCommands.map((c) => {
-        return {
-          selected: projectSettings.value.profiles.includes(c.command),
-          name: c.displayName,
-          conversion: c.command,
-        };
-      }),
-    );
+const exportFormatList = computed<ExportProfile[]>(() => {
+  return offeredItems.value.map((item) => ({
+    selected: isSelected(item),
+    name: getDisplayText(item.id),
+    conversion: conversionOf(item),
+  }));
 });
 
 watch(projectSettings, updateProperties, { deep: true });
 
 // First, we need to get the available export formats
 ipcRenderer
-  .invoke("assets-provider", { command: "list-export-profiles" })
-  .then((defaults: PandocProfileMetadata[]) => {
-    profiles.value = defaults;
+  .invoke("assets-provider", { command: "list-export-items" })
+  .then((items: ExportItemEntry[]) => {
+    exportItems.value = items;
   })
   .catch((err) => reportError(err));
 
@@ -419,24 +438,20 @@ onMounted(() => {
   });
 });
 
+/**
+ * Takes the selection of the list. The list gives its rows back in the
+ * order of `offeredItems`; the Project stores the identity of each selected
+ * item.
+ */
 function selectExportProfile(newListVal: ExportProfile[]): void {
-  const newProfiles = newListVal
-    .filter((e) => e.selected)
-    .map((e) => {
-      return (
-        profiles.value.find((x) => getDisplayText(x.name) === e.name) ??
-        customCommands.find((c) => c.displayName === e.name)
-      );
-    })
-    .filter((x) => x !== undefined) as Array<PandocProfileMetadata | CustomCommand>;
-
-  projectSettings.value.profiles = newProfiles.map((x) => {
-    return "name" in x ? x.name : x.command;
-  });
+  projectSettings.value.profiles = offeredItems.value
+    .filter((_item, index) => newListVal[index].selected)
+    .map((item) => item.id);
 }
 
+/** The name of a defaults file without its extension; another name as it is. */
 function getDisplayText(name: string): string {
-  return name.substring(0, name.lastIndexOf("."));
+  return /\.ya?ml$/.test(name) ? name.replace(/\.ya?ml$/, "") : name;
 }
 
 /** A change that this window does not send: the author gets the cause here. */

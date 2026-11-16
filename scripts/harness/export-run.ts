@@ -13,7 +13,8 @@
  *
  * Or `just export-headless <ProfileName.yaml> <source.md>`.
  */
-import { makeExport, exportProfiles } from '../../source/app/service-providers/commands/exporter/index'
+import { makeExport } from '../../source/app/service-providers/commands/exporter/index'
+import { exportItemKind, exportItems } from '../../source/app/service-providers/commands/exporter/export-items'
 import { promises as fs, readFileSync } from 'fs'
 import path from 'path'
 import os from 'os'
@@ -55,22 +56,35 @@ async function main (): Promise<void> {
   const defaultsDir = path.join(userData, 'defaults')
 
   // The defaults files of userData, as `listDefaults` reads them.
-  const files = (await fs.readdir(defaultsDir)).filter(f => f.endsWith('.yaml'))
+  const files = (await fs.readdir(defaultsDir)).filter(f => /\.ya?ml$/.test(f))
   const defaultsProfiles = files.map(f => {
     const parsed = YAML.parse(readFileSync(path.join(defaultsDir, f), 'utf8'))
-    return { name: f, reader: parsed.reader, writer: parsed.writer, isInvalid: false as const }
+    return {
+      name: f,
+      reader: parsed.reader,
+      writer: parsed.writer,
+      template: parsed.template,
+      isInvalid: false as const,
+    }
   })
-  const allProfiles = exportProfiles(defaultsProfiles, appConfig.export.scripts)
+  // The one list of export items, as each surface of the app reads it.
+  const allItems = exportItems(defaultsProfiles, appConfig.export.items)
 
-  console.log('=== profiles the GUI lists (name -> writer) ===')
-  for (const p of allProfiles) { console.log(`  ${p.name}: ${p.writer}`) }
+  console.log('=== export items the GUI lists (name -> kind) ===')
+  for (const listed of allItems) {
+    console.log(`  ${listed.id}: ${listed.isInvalid ? `cannot run: ${listed.reason}` : exportItemKind(listed)}`)
+  }
 
-  const profile = allProfiles.find(p => p.name === profileName)
-  if (profile === undefined) {
-    stderr(`\nprofile ${profileName} not found in the list above`)
+  const item = allItems.find(listed => listed.id === profileName)
+  if (item === undefined) {
+    stderr(`\nexport item ${profileName} not found in the list above`)
     process.exit(2)
   }
-  console.log(`\n=== makeExport: ${profile.name} (writer=${profile.writer}) ===`)
+  if (item.isInvalid) {
+    stderr(`\nexport item ${profileName} cannot run: ${item.reason}`)
+    process.exit(2)
+  }
+  console.log(`\n=== makeExport: ${item.id} (${exportItemKind(item)}) ===`)
 
   await fs.mkdir(targetDir, { recursive: true })
   const config: any = { get: () => appConfig }
@@ -85,7 +99,8 @@ async function main (): Promise<void> {
   }
   const log: any = { info () {}, error () {}, verbose () {}, warning () {} }
   const options: any = {
-    profile,
+    item,
+    commandSubject: { argument: sourceFile, cwd: path.dirname(sourceFile) },
     targetDirectory: targetDir,
     sourceFiles: [
       {

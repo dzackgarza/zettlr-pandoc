@@ -13,6 +13,7 @@ import type {
 import { loadMathJaxMacros } from "source/app/util/load-mathjax-macros";
 import { promisify } from "util";
 import YAML from "yaml";
+import { exportItem } from "./export-item-fixtures";
 
 const execFileAsync = promisify(execFile);
 
@@ -65,28 +66,30 @@ describe("Pipeline-integrated export scripts", function () {
           pandocDirectory: MACRO_TREE,
         });
       },
-      listDefaults: async () => [
-        { name: "LaTeX.yaml", reader: "markdown", writer: "latex", isInvalid: false },
-      ],
     };
 
+    // An item of the settings with a base: the defaults file runs, then the
+    // command of the item.
+    const item = exportItem(
+      "Marked TeX",
+      [{ name: "LaTeX.yaml", reader: "markdown", writer: "latex" }],
+      [{ name: "Marked TeX", base: "LaTeX.yaml", command: scriptFile, extension: "txt" }],
+    );
     const options: ExporterOptions = {
-      profile: { name: "Marked TeX", reader: "markdown", writer: "script", isInvalid: false },
+      item,
       sourceFiles: [{ name: "input.md", ext: ".md", path: inputFile, textFile: inputFile }],
       targetDirectory: directory,
+      commandSubject: { argument: inputFile, cwd: directory },
     };
-    const script = {
-      name: "Marked TeX",
-      profile: "LaTeX.yaml",
-      command: scriptFile,
-      extension: "txt",
-    };
+    const { engine, post } = item;
+    assert.ok(engine.kind === "pandoc" && post !== undefined, "the item has a base and a command");
 
-    const output = await runScriptExport(options, [inputFile], ctx, script);
+    const output = await runScriptExport(options, [inputFile], ctx, engine, post);
 
     assert.strictEqual(output.code, 0);
-    assert.strictEqual(output.targetFile, path.join(directory, "input.txt"));
-    const produced = await readFile(output.targetFile, { encoding: "utf8" });
+    const target = path.join(directory, "input.txt");
+    assert.strictEqual(output.targetFile, target);
+    const produced = await readFile(target, { encoding: "utf8" });
     assert.match(produced, /Hello/, "carries the Pandoc-processed intermediate");
     assert.match(produced, /SCRIPT_RAN/, "the declared script ran on it");
   });

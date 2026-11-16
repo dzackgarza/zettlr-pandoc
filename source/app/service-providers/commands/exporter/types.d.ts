@@ -13,8 +13,8 @@
  * END HEADER
  */
 
-import { type PandocProfileMetadata, type ValidPandocProfile } from "@providers/assets";
 import type { PandocRunnerOutput } from "../../../util/run-pandoc";
+import type { ExportItem } from "./export-items";
 
 /**
  * One document of an export.
@@ -57,11 +57,16 @@ interface DefaultsOverride {
  */
 export interface ExporterOptions {
   /**
-   * The profile must be a runnable profile descriptor (can be retrieved from
-   * the assets provider) or any of the custom values we support. Callers narrow
-   * to the valid variant before they reach the exporter.
+   * The export item to run (`export-items.ts`). A caller gives an item that
+   * can run; an invalid item does not reach the exporter.
    */
-  profile: ValidPandocProfile;
+  item: ExportItem;
+  /**
+   * What an item with a command engine gets as its one argument, and the
+   * folder that the command runs in: the document in its folder, or the
+   * folder of a Project.
+   */
+  commandSubject: { argument: string; cwd: string };
   /**
    * This is an array of source files you wish to compile into the target file.
    */
@@ -105,10 +110,11 @@ export interface ExporterOutput {
    */
   stderr: string[];
   /**
-   * This property contains the absolute path to the generated output file. Then
-   * you can, for example, open it.
+   * The absolute path of the file that the export wrote. An item with a
+   * command engine names no file: the command decides what it writes, so
+   * the value is null.
    */
-  targetFile: string;
+  targetFile: string | null;
   /**
    * The errors that TeX reported for a PDF that the export still wrote, one
    * entry for each error. Empty for an export without such an error, and for
@@ -140,7 +146,6 @@ export interface ExporterAPI {
    * @return  {Promise<string>}                      Resolves with an absolute path to the written file.
    */
   writeDefaults: (writer: string, properties: Record<string, unknown> = {}) => Promise<string>;
-  listDefaults: () => Promise<PandocProfileMetadata[]>;
 }
 
 /**

@@ -114,19 +114,19 @@ export function getImportExportFields(): PreferencesFieldset[] {
       ],
     },
     {
-      title: trans("Custom export commands"),
+      title: trans("Export items"),
       infoString: trans(
-        "Specify custom commands to run the exporter with. Each command receives as its first argument the file or project folder to be exported.",
+        "Add an export of your own. An item without a base is a command: it receives the document, or the folder of a Project, as its one argument. An item with a base exports through the defaults file of that name (for example HTML.yaml) and then runs its command, which receives the file of Pandoc first and the output path second and writes a file with the extension. A Project names an item by its name.",
       ),
       group: PreferencesGroups.ImportExport,
-      help: undefined, // TODO
+      help: undefined,
       fields: [
         {
           type: "list",
           valueType: "record",
-          keyNames: ["displayName", "command"],
-          columnLabels: [trans("Display name"), trans("Command")],
-          model: "export.customCommands",
+          keyNames: ["name", "base", "command", "extension"],
+          columnLabels: [trans("Name"), trans("Base"), trans("Command"), trans("Extension")],
+          model: "export.items",
           deletable: true,
           searchable: true,
           addable: true,
@@ -172,27 +172,6 @@ export function getImportExportFields(): PreferencesFieldset[] {
           type: "filter-select",
           label: trans("Enabled export filters"),
           model: "export.filters",
-        },
-      ],
-    },
-    {
-      title: trans("Export scripts"),
-      infoString: trans(
-        "Add an export format that runs a command after the selected profile. The command receives the intermediate file first and the output path second.",
-      ),
-      group: PreferencesGroups.ImportExport,
-      help: undefined,
-      fields: [
-        {
-          type: "list",
-          valueType: "record",
-          keyNames: ["name", "profile", "command", "extension"],
-          columnLabels: [trans("Name"), trans("Profile"), trans("Command"), trans("Extension")],
-          model: "export.scripts",
-          deletable: true,
-          searchable: true,
-          addable: true,
-          editable: true,
         },
       ],
     },

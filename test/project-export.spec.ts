@@ -27,6 +27,7 @@ import {
   exportProject,
   type ProjectExportServices,
 } from "source/app/service-providers/commands/dir-project-export";
+import type { SettingsExportItem } from "source/app/service-providers/commands/exporter/export-items";
 import ConfigProvider from "source/app/service-providers/config";
 import type FSAL from "source/app/service-providers/fsal";
 import LogProvider from "source/app/service-providers/log";
@@ -81,6 +82,7 @@ describe("Project export", function () {
   let fsal: FSAL;
   let assets: AssetsProvider;
   let config: ConfigProvider;
+  let commandItems: SettingsExportItem[];
   let services: ProjectExportServices;
   const errorWindows: ErrorWindow[] = [];
 
@@ -153,8 +155,11 @@ describe("Project export", function () {
       texTemplate: "",
       cslStyle: "",
     });
+    // This Project names its item by the identity of the item. The other
+    // Projects hold the command line of a command, as a Project file from
+    // before the export items does.
     allExported = await project("all-exported", {
-      profiles: [listing],
+      profiles: ["Listing"],
       chapters,
       texTemplate: "",
       cslStyle: "",
@@ -237,11 +242,13 @@ describe("Project export", function () {
 
     const log = new LogProvider();
     config = new ConfigProvider(log, [path.resolve("static", "lang")], unexpectedStoreWriteFailure);
-    config.set("export.customCommands", [
-      { displayName: "First command", command: noEngine },
-      { displayName: "Second command", command: noTemplate },
-      { displayName: "Listing", command: listing },
-    ]);
+    // Three items of the settings without a base: each is a command.
+    commandItems = [
+      { name: "First command", base: "", command: noEngine, extension: "" },
+      { name: "Second command", base: "", command: noTemplate, extension: "" },
+      { name: "Listing", base: "", command: listing, extension: "" },
+    ];
+    config.set("export.items", commandItems);
     assets = new AssetsProvider(log, config, BUNDLED_EXPORT_MATHJAX);
     fsal = await bootFsal(root);
 
@@ -311,31 +318,36 @@ describe("Project export", function () {
     }
   });
 
-  it("lists an export script of the settings among the export profiles (#57)", async function () {
-    // The export menu, the launcher and the Project export read this list. A
-    // script of the settings that is absent from it can be neither chosen
-    // nor run.
-    config.set("export.scripts", [
-      {
-        name: "Handout script",
-        profile: "LaTeX.yaml",
-        command: await exportCommand("handout-script", "exit 0"),
-        extension: "pdf",
-      },
+  it("lists an item of the settings with a base among the export items (#57)", async function () {
+    // The launcher, the Project window and the Project export read this
+    // list. An item of the settings that is absent from it can be neither
+    // chosen nor run.
+    const command = await exportCommand("handout-script", "exit 0");
+    config.set("export.items", [
+      ...commandItems,
+      { name: "Handout script", base: "LaTeX.yaml", command, extension: "pdf" },
     ]);
-    const profiles = await assets.listExportProfiles();
-    config.set("export.scripts", []);
+    const listed = (await assets.listExportItems()).find((item) => item.id === "Handout script");
+    config.set("export.items", commandItems);
 
-    assert.deepEqual(
-      profiles.filter((profile) => !profile.isInvalid && profile.writer === "script"),
-      [{ name: "Handout script", reader: "markdown", writer: "script", isInvalid: false }],
+    assert.ok(listed !== undefined && !listed.isInvalid, "the item is in the list and can run");
+    assert.equal(listed.origin, "settings");
+    assert.deepEqual(listed.post, { command, extension: "pdf" });
+    assert.ok(
+      listed.engine.kind === "pandoc" && listed.engine.defaultsFile === "LaTeX.yaml",
+      "the engine of the item is the defaults file of its base",
     );
-    assert.deepEqual(
-      (await assets.listExportProfiles()).filter(
-        (profile) => !profile.isInvalid && profile.writer === "script",
-      ),
-      [],
+    assert.equal(
+      (await assets.listExportItems()).some((item) => item.id === "Handout script"),
+      false,
+      "the list follows the settings",
     );
+  });
+
+  it("exports with an item that a Project names by its identity", async function () {
+    await exportProject(services, allExported);
+
+    assert.match(await readFile(path.join(allExported, "listing.txt"), "utf8"), /^chapter\.md$/m);
   });
 
   it("gives a command a Project folder with an apostrophe in its name", async function () {

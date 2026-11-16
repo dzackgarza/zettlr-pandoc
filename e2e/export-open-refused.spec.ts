@@ -25,7 +25,6 @@ import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Browser, Page } from "playwright";
-import type { PandocProfileMetadata } from "source/app/service-providers/assets";
 import {
   assertCleanExit,
   attach,
@@ -156,16 +155,9 @@ describe("an export whose file the desktop does not open", function () {
     // The call that the export launcher of the main window makes.
     await editorPage.evaluate(
       async ({ file, name }) => {
-        const profiles: PandocProfileMetadata[] = await window.ipc.invoke("assets-provider", {
-          command: "list-export-profiles",
-        });
-        const profile = profiles.find((candidate) => candidate.name === name);
-        if (profile === undefined || profile.isInvalid) {
-          throw new Error(`The application has no valid profile ${name}`);
-        }
         await window.ipc.invoke("application", {
           command: "export",
-          payload: { file, profile, exportTo: "cwd" },
+          payload: { file, item: name, exportTo: "cwd" },
         });
       },
       { file: document, name: PROFILE },

@@ -79,7 +79,7 @@ import DirRename from "./dir-rename";
 import DirRescan from "./dir-rescan";
 import type { DirSettingsCommandAPI } from "./dir-settings";
 import DirSettings from "./dir-settings";
-import type { CustomExportIPCAPI, ExportIPCAPI } from "./export";
+import type { ExportIPCAPI } from "./export";
 import Export from "./export";
 import FetchLinkPreview from "./fetch-link-preview";
 import FileDelete from "./file-delete";
@@ -168,10 +168,6 @@ export type ApplicationIPCContract = {
   "commit-fix-all": {
     request: { payload: { plan: FixAllPlan } };
     response: FixAllOutcome;
-  };
-  "custom-export": {
-    request: { payload: CustomExportIPCAPI };
-    response: undefined;
   };
   "dir-bind-quarto-manifest": {
     request: { payload: DirBindQuartoManifestAPI };
@@ -636,9 +632,6 @@ export default class CommandProvider extends ProviderContract {
           throw new Error(trans("%s is not an image that can be copied.", imagePath));
         }
         clipboard.writeImage(image);
-      },
-      "custom-export": async (payload) => {
-        await exporter.run("custom-export", payload);
       },
       "dir-bind-quarto-manifest": async (payload) =>
         await dirBindQuartoManifest.run("dir-bind-quarto-manifest", payload),

@@ -101,7 +101,11 @@ import type {
   ReferenceOccurrence,
 } from "@dts/common/references";
 import type { SerializedMenuItem } from "@dts/common/serialized-menu";
-import type { PandocProfileMetadata, ValidPandocProfile } from "@providers/assets";
+import {
+  type ExportItem,
+  type ExportItemEntry,
+  exportItemKind,
+} from "@providers/commands/exporter/export-items";
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
 import type { RecentFiles } from "source/app/service-providers/recent-docs";
 import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
@@ -123,8 +127,7 @@ import {
   breadcrumbOf,
   type DynamicGroupId,
   type DynamicGroupRow,
-  type ExportCommandRow,
-  type ExportProfileRow,
+  type ExportItemRow,
   type ExportRequest,
   type FileRow,
   fileBreadcrumb,
@@ -286,28 +289,37 @@ async function loadJustfileCommands(): Promise<boolean> {
   return true;
 }
 
-// The export view's data: the profiles the assets provider can run, fetched
-// when the view opens; the custom commands come from the config.
-const exportProfiles = ref<ValidPandocProfile[]>([]);
+// The export view's data: the export items of the application
+// (`exporter/export-items.ts`), fetched when the view opens.
+const exportItems = ref<ExportItem[]>([]);
 
-/** Loads the export profiles Zettlr can run on its own documents. */
-async function loadExportProfiles(): Promise<boolean> {
-  const listed: PandocProfileMetadata[] = await ipcRenderer.invoke("assets-provider", {
-    command: "list-export-profiles",
+/** Loads the export items that can run on a document of the editor. */
+async function loadExportItems(): Promise<boolean> {
+  const listed: ExportItemEntry[] = await ipcRenderer.invoke("assets-provider", {
+    command: "list-export-items",
   });
-  exportProfiles.value = listed
-    .filter((profile): profile is ValidPandocProfile => !profile.isInvalid)
-    .filter((profile) => SUPPORTED_READERS.includes(parseReaderWriter(profile.reader).name));
+  exportItems.value = listed
+    .filter((item): item is ExportItem => !item.isInvalid)
+    .filter(
+      (item) =>
+        item.engine.kind !== "pandoc" ||
+        SUPPORTED_READERS.includes(parseReaderWriter(item.engine.reader).name),
+    );
   return true;
 }
 
-/** The profile's name without its extension, and the writer it runs. */
-function exportProfileLabel(profile: ValidPandocProfile): string {
-  return `${profile.name.substring(0, profile.name.lastIndexOf("."))} (${profile.writer})`;
+/**
+ * The name of an item and its kind: the name of a defaults file without its
+ * extension, and the writer, the recipe, the format, "script" or "command".
+ */
+function exportItemLabel(item: ExportItem): string {
+  const name = /\.ya?ml$/.test(item.id) ? item.id.replace(/\.ya?ml$/, "") : item.id;
+  const kind = item.engine.kind === "command" ? trans("command") : exportItemKind(item);
+  return `${name} (${kind})`;
 }
 
-/** The last profile exported for the active document, else the last used anywhere. */
-const rememberedExportProfile = computed<string>(() => {
+/** The last item exported for the active document, else the last used anywhere. */
+const rememberedExportItem = computed<string>(() => {
   const activePath = documentTreeStore.lastLeafActiveFile?.path;
   const entry = configStore.config.export.selectedProfiles.find(
     (item) => item.filePath === activePath,
@@ -315,32 +327,15 @@ const rememberedExportProfile = computed<string>(() => {
   return entry === undefined ? configStore.config.export.lastUsedProfile : entry.profile;
 });
 
-/** The export rows, the remembered profile first so Enter re-exports. */
+/** The export rows, the remembered item first so Enter re-exports. */
 const exportRows = computed<LauncherRow[]>(() => {
-  const commandLabel = trans("command");
-  const profileRows: ExportProfileRow[] = exportProfiles.value.map((profile) => ({
-    kind: "export-profile",
-    profile,
-    label: exportProfileLabel(profile),
+  const rows: ExportItemRow[] = exportItems.value.map((item) => ({
+    kind: "export-item",
+    item,
+    label: exportItemLabel(item),
   }));
-  const commandRows: ExportCommandRow[] = configStore.config.export.customCommands.map(
-    (command) => ({
-      kind: "export-command",
-      displayName: command.displayName,
-      command: command.command,
-      label: `${command.displayName} (${commandLabel})`,
-    }),
-  );
-  const rows: LauncherRow[] = [...profileRows, ...commandRows];
-  const remembered = rememberedExportProfile.value;
-  const first = rows.findIndex(
-    (row) =>
-      (row.kind === "export-profile"
-        ? row.profile.name
-        : row.kind === "export-command"
-          ? row.command
-          : "") === remembered,
-  );
+  const remembered = rememberedExportItem.value;
+  const first = rows.findIndex((row) => row.item.id === remembered);
   if (first <= 0) {
     return rows;
   }
@@ -517,7 +512,7 @@ const dynamicGroupLoaders: Partial<Record<DynamicGroupId, () => Promise<boolean>
   "search-references": loadReferences,
   "browse-content": loadReferences,
   justfile: loadJustfileCommands,
-  export: loadExportProfiles,
+  export: loadExportItems,
 };
 
 /** The view a dynamic group row drills into. */
@@ -659,18 +654,10 @@ async function run(row: LauncherRow): Promise<void> {
       close();
       emit("jump-to-line", row.line);
       return;
-    case "export-profile":
-      rememberExportProfile(row.profile.name);
+    case "export-item":
+      rememberExportProfile(row.item.id);
       close();
-      emit("export", { kind: "profile", profile: row.profile });
-      return;
-    case "export-command":
-      close();
-      emit("export", {
-        kind: "command",
-        displayName: row.displayName,
-        command: row.command,
-      });
+      emit("export", { item: row.item.id });
       return;
     case "just-unlisted":
       return; // The row names a cause; it is disabled.

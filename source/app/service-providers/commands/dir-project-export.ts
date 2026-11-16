@@ -24,15 +24,18 @@ import { isHtmlWriter, isTexWriter, PANDOC_WRITERS } from "source/common/pandoc-
 import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
 import type { DirDescriptor, ProjectSettings } from "source/types/common/fsal";
 import type AssetsProvider from "../assets";
-import type { PandocProfileMetadata, ValidPandocProfile } from "../assets";
 import type ConfigProvider from "../config";
-import type { ConfigOptions } from "../config/get-config-template";
 import type FSAL from "../fsal";
 import type LinkProvider from "../links";
 import type LongRunningTaskProvider from "../long-running-tasks";
 import type WindowProvider from "../windows";
 import { makeExport } from "./exporter";
-import { runShellCommand } from "./exporter/run-shell-command";
+import {
+  type ExportItem,
+  type ExportItemEntry,
+  exportItemKind,
+  exportItemOfProjectEntry,
+} from "./exporter/export-items";
 import type { ExporterOptions } from "./exporter/types";
 import ZettlrCommand from "./zettlr-command";
 
@@ -137,31 +140,28 @@ export async function exportProject(app: ProjectExportServices, arg: string): Pr
     }); // Don't return, because we still can export
   }
 
-  const profiles = await app.assets.listExportProfiles();
-  const commands = app.config.get().export.customCommands;
+  const items = await app.assets.listExportItems();
 
   // One exporter that stops does not stop the other ones. The author gets
   // one message for the whole export.
   const failed: FailedExporter[] = [];
   const withTexErrors: ExporterWithTexErrors[] = [];
   for (const entry of config.profiles) {
-    const exporter = exporterOf(entry, commands, profiles);
+    const item = exportItemOfProjectEntry(entry, items);
+    const name = item === undefined ? entry : item.id;
     try {
-      const texErrors = await exportWith(app, dir, config, existingFilesWithSorting, exporter);
+      const texErrors = await exportWith(app, dir, config, existingFilesWithSorting, item);
       if (texErrors.length > 0) {
         app.log.warning(
-          `[Project] ${config.title} exported with ${exporter.name}, and TeX reported errors`,
+          `[Project] ${config.title} exported with ${name}, and TeX reported errors`,
           texErrors,
         );
-        withTexErrors.push({ name: exporter.name, errors: texErrors });
+        withTexErrors.push({ name, errors: texErrors });
       }
     } catch (err: unknown) {
       const cause = err instanceof Error ? err.message : String(err);
-      app.log.error(
-        `[Project] ${config.title} did not export with ${exporter.name}: ${cause}`,
-        err,
-      );
-      failed.push({ name: exporter.name, cause });
+      app.log.error(`[Project] ${config.title} did not export with ${name}: ${cause}`, err);
+      failed.push({ name, cause });
     }
   }
 
@@ -220,18 +220,6 @@ export async function exportProject(app: ProjectExportServices, arg: string): Pr
   return true;
 }
 
-/** An export command of the configuration. */
-type CustomCommand = ConfigOptions["export"]["customCommands"][number];
-
-/**
- * What one entry of the profile list of a Project exports with. The author
- * knows it by `name`.
- */
-type ProjectExporter =
-  | { kind: "command"; name: string; command: CustomCommand }
-  | { kind: "profile"; name: string; profile: PandocProfileMetadata }
-  | { kind: "absent"; name: string };
-
 /** An exporter of a Project that did not export, and why. */
 interface FailedExporter {
   name: string;
@@ -245,126 +233,69 @@ interface ExporterWithTexErrors {
 }
 
 /**
- * Finds the exporter of one entry of the profile list of a Project. An entry
- * is the command line of an export command or the name of a profile.
- */
-function exporterOf(
-  entry: string,
-  commands: CustomCommand[],
-  profiles: PandocProfileMetadata[],
-): ProjectExporter {
-  const command = commands.find((candidate) => candidate.command === entry);
-  if (command !== undefined) {
-    return { kind: "command", name: command.displayName, command };
-  }
-  const profile = profiles.find((candidate) => candidate.name === entry);
-  if (profile !== undefined) {
-    return { kind: "profile", name: profile.name, profile };
-  }
-  return { kind: "absent", name: entry };
-}
-
-/**
- * Exports a Project with one exporter. It rejects with the cause when the
- * exporter did not export.
+ * Exports a Project with one export item. It rejects with the cause when the
+ * item did not export.
  *
- * @param   {AppServiceContainer}  app       The ASC
- * @param   {DirDescriptor}        dir       The Project folder
- * @param   {ProjectSettings}      config    The Project settings
- * @param   {string[]}             files     The files of the Project, in order
- * @param   {ProjectExporter}      exporter  The exporter
+ * @param   {AppServiceContainer}        app     The ASC
+ * @param   {DirDescriptor}              dir     The Project folder
+ * @param   {ProjectSettings}            config  The Project settings
+ * @param   {string[]}                   files   The files of the Project, in order
+ * @param   {ExportItemEntry|undefined}  item    The item that the entry of the
+ *                                               Project names, if one has the name
  *
- * @return  {Promise<string[]>}              The errors that TeX reported for
- *                                           a PDF that the exporter still
- *                                           wrote; empty without such an error
+ * @return  {Promise<string[]>}                  The errors that TeX reported for
+ *                                               a PDF that the item still wrote;
+ *                                               empty without such an error
  */
 async function exportWith(
   app: ProjectExportServices,
   dir: DirDescriptor,
   config: ProjectSettings,
   files: string[],
-  exporter: ProjectExporter,
+  item: ExportItemEntry | undefined,
 ): Promise<string[]> {
-  if (exporter.kind === "absent") {
+  if (item === undefined) {
     throw new Error(trans("No profile and no export command has this name."));
   }
-  if (exporter.kind === "command") {
-    await exportUsingCustomCommand(app, dir, config, exporter.command);
-    return [];
+  if (item.isInvalid) {
+    throw new Error(item.reason);
   }
-  if (exporter.profile.isInvalid) {
-    throw new Error(exporter.profile.reason);
-  }
-  return await exportUsingProfile(app, dir, config, files, exporter.profile);
+  return await exportUsingItem(app, dir, config, files, item);
 }
 
 /**
- * Exports a given project using a custom command.
+ * Exports a Project with an item that can run.
  *
- * @param   {AppServiceContainer}  app      The ASC
- * @param   {DirDescriptor}        dir      The directory
- * @param   {ProjectSettings}      config   The project settings
- * @param   {CustomCommand}        command  The command
+ * @param   {AppServiceContainer}  app     The ASC
+ * @param   {DirDescriptor}        dir     The directory
+ * @param   {ProjectSettings}      config  The project settings
+ * @param   {string[]}             files   The files of the Project, in order
+ * @param   {ExportItem}           item    The export item
+ *
+ * @return  {Promise<string[]>}            The errors that TeX reported for the
+ *                                         PDF of the export; empty without
+ *                                         such an error
  */
-async function exportUsingCustomCommand(
-  app: ProjectExportServices,
-  dir: DirDescriptor,
-  config: ProjectSettings,
-  command: CustomCommand,
-): Promise<void> {
-  const task = app.lrt.registerTask(
-    trans('Exporting project "%s"', config.title),
-    trans("Exporting using custom command %s", command.displayName),
-  );
-  const stop = (err: Error): never => {
-    task.update({
-      title: trans('Could not export project "%s".', config.title),
-      info: trans("Export with command %s was unsuccessful: %s.", command.displayName, err.message),
-    });
-    task.endTask("error", err);
-    throw err;
-  };
-
-  app.log.info(`[Project] Exporting ${config.title} using custom command ${command.displayName}.`);
-  const output = await runShellCommand(command.command, [dir.path], dir.path).catch(stop);
-  if (output.code !== 0) {
-    stop(
-      new Error(
-        `${trans("The command ended with the exit code %s.", output.code)}\n${output.stderr.trim()}`,
-      ),
-    );
-  }
-  task.endTask("success");
-}
-
-/**
- * Exports a project using a profile.
- *
- * @param   {AppServiceContainer}    app      The ASC
- * @param   {DirDescriptor}          dir      The directory
- * @param   {ProjectSettings}        config   The project settings
- * @param   {string[]}               files    The files of the Project, in order
- * @param   {ValidPandocProfile}     profile  The profile
- *
- * @return  {Promise<string[]>}               The errors that TeX reported for
- *                                            the PDF of the export; empty
- *                                            without such an error
- */
-async function exportUsingProfile(
+async function exportUsingItem(
   app: ProjectExportServices,
   dir: DirDescriptor,
   config: ProjectSettings,
   files: string[],
-  profile: ValidPandocProfile,
+  item: ExportItem,
 ): Promise<string[]> {
+  const isCommand = item.engine.kind === "command";
   const task = app.lrt.registerTask(
     trans('Exporting project "%s"', config.title),
-    trans("Exporting using profile %s", profile.name),
+    isCommand
+      ? trans("Exporting using custom command %s", item.id)
+      : trans("Exporting using profile %s", item.id),
   );
   const stop = (err: Error): never => {
     task.update({
       title: trans('Could not export project "%s".', config.title),
-      info: trans("Export with profile %s was unsuccessful: %s.", profile.name, err.message),
+      info: isCommand
+        ? trans("Export with command %s was unsuccessful: %s.", item.id, err.message)
+        : trans("Export with profile %s was unsuccessful: %s.", item.id, err.message),
     });
     task.endTask("error", err);
     throw err;
@@ -375,21 +306,23 @@ async function exportUsingProfile(
   });
 
   const opt: ExporterOptions = {
-    profile,
+    item,
     sourceFiles,
     targetDirectory: dir.path,
     cwd: dir.path,
+    // A command gets the folder of the Project and runs in it.
+    commandSubject: { argument: dir.path, cwd: dir.path },
     defaultsOverride: {
       title: config.title,
       csl:
         typeof config.cslStyle === "string" && config.cslStyle.length > 0
           ? config.cslStyle
           : undefined,
-      template: templateOf(config, profile),
+      template: templateOf(config, item),
     },
   };
 
-  app.log.info(`[Project] Exporting ${config.title} using profile ${profile.name}.`);
+  app.log.info(`[Project] Exporting ${config.title} using ${item.id}.`);
   const result = await makeExport(
     opt,
     app.log,
@@ -401,13 +334,24 @@ async function exportUsingProfile(
   if (result.code !== 0) {
     stop(
       new Error(
-        `${trans("The export ended with the exit code %s.", result.code)}\n${result.stderr.join("\n").trim()}`,
+        `${
+          isCommand
+            ? trans("The command ended with the exit code %s.", result.code)
+            : trans("The export ended with the exit code %s.", result.code)
+        }\n${result.stderr.join("\n").trim()}`,
       ),
     );
   }
 
-  const readableFormat =
-    profile.writer in PANDOC_WRITERS ? PANDOC_WRITERS[profile.writer] : profile.writer;
+  const { targetFile } = result;
+  if (targetFile === null) {
+    // A command decides what it writes: the export names no file to open.
+    task.endTask("success");
+    return [];
+  }
+
+  const kind = exportItemKind(item);
+  const readableFormat = kind in PANDOC_WRITERS ? PANDOC_WRITERS[kind] : kind;
   task.update({
     title:
       result.texErrors.length > 0
@@ -415,7 +359,7 @@ async function exportUsingProfile(
         : trans('Project "%s" has been exported.', config.title),
     info: trans("Project has been exported to %s.", readableFormat),
     successInteraction: () => {
-      openShowingRefusal(app, result.targetFile);
+      openShowingRefusal(app, targetFile);
     },
   });
   task.endTask("success");
@@ -423,25 +367,31 @@ async function exportUsingProfile(
 }
 
 /**
- * The template of a Project for an export with a profile. The LaTeX template
- * is for each export that goes through TeX: the writers of `isTexWriter` and
- * the PDF recipe. The HTML template is for the writers of `isHtmlWriter`.
- * These are the families of the settings `export.latexTemplate` and
+ * The template of a Project for an export with an item. The LaTeX template
+ * is for each export that goes through TeX: the TeX writers of Pandoc and
+ * the PDF recipe. The HTML template is for the HTML writers of Pandoc. These
+ * are the families of the settings `export.latexTemplate` and
  * `export.htmlTemplate`.
  *
- * @param   {ProjectSettings}     config   The Project settings
- * @param   {ValidPandocProfile}  profile  The profile
+ * @param   {ProjectSettings}  config  The Project settings
+ * @param   {ExportItem}       item    The export item
  *
- * @return  {string|undefined}             The template, or undefined when the
- *                                         Project sets none for the profile
+ * @return  {string|undefined}         The template, or undefined when the
+ *                                     Project sets none for the item
  */
-function templateOf(config: ProjectSettings, profile: ValidPandocProfile): string | undefined {
+function templateOf(config: ProjectSettings, item: ExportItem): string | undefined {
+  const { engine } = item;
   const goesThroughTex =
-    profile.writer === "compile-pandoc" || isTexWriter(parseReaderWriter(profile.writer).name);
+    engine.kind === "recipe" ||
+    (engine.kind === "pandoc" && isTexWriter(parseReaderWriter(engine.writer).name));
   if (goesThroughTex && config.templates.tex !== "") {
     return config.templates.tex;
   }
-  if (isHtmlWriter(parseReaderWriter(profile.writer).name) && config.templates.html !== "") {
+  if (
+    engine.kind === "pandoc" &&
+    isHtmlWriter(parseReaderWriter(engine.writer).name) &&
+    config.templates.html !== ""
+  ) {
     return config.templates.html;
   }
   return undefined;
