@@ -260,7 +260,10 @@ describe("assembled app: a PDF export through the window (#47)", function () {
       `${LAUNCHER} [data-launcher-row][data-export-item=${JSON.stringify(PDF_PROFILE)}]`,
     );
     await profileRow.waitFor({ state: "visible", timeout: 10_000 });
-    assert.equal((await profileRow.innerText()).trim(), "PDF (compile-pandoc)");
+    assert.equal(
+      (await profileRow.locator(".chrome-row-label").innerText()).trim(),
+      "PDF (compile-pandoc)",
+    );
     screenshots.set("export-launcher.png", await activePage.screenshot());
     await profileRow.click();
     await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });

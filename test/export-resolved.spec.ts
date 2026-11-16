@@ -45,7 +45,10 @@ describe("The resolved form of an export", function () {
   it("gives the filter chain of a Pandoc item in the order that Pandoc runs it", function () {
     const resolved = resolveExport(
       exportItem("HTML.yaml", [HTML]),
-      { filters: ["citeproc", { type: "lua", path: "numbering.lua" }], template: undefined },
+      {
+        filters: [{ type: "citeproc" }, { type: "lua", path: "numbering.lua" }],
+        template: undefined,
+      },
       SETTINGS,
       NO_OVERRIDE,
       PANDOC_DIRECTORY,
@@ -143,6 +146,19 @@ describe("The resolved form of an export", function () {
 
     assert.deepEqual(mathOf(true), { owner: "application", pandocDirectory: PANDOC_DIRECTORY });
     assert.deepEqual(mathOf(false), { owner: "template", pandocDirectory: PANDOC_DIRECTORY });
+
+    // The headers of the application are for HTML and for TeX: a Word
+    // document gets what Pandoc makes of the math.
+    const [word] = resolveExport(
+      exportItem("Word.yaml", [{ name: "Word.yaml", reader: "markdown", writer: "docx" }]),
+      { filters: [], template: undefined },
+      SETTINGS,
+      NO_OVERRIDE,
+      PANDOC_DIRECTORY,
+      WIKILINK_FILTER,
+    ).stages;
+    assert.ok(word.kind === "pandoc");
+    assert.equal(word.math.owner, "pandoc");
   });
 
   it("puts the command of an item after its Pandoc stage", function () {

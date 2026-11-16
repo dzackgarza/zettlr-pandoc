@@ -333,6 +333,24 @@ they must be threaded through **four** layers:
   command runs through it as each other item does, gets the document or the
   folder of the Project as its one argument, and names no file that it wrote
   (`ExporterOutput.targetFile` is null).
+- **One place decides what an export runs, and a window shows it.**
+  `exporter/resolve-export.ts` decides the effective filter chain (the
+  wikilink filter of ~/.pandoc, the filters of the settings, the filters of
+  the defaults file), the effective template (the Project, then the defaults
+  file, then the setting for the family of the writer) and the effective
+  citation style (the Project, then the setting). `writeDefaults` calls
+  those functions, and `resolveExport` puts the same decisions into one
+  record (`ResolvedExport`) with each stage, who gives the math, and the
+  recipe or the command. The launcher shows the record on a line below each
+  export item and the Project window shows it in its list with the templates
+  and the style of the Project (`resolve-exports`,
+  `describeResolvedExport`); each export writes it to the log
+  (`[Export] <item> runs:`). `projectOverride` is what an export of a
+  Project sets for an item: the export and the window use it. A new
+  decision about what an export runs goes into this module, so that the
+  record of a window stays what runs. Proof: `test/export-resolved.spec.ts`,
+  `test/export-filters.spec.ts`, `e2e/window-header.spec.ts`,
+  `e2e/pdf-export.spec.ts`.
 - **The settings of an older version become items.** `migrateExportItems`
   (`config/migrate-export-items.ts`) makes items of `export.customCommands`
   (no base) and `export.scripts` (the base is the profile) when the

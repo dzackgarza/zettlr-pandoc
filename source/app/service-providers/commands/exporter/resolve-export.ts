@@ -83,6 +83,11 @@ export function filterName(entry: unknown): string {
   if (entry instanceof Object && "path" in entry && typeof entry.path === "string") {
     return entry.path;
   }
+  // A mapping without a path names a filter that Pandoc has itself
+  // (`type: citeproc`).
+  if (entry instanceof Object && "type" in entry && typeof entry.type === "string") {
+    return entry.type;
+  }
   return JSON.stringify(entry);
 }
 
@@ -161,6 +166,22 @@ export function projectOverride(item: ExportItem, project: ProjectExportSettings
   return { template: undefined, csl };
 }
 
+/**
+ * Who gives a Pandoc export with this writer its math. The headers of the
+ * application are for the HTML writers and the TeX writers
+ * (`injectPandocMathHeaders`).
+ */
+export function mathOwner(
+  writer: string,
+  settings: Pick<ExportSettings, "injectMathHeaders">,
+): "application" | "template" | "pandoc" {
+  const writerName = parseReaderWriter(writer).name;
+  if (!isHtmlWriter(writerName) && !isTexWriter(writerName)) {
+    return "pandoc";
+  }
+  return settings.injectMathHeaders ? "application" : "template";
+}
+
 /** What the defaults file of a Pandoc engine declares, as far as an export decides with it. */
 export interface DeclaredDefaults {
   /** The filters as the file declares them (`filterName`) */
@@ -182,10 +203,13 @@ export interface ResolvedPandocStage {
   /** The library of the settings, or undefined */
   citationLibrary: string | undefined;
   /**
-   * Who gives the export its math: the application adds its headers with
-   * the macros of the Pandoc directory, or the template owns the math.
+   * Who gives the export its math. The application adds its headers, with
+   * the macros of the Pandoc directory, to an HTML writer and to a TeX
+   * writer when the setting is on; with the setting off the template owns
+   * the math of those writers. Each other writer gets what Pandoc makes of
+   * the math itself.
    */
-  math: { owner: "application" | "template"; pandocDirectory: string };
+  math: { owner: "application" | "template" | "pandoc"; pandocDirectory: string };
 }
 
 /** One stage of an export, in the order that the stages run. */
@@ -269,10 +293,7 @@ export function resolveExport(
         template: effectiveTemplate(engine.writer, declared.template, override, settings),
         citationStyle: effectiveCitationStyle(override, settings),
         citationLibrary,
-        math: {
-          owner: settings.injectMathHeaders ? "application" : "template",
-          pandocDirectory,
-        },
+        math: { owner: mathOwner(engine.writer, settings), pandocDirectory },
       });
       if (post !== undefined) {
         stages.push({
@@ -326,11 +347,11 @@ export function describeResolvedExport(resolved: ResolvedExport): string[] {
             `citation style: ${baseName(stage.citationStyle.value)} (${sourceLabel(stage.citationStyle)})`,
           );
         }
-        lines.push(
-          stage.math.owner === "application"
-            ? `math: headers of the application, macros of ${stage.math.pandocDirectory}`
-            : "math: the template",
-        );
+        if (stage.math.owner === "application") {
+          lines.push(`math: headers of the application, macros of ${stage.math.pandocDirectory}`);
+        } else if (stage.math.owner === "template") {
+          lines.push("math: the template");
+        }
         break;
       case "recipe":
         lines.push(`recipe ${stage.recipe} of ~/.pandoc (its filters, its flags)`);
