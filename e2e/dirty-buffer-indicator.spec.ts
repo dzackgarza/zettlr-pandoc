@@ -219,7 +219,14 @@ for (const theme of ["light", "dark"] as const) {
       // tab, and the unsaved one is now neither active nor under the pointer.
       // That is the tab whose state has to survive on its own.
       await tabs.nth(2).click();
-      await page.locator('div[role="tab"].active').first().waitFor({ timeout: 10_000 });
+      // The tab that was active is active until the click takes effect, so
+      // the wait is on the clicked tab and not on any active tab.
+      await page.waitForFunction(
+        () =>
+          document.querySelectorAll('div[role="tab"]')[2]?.classList.contains("active") === true,
+        undefined,
+        { timeout: 10_000 },
+      );
       assert.equal(
         await dirtyTab.evaluate((el) => el.classList.contains("active")),
         false,

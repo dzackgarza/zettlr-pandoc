@@ -19,7 +19,7 @@
       {{ loadFailure }}
     </ZtrAdmonition>
     <div
-      v-show="loadFailure === null && currentTab === 0"
+      v-show="settingsLoaded && currentTab === 0"
       id="formats-panel"
       role="tabpanel"
     >
@@ -51,7 +51,7 @@
       />
     </div>
     <div
-      v-show="loadFailure === null && currentTab === 1"
+      v-show="settingsLoaded && currentTab === 1"
       id="profiles-panel"
       role="tabpanel"
     >
@@ -74,7 +74,7 @@
       />
     </div>
     <div
-      v-show="loadFailure === null && currentTab === 2"
+      v-show="settingsLoaded && currentTab === 2"
       id="files-panel"
       role="tabpanel"
     >
@@ -208,7 +208,7 @@ import { pathToUnix } from "source/common/util/path-to-unix";
 import { isInsideRoot } from "source/common/util/renderer-path-polyfill";
 import { useConfigStore, useWorkspaceStore } from "source/pinia";
 import getDocumentTitle from "source/win-main/util/get-document-title";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 const ipcRenderer = window.ipc;
 
@@ -270,7 +270,19 @@ const tabs: WindowTab[] = [
 const searchParams = new URLSearchParams(window.location.search);
 const dirPath = searchParams.get("directory") ?? "";
 
-const updateLock = ref(true); // To ensure these defaults aren't written before the properties have been loaded
+/**
+ * The window has the settings of the Project. Before that it draws no field:
+ * a change that the author made in a field would be lost when the settings
+ * arrive, and the placeholder settings must not be written.
+ */
+const settingsLoaded = ref(false);
+/** A save of the settings is on its way to the main process. */
+let saveInFlight = false;
+/**
+ * The author changed a setting while a save was on its way. That save
+ * carries the settings from before the change, so one more save follows it.
+ */
+let changedDuringSave = false;
 /** Why the window has no settings of the folder: it then takes no change. */
 const loadFailure = ref<string | null>(null);
 /** The export items of the application (`exporter/export-items.ts`). */
@@ -480,11 +492,15 @@ function refuseUpdate(message: string): void {
 }
 
 function updateProperties(): void {
-  if (updateLock.value) {
+  if (!settingsLoaded.value) {
+    return;
+  }
+  if (saveInFlight) {
+    changedDuringSave = true;
     return;
   }
 
-  updateLock.value = true;
+  saveInFlight = true;
 
   ipcRenderer
     .invoke("fsal", {
@@ -525,7 +541,11 @@ function updateProperties(): void {
     // The dispatcher shows the failure of the command in this window.
     .catch((err) => reportError(err))
     .finally(() => {
-      updateLock.value = false;
+      saveInFlight = false;
+      if (changedDuringSave) {
+        changedDuringSave = false;
+        updateProperties();
+      }
     });
 }
 
@@ -544,9 +564,12 @@ async function fetchProperties(): Promise<void> {
     // Apparently the user kept the window open and removed the project
     // state on this project. So let's close this window silently.
     ipcRenderer.send("window-controls", { command: "win-close" });
+    return;
   }
-  updateLock.value = false; // Now the properties are fetched, so the
-  // handlers can overwrite them.
+  // The watcher of the settings runs for this assignment before the next
+  // tick: the settings as they were read are no change, and nothing is sent.
+  await nextTick();
+  settingsLoaded.value = true;
 }
 
 /**
