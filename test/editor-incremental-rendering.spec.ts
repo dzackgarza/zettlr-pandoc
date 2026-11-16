@@ -71,6 +71,29 @@ function parsed(state: EditorState): EditorState {
   return state.update({}).state;
 }
 
+/**
+ * Runs a change while the time of the parser passes after one step.
+ *
+ * The parser of a state works for a set time after a change and goes on in
+ * the background. During `run`, each reading of the clock is a second later
+ * than the one before, so the parser stops after its first step, as on a
+ * machine under load. The tree of the changed state then ends before the
+ * document does.
+ */
+function withParserTimePassed<T>(run: () => T): T {
+  const realNow = Date.now;
+  let now = realNow.call(Date);
+  Date.now = () => {
+    now += 1000;
+    return now;
+  };
+  try {
+    return run();
+  } finally {
+    Date.now = realNow;
+  }
+}
+
 function countedEditor(doc: string, anchor: number): CountedEditor {
   let made = 0;
   const renderer = renderBlockWidgets(
@@ -143,29 +166,18 @@ describe("Block widgets follow the size of a change", function () {
   });
 
   it("keeps each widget below a change that the parser has not reached yet", function () {
-    // The parser of a state works for a set time after a change and goes on
-    // in the background. This clock passes that time after one step of the
-    // parser, as a machine under load does.
     const count = 400;
     const doc = paragraphs(count);
     const editor = countedEditor(doc, 0);
     const position = doc.indexOf("holds", doc.length / 2);
     editor.reset();
-    const realNow = Date.now;
-    let now = realNow.call(Date);
-    Date.now = () => {
-      now += 1000;
-      return now;
-    };
-    let typed: EditorState;
-    try {
-      typed = editor.state.update({
-        changes: { from: position, insert: "x" },
-        selection: { anchor: position + 1 },
-      }).state;
-    } finally {
-      Date.now = realNow;
-    }
+    const typed = withParserTimePassed(
+      () =>
+        editor.state.update({
+          changes: { from: position, insert: "x" },
+          selection: { anchor: position + 1 },
+        }).state,
+    );
 
     assert.ok(
       syntaxTree(typed).length < typed.doc.length,
@@ -397,7 +409,14 @@ describe("The production renderers", function () {
     }
   }
 
-  it("draw an edited document as a new editor draws it, after each of a sequence of edits and caret moves", function () {
+  /**
+   * Makes each of a sequence of edits and caret moves in one editor, and
+   * compares its drawing with that of a new editor of the same text after
+   * each step. With `parserBehind`, the parser of the edit stops after one
+   * step, as on a machine under load, and reaches the end of the document
+   * in a later update that changes no text.
+   */
+  function assertEditedEditorDrawsAsNewEditor(parserBehind: boolean): void {
     const at = (needle: string, state: EditorState): number => {
       const position = state.sliceDoc().indexOf(needle);
       assert.notEqual(position, -1, `the document must contain ${needle}`);
@@ -527,13 +546,25 @@ describe("The production renderers", function () {
     const edited = createEditor(AGGREGATE_DOC, EditorSelection.single(AGGREGATE_DOC.length));
     assert.ok(drawn(edited).length > 20, "the renderers must draw the document");
     for (const [step, spec] of steps) {
-      edited.dispatch(spec(edited.state));
+      if (parserBehind) {
+        withParserTimePassed(() => edited.dispatch(spec(edited.state)));
+      } else {
+        edited.dispatch(spec(edited.state));
+      }
       parsedView(edited);
       const fresh = createEditor(edited.state.sliceDoc(), edited.state.selection);
       assertSameDrawing(edited, fresh, step);
       fresh.destroy();
       views.pop();
     }
+  }
+
+  it("draw an edited document as a new editor draws it, after each of a sequence of edits and caret moves", function () {
+    assertEditedEditorDrawsAsNewEditor(false);
+  });
+
+  it("draw an edited document as a new editor draws it when the parser is behind after each edit", function () {
+    assertEditedEditorDrawsAsNewEditor(true);
   });
 
   it("stay in place for a configuration update that changes no renderer setting", function () {

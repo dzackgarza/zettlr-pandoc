@@ -23,7 +23,10 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-import { visitVisibleSyntaxNodes } from "@dzack/pandoc-editor/util/visible-syntax-nodes";
+import {
+  syntaxTreeChanged,
+  visitVisibleSyntaxNodes,
+} from "@dzack/pandoc-editor/util/visible-syntax-nodes";
 
 const footnoteLine = Decoration.line({ class: "cm-footnote-body" });
 const footnoteFirstLine = Decoration.line({ class: "cm-footnote-body cm-footnote-body-first" });
@@ -62,7 +65,7 @@ const footnoteBackgroundPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate): void {
-      if (update.docChanged || update.viewportChanged) {
+      if (update.docChanged || update.viewportChanged || syntaxTreeChanged(update)) {
         this.decorations = footnoteBodyDecorations(update.view);
       }
     }

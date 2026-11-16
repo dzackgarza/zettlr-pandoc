@@ -1,6 +1,6 @@
 import { EditorSelection, type Extension } from "@codemirror/state";
 import { EditorView, layer, RectangleMarker } from "@codemirror/view";
-import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
+import { syntaxTreeChanged, visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
 
 /**
  * A layer that renders a code background for both code blocks and block comments
@@ -11,7 +11,7 @@ export const codeblockBackground = layer({
   above: false, // Render below text
   class: "cm-codeBackgroundLayer",
   update(update) {
-    return update.docChanged || update.viewportChanged; // Return true to redraw markers
+    return update.docChanged || update.viewportChanged || syntaxTreeChanged(update); // Return true to redraw markers
   },
   markers(view) {
     const markers: RectangleMarker[] = [];
@@ -84,7 +84,7 @@ export const inlineCodeBackground = layer({
   above: false, // Render below text
   class: "cm-inlineCodeBackgroundLayer",
   update(update) {
-    return update.docChanged || update.viewportChanged; // Return true to redraw markers
+    return update.docChanged || update.viewportChanged || syntaxTreeChanged(update); // Return true to redraw markers
   },
   markers(view) {
     const markers: RectangleMarker[] = [];

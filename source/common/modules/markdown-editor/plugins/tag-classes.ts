@@ -22,7 +22,10 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-import { visitVisibleSyntaxNodes } from "@dzack/pandoc-editor/util/visible-syntax-nodes";
+import {
+  syntaxTreeChanged,
+  visitVisibleSyntaxNodes,
+} from "@dzack/pandoc-editor/util/visible-syntax-nodes";
 import cssSafeString from "source/common/util/css-safe-string";
 
 /**
@@ -74,7 +77,7 @@ const tagClassesPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate): void {
-      if (update.docChanged || update.viewportChanged) {
+      if (update.docChanged || update.viewportChanged || syntaxTreeChanged(update)) {
         this.decorations = retrieveTagClasses(update.view, this.tagDecorationCache);
       }
     }

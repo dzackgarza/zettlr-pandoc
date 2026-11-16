@@ -10,7 +10,7 @@
 
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
-import type { EditorView } from "@codemirror/view";
+import type { EditorView, ViewUpdate } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef, Tree } from "@lezer/common";
 
 interface VisibleSyntaxCacheEntry {
@@ -22,6 +22,18 @@ interface VisibleSyntaxCacheEntry {
 }
 
 const visibleSyntaxCache = new WeakMap<EditorView, VisibleSyntaxCacheEntry>();
+
+/**
+ * The syntax tree of the state changed in this update.
+ *
+ * The parser works for a set time after a change and goes on in the
+ * background, so the tree can end before the document does. The rest of the
+ * tree arrives in a later update that changes no text. A decoration that is
+ * made from the tree follows this, and not only a change of the document.
+ */
+export function syntaxTreeChanged(update: ViewUpdate): boolean {
+  return syntaxTree(update.startState) !== syntaxTree(update.state);
+}
 
 function rangesKey(view: EditorView): string {
   return view.visibleRanges.map(({ from, to }) => `${from}:${to}`).join("|");
