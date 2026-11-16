@@ -109,6 +109,12 @@ export interface ExporterOutput {
    * you can, for example, open it.
    */
   targetFile: string;
+  /**
+   * The errors that TeX reported for a PDF that the export still wrote, one
+   * entry for each error. Empty for an export without such an error, and for
+   * each export that does not run the PDF recipe.
+   */
+  texErrors: string[];
 }
 
 /**

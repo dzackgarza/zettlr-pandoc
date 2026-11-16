@@ -143,15 +143,26 @@ export async function exportProject(app: ProjectExportServices, arg: string): Pr
   // One exporter that stops does not stop the other ones. The author gets
   // one message for the whole export.
   const failed: FailedExporter[] = [];
+  const withTexErrors: ExporterWithTexErrors[] = [];
   for (const entry of config.profiles) {
     const exporter = exporterOf(entry, commands, profiles);
-    await exportWith(app, dir, config, existingFilesWithSorting, exporter).catch((err: Error) => {
+    try {
+      const texErrors = await exportWith(app, dir, config, existingFilesWithSorting, exporter);
+      if (texErrors.length > 0) {
+        app.log.warning(
+          `[Project] ${config.title} exported with ${exporter.name}, and TeX reported errors`,
+          texErrors,
+        );
+        withTexErrors.push({ name: exporter.name, errors: texErrors });
+      }
+    } catch (err: unknown) {
+      const cause = err instanceof Error ? err.message : String(err);
       app.log.error(
-        `[Project] ${config.title} did not export with ${exporter.name}: ${err.message}`,
+        `[Project] ${config.title} did not export with ${exporter.name}: ${cause}`,
         err,
       );
-      failed.push({ name: exporter.name, cause: err.message });
-    });
+      failed.push({ name: exporter.name, cause });
+    }
   }
 
   if (failed.length > 0) {
@@ -165,9 +176,33 @@ export async function exportProject(app: ProjectExportServices, arg: string): Pr
             config.title,
             names,
           ),
-      failed.map((exporter) => `${exporter.name}\n${exporter.cause}`).join("\n\n"),
+      [
+        ...failed.map((exporter) => `${exporter.name}\n${exporter.cause}`),
+        ...withTexErrors.map(
+          (exporter) =>
+            `${trans("%s: exported with TeX errors", exporter.name)}\n${exporter.errors.join("\n")}`,
+        ),
+      ].join("\n\n"),
     );
     return false;
+  }
+
+  if (withTexErrors.length > 0) {
+    // Each profile exported. The recipe wrote a PDF of chapters with a TeX
+    // error: the author gets the errors, and no message that reads as an
+    // export without a fault.
+    app.windows.showErrorMessage(
+      trans("The PDF has TeX errors"),
+      trans(
+        'TeX reported errors for the Project "%s" with %s. Each profile exported, and a PDF with errors can lack text. A line number is a line of the TeX file that the recipe built.',
+        config.title,
+        withTexErrors.map((exporter) => exporter.name).join(", "),
+      ),
+      withTexErrors
+        .map((exporter) => `${exporter.name}\n${exporter.errors.join("\n")}`)
+        .join("\n\n"),
+    );
+    return true;
   }
 
   const notificationShown = await showNativeNotification(
@@ -203,6 +238,12 @@ interface FailedExporter {
   cause: string;
 }
 
+/** An exporter of a Project that wrote a PDF for which TeX reported errors. */
+interface ExporterWithTexErrors {
+  name: string;
+  errors: string[];
+}
+
 /**
  * Finds the exporter of one entry of the profile list of a Project. An entry
  * is the command line of an export command or the name of a profile.
@@ -232,6 +273,10 @@ function exporterOf(
  * @param   {ProjectSettings}      config    The Project settings
  * @param   {string[]}             files     The files of the Project, in order
  * @param   {ProjectExporter}      exporter  The exporter
+ *
+ * @return  {Promise<string[]>}              The errors that TeX reported for
+ *                                           a PDF that the exporter still
+ *                                           wrote; empty without such an error
  */
 async function exportWith(
   app: ProjectExportServices,
@@ -239,18 +284,18 @@ async function exportWith(
   config: ProjectSettings,
   files: string[],
   exporter: ProjectExporter,
-): Promise<void> {
+): Promise<string[]> {
   if (exporter.kind === "absent") {
     throw new Error(trans("No profile and no export command has this name."));
   }
   if (exporter.kind === "command") {
     await exportUsingCustomCommand(app, dir, config, exporter.command);
-    return;
+    return [];
   }
   if (exporter.profile.isInvalid) {
     throw new Error(exporter.profile.reason);
   }
-  await exportUsingProfile(app, dir, config, files, exporter.profile);
+  return await exportUsingProfile(app, dir, config, files, exporter.profile);
 }
 
 /**
@@ -300,6 +345,10 @@ async function exportUsingCustomCommand(
  * @param   {ProjectSettings}        config   The project settings
  * @param   {string[]}               files    The files of the Project, in order
  * @param   {ValidPandocProfile}     profile  The profile
+ *
+ * @return  {Promise<string[]>}               The errors that TeX reported for
+ *                                            the PDF of the export; empty
+ *                                            without such an error
  */
 async function exportUsingProfile(
   app: ProjectExportServices,
@@ -307,7 +356,7 @@ async function exportUsingProfile(
   config: ProjectSettings,
   files: string[],
   profile: ValidPandocProfile,
-): Promise<void> {
+): Promise<string[]> {
   const task = app.lrt.registerTask(
     trans('Exporting project "%s"', config.title),
     trans("Exporting using profile %s", profile.name),
@@ -360,13 +409,17 @@ async function exportUsingProfile(
   const readableFormat =
     profile.writer in PANDOC_WRITERS ? PANDOC_WRITERS[profile.writer] : profile.writer;
   task.update({
-    title: trans('Project "%s" has been exported.', config.title),
+    title:
+      result.texErrors.length > 0
+        ? trans('Project "%s" has been exported with TeX errors.', config.title)
+        : trans('Project "%s" has been exported.', config.title),
     info: trans("Project has been exported to %s.", readableFormat),
     successInteraction: () => {
       openShowingRefusal(app, result.targetFile);
     },
   });
   task.endTask("success");
+  return result.texErrors;
 }
 
 /**

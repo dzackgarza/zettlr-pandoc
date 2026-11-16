@@ -38,6 +38,7 @@ export const plugin: ExporterPlugin = async function (
     stdout: [],
     stderr: [],
     targetFile: "",
+    texErrors: [],
   };
 
   if (sourceFiles.length > 1) {

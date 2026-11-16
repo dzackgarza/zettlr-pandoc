@@ -66,6 +66,7 @@ export async function runScriptExport(
       stdout: pandocOutput.stdout,
       stderr: pandocOutput.stderr,
       targetFile: intermediate,
+      texErrors: [],
     };
   }
 
@@ -79,5 +80,6 @@ export async function runScriptExport(
     stdout: pandocOutput.stdout.concat(splitLines(scriptOutput.stdout)),
     stderr: pandocOutput.stderr.concat(splitLines(scriptOutput.stderr)),
     targetFile: target,
+    texErrors: [],
   };
 }

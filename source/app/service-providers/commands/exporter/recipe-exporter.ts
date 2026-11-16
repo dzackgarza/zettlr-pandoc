@@ -28,6 +28,7 @@ import path from "path";
 import sanitize from "sanitize-filename";
 import { bibliographyFiles, documentBibliography } from "../../../util/document-bibliographies";
 import { splitLines } from "./split-lines";
+import { texErrorsOfRecipeRun } from "./tex-errors";
 import type { ExporterOptions, ExporterOutput, MinimalFile } from "./types";
 import { exportInputs, withWikilinkMap } from "./wikilink-map-file";
 
@@ -200,6 +201,7 @@ export async function runRecipeExport(
         produced === undefined ? ["compile-pandoc did not produce a PDF"] : [],
       ),
       targetFile: target,
+      texErrors: [],
     };
   }
 
@@ -209,10 +211,15 @@ export async function runRecipeExport(
   await fs.copyFile(produced, target);
   await fs.rm(produced, { force: true });
 
+  // The recipe keeps the PDF of a document with a TeX error and ends with
+  // exit code 0. The errors are in its output; the author gets them with
+  // the PDF.
+  const stdout = splitLines(result.stdout);
   return {
     code: 0,
-    stdout: splitLines(result.stdout),
+    stdout,
     stderr: splitLines(result.stderr),
     targetFile: target,
+    texErrors: texErrorsOfRecipeRun(stdout),
   };
 }

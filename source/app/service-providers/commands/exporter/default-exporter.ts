@@ -53,5 +53,6 @@ export const plugin: ExporterPlugin = async function (
     stdout: pandocOutput.stdout,
     stderr: pandocOutput.stderr,
     targetFile: target,
+    texErrors: [],
   };
 };

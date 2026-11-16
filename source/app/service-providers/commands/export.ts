@@ -293,7 +293,23 @@ async function runDocumentExport(
       app.log.info(`Successfully exported file to ${output.targetFile}`);
       const readableFormat =
         profile.writer in PANDOC_WRITERS ? PANDOC_WRITERS[profile.writer] : profile.writer;
-      showNativeNotification(trans("Exported to %s", readableFormat));
+      const hasTexErrors = output.texErrors.length > 0;
+      if (hasTexErrors) {
+        // The recipe wrote the PDF of a document with a TeX error. The author
+        // gets the errors, and no message that reads as an export without a
+        // fault.
+        app.log.warning(`[Export] TeX reported errors for ${output.targetFile}`, output.texErrors);
+        app.windows.showErrorMessage(
+          trans("The PDF has TeX errors"),
+          trans(
+            "TeX reported errors for %s. The export wrote the PDF, and the PDF can lack text. A line number is a line of the TeX file that the recipe built.",
+            path.basename(output.targetFile),
+          ),
+          output.texErrors.join("\n"),
+        );
+      } else {
+        showNativeNotification(trans("Exported to %s", readableFormat));
+      }
       // The export is done when the file is written. An open of the file
       // that the desktop refuses is a message of its own, and the command
       // does not wait for the application that shows the file.
@@ -304,7 +320,9 @@ async function runDocumentExport(
         });
       };
       task.update({
-        title: trans("File %s has been exported", path.basename(file)),
+        title: hasTexErrors
+          ? trans("File %s has been exported with TeX errors", path.basename(file))
+          : trans("File %s has been exported", path.basename(file)),
         info: trans("File has been exported to %s", readableFormat),
         successInteraction: openExportedFile,
       });
