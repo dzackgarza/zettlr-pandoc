@@ -102,6 +102,7 @@ import { renderers } from "./renderers";
 import { tikzEditSessions } from "./tikz-edit-client";
 import { filePreview, footnoteHover, urlHover } from "./tooltips";
 import { citationTooltips } from "./tooltips/citations";
+import { closeHoverOutsideEditor } from "./tooltips/close-hover-outside-editor";
 import { referenceTooltips } from "./tooltips/references";
 import { configField, type EditorConfiguration } from "./util/configuration";
 
@@ -382,6 +383,7 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
     filePreview,
     citationTooltips,
     referenceTooltips,
+    closeHoverOutsideEditor,
     footnoteBackground, // Tint the lines that belong to a footnote body
     defaultContextMenu, // A default context menu
     tagClasses(), // Apply a custom class to each tag so that users can style them (#4589)
