@@ -52,8 +52,12 @@ import LongRunningTaskProvider from "source/app/service-providers/long-running-t
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { bootDocumentManager } from "./documents-provider-seam";
 import { bootFsal } from "./fsal-seam";
-import { home, userData } from "./headless-electron-harness.cjs";
-import { installRecordingJust, type RecordingJust } from "./recording-just";
+import { home, notifications, userData } from "./headless-electron-harness.cjs";
+import {
+  installRecordingJust,
+  RECIPE_OUTPUT_WITH_TEX_ERROR,
+  type RecordingJust,
+} from "./recording-just";
 import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 /** A document with the LaTeX delimiters of math, which the editor reads as math. */
@@ -316,6 +320,34 @@ describe("Export of one document", function () {
       cwd: root,
       argv: ["--justfile", RECIPE_FILE, "compile-pandoc", "Lattices.md", "Lattices"],
     });
+  });
+
+  it("tells the author of a PDF without a TeX error that it is exported", async function () {
+    notifications.shown.length = 0;
+
+    await exportDocument(services, { file: document, profile: PDF, exportTo: "cwd" });
+
+    assert.deepEqual(errorWindows, []);
+    assert.equal(notifications.shown.length, 1, "one notification of the export");
+  });
+
+  it("shows the TeX errors of a PDF that the recipe still wrote (#47)", async function () {
+    notifications.shown.length = 0;
+    await just.print(RECIPE_OUTPUT_WITH_TEX_ERROR);
+
+    await exportDocument(services, { file: document, profile: PDF, exportTo: "cwd" });
+
+    assert.equal(existsSync(path.join(root, "Lattices.pdf")), true, "the export wrote the PDF");
+    assert.deepEqual(errorWindows, [
+      {
+        title: "The PDF has TeX errors",
+        message:
+          "TeX reported errors for Lattices.pdf. The export wrote the PDF, and the PDF can lack text. A line number is a line of the TeX file that the recipe built.",
+        // latexmk ran TeX two times; the error is shown one time.
+        contents: "Undefined control sequence. l.117 \\undefinedmacro",
+      },
+    ]);
+    assert.deepEqual(notifications.shown, [], "no message says that the export has no fault");
   });
 
   it("reads a declared working directory from the folder of the document", async function () {

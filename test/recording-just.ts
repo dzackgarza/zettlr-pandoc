@@ -24,6 +24,29 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+/**
+ * What the recipe prints for a PDF that TeX wrote with an error: the lines of
+ * a run of `compile-pandoc` on a document with `\\undefinedmacro{genus}`.
+ * latexmk runs TeX two times and the recipe ends with its own report
+ * (`_compile-pandoc-latexmk`).
+ */
+export const RECIPE_OUTPUT_WITH_TEX_ERROR = [
+  "Latexmk: applying rule 'pdflatex'...",
+  "[1{/opt/texlive/texmf-var/fonts/map/pdftex/updmap/pdftex.map}]",
+  "! Undefined control sequence.",
+  "l.117 \\undefinedmacro",
+  "                     {genus}",
+  "[2]",
+  "Latexmk: applying rule 'pdflatex'...",
+  "! Undefined control sequence.",
+  "l.117 \\undefinedmacro",
+  "                     {genus}",
+  "[2]",
+  "Latexmk: Errors, in force_mode: so I tried finishing targets",
+  "⚠️  latexmk exited 12 but PDF was produced — check warnings above",
+  "",
+].join("\n");
+
 /** One run of the recipe runner. */
 export interface RecipeRun {
   /** The working directory of the run. */
@@ -41,7 +64,9 @@ export interface RecordingJust {
   inputText: () => Promise<string>;
   /** The wikilink map that the last `compile-pandoc` run got, as JSON text. */
   wikilinkMap: () => Promise<string>;
-  /** Drops the recorded runs. */
+  /** Makes each run until the next `forget` print this text on its standard output. */
+  print: (text: string) => Promise<void>;
+  /** Drops the recorded runs and the text of `print`. */
   forget: () => Promise<void>;
   /** Gives the process its PATH back and removes the runner. */
   remove: () => Promise<void>;
@@ -52,7 +77,8 @@ export interface RecordingJust {
  * arguments, each ended by NUL, then one RS. The title is the fourth argument
  * of `compile-pandoc-project` and the fifth of `compile-pandoc`. The input of
  * `compile-pandoc` is its fourth argument, a path that the recipe reads from
- * its working directory.
+ * its working directory. A run prints the text of `output.txt` when a spec
+ * wrote one.
  */
 const RUNNER = [
   "#!/bin/sh",
@@ -65,6 +91,7 @@ const RUNNER = [
   '    cat "$PANDOC_WIKILINKS" > "$(dirname "$0")/wikilinks.json"',
   "    ;;",
   "esac",
+  'if [ -f "$(dirname "$0")/output.txt" ]; then cat "$(dirname "$0")/output.txt"; fi',
   ': > "$PWD/$title-01-01-26.pdf"',
   "",
 ].join("\n");
@@ -78,6 +105,7 @@ export async function installRecordingJust(): Promise<RecordingJust> {
 
   const directory = await mkdtemp(path.join(tmpdir(), "zettlr-recording-just-"));
   const recordFile = path.join(directory, "record.bin");
+  const outputFile = path.join(directory, "output.txt");
   const runner = path.join(directory, "just");
   await writeFile(runner, RUNNER);
   await chmod(runner, 0o755);
@@ -104,8 +132,12 @@ export async function installRecordingJust(): Promise<RecordingJust> {
     },
     inputText: async () => await readFile(path.join(directory, "input.md"), "utf8"),
     wikilinkMap: async () => await readFile(path.join(directory, "wikilinks.json"), "utf8"),
+    print: async (text: string) => {
+      await writeFile(outputFile, text);
+    },
     forget: async () => {
       await writeFile(recordFile, "");
+      await rm(outputFile, { force: true });
     },
     remove: async () => {
       process.env.PATH = pathOfTheRun;

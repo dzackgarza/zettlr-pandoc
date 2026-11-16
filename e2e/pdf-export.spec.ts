@@ -15,7 +15,8 @@
  *              text of each PDF, so the chapters of the Project are proven
  *              in the order of its settings. A Project whose template the
  *              recipe does not have shows one error window with the cause
- *              and leaves no PDF (#47).
+ *              and leaves no PDF. A document with a TeX error gets its PDF
+ *              and one error window with the errors of TeX (#47).
  *
  * END HEADER
  */
@@ -53,6 +54,11 @@ const NOTE = `# Lattices\n\n${NOTE_SENTENCE}\n`;
 const FIRST_CHAPTER = { name: "zeta.md", sentence: "The first chapter is about the genus." };
 const SECOND_CHAPTER = { name: "alpha.md", sentence: "The second chapter is about the rank." };
 const UNKNOWN_TEMPLATE = "no-such-template";
+// A macro that TeX does not have. The recipe keeps the PDF of a document
+// with a TeX error (latexmk in force mode) and ends with exit code 0.
+const UNKNOWN_MACRO = "\\undefinedmacro";
+const AFTER_MACRO_SENTENCE = "The discriminant form decides the genus.";
+const TEX_ERROR_NOTE = `# Genus\n\n${UNKNOWN_MACRO}{genus}\n\n${AFTER_MACRO_SENTENCE}\n`;
 
 /** The pages of the error windows of the application. */
 async function errorWindows(browser: Browser): Promise<Page[]> {
@@ -91,6 +97,7 @@ describe("assembled app: a PDF export through the window (#47)", function () {
   let fixtureRoot: string | undefined;
   let workspace = "";
   let notePath = "";
+  let texErrorNote = "";
   let book = "";
   let brokenBook = "";
   let opened = "";
@@ -163,6 +170,8 @@ describe("assembled app: a PDF export through the window (#47)", function () {
     fixtureRoot = fixture.root;
     notePath = fixture.documentPath;
     workspace = path.dirname(notePath);
+    texErrorNote = path.join(workspace, "tex-error.md");
+    await writeFile(texErrorNote, TEX_ERROR_NOTE, "utf8");
     book = await project("book", "Lattice book", "");
     brokenBook = await project("broken-book", "Broken book", UNKNOWN_TEMPLATE);
 
@@ -307,6 +316,63 @@ describe("assembled app: a PDF export through the window (#47)", function () {
     assert.ok(
       entries[0].includes(`templates/${UNKNOWN_TEMPLATE}.latex`),
       `the log entry has the cause of the recipe:\n${entries[0]}`,
+    );
+
+    await clickToClose(errorPage, errorPage.locator("button").first());
+  });
+
+  it("shows the TeX errors of a document whose PDF the recipe still wrote", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const runningBrowser = requireInitialized(browser, "The application must be running");
+    const exported = path.join(workspace, "tex-error.pdf");
+
+    await activePage
+      .locator(`#file-manager .tree-item[data-path=${JSON.stringify(texErrorNote)}] .display-text`)
+      .first()
+      .click();
+    await activePage
+      .locator('.editor-pane [role="tab"].active', { hasText: "Genus" })
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await activePage.evaluate(() => {
+      window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu.export" });
+    });
+    const profileRow = activePage.locator(
+      `${LAUNCHER} [data-launcher-row][data-export-profile=${JSON.stringify(PDF_PROFILE)}]`,
+    );
+    await profileRow.waitFor({ state: "visible", timeout: 10_000 });
+    await profileRow.click();
+
+    let shown: Page[] = [];
+    await waitUntil(
+      async () => {
+        shown = await errorWindows(runningBrowser);
+        return shown.length > 0;
+      },
+      "the error window of the TeX errors",
+      60_000,
+    );
+    assert.equal(shown.length, 1, "one error window is shown");
+    const errorPage = shown[0];
+    screenshots.set("tex-errors.png", await errorPage.screenshot());
+    const text = await errorPage.locator("#error").innerText();
+    assert.ok(
+      text.includes("TeX reported errors for tex-error.pdf."),
+      `the error window names the PDF:\n${text}`,
+    );
+    assert.ok(
+      text.includes("Undefined control sequence.") && text.includes(UNKNOWN_MACRO),
+      `the error window has the error of TeX and the macro:\n${text}`,
+    );
+
+    // The recipe wrote the PDF, and the application gives it to the desktop.
+    await waitUntil(
+      async () => (await openedPaths()).includes(exported),
+      `the desktop to get ${exported}`,
+      20_000,
+    );
+    assert.ok(
+      (await pdfText(exported)).includes(AFTER_MACRO_SENTENCE),
+      "the PDF holds the sentence after the macro",
     );
 
     await clickToClose(errorPage, errorPage.locator("button").first());

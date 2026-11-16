@@ -34,7 +34,11 @@ import LongRunningTaskProvider from "source/app/service-providers/long-running-t
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { bootFilteredFsal, bootFsal } from "./fsal-seam";
 import { home, messageBoxes, notifications, userData } from "./headless-electron-harness.cjs";
-import { installRecordingJust, type RecordingJust } from "./recording-just";
+import {
+  installRecordingJust,
+  RECIPE_OUTPUT_WITH_TEX_ERROR,
+  type RecordingJust,
+} from "./recording-just";
 import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 const CHAPTER = "# Genus\n\nTwo forms of one genus.\n";
@@ -116,6 +120,7 @@ describe("Project export", function () {
   let oneFailed: string;
   let twoFailed: string;
   let allExported: string;
+  let failedBesidePdf: string;
   let apostrophe: string;
   let template: string;
   let pdfOfChapters: string;
@@ -150,6 +155,12 @@ describe("Project export", function () {
     });
     allExported = await project("all-exported", {
       profiles: [listing],
+      chapters,
+      texTemplate: "",
+      cslStyle: "",
+    });
+    failedBesidePdf = await project("failed-beside-pdf", {
+      profiles: [noEngine, "PDF.yaml"],
       chapters,
       texTemplate: "",
       cslStyle: "",
@@ -393,6 +404,42 @@ describe("Project export", function () {
           "two.md",
         ],
       ]);
+    });
+
+    it("shows the TeX errors of a PDF that the recipe still wrote (#47)", async function () {
+      await just.print(RECIPE_OUTPUT_WITH_TEX_ERROR);
+
+      const exported = await exportProject(services, pdfOfChapters);
+
+      assert.equal(exported, true, "each profile exported");
+      assert.equal(existsSync(path.join(pdfOfChapters, "pdf-of-chapters.pdf")), true);
+      assert.deepEqual(errorWindows, [
+        {
+          title: "The PDF has TeX errors",
+          message:
+            'TeX reported errors for the Project "pdf-of-chapters" with PDF.yaml. Each profile exported, and a PDF with errors can lack text. A line number is a line of the TeX file that the recipe built.',
+          contents: "PDF.yaml\nUndefined control sequence. l.117 \\undefinedmacro",
+        },
+      ]);
+      assert.deepEqual(notifications.shown, [], "no message says that the export has no fault");
+    });
+
+    it("names a profile with TeX errors in the one message of a profile that did not export (#47)", async function () {
+      await just.print(RECIPE_OUTPUT_WITH_TEX_ERROR);
+
+      const exported = await exportProject(services, failedBesidePdf);
+
+      assert.equal(exported, false, "one profile did not export");
+      assert.equal(errorWindows.length, 1, "one export opens one error window");
+      const [shown] = errorWindows;
+      assert.equal(
+        shown.message,
+        'Could not export the Project "failed-beside-pdf" with First command. The other profiles exported.',
+      );
+      assert.equal(
+        shown.contents,
+        `First command\nThe command ended with the exit code 3.\n${NO_ENGINE}\n\nPDF.yaml: exported with TeX errors\nUndefined control sequence. l.117 \\undefinedmacro`,
+      );
     });
 
     it("runs the recipe for a PDF when the profiles of the author hold an old PDF.yaml", async function () {
