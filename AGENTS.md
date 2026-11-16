@@ -1846,6 +1846,16 @@ of an isolated instance are in the first comment of #132.
   reason, and `FormBuilder` shows it under the field (`refusals`) until the
   field gives a value that the rule accepts. Code that writes a setting it
   built itself calls `setConfigValue` or `setConfigFromForm`, which throw.
+- **A setting that a window writes is plain data.** An item of the
+  configuration store (`useConfigStore().config`) is a reactive proxy, and
+  the IPC of the setting cannot clone a proxy ("An object could not be
+  cloned"). A new value that keeps items of the old one (an array of
+  objects) builds each item again from its fields; an array of strings needs
+  nothing. The export launcher remembers the profile of each document this
+  way (`rememberExportProfile`, `launcher/CommandLauncher.vue`): with the
+  items of the store, each export after the first one of another document
+  stopped before it started and showed nothing. Proof:
+  `e2e/pdf-export.spec.ts` ("exports a second document from the launcher").
 - **A mode of a window writes no setting.** Distraction-free mode is a
   state of one window (`distractionFreeMode`, `pinia/window-state-store.ts`):
   it hides the panes and leaves `window.fileManagerVisible` and
