@@ -453,4 +453,85 @@ describe("TikZ microlocal live preview in the assembled app", function () {
       `the renderer emitted errors: ${JSON.stringify(rendererEvents)}`,
     );
   });
+
+  it("shows the figure in full screen on its button and leaves it on Escape (#47)", async function () {
+    assert.ok(page !== undefined, "the main editor page must be attached");
+    const preview = page.locator(".tikz-live-preview");
+    await preview.waitFor({ state: "visible", timeout: 20_000 });
+    const expand = preview.locator(".tikz-live-preview-expand");
+    assert.strictEqual(await expand.getAttribute("aria-label"), "Open fullscreen preview");
+
+    await expand.click();
+
+    await page
+      .locator(".tikz-live-preview.fullscreen")
+      .waitFor({ state: "visible", timeout: 10_000 });
+    assert.strictEqual(await expand.getAttribute("aria-label"), "Exit fullscreen preview");
+    const size = await preview.boundingBox();
+    const viewport = await page.evaluate(() => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }));
+    assert.ok(size !== null, "the preview has a place in the window");
+    assert.ok(
+      size.width >= viewport.width * 0.9 && size.height >= viewport.height * 0.9,
+      `the preview fills the window: ${JSON.stringify(size)} of ${JSON.stringify(viewport)}`,
+    );
+
+    await page.keyboard.press("Escape");
+
+    await page
+      .locator(".tikz-live-preview.fullscreen")
+      .waitFor({ state: "detached", timeout: 10_000 });
+    await preview.waitFor({ state: "visible", timeout: 10_000 });
+    assert.strictEqual(await expand.getAttribute("aria-label"), "Open fullscreen preview");
+  });
+
+  it("renders the figure again when the author types in its source (#47)", async function () {
+    assert.ok(page !== undefined, "the main editor page must be attached");
+    const preview = page.locator(".tikz-live-preview");
+    const figure = async (): Promise<string> =>
+      await preview.evaluate((pane) => {
+        const drawn = pane.querySelector("svg, img, object");
+        if (drawn === null) {
+          throw new Error("the preview shows no figure");
+        }
+        return drawn.outerHTML;
+      });
+    const before = await figure();
+
+    // The author clicks into the source of the commutative diagram and types
+    // one more arrow at the end of its row.
+    const row = page.locator(".cm-content .cm-line", { hasText: "& B" }).first();
+    await row.waitFor({ state: "visible", timeout: 10_000 });
+    await row.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(' \\arrow[r, "g"] & C', { delay: 20 });
+
+    await page.waitForFunction(
+      (earlier) => {
+        const pane = document.querySelector(".tikz-live-preview");
+        const drawn = pane?.querySelector("svg, img, object");
+        return (
+          pane?.querySelector(".tikz-live-preview-status")?.textContent?.includes("Up to date") ===
+            true &&
+          drawn !== null &&
+          drawn !== undefined &&
+          drawn.outerHTML !== earlier
+        );
+      },
+      before,
+      { timeout: 90_000 },
+    );
+    assert.strictEqual(
+      await preview.locator(".tikz-live-preview-error").count(),
+      0,
+      "the typed source compiles",
+    );
+    assert.deepStrictEqual(
+      rendererEvents,
+      [],
+      `the renderer emitted errors: ${JSON.stringify(rendererEvents)}`,
+    );
+  });
 });
