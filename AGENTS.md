@@ -1096,9 +1096,21 @@ of an isolated instance are in the first comment of #132.
 - **A failed test keeps its windows.** The hook after each test takes a
   screenshot of each open window when the test failed; `preserveArtifacts`
   writes them as `failure-<test>-window-<n>.png` with `failures.txt`.
-- **No exclusive test passes.** mocha runs with `--forbid-only` in the lanes
-  runner and in `scripts/run-unit-tests.sh`: a file with `.only` fails.
-  Proof of the three rules: `test/e2e-run-lanes.spec.ts`.
+- **A spec that connects itself is under the gate too.** `observeRenderer`
+  puts the array of its first page under the gate, and `observeBrowser`
+  observes each window of a connection: a spec that calls
+  `chromium.connectOverCDP` itself calls one of them for its connection.
+- **Each file keeps what its failed tests showed.** A spec that calls
+  `preserveArtifacts` gets the screenshots, `failures.txt` and, when a test
+  failed, the whole fixture (`fixture/`: the configuration, the workspace,
+  the logs) in its artifacts. A file that keeps no artifacts itself gets
+  `/tmp/zettlr-<file>-failures-e2e-latest` from the root hooks. The hosted
+  run uploads `/tmp/zettlr-*-e2e-latest`.
+- **No exclusive and no skipped test passes.** mocha runs with
+  `--forbid-only` in the lanes runner and in `scripts/run-unit-tests.sh`,
+  and with `--forbid-pending` in the lanes runner: a file with `.only`, with
+  a skipped test or with a test without a body fails. Proof of these rules:
+  `test/e2e-run-lanes.spec.ts`.
 - `just test-e2e` and `just test-e2e-file <spec>` run the specs of `e2e/`.
   The recipes first make the packaged build of the tree when it is not
   current (`_current-package`: `verify-build.py --if-stale`), one build for

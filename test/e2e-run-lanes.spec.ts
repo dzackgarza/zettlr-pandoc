@@ -180,6 +180,27 @@ it("passes while a window reports the error that the test provokes", function ()
 });
 `;
 
+/** A file with a skipped test: the run would pass with one test less. */
+const SKIPPED_SPEC_SOURCE = `
+it("passes", function () {});
+it.skip("is skipped", function () {});
+`;
+
+/**
+ * A file with a failed test that keeps no artifacts itself. Its app has no
+ * open window, so the record of the failure is the title of the test.
+ */
+const FAILED_SPEC_SOURCE = `
+const path = require("node:path");
+const { watchRendererEvents } = require(path.join(process.cwd(), "e2e", "support", "electron-app.ts"));
+
+watchRendererEvents([], () => []);
+
+it("fails without artifacts of its own", function () {
+  throw new Error("the test failed");
+});
+`;
+
 /** A file with an exclusive test: its second test does not run. */
 const EXCLUSIVE_SPEC_SOURCE = `
 it.only("passes", function () {});
@@ -364,6 +385,36 @@ describe("E2E lanes runner", function () {
 
     assert.notEqual(run.status, 0, `the run fails: ${run.stdout}${run.stderr}`);
     assert.match(run.stdout, /\.only/, `the run names the exclusive test: ${run.stdout}`);
+  });
+
+  it("fails a file with a skipped test (#47)", async function () {
+    const file = path.join(directory, "has-a-skipped-test.cjs");
+    await writeFile(file, SKIPPED_SPEC_SOURCE, "utf8");
+
+    const run = runLanes([file], 60, 60_000);
+
+    assert.notEqual(run.status, 0, `the run fails: ${run.stdout}${run.stderr}`);
+    assert.match(
+      run.stdout,
+      /Pending test forbidden/,
+      `the run names the skipped test: ${run.stdout}`,
+    );
+  });
+
+  it("keeps the record of a failed test of a file that keeps no artifacts (#47)", async function () {
+    const file = path.join(directory, "has-a-failed-test.cjs");
+    await writeFile(file, FAILED_SPEC_SOURCE, "utf8");
+    const artifacts = path.join(tmpdir(), "zettlr-has-a-failed-test.cjs-failures-e2e-latest");
+    await rm(artifacts, { recursive: true, force: true });
+
+    const run = runLanes([file], 60, 60_000);
+
+    assert.notEqual(run.status, 0, `the run fails: ${run.stdout}${run.stderr}`);
+    assert.equal(
+      await readFile(path.join(artifacts, "failures.txt"), "utf8"),
+      "test 1: fails without artifacts of its own\n",
+    );
+    await rm(artifacts, { recursive: true, force: true });
   });
 
   it("gives the files of a run a session bus without services", async function () {

@@ -317,6 +317,47 @@ export async function readAppLog(fixtureRoot: string): Promise<string> {
   ).join("\n");
 }
 
+/** Whether the windows of the failed tests of the file are written to its artifacts. */
+let failuresWritten = false;
+
+/**
+ * Writes the windows at each failed test of the file (`captureFailedTest`)
+ * and `failures.txt` into a directory of artifacts.
+ */
+async function writeFailures(artifactDirectory: string): Promise<void> {
+  for (const [filename, screenshot] of failureScreenshots) {
+    await writeFile(path.join(artifactDirectory, filename), screenshot);
+  }
+  if (failureNotes.length > 0) {
+    await writeFile(
+      path.join(artifactDirectory, "failures.txt"),
+      `${failureNotes.join("\n")}\n`,
+      "utf8",
+    );
+  }
+  failuresWritten = true;
+}
+
+/**
+ * Writes the windows of the failed tests of a file that keeps no artifacts
+ * itself: a spec that does not call `preserveArtifacts` still leaves what
+ * its failed tests showed, in the directory that the hosted run uploads
+ * (`/tmp/zettlr-*-e2e-latest`). The root hooks call this after the last
+ * test of the file.
+ *
+ * @param   {string}  specFile  The path of the spec file
+ */
+export async function preserveUnwrittenFailures(specFile: string): Promise<void> {
+  if (failuresWritten || failureNotes.length === 0) {
+    return;
+  }
+  const name = path.basename(specFile).replace(/\.spec\.[cm]?[jt]s$/, "");
+  const artifactDirectory = path.join(tmpdir(), `zettlr-${name}-failures-e2e-latest`);
+  await rm(artifactDirectory, { recursive: true, force: true });
+  await mkdir(artifactDirectory, { recursive: true });
+  await writeFailures(artifactDirectory);
+}
+
 export async function preserveArtifacts(
   artifactDirectory: string,
   fixtureRoot: string | undefined,
@@ -335,16 +376,11 @@ export async function preserveArtifacts(
   for (const [filename, screenshot] of screenshots) {
     await writeFile(path.join(artifactDirectory, filename), screenshot);
   }
-  // The windows at each failed test of the file (`captureFailedTest`).
-  for (const [filename, screenshot] of failureScreenshots) {
-    await writeFile(path.join(artifactDirectory, filename), screenshot);
-  }
-  if (failureNotes.length > 0) {
-    await writeFile(
-      path.join(artifactDirectory, "failures.txt"),
-      `${failureNotes.join("\n")}\n`,
-      "utf8",
-    );
+  await writeFailures(artifactDirectory);
+  // The files of the fixture as a failed test left them: the document, the
+  // workspace and the configuration say what the app worked on.
+  if (failureNotes.length > 0 && fixtureRoot !== undefined) {
+    await cp(fixtureRoot, path.join(artifactDirectory, "fixture"), { recursive: true });
   }
 
   if (fixtureRoot !== undefined) {
@@ -827,7 +863,24 @@ export async function captureFailedTest(title: string): Promise<void> {
   }
 }
 
+/** The pages whose events go to one array of renderer events. */
+const observedPages = new Map<string[], Set<Page>>();
+
+/**
+ * Collects the errors of a window in `rendererEvents`: console errors,
+ * uncaught exceptions and dialogs. The first page of an array puts the array
+ * under the renderer gate of the file (`watchRendererEvents`), so a spec
+ * that connects to the app itself is under the gate as `attach` is.
+ */
 export function observeRenderer(page: Page, rendererEvents: string[]): void {
+  let pages = observedPages.get(rendererEvents);
+  if (pages === undefined) {
+    const observed = new Set<Page>();
+    pages = observed;
+    observedPages.set(rendererEvents, observed);
+    watchRendererEvents(rendererEvents, () => [...observed].filter((open) => !open.isClosed()));
+  }
+  pages.add(page);
   page.on("console", (message) => {
     if (message.type() === "error") {
       // A resource that did not load is an error without the resource in its
@@ -849,6 +902,18 @@ export function observeRenderer(page: Page, rendererEvents: string[]): void {
       rendererEvents.push(`dialog-dismiss-error: ${String(error)}`);
     });
   });
+}
+
+/**
+ * Collects the errors of each window of a connected app, the open ones and
+ * each later one (`observeRenderer`). A spec that connects to the app itself
+ * calls this for its connection.
+ */
+export function observeBrowser(browser: Browser, rendererEvents: string[]): void {
+  for (const context of browser.contexts()) {
+    context.pages().forEach((page) => observeRenderer(page, rendererEvents));
+    context.on("page", (page) => observeRenderer(page, rendererEvents));
+  }
 }
 
 /**
@@ -904,19 +969,7 @@ export async function attach(
     await waitForApplicationBoot(appProcess, () => processOutput, timeoutMs);
     const connectedBrowser = await chromium.connectOverCDP(devToolsUrl);
     browser = connectedBrowser;
-    for (const context of connectedBrowser.contexts()) {
-      context.pages().forEach((page) => observeRenderer(page, rendererEvents));
-      context.on("page", (page) => observeRenderer(page, rendererEvents));
-    }
-    watchRendererEvents(rendererEvents, () =>
-      connectedBrowser.isConnected()
-        ? connectedBrowser
-            .contexts()
-            .flatMap((context) => context.pages())
-            .filter((page) => !page.isClosed())
-        : [],
-    );
-
+    observeBrowser(connectedBrowser, rendererEvents);
     attached = true;
     return {
       appProcess,

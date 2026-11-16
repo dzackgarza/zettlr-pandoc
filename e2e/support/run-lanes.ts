@@ -53,7 +53,8 @@ const LANES = 3;
 /**
  * The arguments of mocha for one spec file. `--forbid-only` fails a file
  * with an exclusive test (`.only`), which would pass with the other tests
- * of the file not run. `--file` loads the hooks of each file: the
+ * of the file not run; `--forbid-pending` fails a file with a test that is
+ * skipped or has no body. `--file` loads the hooks of each file: the
  * screenshots of a failed test and the renderer gate (`root-hooks.ts`).
  */
 const MOCHA_ARGS = [
@@ -64,6 +65,7 @@ const MOCHA_ARGS = [
   "90000",
   "--exit",
   "--forbid-only",
+  "--forbid-pending",
   "--file",
   "e2e/support/root-hooks.ts",
 ];

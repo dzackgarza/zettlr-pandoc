@@ -23,6 +23,8 @@
 
 - [ ] Optional state uses an explicit typed boundary.
 
+- [ ] Each behaviour of this PR that an author can see has a journey through the window of the packaged app (`e2e/`). A component or provider spec stands beside the journey, not in its place (#47).
+
 ## Evidence
 
 <!-- Commands, fixtures, and test output proving the boxes above.
