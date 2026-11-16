@@ -1347,7 +1347,7 @@ export interface components {
       /** @description Path relative to ~/.pandoc/styles/macros. */
       sourcePath: string;
       line: number;
-      /** @description The physical source line containing the declaration. */
+      /** @description The source line that has the declaration, without the white space at its start and at its end. */
       declaration: string;
       /** @description A bounded source excerpt around the declaration. */
       context: string;
