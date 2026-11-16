@@ -48,6 +48,7 @@ const run = promisify(execFile);
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-pdf-export-e2e-latest");
 const LAUNCHER = "[data-command-launcher]";
+const STATUSBAR = "#main-statusbar";
 const PDF_PROFILE = "PDF.yaml";
 
 const NOTE_SENTENCE = "An even unimodular lattice has a rank that 8 divides.";
@@ -290,6 +291,30 @@ describe("assembled app: a PDF export through the window (#47)", function () {
       "the app log has the resolved export of the PDF item",
     );
     screenshots.set("document-exported.png", await activePage.screenshot());
+  });
+
+  it("opens the PDF again from its finished task in the task list", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const exported = path.join(workspace, "note.pdf");
+    const opensOfThePdf = async (): Promise<number> =>
+      (await openedPaths()).filter((opened) => opened === exported).length;
+    assert.equal(await opensOfThePdf(), 1, "the export gave the PDF to the desktop one time");
+
+    // The status bar has the tasks; the finished export is a row of the list.
+    await activePage.locator(`${STATUSBAR} [data-statusbar-item="tasks"]`).click();
+    const task = activePage.locator("#lrt-wrapper .lrt.interactable", {
+      hasText: "note.md has been exported",
+    });
+    await task.waitFor({ state: "visible", timeout: 10_000 });
+    screenshots.set("finished-export-task.png", await activePage.screenshot());
+    await task.click();
+
+    await waitUntil(
+      async () => (await opensOfThePdf()) === 2,
+      "the desktop to get the PDF a second time",
+      20_000,
+    );
+    await activePage.keyboard.press("Escape");
   });
 
   it("exports the chapters of a Project in the order of its settings, from the menu of its folder", async function () {
