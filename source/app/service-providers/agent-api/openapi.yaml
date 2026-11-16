@@ -1974,7 +1974,7 @@ components:
           minimum: 1
         declaration:
           type: string
-          description: The physical source line containing the declaration.
+          description: The source line that has the declaration, without the white space at its start and at its end.
         context:
           type: string
           description: A bounded source excerpt around the declaration.
@@ -3822,11 +3822,11 @@ paths:
               $ref: "#/components/schemas/AddReviewCommentRequest"
       responses:
         "200":
-          description: The review with the comment appended.
+          description: The comment that the review took, with the generation of the review after it.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ReviewDetailResponse"
+                $ref: "#/components/schemas/ReviewCommentResponse"
         '400':
           $ref: '#/components/responses/InvalidRequest'
         '401':

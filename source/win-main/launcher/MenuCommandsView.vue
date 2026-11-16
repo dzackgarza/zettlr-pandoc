@@ -36,6 +36,7 @@
           v-bind:value="rowKey(row)"
           v-bind:label="row.label"
           v-bind:breadcrumb="rowBreadcrumb(row)"
+          v-bind:facts="row.kind === 'export-item' ? row.facts : undefined"
           :accelerator="
             row.kind === 'menu-leaf' || row.kind === 'registered-command'
               ? row.accelerator
@@ -45,7 +46,7 @@
           v-bind:checked="row.kind === 'menu-leaf' ? row.checked : undefined"
           v-bind:data-row-kind="row.kind"
           v-bind:data-file-path="row.kind === 'file' ? row.path : undefined"
-          v-bind:data-export-profile="row.kind === 'export-profile' ? row.profile.name : undefined"
+          v-bind:data-export-item="row.kind === 'export-item' ? row.item.id : undefined"
           v-bind:data-just-recipe="row.kind === 'just-recipe' ? row.name : undefined"
           v-bind:data-just-repository="row.kind === 'just-unlisted' ? row.repoRoot : undefined"
           v-bind:title="row.kind === 'just-unlisted' ? row.cause : undefined"

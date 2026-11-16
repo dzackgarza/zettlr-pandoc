@@ -16,7 +16,6 @@ import { trans } from "@common/i18n-main";
 import { PANDOC_WRITERS } from "@common/pandoc-util/pandoc-maps";
 import { showNativeNotification } from "@common/util/show-notification";
 import type AssetsProvider from "@providers/assets";
-import { type ValidPandocProfile } from "@providers/assets";
 import type ConfigProvider from "@providers/config";
 import type DocumentManager from "@providers/documents";
 import type FSAL from "@providers/fsal";
@@ -30,7 +29,7 @@ import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import { openPath, revealPath } from "source/app/util/open-path";
 import { makeExport } from "./exporter";
-import { runShellCommand } from "./exporter/run-shell-command";
+import { type ExportItem, exportItemKind } from "./exporter/export-items";
 import type { ExporterOptions } from "./exporter/types";
 import ZettlrCommand from "./zettlr-command";
 
@@ -57,14 +56,13 @@ function frontmatterWorkingDir(frontmatter: unknown): string | undefined {
   return typeof workingDir === "string" ? workingDir : undefined;
 }
 
-export interface CustomExportIPCAPI {
-  displayName: string;
-  file: string;
-}
-
+/** The request to export one document. */
 export interface ExportIPCAPI {
+  /** The path of the document */
   file: string;
-  profile: ValidPandocProfile;
+  /** The identity of the export item (`exporter/export-items.ts`) */
+  item: string;
+  /** Where the file of the export goes: "temp", "cwd" or "ask" */
   exportTo: string;
 }
 
@@ -80,76 +78,7 @@ export default class Export extends ZettlrCommand {
    * @param  {Object} arg An object containing hash and wanted extension.
    * @return {Boolean}     Whether or not the call succeeded.
    */
-  async run(evt: string, arg: CustomExportIPCAPI | ExportIPCAPI): Promise<void> {
-    // Custom export
-    if (evt === "custom-export") {
-      if (!("displayName" in arg)) {
-        throw new Error("Unexpected payload received for custom-export event.");
-      }
-
-      const { displayName, file } = arg;
-
-      const commands = this._app.config.get().export.customCommands;
-      const foundCommand = commands.find((c) => c.displayName === displayName);
-      if (foundCommand === undefined) {
-        throw new Error(`Cannot run custom command ${displayName}: Not found`);
-      }
-
-      this._app.log.info(
-        `[Export] Running custom export command ${displayName} on file ${file} ...`,
-      );
-      const task = this._app.lrt.registerTask(
-        trans('Exporting file "%s"', path.basename(file)),
-        trans("Exporting using custom command %s", displayName),
-      );
-      const cwd = path.dirname(file);
-
-      try {
-        const output = await runShellCommand(foundCommand.command, [file], cwd);
-
-        if (output.code !== 0) {
-          this._app.log.error(
-            `[Export] Custom export ${displayName} failed with code ${output.code}`,
-            output.stderr,
-          );
-          const title = trans("Export failed");
-          const message = trans(
-            "An error occurred during export: %s",
-            `Custom Command exited with code ${output.code}`,
-          );
-          this._app.windows.showErrorMessage(title, message, output.stderr);
-          task.endTask("error", new Error(message));
-        } else {
-          this._app.log.info(`[Export] File ${path.basename(file)} exported successfully.`);
-          task.update({ info: trans("Exported file successfully.") });
-          task.endTask("success");
-        }
-
-        if (output.stdout.length > 0) {
-          this._app.log.info("This custom export run produced additional output.", output.stdout);
-        }
-      } catch (err: unknown) {
-        if (!(err instanceof Error)) {
-          this._app.log.error(
-            `[Export] Custom export ${displayName} failed with an unknown error`,
-            err,
-          );
-          task.endTask("error", new Error("Unknown error"));
-        } else {
-          this._app.log.error(
-            `[Export] Custom export ${displayName} failed with an error: ${err.message}`,
-            err,
-          );
-          task.endTask("error", err);
-        }
-      }
-      return; // Done
-    }
-
-    // Regular export
-    if (!("profile" in arg) || !("exportTo" in arg)) {
-      throw new Error("Unexpected payload received for export event.");
-    }
+  async run(_evt: string, arg: ExportIPCAPI): Promise<void> {
     await exportDocument(this._app, arg);
   }
 }
@@ -176,7 +105,18 @@ export async function exportDocument(
   app: DocumentExportServices,
   arg: ExportIPCAPI,
 ): Promise<void> {
-  const { file, profile, exportTo } = arg;
+  const { file, exportTo } = arg;
+
+  // The window names the item; the list of the main process decides what
+  // the name means.
+  const entry = (await app.assets.listExportItems()).find((item) => item.id === arg.item);
+  if (entry === undefined) {
+    throw new Error(trans("No export item has the name %s.", arg.item));
+  }
+  if (entry.isInvalid) {
+    throw new Error(trans("The export item %s cannot run: %s", entry.id, entry.reason));
+  }
+  const item = entry;
 
   // We must have an absolute path given in file
   const fileDescriptor = await app.fsal.getDescriptorForAnySupportedFile(file);
@@ -202,6 +142,24 @@ export async function exportDocument(
     }
   }
 
+  const { path: documentPath, name, ext } = fileDescriptor;
+  const exportOf = (textFile: string, targetDirectory: string): ExporterOptions => {
+    return {
+      item,
+      targetDirectory,
+      sourceFiles: [{ path: documentPath, name, ext, textFile }],
+      cwd,
+      commandSubject: { argument: documentPath, cwd: fileDescriptor.dir },
+    };
+  };
+
+  // A command gets the document as it is on disk and decides itself what
+  // it writes: it has no destination to ask for.
+  if (item.engine.kind === "command") {
+    await runDocumentExport(app, arg, item, exportOf(documentPath, fileDescriptor.dir));
+    return;
+  }
+
   let targetDirectory = fileDescriptor.dir;
   switch (exportTo) {
     case "ask": {
@@ -225,18 +183,8 @@ export async function exportDocument(
       break;
   }
 
-  const { path: documentPath, name, ext } = fileDescriptor;
-  const exportOf = (textFile: string): ExporterOptions => {
-    return {
-      profile,
-      targetDirectory,
-      sourceFiles: [{ path: documentPath, name, ext, textFile }],
-      cwd,
-    };
-  };
-
   if (!app.documents.isModified(file)) {
-    await runDocumentExport(app, arg, exportOf(documentPath));
+    await runDocumentExport(app, arg, item, exportOf(documentPath, targetDirectory));
     return;
   }
 
@@ -250,7 +198,7 @@ export async function exportDocument(
     .getDocument(file)
     .then(async (unsaved) => {
       await fs.writeFile(textFile, unsaved.content, { encoding: "utf8" });
-      await runDocumentExport(app, arg, exportOf(textFile));
+      await runDocumentExport(app, arg, item, exportOf(textFile, targetDirectory));
     })
     .finally(async () => {
       await fs.rm(scratch, { recursive: true });
@@ -261,19 +209,21 @@ export async function exportDocument(
  * Runs the export of one document and tells the author its result.
  *
  * @param   {DocumentExportServices}  app              The services of the application
- * @param   {ExportIPCAPI}            arg              The document and the profile
+ * @param   {ExportIPCAPI}            arg              The document and the destination
+ * @param   {ExportItem}              item             The export item
  * @param   {ExporterOptions}         exporterOptions  What the exporter gets
  */
 async function runDocumentExport(
   app: DocumentExportServices,
   arg: ExportIPCAPI,
+  item: ExportItem,
   exporterOptions: ExporterOptions,
 ): Promise<void> {
-  const { file, profile } = arg;
+  const { file } = arg;
 
   const task = app.lrt.registerTask(
     trans("Exporting file %s", path.basename(file)),
-    trans("Exporting using profile %s", profile.name),
+    trans("Exporting using profile %s", item.id),
   );
 
   // Call the exporter. Don't throw the "big" error as this is single-file export
@@ -289,51 +239,82 @@ async function runDocumentExport(
       app.links.index,
       app.fsal,
     );
-    if (output.code === 0) {
-      app.log.info(`Successfully exported file to ${output.targetFile}`);
-      const readableFormat =
-        profile.writer in PANDOC_WRITERS ? PANDOC_WRITERS[profile.writer] : profile.writer;
-      showNativeNotification(trans("Exported to %s", readableFormat));
-      // The export is done when the file is written. An open of the file
-      // that the desktop refuses is a message of its own, and the command
-      // does not wait for the application that shows the file.
-      const openExportedFile = (): void => {
-        openPath(output.targetFile).catch((refusal: Error) => {
-          app.log.error(refusal.message, refusal);
-          app.windows.showErrorMessage(trans("Could not open the exported file"), refusal.message);
-        });
-      };
-      task.update({
-        title: trans("File %s has been exported", path.basename(file)),
-        info: trans("File has been exported to %s", readableFormat),
-        successInteraction: openExportedFile,
-      });
-      task.endTask("success");
-
-      // A textbundle is a folder and a textpack an archive: the file browser
-      // shows them, as no application opens them.
-      if (app.config.get().export.autoOpenExportedFiles) {
-        if (["textbundle", "textpack"].includes(profile.writer)) {
-          revealPath(output.targetFile).catch((refusal: Error) => {
-            app.log.error(refusal.message, refusal);
-            app.windows.showErrorMessage(
-              trans("Could not open the exported file"),
-              refusal.message,
-            );
-          });
-        } else {
-          openExportedFile();
-        }
-      }
-    } else {
+    if (output.code !== 0) {
       const title = trans("Export failed");
       const message = trans(
         "An error occurred on export: %s",
-        `Pandoc exited with code ${output.code}`,
+        item.engine.kind === "command"
+          ? `The command exited with code ${output.code}`
+          : `Pandoc exited with code ${output.code}`,
       );
       const contents = output.stderr.join("\n");
       app.windows.showErrorMessage(title, message, contents);
       task.endTask("error", new Error(`Export failed with status ${output.code}`));
+      return;
+    }
+
+    const { targetFile } = output;
+    if (targetFile === null) {
+      // A command decides what it writes: the export names no file to open.
+      app.log.info(`[Export] ${item.id} ended for ${path.basename(file)}.`);
+      if (output.stdout.length > 0) {
+        app.log.info("This export command produced additional output.", output.stdout);
+      }
+      showNativeNotification(trans("Exported with %s", item.id));
+      task.update({ info: trans("Exported file successfully.") });
+      task.endTask("success");
+      return;
+    }
+
+    app.log.info(`Successfully exported file to ${targetFile}`);
+    const kind = exportItemKind(item);
+    const readableFormat = kind in PANDOC_WRITERS ? PANDOC_WRITERS[kind] : kind;
+    const hasTexErrors = output.texErrors.length > 0;
+    if (hasTexErrors) {
+      // The recipe wrote the PDF of a document with a TeX error. The author
+      // gets the errors, and no message that reads as an export without a
+      // fault.
+      app.log.warning(`[Export] TeX reported errors for ${targetFile}`, output.texErrors);
+      app.windows.showErrorMessage(
+        trans("The PDF has TeX errors"),
+        trans(
+          "TeX reported errors for %s. The export wrote the PDF, and the PDF can lack text. A line number is a line of the TeX file that the recipe built.",
+          path.basename(targetFile),
+        ),
+        output.texErrors.join("\n"),
+      );
+    } else {
+      showNativeNotification(trans("Exported to %s", readableFormat));
+    }
+    // The export is done when the file is written. An open of the file
+    // that the desktop refuses is a message of its own, and the command
+    // does not wait for the application that shows the file.
+    const openExportedFile = (): void => {
+      openPath(targetFile).catch((refusal: Error) => {
+        app.log.error(refusal.message, refusal);
+        app.windows.showErrorMessage(trans("Could not open the exported file"), refusal.message);
+      });
+    };
+    task.update({
+      title: hasTexErrors
+        ? trans("File %s has been exported with TeX errors", path.basename(file))
+        : trans("File %s has been exported", path.basename(file)),
+      info: trans("File has been exported to %s", readableFormat),
+      successInteraction: openExportedFile,
+    });
+    task.endTask("success");
+
+    // A textbundle is a folder and a textpack an archive: the file browser
+    // shows them, as no application opens them.
+    if (app.config.get().export.autoOpenExportedFiles) {
+      if (item.engine.kind === "bundle") {
+        revealPath(targetFile).catch((refusal: Error) => {
+          app.log.error(refusal.message, refusal);
+          app.windows.showErrorMessage(trans("Could not open the exported file"), refusal.message);
+        });
+      } else {
+        openExportedFile();
+      }
     }
   } catch (err: unknown) {
     if (err instanceof Error) {

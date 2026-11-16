@@ -33,11 +33,16 @@ export const plugin: ExporterPlugin = async function (
   sourceFiles,
   _ctx: ExporterAPI,
 ): Promise<ExporterOutput> {
+  const { engine } = options.item;
+  if (engine.kind !== "bundle") {
+    throw new Error(`The bundle exporter cannot run the export item "${options.item.id}".`);
+  }
   const output: ExporterOutput = {
     code: 0,
     stdout: [],
     stderr: [],
     targetFile: "",
+    texErrors: [],
   };
 
   if (sourceFiles.length > 1) {
@@ -49,13 +54,13 @@ export const plugin: ExporterPlugin = async function (
     options.defaultsOverride?.title !== undefined
       ? sanitize(options.defaultsOverride.title, { replacement: "-" })
       : baseName;
-  const ext = options.profile.writer === "textpack" ? ".textpack" : ".textbundle";
+  const ext = engine.format === "textpack" ? ".textpack" : ".textbundle";
   const targetPath = path.join(options.targetDirectory, title + ext);
   try {
     output.targetFile = await makeTextbundle(
       options.sourceFiles[0],
       targetPath,
-      options.profile.writer === "textpack",
+      engine.format === "textpack",
     );
   } catch (err: unknown) {
     output.code = 1;

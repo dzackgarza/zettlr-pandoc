@@ -301,6 +301,20 @@ type DeclaredStatus<Op extends OperationId> = Extract<
   number
 >;
 
+/**
+ * The JSON body that the document declares for one status of an operation.
+ * An answer of the server is typed with it, so a handler cannot send the
+ * body of another operation.
+ */
+type DeclaredBody<
+  Op extends OperationId,
+  Status extends DeclaredStatus<Op>,
+> = AgentApiOperations[Op]["responses"][Status] extends {
+  content: { "application/json": infer Body };
+}
+  ? Body
+  : never;
+
 /** The operations that the Agent API serves at /zotero/mcp. */
 type ZoteroOperation =
   | "getZoteroExtractions"
@@ -2226,13 +2240,13 @@ export default class AgentHTTPProvider extends ProviderContract {
    * result are statuses that the operation declares, so a status of the
    * add-on that the document does not name is a compile error.
    */
-  private sendZoteroResult<Op extends ZoteroOperation, Body extends AgentApiResponseBody>(
-    res: Reply<Op>,
-    result: ZoteroResult<Body, NoInfer<DeclaredStatus<Op>>>,
-  ): void {
+  private sendZoteroResult<
+    Op extends ZoteroOperation,
+    Body extends DeclaredBody<ZoteroOperation, 200>,
+  >(res: Reply<Op>, result: ZoteroResult<Body, NoInfer<DeclaredStatus<Op>>>): void {
     if (result.ok) {
       // Each Zotero operation declares 200.
-      this.sendJson<ZoteroOperation>(res, 200, result.body);
+      this.sendJson<ZoteroOperation, 200>(res, 200, result.body);
       return;
     }
     this.sendError(
@@ -2362,7 +2376,11 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     const item = this._citeproc.getItem(database, citeKey);
-    this.sendJson(res, 200, item as AgentApiResponseBody);
+    if (item === undefined) {
+      // `citekeysHeld` answered that the library holds the key.
+      throw new Error(`The library ${database} holds ${citeKey} and has no item for it.`);
+    }
+    this.sendJson(res, 200, item);
   }
 
   private handleRenderCitation(res: Reply<"renderCitations">, body: RenderCitationRequest): void {
@@ -2935,16 +2953,21 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private sendJson<Op extends OperationId>(
+  private sendJson<Op extends OperationId, Status extends DeclaredStatus<Op>>(
     res: Reply<Op>,
-    status: NoInfer<DeclaredStatus<Op>>,
-    body: AgentApiResponseBody,
+    status: Status,
+    body: NoInfer<DeclaredBody<Op, Status>>,
   ): void {
-    this.writeJson(res, status, body);
+    this.writeBody(res, status, body);
   }
 
   /** Writes a JSON answer with any status: for a route that is no operation. */
   private writeJson(res: http.ServerResponse, status: number, body: AgentApiResponseBody): void {
+    this.writeBody(res, status, body);
+  }
+
+  /** Writes a body as JSON. Each caller has typed the body for its answer. */
+  private writeBody(res: http.ServerResponse, status: number, body: unknown): void {
     const json = JSON.stringify(body);
     res.writeHead(status, {
       "Content-Type": "application/json",

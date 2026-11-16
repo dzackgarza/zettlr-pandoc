@@ -1347,7 +1347,7 @@ export interface components {
       /** @description Path relative to ~/.pandoc/styles/macros. */
       sourcePath: string;
       line: number;
-      /** @description The physical source line containing the declaration. */
+      /** @description The source line that has the declaration, without the white space at its start and at its end. */
       declaration: string;
       /** @description A bounded source excerpt around the declaration. */
       context: string;
@@ -2628,13 +2628,13 @@ export interface operations {
       };
     };
     responses: {
-      /** @description The review with the comment appended. */
+      /** @description The comment that the review took, with the generation of the review after it. */
       200: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ReviewDetailResponse"];
+          "application/json": components["schemas"]["ReviewCommentResponse"];
         };
       };
       400: components["responses"]["InvalidRequest"];

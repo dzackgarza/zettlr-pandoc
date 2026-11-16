@@ -101,14 +101,23 @@ async function openAndAnnotate(page: Page, documentPath: string, quote: string):
   await page
     .locator(`[role="tab"][data-path="${documentPath}"].active`)
     .waitFor({ state: "visible", timeout: 30_000 });
-  const session: DocumentCollaborationSession | undefined = await page.evaluate(
-    async (pathInPage) =>
-      await window.ipc.invoke("documents-provider", {
-        command: "get-collaboration-session",
-        payload: { path: pathInPage },
-      }),
-    documentPath,
-  );
+  // The tab is active before its editor has the document: the provider has
+  // the session of a document when the editor loaded it.
+  const readSession = async (): Promise<DocumentCollaborationSession | undefined> =>
+    await page.evaluate(
+      async (pathInPage) =>
+        await window.ipc.invoke("documents-provider", {
+          command: "get-collaboration-session",
+          payload: { path: pathInPage },
+        }),
+      documentPath,
+    );
+  const deadline = Date.now() + 30_000;
+  let session = await readSession();
+  while (session === undefined && Date.now() < deadline) {
+    await delay(100);
+    session = await readSession();
+  }
   assert.ok(session !== undefined, `the provider holds a session for ${documentPath}`);
   const from = session.workingText.indexOf(quote);
   assert.ok(from >= 0, `${documentPath} holds the text to annotate`);

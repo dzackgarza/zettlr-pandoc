@@ -9,12 +9,16 @@ import {
   currentPackagedBinary,
   delay,
   findEditorPage,
+  observeBrowser,
   readAppLog,
   requestQuit,
   startDeadline,
   stopProcess,
   waitForDevTools,
 } from "./support/electron-app";
+
+/** The errors of each window of each start of the file; the renderer gate reads them. */
+const rendererEvents: string[] = [];
 
 describe("application launch delivery", function () {
   // A test starts the packaged app two times: an owner and a second
@@ -92,6 +96,7 @@ describe("application launch delivery", function () {
       process.kill(primary.pid, "SIGCONT");
       const endpoint = await endpointReady;
       browser = await chromium.connectOverCDP(endpoint);
+      observeBrowser(browser, rendererEvents);
       const page = await findEditorPage(browser, 60_000);
       await page
         .getByText("A launch request must reach the editor", { exact: false })
@@ -154,6 +159,7 @@ describe("application launch delivery", function () {
     try {
       const primaryEndpoint = await waitForDevTools(primary, () => primaryOutput, 60_000);
       browser = await chromium.connectOverCDP(primaryEndpoint);
+      observeBrowser(browser, rendererEvents);
       const initial = await findEditorPage(browser, 60_000);
       await initial.locator(".cm-content").waitFor({ timeout: 60_000 });
       const logDirectory = path.join(fixture.configDirectory, "logs");
@@ -201,6 +207,7 @@ describe("application launch delivery", function () {
       const endpointReady = waitForDevTools(secondary, () => output, 60_000);
       process.kill(pid, "SIGCONT");
       browser = await chromium.connectOverCDP(await endpointReady);
+      observeBrowser(browser, rendererEvents);
       const page = await findEditorPage(browser, 60_000);
       await page
         .getByText("Document requested during shutdown", { exact: false })

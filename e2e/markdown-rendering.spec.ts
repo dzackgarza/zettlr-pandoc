@@ -43,6 +43,14 @@ such that for each nonempty overlap $U_i \\cap U_j$, the transition maps
 \\phi_j \\circ \\phi_i^{-1} \\colon \\phi_i(U_i \\cap U_j) \\to \\phi_j(U_i \\cap U_j)
 .\\end{align*}
 
+The discriminant of the lattice is
+
+\\[
+\\Delta_{E_8} = 1
+\\]
+
+## Attributed heading {#sec:attributed .unnumbered}
+
 Outside rendering probe.
 `;
 
@@ -185,6 +193,57 @@ describe("assembled Markdown rendering", function () {
       rendererEvents,
       [],
       `the renderer reported errors while Markdown rendering was exercised:\n${rendererEvents.join("\n")}`,
+    );
+  });
+
+  it("renders \\[ \\] as display math (#47)", async function () {
+    assert.ok(page !== undefined, "editor page was not initialized");
+
+    const widgets = await page.locator(".preview-math").evaluateAll((elements: HTMLElement[]) =>
+      elements
+        .filter((element) => element.dataset.equation?.includes("\\Delta_{E_8} = 1") === true)
+        .map((element) => ({
+          equation: element.dataset.equation,
+          display: element.querySelector("mjx-container")?.getAttribute("display"),
+        })),
+    );
+
+    assert.equal(widgets.length, 1, `the block renders one time: ${JSON.stringify(widgets)}`);
+    assert.equal(widgets[0].display, "true", "MathJax typesets the block as display math");
+    // The delimiters are source, and the rendered block shows none of them.
+    assert.equal(
+      await page.locator(".cm-line", { hasText: "\\Delta_{E_8}" }).count(),
+      0,
+      "no line shows the source of the block while the cursor is elsewhere",
+    );
+  });
+
+  it("hides the attribute block of a heading, and shows it on the line of the cursor (#47)", async function () {
+    assert.ok(page !== undefined, "editor page was not initialized");
+    const heading = page.locator(".cm-line", { hasText: "Attributed heading" }).first();
+
+    assert.equal(
+      (await heading.innerText()).trim(),
+      "Attributed heading",
+      "the heading shows its text without the attribute block",
+    );
+
+    // The count of the references of a labelled heading lies over the middle
+    // of its line: the click goes to the start of the line.
+    await heading.click({ position: { x: 4, y: 4 } });
+    await page.waitForFunction(
+      (element) => element?.textContent?.includes("{#sec:attributed .unnumbered}") === true,
+      await heading.elementHandle(),
+      { timeout: 10_000 },
+    );
+    screenshots.set("attribute-block-revealed.png", await page.screenshot());
+
+    // The cursor leaves the line, and the block is hidden again.
+    await page.locator(".cm-line", { hasText: "Outside rendering probe." }).click();
+    await page.waitForFunction(
+      (element) => element?.textContent?.trim() === "Attributed heading",
+      await heading.elementHandle(),
+      { timeout: 10_000 },
     );
   });
 });

@@ -23,7 +23,6 @@ import {
 import isFile from "@common/util/is-file";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type AssetsProvider from "@providers/assets";
-import { type PandocProfileMetadata, type ValidPandocProfile } from "@providers/assets";
 import type ConfigProvider from "@providers/config";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import type FSAL from "@providers/fsal";
@@ -35,81 +34,27 @@ import path from "path";
 import YAML from "yaml";
 import { loadCanonicalMathJaxMacros } from "../../../util/load-mathjax-macros";
 import { runPandoc } from "../../../util/run-pandoc";
+import { runCommandExport } from "./command-exporter";
 import { plugin as DefaultExporter } from "./default-exporter";
+// Exporters
+import type { ExportItem } from "./export-items";
 import { type ExportMath, injectPandocMathHeaders } from "./pandoc-math-headers";
 import { runRecipeExport } from "./recipe-exporter";
+import {
+  type DeclaredDefaults,
+  describeResolvedExport,
+  type ExportOverride,
+  effectiveCitationStyle,
+  effectiveFilters,
+  effectiveTemplate,
+  leadingFilters,
+  type ResolvedExport,
+  resolveExport,
+} from "./resolve-export";
 import { runScriptExport } from "./script-exporter";
 import { plugin as TextbundleExporter } from "./textbundle-exporter";
-// Exporters
 import type { DefaultsOverride, ExporterAPI, ExporterOptions, ExporterOutput } from "./types";
 import { exportInputs, withWikilinkMap } from "./wikilink-map-file";
-
-/**
- * This function returns faux metadata for the custom export formats the
- * exporter supports which circumvent (or build upon) the Pandoc exporter. These
- * are not defined as regular defaults files, therefore we need to output them
- * here.
- *
- * @return  {ValidPandocProfile[]}   The additional profiles
- */
-export function getCustomProfiles(
-  scripts: ConfigOptions["export"]["scripts"] = [],
-): ValidPandocProfile[] {
-  return [
-    {
-      // PDF export is not a Pandoc-defaults export: it delegates to the
-      // authoritative ~/.pandoc `compile-pandoc` recipe (see recipe-exporter).
-      name: "PDF.yaml",
-      reader: "markdown",
-      writer: "compile-pandoc",
-      isInvalid: false,
-    },
-    {
-      name: "Textbundle.yaml", // Fake name
-      reader: "markdown", // Not completely the truth
-      writer: "textbundle", // Not even supported by Pandoc
-      isInvalid: false, // IT'S ALL FAKE!
-    },
-    {
-      name: "Textpack.yaml",
-      reader: "markdown",
-      writer: "textpack",
-      isInvalid: false,
-    },
-    // User-declared pipeline-integrated export scripts (config.export.scripts),
-    // passed by callers that have config access.
-    ...scripts.map(
-      (script): ValidPandocProfile => ({
-        name: script.name,
-        reader: "markdown",
-        writer: "script",
-        isInvalid: false,
-      }),
-    ),
-  ];
-}
-
-/**
- * The export profiles of the application: the defaults files of the author
- * and the custom profiles. A custom profile replaces a defaults file of the
- * same name. userData/defaults is copied once and never pruned, so it can
- * hold a PDF.yaml of a version before the PDF recipe; that file must not
- * replace the recipe profile.
- *
- * @param   {Profile[]}  defaults  The defaults files of the author: all of them
- *                                (the menu), or the valid ones (the harness)
- * @param   {ConfigOptions["export"]["scripts"]}  scripts  The export scripts of the settings
- *
- * @return  {Array<Profile | ValidPandocProfile>}  The profiles, one for each name
- */
-export function exportProfiles<Profile extends PandocProfileMetadata>(
-  defaults: Profile[],
-  scripts: ConfigOptions["export"]["scripts"],
-): Array<Profile | ValidPandocProfile> {
-  const custom = getCustomProfiles(scripts);
-  const customNames = new Set(custom.map((profile) => profile.name));
-  return [...defaults.filter((profile) => !customNames.has(profile.name)), ...custom];
-}
 
 const PLUGINS = {
   pandoc: DefaultExporter,
@@ -201,10 +146,18 @@ export async function makeExport(
   // filter, which can add headings.
   const inputs = await exportInputs(options.sourceFiles);
   const reading = { index: wikilinks, linkFormat: config.get().zkn.linkFormat };
-  const filters = [
-    path.join(math.pandocDirectory, "filters", "wikilinks.lua"),
-    ...config.get().export.filters,
-  ];
+  const filters = leadingFilters(
+    wikilinkFilterOf(math.pandocDirectory),
+    config.get().export.filters,
+  );
+
+  // The log keeps what this export runs: the same record that a window
+  // shows for the item.
+  const resolved = await resolveExportItem(options.item, assets, config.get(), {
+    template: options.defaultsOverride?.template,
+    csl: options.defaultsOverride?.csl,
+  });
+  logger.info(`[Export] ${options.item.id} runs:`, describeResolvedExport(resolved));
 
   // This is basically the "plugin API"
   const ctx: ExporterAPI = {
@@ -233,35 +186,75 @@ export async function makeExport(
         options.defaultsOverride,
       );
     },
-    listDefaults: async () => {
-      return await assets.listDefaults();
-    },
   };
 
-  // Search for the correct plugin to run, and run it. First the custom ones ...
-  if (["textbundle", "textpack"].includes(options.profile.writer)) {
-    return await PLUGINS.textbundle(options, inputFiles, ctx);
-  } else if (options.profile.writer === "compile-pandoc") {
-    // PDF: delegate to the authoritative ~/.pandoc compile-pandoc recipe.
-    // A template of the export (the LaTeX template of a Project) goes before
-    // the template of the setting, as it does for a Pandoc profile.
-    const ownTemplate = options.defaultsOverride?.template;
-    return await runRecipeExport(options, {
-      latexTemplate: ownTemplate !== undefined ? ownTemplate : config.get().export.latexTemplate,
-      wikilinks: reading,
-      fsal,
-      mainLibrary: config.get().export.cslLibrary,
-    });
-  } else if (options.profile.writer === "script") {
-    const script = config.get().export.scripts.find((s) => s.name === options.profile.name);
-    if (script === undefined) {
-      throw new Error(`Cannot run export script "${options.profile.name}": not found in config`);
+  // The engine of the item decides which exporter runs.
+  const { engine, post } = options.item;
+  switch (engine.kind) {
+    case "bundle":
+      return await PLUGINS.textbundle(options, inputFiles, ctx);
+    case "recipe": {
+      // PDF: the ~/.pandoc compile-pandoc recipe owns each flag. A template
+      // of the export (the LaTeX template of a Project) goes before the
+      // template of the setting, as it does for a Pandoc engine.
+      const ownTemplate = options.defaultsOverride?.template;
+      return await runRecipeExport(options, {
+        latexTemplate: ownTemplate !== undefined ? ownTemplate : config.get().export.latexTemplate,
+        wikilinks: reading,
+        fsal,
+        mainLibrary: config.get().export.cslLibrary,
+      });
     }
-    return await runScriptExport(options, inputFiles, ctx, script);
-  } else {
-    // ... otherwise run the regular Pandoc exporter.
-    return await PLUGINS.pandoc(options, inputFiles, ctx);
+    case "command":
+      return await runCommandExport(options, engine.command);
+    case "pandoc":
+      return post === undefined
+        ? await PLUGINS.pandoc(options, inputFiles, ctx)
+        : await runScriptExport(options, inputFiles, ctx, engine, post);
   }
+}
+
+/** The wikilink filter of the Pandoc directory; it runs before each other filter. */
+function wikilinkFilterOf(pandocDirectory: string): string {
+  return path.join(pandocDirectory, "filters", "wikilinks.lua");
+}
+
+/**
+ * Resolves an export item into what it runs with the current settings
+ * (`resolveExport`). The defaults writer of an export makes the same
+ * decisions with the same functions.
+ *
+ * @param   {ExportItem}       item      The item
+ * @param   {AssetsProvider}   assets    Reads the defaults file of a Pandoc engine
+ * @param   {ConfigOptions}    config    The settings
+ * @param   {ExportOverride}   override  What the export sets itself (a Project)
+ */
+export async function resolveExportItem(
+  item: ExportItem,
+  assets: Pick<AssetsProvider, "getDefaultsFile">,
+  config: Pick<ConfigOptions, "export">,
+  override: ExportOverride,
+): Promise<ResolvedExport> {
+  const pandocDirectory = path.join(app.getPath("home"), ".pandoc");
+  let declared: DeclaredDefaults | undefined;
+  if (item.engine.kind === "pandoc") {
+    const defaults = normalizePandocDefaults(
+      await assets.getDefaultsFile(item.engine.defaultsFile),
+      item.engine.defaultsFile,
+    );
+    declared = {
+      filters: defaults.filters,
+      template: typeof defaults.template === "string" ? defaults.template : undefined,
+    };
+  }
+  return resolveExport(
+    item,
+    declared,
+    config.export,
+    override,
+    pandocDirectory,
+    wikilinkFilterOf(pandocDirectory),
+  );
 }
 
 // REFERENCE: Full defaults file here: https://pandoc.org/MANUAL.html#default-files
@@ -323,12 +316,16 @@ export async function writeDefaults(
   }
 
   // The style of the export (that of a Project) goes before the setting.
-  const style = defaultsOverride?.csl !== undefined ? defaultsOverride.csl : cslStyle;
-  if (style !== "") {
-    if (!isFile(style)) {
-      throw new Error(trans("The citation style %s is no file.", style));
+  const override: ExportOverride = {
+    template: defaultsOverride?.template,
+    csl: defaultsOverride?.csl,
+  };
+  const style = effectiveCitationStyle(override, { cslStyle });
+  if (style !== undefined) {
+    if (!isFile(style.value)) {
+      throw new Error(trans("The citation style %s is no file.", style.value));
     }
-    defaults.csl = style;
+    defaults.csl = style.value;
   }
 
   // Now add metadata values for our GUI settings the user can choose. NOTE that
@@ -343,26 +340,24 @@ export async function writeDefaults(
     defaults.metadata.title = defaultsOverride.title;
   }
 
-  if (defaultsOverride?.template !== undefined) {
-    defaults.template = defaultsOverride.template;
+  // The template of the export (a Project), then the template of the
+  // defaults file, then the template of the settings for the family of the
+  // writer (`effectiveTemplate`). A configured file browses to an absolute
+  // path, or a name is resolved from ~/.pandoc/templates.
+  const template = effectiveTemplate(
+    defaults.writer as string,
+    typeof defaults.template === "string" ? defaults.template : undefined,
+    override,
+    config.export,
+  );
+  if (template !== undefined) {
+    defaults.template = template.value;
   }
 
-  // Apply a configured default template per writer family when the profile (and
-  // any override) leave the template unset. A configured file browses to an
-  // absolute path, or a name is resolved from ~/.pandoc/templates.
-  if (defaults.template === undefined || defaults.template === "") {
-    const writerName = parseReaderWriter(defaults.writer as string).name;
-    if (isHtmlWriter(writerName) && config.export.htmlTemplate !== "") {
-      defaults.template = config.export.htmlTemplate;
-    } else if (isTexWriter(writerName) && config.export.latexTemplate !== "") {
-      defaults.template = config.export.latexTemplate;
-    }
-  }
-
-  // Prepend the declared, ordered export filter chain before the profile's own
-  // filters, so structural filters (e.g. amsthm-env conversion) run before the
-  // profile's citeproc rather than in filesystem order.
-  defaults.filters = [...filters, ...defaults.filters];
+  // The declared, ordered filters of each export run before the filters of
+  // the defaults file, so structural filters (e.g. amsthm-env conversion)
+  // run before the citeproc of the defaults file.
+  defaults.filters = effectiveFilters(filters, defaults.filters);
 
   // After we have added our default keys, let the plugin add their keys, which
   // enables them to override certain keys if necessary.

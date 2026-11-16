@@ -6,10 +6,11 @@
 #
 # PROFILE COVERAGE (issue #5, C9): one export profile IS the entire recipe
 # surface. The recipe exporter is reachable only through the single custom
-# 'PDF.yaml' profile (writer 'compile-pandoc' — see getCustomProfiles() and
-# the makeExport dispatch in source/.../exporter/index.ts); every other
-# profile routes through the ordinary Pandoc-defaults, textbundle, or script
-# exporters, which never touch the ~/.pandoc justfile boundary this harness
+# 'PDF.yaml' item (engine 'recipe' — see exportItems() in
+# source/.../exporter/export-items.ts and the makeExport dispatch in
+# source/.../exporter/index.ts); every other item runs Pandoc with a
+# defaults file, a bundle, or a command of the author, and none of those
+# touches the ~/.pandoc justfile boundary this harness
 # proves. Within that one profile, BOTH recipes are argv-proven by
 # test/export-ordered-inputs.spec.ts / export-quoted-inputs.spec.ts
 # (compile-pandoc single-file and compile-pandoc-project), and this script

@@ -10,7 +10,7 @@
 
 import { strict as assert } from "node:assert";
 import { type ChildProcess } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type EditorView } from "@codemirror/view";
@@ -55,6 +55,7 @@ describe("assembled editor: click into rendered math to edit it", function () {
   let browser: Browser | undefined;
   let page: Page | undefined;
   let fixtureRoot: string | undefined;
+  let documentPath = "";
   let getOutput: () => string = () => "";
   const rendererEvents: string[] = [];
   const screenshots = new Map<string, Buffer>();
@@ -65,6 +66,7 @@ describe("assembled editor: click into rendered math to edit it", function () {
       documentContents: DOCUMENT,
     });
     fixtureRoot = fixture.root;
+    documentPath = fixture.documentPath;
 
     const app = await attach(fixture.configDirectory, rendererEvents);
     appProcess = app.appProcess;
@@ -187,4 +189,36 @@ describe("assembled editor: click into rendered math to edit it", function () {
       );
     });
   }
+
+  it("leaves the file and the saved state of the document as they were (#47)", async function () {
+    assert.ok(page !== undefined, "the assembled editor page must be available");
+    // The tests before this one put the caret into the equation four times
+    // and took it out again. The cursor leaves the equation one more time.
+    await page.locator(".cm-line", { hasText: "Outside probe." }).click();
+    await delay(600);
+    assert.ok(
+      (await renderedEquationCentre(page)) !== null,
+      "with the caret outside, the equation is rendered again",
+    );
+
+    assert.equal(
+      await readFile(documentPath, "utf8"),
+      DOCUMENT,
+      "the file has the text that it had before the cursor entered the equation",
+    );
+    assert.equal(
+      await page.locator('.editor-pane [role="tab"].modified').count(),
+      0,
+      "no tab shows unsaved text",
+    );
+    assert.equal(
+      await page.evaluate(() => {
+        const view = document.querySelector<EditorContentElement>(".cm-content")?.cmTile?.root.view;
+        if (view === undefined) throw new Error("No CodeMirror view is mounted");
+        return view.state.doc.toString();
+      }),
+      DOCUMENT,
+      "the editor has the text of the file",
+    );
+  });
 });

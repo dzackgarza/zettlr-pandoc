@@ -36,6 +36,7 @@ import { runRecipeExport } from "source/app/service-providers/commands/exporter/
 import type { ExporterOptions } from "source/app/service-providers/commands/exporter/types";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
+import { exportItem } from "./export-item-fixtures";
 import { installRecordingJust, type RecordingJust } from "./recording-just";
 
 /** The folders of the inputs, read from disk as the FSAL reads them. */
@@ -46,13 +47,8 @@ const FOLDERS = {
 const JUSTFILE = path.join(os.homedir(), ".pandoc", "justfile");
 const FIXTURE_ROOT = path.join("test", "fixtures", "reference-workspace");
 
-/** The PDF profile metadata as the exporter dispatcher passes it. */
-const PDF_PROFILE = {
-  name: "PDF Document.yaml",
-  reader: "markdown",
-  writer: "pdf",
-  isInvalid: false,
-};
+/** The PDF item of the application, as the dispatch gives it to the exporter. */
+const PDF_ITEM = exportItem("PDF.yaml");
 
 describe("Quote-bearing export inputs (review B2/B11)", function () {
   let scratch: string;
@@ -89,7 +85,7 @@ describe("Quote-bearing export inputs (review B2/B11)", function () {
 
     await runRecipeExport(
       {
-        profile: PDF_PROFILE,
+        item: PDF_ITEM,
         sourceFiles: orderedFiles.map((name) => ({
           path: path.join(projectDir, name),
           name,
@@ -135,7 +131,7 @@ describe("Quote-bearing export inputs (review B2/B11)", function () {
 
     await runRecipeExport(
       {
-        profile: PDF_PROFILE,
+        item: PDF_ITEM,
         sourceFiles: [
           { path: inputFile, name: "Enriques' Notes.md", ext: ".md", textFile: inputFile },
         ],
@@ -170,7 +166,7 @@ describe("Quote-bearing export inputs (review B2/B11)", function () {
 
     await runRecipeExport(
       {
-        profile: PDF_PROFILE,
+        item: PDF_ITEM,
         sourceFiles: orderedFiles.map((name) => ({
           path: path.join(projectDir, name),
           name,

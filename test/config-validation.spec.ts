@@ -47,6 +47,7 @@ const INVALID: Record<string, ConfigJsonValue> = {
   "export.stripTags": "no",
   "export.stripLinks": "some",
   "export.cslLibrary": 3,
+  "export.items": "pandoc",
   "zkn.idRE": 3,
   "zkn.idGen": "a",
   attachmentExtensions: ".pdf",

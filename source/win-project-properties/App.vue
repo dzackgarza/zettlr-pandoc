@@ -19,7 +19,7 @@
       {{ loadFailure }}
     </ZtrAdmonition>
     <div
-      v-show="loadFailure === null && currentTab === 0"
+      v-show="settingsLoaded && currentTab === 0"
       id="formats-panel"
       role="tabpanel"
     >
@@ -51,7 +51,7 @@
       />
     </div>
     <div
-      v-show="loadFailure === null && currentTab === 1"
+      v-show="settingsLoaded && currentTab === 1"
       id="profiles-panel"
       role="tabpanel"
     >
@@ -74,7 +74,7 @@
       />
     </div>
     <div
-      v-show="loadFailure === null && currentTab === 2"
+      v-show="settingsLoaded && currentTab === 2"
       id="files-panel"
       role="tabpanel"
     >
@@ -187,7 +187,7 @@
  */
 
 import { trans } from "@common/i18n-renderer";
-import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
+import { SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
 import { reportError } from "@common/util/error-reporting";
 import { remoteErrorMessage } from "@common/util/ipc-rejection";
 import showToast from "@common/util/show-toast";
@@ -198,13 +198,17 @@ import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import { type WindowTab } from "@common/vue/window/WindowTabbar.vue";
 import ZtrAdmonition from "@common/vue/ZtrAdmonition.vue";
 import type { CodeFileDescriptor, MDFileDescriptor, ProjectSettings } from "@dts/common/fsal";
-import type { PandocProfileMetadata, ValidPandocProfile } from "@providers/assets";
+import type { ExportItem, ExportItemEntry } from "@providers/commands/exporter/export-items";
+import {
+  describeResolvedExport,
+  type ResolvedExport,
+} from "@providers/commands/exporter/resolve-export";
 import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
 import { pathToUnix } from "source/common/util/path-to-unix";
 import { isInsideRoot } from "source/common/util/renderer-path-polyfill";
 import { useConfigStore, useWorkspaceStore } from "source/pinia";
 import getDocumentTitle from "source/win-main/util/get-document-title";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 const ipcRenderer = window.ipc;
 
@@ -212,10 +216,6 @@ interface ExportProfile {
   selected: boolean;
   name: string;
   conversion: string;
-}
-interface CustomCommand {
-  displayName: string;
-  command: string;
 }
 
 const exportFormatLabel = trans("Export project to:");
@@ -270,11 +270,25 @@ const tabs: WindowTab[] = [
 const searchParams = new URLSearchParams(window.location.search);
 const dirPath = searchParams.get("directory") ?? "";
 
-const updateLock = ref(true); // To ensure these defaults aren't written before the properties have been loaded
+/**
+ * The window has the settings of the Project. Before that it draws no field:
+ * a change that the author made in a field would be lost when the settings
+ * arrive, and the placeholder settings must not be written.
+ */
+const settingsLoaded = ref(false);
+/** A save of the settings is on its way to the main process. */
+let saveInFlight = false;
+/**
+ * The author changed a setting while a save was on its way. That save
+ * carries the settings from before the change, so one more save follows it.
+ */
+let changedDuringSave = false;
 /** Why the window has no settings of the folder: it then takes no change. */
 const loadFailure = ref<string | null>(null);
-const profiles = ref<PandocProfileMetadata[]>([]);
-const customCommands = configStore.config.export.customCommands;
+/** The export items of the application (`exporter/export-items.ts`). */
+const exportItems = ref<ExportItemEntry[]>([]);
+/** What each item runs as an export of this Project, by the identity of the item. */
+const resolvedExports = ref<Map<string, ResolvedExport>>(new Map());
 
 const projectSettings = ref<ProjectSettings>({
   manifest: { kind: "zettlr" },
@@ -359,52 +373,88 @@ const currentTab = ref(0);
 
 const windowTitle = computed(() => projectSettings.value.title);
 
-const exportFormatList = computed<ExportProfile[]>(() => {
-  // We need to return a list of { selected: boolean, name: string, conversion: string }
-  // A project builds by running its profiles, so only profiles Zettlr can
-  // actually run may be offered here.
-  return profiles.value
-    .filter((e): e is ValidPandocProfile => !e.isInvalid)
-    .filter((e) => {
-      return SUPPORTED_READERS.includes(parseReaderWriter(e.reader).name);
-    })
-    .map((e) => {
-      const plainReader = parseReaderWriter(e.reader).name;
-      const plainWriter = parseReaderWriter(e.writer).name;
-
-      const hasReaderExtensions = plainReader !== e.reader;
-      const hasWriterExtensions = plainWriter !== e.writer;
-
-      const reader = plainReader in PANDOC_READERS ? PANDOC_READERS[plainReader] : plainReader;
-      const writer = plainWriter in PANDOC_WRITERS ? PANDOC_WRITERS[plainWriter] : plainWriter;
-
-      const readerFull = hasReaderExtensions ? reader + ` (${e.reader})` : reader;
-      const writerFull = hasWriterExtensions ? writer + ` (${e.writer})` : writer;
-
-      return {
-        selected: projectSettings.value.profiles.includes(e.name),
-        name: getDisplayText(e.name),
-        conversion: [readerFull, writerFull].join(" → "),
-      };
-    })
-    .concat(
-      customCommands.map((c) => {
-        return {
-          selected: projectSettings.value.profiles.includes(c.command),
-          name: c.displayName,
-          conversion: c.command,
-        };
-      }),
+/**
+ * The items that a Project can export with: each item that can run, with a
+ * reader of Pandoc that the editor writes. A bundle holds one document, so
+ * a Project has no bundle.
+ */
+const offeredItems = computed<ExportItem[]>(() => {
+  return exportItems.value
+    .filter((item): item is ExportItem => !item.isInvalid)
+    .filter((item) => item.engine.kind !== "bundle")
+    .filter(
+      (item) =>
+        item.engine.kind !== "pandoc" ||
+        SUPPORTED_READERS.includes(parseReaderWriter(item.engine.reader).name),
     );
+});
+
+/**
+ * Whether the Project exports with the item. A Project file from before the
+ * export items names an export command by its command line.
+ */
+function isSelected(item: ExportItem): boolean {
+  const selected = projectSettings.value.profiles;
+  return (
+    selected.includes(item.id) ||
+    (item.engine.kind === "command" && selected.includes(item.engine.command))
+  );
+}
+
+/**
+ * What an item runs as an export of this Project, for the column of the
+ * list: the record of the main process (`resolve-exports`), which an export
+ * of the Project makes with the same functions.
+ */
+function conversionOf(item: ExportItem): string {
+  const resolved = resolvedExports.value.get(item.id);
+  return resolved === undefined ? "" : describeResolvedExport(resolved).join(" · ");
+}
+
+/** Reads what each item runs with the templates and the style of this Project. */
+async function resolveExports(): Promise<void> {
+  const { templates, cslStyle } = projectSettings.value;
+  const resolved: ResolvedExport[] = await ipcRenderer.invoke("assets-provider", {
+    command: "resolve-exports",
+    payload: {
+      project: {
+        templates: { tex: templates.tex, html: templates.html },
+        cslStyle: typeof cslStyle === "string" ? cslStyle : "",
+      },
+    },
+  });
+  resolvedExports.value = new Map(resolved.map((entry) => [entry.item, entry]));
+}
+
+const exportFormatList = computed<ExportProfile[]>(() => {
+  return offeredItems.value.map((item) => ({
+    selected: isSelected(item),
+    name: getDisplayText(item.id),
+    conversion: conversionOf(item),
+  }));
 });
 
 watch(projectSettings, updateProperties, { deep: true });
 
+// The list shows what each item runs with the templates and the citation
+// style of this Project, so each change of them reads the record again.
+watch(
+  () => [
+    projectSettings.value.templates.tex,
+    projectSettings.value.templates.html,
+    projectSettings.value.cslStyle,
+  ],
+  () => {
+    resolveExports().catch((err) => reportError(err));
+  },
+  { immediate: true },
+);
+
 // First, we need to get the available export formats
 ipcRenderer
-  .invoke("assets-provider", { command: "list-export-profiles" })
-  .then((defaults: PandocProfileMetadata[]) => {
-    profiles.value = defaults;
+  .invoke("assets-provider", { command: "list-export-items" })
+  .then((items: ExportItemEntry[]) => {
+    exportItems.value = items;
   })
   .catch((err) => reportError(err));
 
@@ -419,24 +469,20 @@ onMounted(() => {
   });
 });
 
+/**
+ * Takes the selection of the list. The list gives its rows back in the
+ * order of `offeredItems`; the Project stores the identity of each selected
+ * item.
+ */
 function selectExportProfile(newListVal: ExportProfile[]): void {
-  const newProfiles = newListVal
-    .filter((e) => e.selected)
-    .map((e) => {
-      return (
-        profiles.value.find((x) => getDisplayText(x.name) === e.name) ??
-        customCommands.find((c) => c.displayName === e.name)
-      );
-    })
-    .filter((x) => x !== undefined) as Array<PandocProfileMetadata | CustomCommand>;
-
-  projectSettings.value.profiles = newProfiles.map((x) => {
-    return "name" in x ? x.name : x.command;
-  });
+  projectSettings.value.profiles = offeredItems.value
+    .filter((_item, index) => newListVal[index].selected)
+    .map((item) => item.id);
 }
 
+/** The name of a defaults file without its extension; another name as it is. */
 function getDisplayText(name: string): string {
-  return name.substring(0, name.lastIndexOf("."));
+  return /\.ya?ml$/.test(name) ? name.replace(/\.ya?ml$/, "") : name;
 }
 
 /** A change that this window does not send: the author gets the cause here. */
@@ -446,11 +492,15 @@ function refuseUpdate(message: string): void {
 }
 
 function updateProperties(): void {
-  if (updateLock.value) {
+  if (!settingsLoaded.value) {
+    return;
+  }
+  if (saveInFlight) {
+    changedDuringSave = true;
     return;
   }
 
-  updateLock.value = true;
+  saveInFlight = true;
 
   ipcRenderer
     .invoke("fsal", {
@@ -491,7 +541,11 @@ function updateProperties(): void {
     // The dispatcher shows the failure of the command in this window.
     .catch((err) => reportError(err))
     .finally(() => {
-      updateLock.value = false;
+      saveInFlight = false;
+      if (changedDuringSave) {
+        changedDuringSave = false;
+        updateProperties();
+      }
     });
 }
 
@@ -510,9 +564,12 @@ async function fetchProperties(): Promise<void> {
     // Apparently the user kept the window open and removed the project
     // state on this project. So let's close this window silently.
     ipcRenderer.send("window-controls", { command: "win-close" });
+    return;
   }
-  updateLock.value = false; // Now the properties are fetched, so the
-  // handlers can overwrite them.
+  // The watcher of the settings runs for this assignment before the next
+  // tick: the settings as they were read are no change, and nothing is sent.
+  await nextTick();
+  settingsLoaded.value = true;
 }
 
 /**

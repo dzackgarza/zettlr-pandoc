@@ -22,7 +22,7 @@ import { innermostRoot, relativePath } from "@common/util/renderer-path-polyfill
 import type { JustRecipeCommand, JustRecipeParameter } from "@dts/common/justfile-commands";
 import type { PreferencesGroups } from "@dts/common/preferences";
 import type { SerializedMenuItem, SerializedSubmenu } from "@dts/common/serialized-menu";
-import type { ValidPandocProfile } from "@providers/assets";
+import type { ExportItem } from "@providers/commands/exporter/export-items";
 import { Fzf } from "fzf";
 
 /** A group's address from the root: one key per nesting level. */
@@ -101,19 +101,17 @@ export interface HeadingRow {
   label: string;
 }
 
-/** One export profile the assets provider can run on the active document. */
-export interface ExportProfileRow {
-  kind: "export-profile";
-  profile: ValidPandocProfile;
+/** One export item that can run on the active document. */
+export interface ExportItemRow {
+  kind: "export-item";
+  item: ExportItem;
   label: string;
-}
-
-/** One custom export command from the export settings. */
-export interface ExportCommandRow {
-  kind: "export-command";
-  displayName: string;
-  command: string;
-  label: string;
+  /**
+   * What the item runs with the current settings, one entry for each fact
+   * (`describeResolvedExport`): the filter chain, the template, the math,
+   * each stage.
+   */
+  facts: readonly string[];
 }
 
 export interface JustRecipeRow extends JustRecipeCommand {
@@ -157,16 +155,16 @@ export type LauncherRow =
   | RegisteredCommandRow
   | FileRow
   | HeadingRow
-  | ExportProfileRow
-  | ExportCommandRow
+  | ExportItemRow
   | JustRecipeRow
   | JustUnlistedRow
   | PreferenceRow;
 
 /** What the launcher asks the window to export the active document with. */
-export type ExportRequest =
-  | { kind: "profile"; profile: ValidPandocProfile }
-  | { kind: "command"; displayName: string; command: string };
+export interface ExportRequest {
+  /** The identity of the export item */
+  item: string;
+}
 
 function parameterLabel(parameter: JustRecipeParameter): string {
   const option =
@@ -213,10 +211,8 @@ export function rowKey(row: LauncherRow): string {
       return `file:${row.path}`;
     case "heading":
       return `heading:${row.line}`;
-    case "export-profile":
-      return `export-profile:${row.profile.name}`;
-    case "export-command":
-      return `export-command:${row.command}`;
+    case "export-item":
+      return `export-item:${row.item.id}`;
     case "just-recipe":
       return `just-recipe:${row.repoRoot}:${row.name}`;
     case "just-unlisted":
@@ -386,8 +382,7 @@ export function launcherRowSearchText(row: LauncherRow): string {
       return [row.label, row.cause].join(" ");
     case "heading":
     case "dynamic-group":
-    case "export-profile":
-    case "export-command":
+    case "export-item":
       return row.label;
   }
 }

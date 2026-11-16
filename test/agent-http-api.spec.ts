@@ -2,15 +2,17 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Agent HTTP API integration tests
+ * Contains:        The HTTP boundary of the Agent API
  * CVM-Role:        Test
  * Maintainer:      D. Zack Garza
- * License:          GNU GPL v3
+ * License:         GNU GPL v3
  *
- * Description:     Drives only the embedded HTTP protocol boundary against
- *                  the OpenAPI specification. Review state and persistence
- *                  are tested at the service boundary; assembled Electron
- *                  behavior is covered by the real Electron capture probes.
+ * Description:     Drives the embedded HTTP server against the OpenAPI
+ *                  contract, with the providers of the main process and no
+ *                  window. Review state and persistence are tested at the
+ *                  service boundary. The calls on the launched app are in
+ *                  `e2e/` (`agent-api-operations.spec.ts` and the specs of
+ *                  the reviews, the annotations and the workspaces).
  *
  * END HEADER
  */
@@ -651,6 +653,43 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     await provider.shutdown();
     rmSync(scratch, { recursive: true, force: true });
     rmSync(authoringHome, { recursive: true, force: true });
+  });
+
+  it("review-submission takes the text of a file with a byte order mark as its baseline (#57)", async function () {
+    // The file starts with a byte order mark. The mark is no text of the
+    // document: a reader of the document gets the text without it, so the
+    // baseline of a patch is the hash of that text.
+    const filePath = path.join(scratch, "with-bom.md");
+    const before = "A lattice is even when each norm is even.\n";
+    const after = "A lattice is even when the norm of each vector is even.\n";
+    writeFileSync(filePath, `\uFEFF${before}`);
+
+    const response = await httpRequest("POST", "/v1/review-submissions", {
+      body: JSON.stringify({
+        document: { uri: filePath },
+        baseline: { sha256: sha256Text(before) },
+        patch: createPatch(filePath, before, after),
+        description: "Name the vectors.",
+        clientRequestId: "bom-submission",
+      }),
+    });
+
+    assert.equal(response.status, 200, response.body);
+    const result = parseAs(response.body, "ReviewSubmissionResponse");
+    const content = await httpRequest(
+      "GET",
+      `/v1/documents/${result.documentId}?includeContent=true`,
+    );
+    assert.equal(
+      parseAs(content.body, "ReadDocumentResponse").content,
+      after,
+      "the proposed text has no byte order mark in it",
+    );
+    assert.equal(
+      readFileSync(filePath, "utf8"),
+      `\uFEFF${before}`,
+      "a proposal writes no file: the file keeps its mark and its text",
+    );
   });
 
   it("review-submission applies a closed-file patch without changing focus and refuses a stale baseline", async function () {
@@ -3076,6 +3115,60 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const unknownError = parseAs(unknown.body, "AgentErrorResponse").error;
     assert.equal(unknownError.code, "PROPOSAL_NOT_FOUND");
     assert.equal("reviewId" in unknownError, false, unknown.body);
+  });
+
+  it("answers a review comment with the comment and the generation of the review after it (#38)", async function () {
+    const filePath = path.join(scratch, "commented-review.md");
+    const documentId = await openInPane(filePath, "alpha\nbeta\n");
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text("alpha\nbeta\n"),
+      [
+        {
+          description: "capitalize beta",
+          patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", {
+            context: 0,
+          }),
+        },
+      ],
+      "commented-review",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The proposal was refused: ${submitted.code}`);
+    }
+
+    const answer = await httpRequest("POST", `/v1/reviews/${submitted.reviewId}/comments`, {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        expectedReviewGeneration: submitted.reviewGeneration,
+        text: "The second line names a lattice.",
+      }),
+    });
+
+    assert.equal(answer.status, 200, answer.body);
+    // The contract declares this body for the operation (ReviewCommentResponse).
+    const body = parseAs(answer.body, "ReviewCommentResponse");
+    assert.deepEqual(
+      {
+        reviewId: body.reviewId,
+        documentId: body.documentId,
+        reviewGeneration: body.reviewGeneration,
+        text: body.comment.text,
+      },
+      {
+        reviewId: submitted.reviewId,
+        documentId,
+        reviewGeneration: submitted.reviewGeneration + 1,
+        text: "The second line names a lattice.",
+      },
+    );
+    assert.deepEqual(Object.keys(body).sort(), [
+      "comment",
+      "documentId",
+      "reviewGeneration",
+      "reviewId",
+    ]);
   });
 
   it("answers PERSISTENCE_FAILED for a retraction and a review comment that the sidecar refuses (#57)", async function () {

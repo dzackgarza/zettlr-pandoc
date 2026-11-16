@@ -18,21 +18,31 @@
 
 import { WRITER2EXT } from "@common/pandoc-util/pandoc-maps";
 import { parseReaderWriter } from "@common/pandoc-util/parse-reader-writer";
-import type { ConfigOptions } from "@providers/config/get-config-template";
 import os from "os";
 import path from "path";
 import sanitize from "sanitize-filename";
+import type { ExportEngine, PostStage } from "./export-items";
 import { runShellCommand } from "./run-shell-command";
 import { splitLines } from "./split-lines";
 import type { ExporterAPI, ExporterOptions, ExporterOutput } from "./types";
 
-export type ExportScript = ConfigOptions["export"]["scripts"][number];
-
+/**
+ * Runs an export item with a Pandoc engine and a command after it: Pandoc
+ * writes an intermediate file with the defaults file of the engine, and the
+ * command of the item gets that file and the file to write.
+ *
+ * @param   {ExporterOptions}  options      The options of the export
+ * @param   {string[]}         sourceFiles  The files that hold the text
+ * @param   {ExporterAPI}      ctx          Writes the defaults and runs Pandoc
+ * @param   {ExportEngine}     engine       The Pandoc engine of the item
+ * @param   {PostStage}        post         The command of the item
+ */
 export async function runScriptExport(
   options: ExporterOptions,
   sourceFiles: string[],
   ctx: ExporterAPI,
-  script: ExportScript,
+  engine: Extract<ExportEngine, { kind: "pandoc" }>,
+  post: PostStage,
 ): Promise<ExporterOutput> {
   const firstName = path.basename(options.sourceFiles[0].name, options.sourceFiles[0].ext);
   const title =
@@ -40,22 +50,13 @@ export async function runScriptExport(
       ? sanitize(options.defaultsOverride.title, { replacement: "-" })
       : firstName;
 
-  // The intermediate's extension follows the base profile's writer.
-  const baseProfile = (await ctx.listDefaults()).find((p) => p.name === script.profile);
-  if (baseProfile === undefined) {
-    throw new Error(`Export script "${script.name}" uses unknown profile "${script.profile}"`);
-  }
-  if (baseProfile.isInvalid) {
-    throw new Error(
-      `Export script "${script.name}" cannot use profile "${script.profile}": ${baseProfile.reason}`,
-    );
-  }
-  const baseWriter = parseReaderWriter(baseProfile.writer).name;
+  // The extension of the intermediate file follows the writer of the engine.
+  const baseWriter = parseReaderWriter(engine.writer).name;
   const intermediateExt = WRITER2EXT[baseWriter] ?? baseWriter;
   const intermediate = path.join(os.tmpdir(), `${title}.intermediate.${intermediateExt}`);
 
-  // 1. Produce the intermediate through the base Pandoc profile.
-  const defaultsFile = await ctx.writeDefaults(script.profile, {
+  // 1. Pandoc writes the intermediate file with the defaults file of the engine.
+  const defaultsFile = await ctx.writeDefaults(engine.defaultsFile, {
     "input-files": sourceFiles,
     "output-file": intermediate,
   });
@@ -66,18 +67,20 @@ export async function runScriptExport(
       stdout: pandocOutput.stdout,
       stderr: pandocOutput.stderr,
       targetFile: intermediate,
+      texErrors: [],
     };
   }
 
-  // 2. Run the declared command on the Pandoc-processed intermediate.
-  const target = path.join(options.targetDirectory, `${title}.${script.extension}`);
+  // 2. The command of the item runs on the file that Pandoc wrote.
+  const target = path.join(options.targetDirectory, `${title}.${post.extension}`);
   const cwd = options.cwd ?? path.dirname(intermediate);
-  const scriptOutput = await runShellCommand(script.command, [intermediate, target], cwd);
+  const scriptOutput = await runShellCommand(post.command, [intermediate, target], cwd);
 
   return {
     code: scriptOutput.code,
     stdout: pandocOutput.stdout.concat(splitLines(scriptOutput.stdout)),
     stderr: pandocOutput.stderr.concat(splitLines(scriptOutput.stderr)),
     targetFile: target,
+    texErrors: [],
   };
 }

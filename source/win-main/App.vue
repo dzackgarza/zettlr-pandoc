@@ -248,10 +248,7 @@ import {
 } from "@dts/common/shortcut-names";
 import { isSidebarViewId } from "@dts/common/sidebar-views";
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
-import type {
-  CustomExportIPCAPI,
-  ExportIPCAPI,
-} from "source/app/service-providers/commands/export";
+import type { ExportIPCAPI } from "source/app/service-providers/commands/export";
 import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
 import {
   useConfigStore,
@@ -295,7 +292,6 @@ import {
   SIDEBAR_VIEWS,
 } from "./sidebar/sidebar-views";
 import { showCitationProblems } from "./util/citation-problem-toasts";
-import { showQuickTexProblem } from "./util/quicktex-problem-toast";
 import {
   type DesktopCommandContext,
   resolveDirectoryHere,
@@ -303,6 +299,7 @@ import {
 } from "./util/desktop-command-target";
 import { getSemanticDocumentTitle } from "./util/get-document-title";
 import { EDITOR_FILLS_ITS_PANE, type EditorSlide, paneSlide } from "./util/pane-slide";
+import { showQuickTexProblem } from "./util/quicktex-problem-toast";
 import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
 import { REFUSED_ACTION_TEXT } from "./util/refused-action-text";
 import { surfaceDocumentLoadFailure } from "./util/surface-document-load-error";
@@ -467,24 +464,16 @@ async function openExport(): Promise<void> {
   await commandLauncher.value?.open({ kind: "dynamic-group", id: "export" });
 }
 
-/** Exports the active document with the profile or custom command chosen in the launcher. */
+/** Exports the active document with the export item chosen in the launcher. */
 async function runExport(request: ExportRequest): Promise<void> {
   const file = activeFile.value;
   if (file === undefined) {
     return;
   }
-  if (request.kind === "command") {
-    await ipcRenderer.invoke("application", {
-      command: "custom-export",
-      payload: { displayName: request.displayName, file: file.path } satisfies CustomExportIPCAPI,
-    });
-    return;
-  }
   await ipcRenderer.invoke("application", {
     command: "export",
     payload: {
-      // Spread into a plain object: the reactive proxy cannot cross the IPC boundary.
-      profile: { ...request.profile },
+      item: request.item,
       exportTo: configStore.config.export.dir,
       file: file.path,
     } satisfies ExportIPCAPI,

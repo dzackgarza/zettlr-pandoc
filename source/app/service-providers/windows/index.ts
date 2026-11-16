@@ -272,13 +272,16 @@ export default class WindowProvider extends ProviderContract {
       return await this.shouldCloseAll(rootType);
     });
 
-    this._documents.on(DP_EVENTS.CHANGE_FILE_STATUS, (_ctx: unknown) => {
-      // Always update the main window's flag depending on whether the document
-      // manager is clean or not
+    // Always update the main window's flag depending on whether the document
+    // manager is clean or not. A load from disk drops the unsaved text of a
+    // document and sends no changed file status.
+    const updateModifiedFlags = (_ctx: unknown): void => {
       for (const key in this._mainWindows) {
         this.setModified(key, !this._documents.isClean(key));
       }
-    });
+    };
+    this._documents.on(DP_EVENTS.CHANGE_FILE_STATUS, updateModifiedFlags);
+    this._documents.on(DP_EVENTS.FILE_REMOTELY_CHANGED, updateModifiedFlags);
 
     this._documents.on(DP_EVENTS.NEW_WINDOW, () => {
       this.syncMainWindows();

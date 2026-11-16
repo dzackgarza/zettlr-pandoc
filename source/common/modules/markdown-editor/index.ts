@@ -21,6 +21,7 @@
 // component for the editor itself.
 import "@dzack/pandoc-editor/editor.css";
 
+import { closeCompletion } from "@codemirror/autocomplete";
 import { foldEffect, foldState } from "@codemirror/language";
 import { forceLinting, setDiagnosticsEffect } from "@codemirror/lint";
 import { closeSearchPanel, openSearchPanel, searchPanelOpen } from "@codemirror/search";
@@ -34,7 +35,7 @@ import {
   Text,
 } from "@codemirror/state";
 // CodeMirror imports
-import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
+import { closeHoverTooltips, Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import type { PhraseDictionaryEntry } from "@common/util/phrase-dictionary";
 import { boundedChangesBetween } from "@common/util/text-changes";
 import type { AnnotationSet } from "@dts/common/annotation-domain";
@@ -590,6 +591,16 @@ export default class MarkdownEditor extends EventEmitter {
       doc: Text.of(content.split("\n")),
       extensions,
     });
+
+    if (isReload) {
+      // The list of completions and a hover of the shown text have a place
+      // in that text. CodeMirror keeps a measurement that their plugin asked
+      // for across `setState` and runs it against the new text, where the
+      // place can lie beyond the end ("Invalid position"). A reload closes
+      // them first, so that measurement has nothing to place.
+      closeCompletion(this._instance);
+      this._instance.dispatch({ effects: closeHoverTooltips });
+    }
 
     this._instance.setState(state);
 

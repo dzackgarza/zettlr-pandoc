@@ -45,6 +45,8 @@ import {
   findEditorPage,
   preserveArtifacts,
   readAgentApiPort,
+  readAppLog,
+  requireInitialized,
   shutdown,
 } from "./support/electron-app";
 
@@ -203,6 +205,16 @@ describe("a lint that did not run", function () {
       for (const documentPath of [indexPath, path.join(workspace, "problem.md")]) {
         await appLogged(getOutput, `Flowmark could not lint ${documentPath}`);
       }
+      // The log file of the app keeps the failure of each run with its cause
+      // (#47): the Problems view and the log say the same.
+      const log = await readAppLog(requireInitialized(fixtureRoot, "the fixture exists"));
+      for (const documentPath of [indexPath, path.join(workspace, "problem.md")]) {
+        assert.ok(
+          log.includes(`Flowmark could not lint ${documentPath}`),
+          `the app log names ${documentPath} as not linted`,
+        );
+      }
+      assert.ok(log.includes(TIME_LIMIT_CAUSE), "the app log has the cause of the failed runs");
       const shown = await problemsViewText(page, TIME_LIMIT_CAUSE);
       screenshots.set("not-linted-first-answer.png", await page.screenshot());
       assert.ok(

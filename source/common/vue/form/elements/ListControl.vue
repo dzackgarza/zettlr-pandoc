@@ -109,7 +109,7 @@
           <td v-for="(colLabel, colIdx) in columnLabels" v-bind:key="colIdx">
             <Checkbox
               v-if="columnType(colIdx) === 'boolean'"
-              v-bind:model-value="true"
+              v-bind:model-value="booleanCellOfNewRecord(colIdx)"
               v-bind:placeholder="colLabel"
               v-bind:inline="true"
               v-on:update:model-value="valuesToAdd[colIdx] = $event"
@@ -120,14 +120,14 @@
               v-else-if="columnType(colIdx) === 'number'"
               v-bind:placeholder="colLabel"
               v-bind:inline="true"
-              v-bind:model-value="0"
+              v-bind:model-value="numberCellOfNewRecord(colIdx)"
               v-on:update:model-value="valuesToAdd[colIdx] = $event"
               v-on:keydown.enter="handleAddition()"
             >
             </NumberControl>
             <TextControl
               v-else
-              v-bind:model-value="''"
+              v-bind:model-value="textCellOfNewRecord(colIdx)"
               v-bind:placeholder="colLabel"
               v-bind:inline="true"
               v-on:update:model-value="valuesToAdd[colIdx] = $event"
@@ -163,7 +163,7 @@
 
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
-import { computed, onBeforeUpdate, ref } from "vue";
+import { computed, ref } from "vue";
 import Checkbox from "./CheckboxControl.vue";
 import NumberControl from "./NumberControl.vue";
 import TextControl from "./TextControl.vue";
@@ -378,10 +378,38 @@ const filteredValue = computed<SupportedValues[] | SupportedValues[][] | Support
   }
 });
 
-onBeforeUpdate(() => {
-  // Reset the available input columns
-  valuesToAdd.value = [];
-});
+/**
+ * The cells of the new record show what the author entered in them. A cell
+ * that the author did not change shows the first value of its type: a set
+ * checkbox, the number 0, or no text. The new record takes what its cells
+ * show.
+ */
+function booleanCellOfNewRecord(columnIndex: number): boolean {
+  const entered = valuesToAdd.value[columnIndex];
+  return typeof entered === "boolean" ? entered : true;
+}
+
+function numberCellOfNewRecord(columnIndex: number): number {
+  const entered = valuesToAdd.value[columnIndex];
+  return typeof entered === "number" ? entered : 0;
+}
+
+function textCellOfNewRecord(columnIndex: number): string {
+  const entered = valuesToAdd.value[columnIndex];
+  return typeof entered === "string" ? entered : "";
+}
+
+/** The value that one cell of the new record shows. */
+function cellOfNewRecord(columnIndex: number): SupportedValues {
+  const type = columnType(columnIndex);
+  if (type === "boolean") {
+    return booleanCellOfNewRecord(columnIndex);
+  }
+  if (type === "number") {
+    return numberCellOfNewRecord(columnIndex);
+  }
+  return textCellOfNewRecord(columnIndex);
+}
 
 /**
  * Returns the values for a single column
@@ -565,10 +593,14 @@ function handleAddition(): void {
   const multi = asMultiArray.value;
   const record = asRecord.value;
 
-  const newValues = valuesToAdd.value;
+  // One value per cell, in the order of the columns. A cell that the author
+  // left as it was gives the value that it shows, so a record can have an
+  // empty cell (an export item without a base, for example).
+  const newValues = props.columnLabels.map((_label, columnIndex) => cellOfNewRecord(columnIndex));
 
-  if (newValues.some((x) => x === undefined)) {
-    reportError("Cannot add new record: Some value was undefined.", newValues);
+  // A record whose every cell is an empty text is the row as the control
+  // drew it: the author entered nothing, and nothing is added.
+  if (newValues.every((value) => value === "")) {
     return;
   }
 
@@ -576,10 +608,12 @@ function handleAddition(): void {
     const newValue = simple.map((elem) => elem);
     newValue.push(newValues[0]);
     emit("update:modelValue", newValue);
+    valuesToAdd.value = [];
   } else if (multi !== undefined) {
     const newValue = multi.map((elem) => elem.map((elem) => elem));
     newValue.push(newValues.map((x) => x));
     emit("update:modelValue", newValue);
+    valuesToAdd.value = [];
   } else if (record !== undefined && objectKeys.value !== undefined) {
     if (objectKeys.value.length !== newValues.length) {
       reportError("Cannot add new record: Didn't receive the right amount of values to add.");
@@ -595,6 +629,7 @@ function handleAddition(): void {
 
     newValue.push(newObject);
     emit("update:modelValue", newValue);
+    valuesToAdd.value = [];
   }
 }
 </script>

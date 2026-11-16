@@ -204,4 +204,20 @@ describe("assembled app: a key follows the link at the caret", function () {
     await page.keyboard.press("F12");
     await waitForPlace(page, FORMS, lineOf(FORMS, "{#sec:forms}"));
   });
+
+  it("opens the definition of a cross-reference on a Mod-click on its chip (#47)", async function () {
+    assert.ok(page !== undefined, "The editor window must be open");
+    const [leaf] = await leafIds(page);
+    await openInLeaf(page, leaf, indexPath);
+    // The test before this one left the caret in the cross-reference, which
+    // shows its source there. The caret goes to the start of the document,
+    // and the cross-reference is a chip again.
+    await placeCaret(page, INDEX, 0);
+    const chip = page.locator(".reference-chip").first();
+    await chip.waitFor({ timeout: 30_000 });
+
+    await chip.click({ modifiers: ["Control"] });
+
+    await waitForPlace(page, FORMS, lineOf(FORMS, "{#sec:forms}"));
+  });
 });

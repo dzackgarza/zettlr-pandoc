@@ -183,7 +183,6 @@ export type ConfigOptions = {
     cslLibrary: string;
     cslStyle: string;
     exportQmdWithQuarto: boolean;
-    customCommands: Array<{ displayName: string; command: string }>;
     // Ordered list of Pandoc filters applied to every export before the
     // profile's own filters. Names resolve from Pandoc's data directory
     // (~/.pandoc/filters) or an absolute path. Ordered and declared, unlike the
@@ -198,14 +197,16 @@ export type ConfigOptions = {
     // htmlTemplate covers html/revealjs; latexTemplate covers latex/pdf/beamer.
     htmlTemplate: string;
     latexTemplate: string;
-    // Declarative, pipeline-integrated export scripts. Each becomes a first-class
-    // Format item: export the source through the named base Pandoc `profile` to
-    // an intermediate, then run `command "<intermediate>" "<output>"`, producing
-    // an `extension` file. Unlike customCommands (raw source), the script
-    // receives the Pandoc-processed output.
-    scripts: Array<{
+    // The export items of the author (`exporter/export-items.ts`). An item
+    // without a `base` is a command: it gets the document, or the folder of a
+    // Project, as its one argument. An item with a `base` exports through
+    // the defaults file of that name and then runs
+    // `command "<file of Pandoc>" "<output>"`, which writes a file with the
+    // `extension`. The name is the identity of the item: a Project names its
+    // exports by it.
+    items: Array<{
       name: string;
-      profile: string;
+      base: string;
       command: string;
       extension: string;
     }>;
@@ -464,12 +465,11 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
       cslLibrary: "", // Path to a CSL JSON library file
       cslStyle: "", // Path to a CSL Style file
       exportQmdWithQuarto: false, // Whether .qmd-files should be exported with Quarto
-      customCommands: [], // Custom commands that the user can use to run arbitrary exports
       filters: [], // Ordered Pandoc filters applied to every export (resolved from ~/.pandoc/filters)
       injectMathHeaders: true, // Inject local MathJax config/preamble into exports; off defers to the profile template
       htmlTemplate: "", // Default Pandoc template for HTML/revealjs exports (when the profile declares none)
       latexTemplate: "", // Default Pandoc template for latex/pdf/beamer exports (when the profile declares none)
-      scripts: [],
+      items: [],
       selectedProfiles: [], // Remembers the last chosen exporter per file for easy re-exporting
       lastUsedProfile: "HTML.yaml", // Remembers the last chosen exporter for easy re-exporting
     },

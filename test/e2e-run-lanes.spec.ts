@@ -145,6 +145,70 @@ const PASSING_SPEC_SOURCE = `
 it("passes", function () {});
 `;
 
+/** What a window reported in the files of the renderer gate. */
+const WINDOW_ERROR = "pageerror: Error: An object could not be cloned.";
+
+/**
+ * A file whose one test passes while a window of its app reports an error.
+ * The file puts the events of a window under the gate as `attach` does.
+ */
+const WINDOW_ERROR_SPEC_SOURCE = `
+const path = require("node:path");
+const { watchRendererEvents } = require(path.join(process.cwd(), "e2e", "support", "electron-app.ts"));
+
+const events = [];
+watchRendererEvents(events, () => []);
+
+it("passes while a window reports an error", function () {
+  events.push(${JSON.stringify(WINDOW_ERROR)});
+});
+`;
+
+/** The same file, with the error declared as what its test provokes. */
+const PROVOKED_WINDOW_ERROR_SPEC_SOURCE = `
+const path = require("node:path");
+const { provokesRendererEvents, watchRendererEvents } = require(
+  path.join(process.cwd(), "e2e", "support", "electron-app.ts"),
+);
+
+const events = [];
+watchRendererEvents(events, () => []);
+provokesRendererEvents(/An object could not be cloned/);
+
+it("passes while a window reports the error that the test provokes", function () {
+  events.push(${JSON.stringify(WINDOW_ERROR)});
+});
+`;
+
+/** A file with a skipped test: the run would pass with one test less. */
+const SKIPPED_SPEC_SOURCE = `
+it("passes", function () {});
+it.skip("is skipped", function () {});
+`;
+
+/**
+ * A file with a failed test that keeps no artifacts itself. Its app has no
+ * open window, so the record of the failure is the title of the test.
+ */
+const FAILED_SPEC_SOURCE = `
+const path = require("node:path");
+const { watchRendererEvents } = require(path.join(process.cwd(), "e2e", "support", "electron-app.ts"));
+
+watchRendererEvents([], () => []);
+
+it("fails without artifacts of its own", function () {
+  throw new Error("the test failed");
+});
+`;
+
+/** A file with an exclusive test: its second test does not run. */
+const EXCLUSIVE_SPEC_SOURCE = `
+it.only("passes", function () {});
+it("fails, and does not run beside an exclusive test", function () {
+  throw new Error("this test ran");
+});
+`;
+
 /** Answers whether a connection to the path is accepted, or the error code. */
 async function connectOutcome(socketPath: string): Promise<string> {
   const client = connect(socketPath);
@@ -285,6 +349,84 @@ describe("E2E lanes runner", function () {
       0,
       `each of two files of one run binds 127.0.0.1:27412: ${run.stdout}${run.stderr}`,
     );
+  });
+
+  it("fails a file whose tests pass while a window reports an error (#47)", async function () {
+    const file = path.join(directory, "window-reports-an-error.cjs");
+    await writeFile(file, WINDOW_ERROR_SPEC_SOURCE, "utf8");
+
+    const run = runLanes([file], 60, 60_000);
+
+    assert.notEqual(run.status, 0, `the run fails: ${run.stdout}${run.stderr}`);
+    assert.match(run.stdout, /1 passing/, "the test of the file passed");
+    assert.ok(
+      run.stdout.includes(
+        "a window of the app reported an error that no test of this file provokes",
+      ),
+      `the run names the gate: ${run.stdout}`,
+    );
+    assert.ok(run.stdout.includes(WINDOW_ERROR), `the run names the error: ${run.stdout}`);
+  });
+
+  it("passes a file whose window reports the error that a test provokes (#47)", async function () {
+    const file = path.join(directory, "window-reports-a-provoked-error.cjs");
+    await writeFile(file, PROVOKED_WINDOW_ERROR_SPEC_SOURCE, "utf8");
+
+    const run = runLanes([file], 60, 60_000);
+
+    assert.equal(run.status, 0, `the run passes: ${run.stdout}${run.stderr}`);
+  });
+
+  it("fails a file with an exclusive test (#47)", async function () {
+    const file = path.join(directory, "has-an-exclusive-test.cjs");
+    await writeFile(file, EXCLUSIVE_SPEC_SOURCE, "utf8");
+
+    const run = runLanes([file], 60, 60_000);
+
+    assert.notEqual(run.status, 0, `the run fails: ${run.stdout}${run.stderr}`);
+    assert.match(run.stdout, /\.only/, `the run names the exclusive test: ${run.stdout}`);
+  });
+
+  it("fails a file name that names no file, and a file without a test (#47)", async function () {
+    const absent = path.join(directory, "no-such-file.cjs");
+    const empty = path.join(directory, "has-no-test.cjs");
+    await writeFile(empty, "// A spec file without a test.\n", "utf8");
+
+    for (const file of [absent, empty]) {
+      const run = runLanes([file], 60, 60_000);
+
+      assert.notEqual(run.status, 0, `the run of ${file} fails: ${run.stdout}${run.stderr}`);
+    }
+  });
+
+  it("fails a file with a skipped test (#47)", async function () {
+    const file = path.join(directory, "has-a-skipped-test.cjs");
+    await writeFile(file, SKIPPED_SPEC_SOURCE, "utf8");
+
+    const run = runLanes([file], 60, 60_000);
+
+    assert.notEqual(run.status, 0, `the run fails: ${run.stdout}${run.stderr}`);
+    assert.match(
+      run.stdout,
+      /Pending test forbidden/,
+      `the run names the skipped test: ${run.stdout}`,
+    );
+  });
+
+  it("keeps the record of a failed test of a file that keeps no artifacts (#47)", async function () {
+    const file = path.join(directory, "has-a-failed-test.cjs");
+    await writeFile(file, FAILED_SPEC_SOURCE, "utf8");
+    const artifacts = path.join(tmpdir(), "zettlr-has-a-failed-test.cjs-failures-e2e-latest");
+    await rm(artifacts, { recursive: true, force: true });
+
+    const run = runLanes([file], 60, 60_000);
+
+    assert.notEqual(run.status, 0, `the run fails: ${run.stdout}${run.stderr}`);
+    assert.equal(
+      await readFile(path.join(artifacts, "failures.txt"), "utf8"),
+      "test 1: fails without artifacts of its own\n",
+    );
+    await rm(artifacts, { recursive: true, force: true });
   });
 
   it("gives the files of a run a session bus without services", async function () {

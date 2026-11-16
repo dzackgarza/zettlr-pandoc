@@ -482,6 +482,83 @@ describe("suggestions through owner edits and later claims", function () {
     assert.equal(secondRejected.nextWorkingText, "");
   });
 
+  it("keeps the first twin in its place when the author decides the second twin first (#57)", function () {
+    // Two insertions of the same text, one after the other. The spec above
+    // decides the first one first; an author can start with the second.
+    const { review } = withReview("", "aa");
+    const packetId = review.packets[0].packetId;
+    review.suggestions = [
+      {
+        suggestionId: "first-a",
+        packetId,
+        kind: "insertion",
+        removedText: "",
+        restorations: [],
+        anchors: [{ from: 0, to: 1 }],
+        seam: 0,
+        state: "proposed",
+      },
+      {
+        suggestionId: "second-a",
+        packetId,
+        kind: "insertion",
+        removedText: "",
+        restorations: [],
+        anchors: [{ from: 1, to: 2 }],
+        seam: 1,
+        state: "proposed",
+      },
+    ];
+
+    const secondRejected = prepareChunkDecision({
+      review,
+      workingText: "aa",
+      chunkId: "second-a",
+      decision: "reject",
+    });
+    assert.ok(!isTransitionError(secondRejected));
+    assert.equal(secondRejected.nextWorkingText, "a");
+    assert.deepEqual(
+      secondRejected.nextReview?.suggestions[0].anchors,
+      [{ from: 0, to: 1 }],
+      "the first twin keeps its text: the rejected text was after it",
+    );
+    assert.equal(secondRejected.nextReview?.suggestions[0].state, "proposed");
+
+    const firstAccepted = prepareChunkDecision({
+      review: secondRejected.nextReview,
+      workingText: secondRejected.nextWorkingText,
+      chunkId: "first-a",
+      decision: "accept",
+    });
+    assert.ok(!isTransitionError(firstAccepted));
+    assert.equal(firstAccepted.nextWorkingText, "a", "the accepted twin stays in the text");
+  });
+
+  for (const decision of ["accept", "reject"] as const) {
+    it(`${decision}s a claim that puts one blank line in the place of a line of text (#57)`, function () {
+      const baseline = "one\ntwo\nthree\n";
+      const proposed = "one\n\nthree\n";
+      const { review, workingText } = withReview(baseline, proposed);
+      assert.equal(workingText, proposed, "the working text holds the proposal");
+      assert.equal(review.suggestions.length, 1, "the claim is one suggestion");
+
+      const decided = prepareChunkDecision({
+        review,
+        workingText,
+        chunkId: review.suggestions[0].suggestionId,
+        decision,
+      });
+
+      assert.ok(!isTransitionError(decided));
+      assert.equal(
+        decided.nextWorkingText,
+        decision === "accept" ? proposed : baseline,
+        "an accept keeps the blank line, and a reject gives the line of text back",
+      );
+    });
+  }
+
   it("withdraws a suggestion when an owner edit destroys its complete anchor", function () {
     const baseline = "prefix suffix\n";
     const proposed = "prefix AGENT suffix\n";

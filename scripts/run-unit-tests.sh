@@ -6,6 +6,9 @@
 # launcher gives the run one directory and removes it when the run ends. A
 # spec that removes nothing leaves nothing behind.
 #
+# A file with an exclusive test (`.only`) fails the run: the other tests of
+# the file would not run, and the run would pass.
+#
 # Usage: scripts/run-unit-tests.sh <mocha arguments>
 set -euo pipefail
 
@@ -13,4 +16,4 @@ repository="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 run_temporary_directory="$(mktemp --directory --tmpdir zettlr-unit-tests-XXXXXX)"
 trap 'rm -rf -- "$run_temporary_directory"' EXIT
 
-TMPDIR="$run_temporary_directory" "$repository/node_modules/.bin/mocha" "$@"
+TMPDIR="$run_temporary_directory" "$repository/node_modules/.bin/mocha" --forbid-only "$@"

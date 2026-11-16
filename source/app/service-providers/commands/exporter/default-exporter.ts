@@ -23,11 +23,12 @@ export const plugin: ExporterPlugin = async function (
   sourceFiles: string[],
   ctx: ExporterAPI,
 ): Promise<ExporterOutput> {
-  if (typeof options.profile === "string") {
-    throw new Error("Cannot run default exporter plugin: Wrong profile provided!");
+  const { engine } = options.item;
+  if (engine.kind !== "pandoc") {
+    throw new Error(`The Pandoc exporter cannot run the export item "${options.item.id}".`);
   }
 
-  const parsedWriter = parseReaderWriter(options.profile.writer).name;
+  const parsedWriter = parseReaderWriter(engine.writer).name;
   const extension = WRITER2EXT[parsedWriter] ?? parsedWriter;
 
   // First file determines the name of the exported file.
@@ -42,7 +43,7 @@ export const plugin: ExporterPlugin = async function (
     "input-files": sourceFiles,
     "output-file": target,
   };
-  const defaultsFile = await ctx.writeDefaults(options.profile.name, defaultKeys);
+  const defaultsFile = await ctx.writeDefaults(engine.defaultsFile, defaultKeys);
 
   // Run Pandoc
   const pandocOutput = await ctx.runPandoc(defaultsFile);
@@ -53,5 +54,6 @@ export const plugin: ExporterPlugin = async function (
     stdout: pandocOutput.stdout,
     stderr: pandocOutput.stderr,
     targetFile: target,
+    texErrors: [],
   };
 };

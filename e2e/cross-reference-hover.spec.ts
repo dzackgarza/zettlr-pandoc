@@ -52,6 +52,12 @@ const DOCUMENT = [
   "",
 ].join("\n");
 
+/** The image of the figure: one pixel. The hover shows the file of the document. */
+const FIGURE_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
 /** The sections of the open hover tooltips that the reference preview does not fill. */
 async function otherHoverSections(page: Page): Promise<string[]> {
   return await page
@@ -74,6 +80,7 @@ describe("assembled app: the hover of a cross-reference and of a citation", func
       config: { display: { renderingMode: "raw" } },
     });
     fixtureRoot = fixture.root;
+    await writeFile(path.join(path.dirname(fixture.documentPath), "figure.png"), FIGURE_PNG);
     const libraryPath = path.join(fixture.root, "references.bib");
     await writeFile(libraryPath, LIBRARY, "utf8");
     const configPath = path.join(fixture.configDirectory, "config.json");

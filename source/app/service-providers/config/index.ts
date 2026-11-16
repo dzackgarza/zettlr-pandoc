@@ -40,6 +40,7 @@ import {
   getConfigTemplate,
   systemAppLang,
 } from "./get-config-template";
+import { migrateExportItems, type StoredExportItems } from "./migrate-export-items";
 import { showOnboardingWindow } from "./onboarding-window";
 import { consolidateRootPaths, rootPathsOnDisk } from "./root-paths";
 
@@ -83,8 +84,9 @@ function assertConfigPath(config: ConfigOptions, option: string): asserts option
  * A config.json as an earlier version may have written it: a subset of the
  * current options, plus the keys that `runMigrations` rewrites.
  */
-type StoredConfig = Partial<Omit<ConfigOptions, "app" | "fileManager">> & {
+type StoredConfig = Partial<Omit<ConfigOptions, "app" | "fileManager" | "export">> & {
   app?: Partial<ConfigOptions["app"]>;
+  export?: Partial<ConfigOptions["export"]> & StoredExportItems;
   fileManager?: Partial<ConfigOptions["fileManager"]> & {
     filePicker?: { include?: string[] } | null;
   };
@@ -342,6 +344,12 @@ export default class ConfigProvider extends ProviderContract {
           : [],
       };
       delete readConfig.fileManager.filePicker;
+    }
+
+    // The export commands and the export scripts of a configuration from
+    // before the export items become the items of `export.items`.
+    if (typeof readConfig.export === "object" && readConfig.export !== null) {
+      migrateExportItems(readConfig.export);
     }
 
     // After version 4.0.0, we have split up `openPaths` into separate file and

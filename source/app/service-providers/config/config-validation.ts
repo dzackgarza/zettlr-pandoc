@@ -41,6 +41,7 @@ const RULES = {
   "export.stripTags": "required|boolean",
   "export.stripLinks": "required|string|in:full,unlink,no",
   "export.cslLibrary": "optional|string",
+  "export.items": "optional|array",
   "zkn.idRE": "required|string",
   "zkn.idGen": "required|string|min:2",
   attachmentExtensions: "optional|array",

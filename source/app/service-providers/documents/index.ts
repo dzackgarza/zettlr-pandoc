@@ -3276,7 +3276,13 @@ current contents from the editor somewhere else, and restart the application.`,
       this._unload(document);
     }
     this._announcedRemoteModtime.delete(filePath);
-    // Indicate to all affected editors that they should reload the file
+    // Indicate to all affected editors that they should reload the file.
+    // The unload dropped the unsaved text of the document, so the same event
+    // makes each window read the list of documents with unsaved text again
+    // (`document-tree-store.ts`) and the windows provider set the modified
+    // flag of each window. A changed file status is not sent for it: an
+    // editor answers that event with a pull of updates, which for an
+    // unloaded document is a second reload beside the one of this event.
     this.broadcastEvent(DP_EVENTS.FILE_REMOTELY_CHANGED, { filePath });
   }
 
