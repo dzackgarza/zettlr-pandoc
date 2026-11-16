@@ -2628,13 +2628,13 @@ export interface operations {
       };
     };
     responses: {
-      /** @description The review with the comment appended. */
+      /** @description The comment that the review took, with the generation of the review after it. */
       200: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ReviewDetailResponse"];
+          "application/json": components["schemas"]["ReviewCommentResponse"];
         };
       };
       400: components["responses"]["InvalidRequest"];

@@ -3117,6 +3117,60 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal("reviewId" in unknownError, false, unknown.body);
   });
 
+  it("answers a review comment with the comment and the generation of the review after it (#38)", async function () {
+    const filePath = path.join(scratch, "commented-review.md");
+    const documentId = await openInPane(filePath, "alpha\nbeta\n");
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text("alpha\nbeta\n"),
+      [
+        {
+          description: "capitalize beta",
+          patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", {
+            context: 0,
+          }),
+        },
+      ],
+      "commented-review",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The proposal was refused: ${submitted.code}`);
+    }
+
+    const answer = await httpRequest("POST", `/v1/reviews/${submitted.reviewId}/comments`, {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        expectedReviewGeneration: submitted.reviewGeneration,
+        text: "The second line names a lattice.",
+      }),
+    });
+
+    assert.equal(answer.status, 200, answer.body);
+    // The contract declares this body for the operation (ReviewCommentResponse).
+    const body = parseAs(answer.body, "ReviewCommentResponse");
+    assert.deepEqual(
+      {
+        reviewId: body.reviewId,
+        documentId: body.documentId,
+        reviewGeneration: body.reviewGeneration,
+        text: body.comment.text,
+      },
+      {
+        reviewId: submitted.reviewId,
+        documentId,
+        reviewGeneration: submitted.reviewGeneration + 1,
+        text: "The second line names a lattice.",
+      },
+    );
+    assert.deepEqual(Object.keys(body).sort(), [
+      "comment",
+      "documentId",
+      "reviewGeneration",
+      "reviewId",
+    ]);
+  });
+
   it("answers PERSISTENCE_FAILED for a retraction and a review comment that the sidecar refuses (#57)", async function () {
     const filePath = path.join(scratch, "unwritable-review.md");
     const documentId = await openInPane(filePath, "alpha\nbeta\n");

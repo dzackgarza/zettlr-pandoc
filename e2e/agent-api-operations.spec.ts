@@ -930,14 +930,16 @@ describe("assembled app: the operations of the Agent API", function () {
     const before = await review(agent);
     assert.deepEqual(before.comments, []);
 
-    // The contract declares a ReviewDetailResponse for this answer, and the
-    // app sends a ReviewCommentResponse. The case reads the one field that
-    // both have; the review itself says what the comment did.
+    // The answer is the comment that the review took, with the generation
+    // of the review after it (ReviewCommentResponse of the contract).
     const answer = (await agent.post(`/v1/reviews/${reviewId}/comments`, {
       expectedReviewGeneration: before.generation,
       text: REVIEW_COMMENT,
-    })) as { reviewId: string };
+    })) as Schemas["ReviewCommentResponse"];
     assert.equal(answer.reviewId, reviewId);
+    assert.equal(answer.documentId, documentId);
+    assert.equal(answer.reviewGeneration, before.generation + 1);
+    assert.equal(answer.comment.text, REVIEW_COMMENT);
 
     const after = await review(agent);
     assert.deepEqual(
