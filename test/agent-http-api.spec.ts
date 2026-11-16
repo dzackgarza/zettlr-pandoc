@@ -1512,6 +1512,18 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(body.openDocuments.length > 0);
   });
 
+  it("GET /v1/context names no focused view and no focused document while no document is open (#57)", async function () {
+    // The schema of a focused view requires the id of a document. Without a
+    // document in a pane, the answer has no focused view: not a view with an
+    // empty id.
+    const response = await httpRequest("GET", "/v1/context");
+    assert.equal(response.status, 200);
+    const body = parseAs(response.body, "EditorContext");
+    assert.deepEqual(body, { openDocuments: [] });
+    assert.equal(JSON.parse(response.body).focusedView, undefined);
+    assert.equal(JSON.parse(response.body).focusedDocument, undefined);
+  });
+
   it("GET /v1/documents lists open documents", async function () {
     const filePath = path.join(scratch, "list.md");
     await openFile(filePath, "content\n");
@@ -1606,6 +1618,31 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     } finally {
       await client.close();
     }
+  });
+
+  it("POST /v1/documents/{id}/search stops a pattern that does not end, and the server answers the next request (#57)", async function () {
+    // The pattern backtracks 2^40 times on this line. The search runs on the
+    // thread of the main process, so only its own deadline ends it.
+    const docId = await openFile(path.join(scratch, "stall-document.md"), `${"a".repeat(40)}!\n`);
+    const stalled = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+      body: JSON.stringify({ literal: "/(a+)+$/", context: 0 }),
+    });
+    assert.equal(stalled.status, 422);
+    const refusal = parseAs(stalled.body, "AgentErrorResponse");
+    assert.equal(refusal.error.code, "SEARCH_TIMEOUT");
+
+    const next = await httpRequest("POST", `/v1/documents/${docId}/search`, {
+      body: JSON.stringify({ literal: "/a+!/", context: 0 }),
+    });
+    assert.equal(next.status, 200);
+    assert.deepEqual(
+      parseAs(next.body, "SearchDocumentResponse").hits.map((hit) => [
+        hit.line,
+        hit.column,
+        hit.length,
+      ]),
+      [[1, 1, 41]],
+    );
   });
 
   it("POST /v1/documents/{id}/search gives each hit up to the limit and says when it stopped (#57)", async function () {
@@ -2261,6 +2298,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         patchPath,
         "--description",
         "no token",
+        "--baseline-sha256",
+        sha256Text("before\n"),
         "--port",
         String(address.port),
       ],
@@ -2272,6 +2311,100 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(refusal.ok, false);
     assert.equal(refusal.error.code, "TOKEN_REQUIRED");
     assert.equal(requestCount, 0);
+  });
+
+  it("sends nothing from the external CLI when no baseline of the patch is given (#57)", async function () {
+    // The request of a proposal requires the hash of the text that the patch
+    // was made from. A command without it has no value to send: it must not
+    // read the working text itself and send the hash of that read.
+    let requestCount = 0;
+    const peer = http.createServer((_request, response) => {
+      requestCount += 1;
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ protocolVersion: openApiDocument.info.version }));
+    });
+    peerServers.push(peer);
+    await new Promise<void>((resolve) => {
+      peer.listen(0, "127.0.0.1", resolve);
+    });
+    const address = peer.address();
+    assert.ok(address !== null && typeof address !== "string");
+
+    const filePath = path.join(scratch, "no-baseline.md");
+    const patchPath = path.join(scratch, "no-baseline.diff");
+    writeFileSync(filePath, "before\n", "utf8");
+    writeFileSync(patchPath, "a non-empty proposition\n", "utf8");
+
+    const result = await runReviewDiffCli([
+      "--document",
+      filePath,
+      "--patch",
+      patchPath,
+      "--description",
+      "no baseline",
+      "--port",
+      String(address.port),
+    ]);
+    assert.equal(result.code, 2);
+    assert.equal(result.stdout, "");
+    const refusal = JSON.parse(result.stderr) as {
+      ok: boolean;
+      error: { code: string; message: string };
+    };
+    assert.equal(refusal.ok, false);
+    assert.equal(refusal.error.code, "INVALID_INVOCATION");
+    assert.match(refusal.error.message, /^Option --baseline-sha256 is required/);
+    assert.equal(requestCount, 0);
+  });
+
+  it("opens no review through the external CLI for a patch of another text than the working text (#57)", async function () {
+    // The author changed the document after the producer of the patch read
+    // it. The patch still applies to the changed text, so only the baseline
+    // tells the editor that the patch was made from another text.
+    const filePath = path.join(scratch, "cli-stale-baseline.md");
+    const read = "first line\nsecond line\n";
+    const working = "first line\nsecond line\nA line that the author added.\n";
+    const documentId = await openFile(filePath, working);
+    const patchPath = path.join(scratch, "cli-stale-baseline.diff");
+    writeFileSync(
+      patchPath,
+      createPatch("document", read, "FIRST line\nsecond line\n", "", "", { context: 0 }),
+      "utf8",
+    );
+
+    const result = await runReviewDiffCli([
+      "--document",
+      filePath,
+      "--patch",
+      patchPath,
+      "--description",
+      "a patch of an earlier text",
+      "--baseline-sha256",
+      sha256Text(read),
+      "--port",
+      String(httpPort),
+    ]);
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, "");
+    const refusal = JSON.parse(result.stderr) as {
+      ok: boolean;
+      error: { code: string; status: number };
+    };
+    assert.equal(refusal.ok, false);
+    assert.equal(refusal.error.code, "REVISION_MISMATCH");
+    assert.equal(refusal.error.status, 412);
+
+    const content = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
+    assert.equal(content.status, 200);
+    assert.equal(parseAs(content.body, "ReadDocumentResponse").content, working);
+    const reviews = await httpRequest("GET", "/v1/reviews");
+    assert.equal(reviews.status, 200);
+    assert.deepEqual(
+      parseAs(reviews.body, "ReviewListResponse").reviews.filter(
+        (review) => review.documentPath === filePath,
+      ),
+      [],
+    );
   });
 
   it("submits a review through the standalone external CLI process without changing the selected tab", async function () {
@@ -2372,6 +2505,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       patchPath,
       "--description",
       "incompatible protocol",
+      "--baseline-sha256",
+      sha256Text("before\n"),
       "--port",
       String(address.port),
     ]);
@@ -2449,6 +2584,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         patchPath,
         "--description",
         failure,
+        "--baseline-sha256",
+        sha256Text("before\n"),
         "--port",
         String(port),
       ]);
@@ -3085,6 +3222,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       patchPath,
       "--description",
       "malformed proposition",
+      "--baseline-sha256",
+      sha256Text("unchanged\n"),
       "--port",
       String(httpPort),
     ]);

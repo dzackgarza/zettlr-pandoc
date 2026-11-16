@@ -1,0 +1,314 @@
+/**
+ * @ignore
+ * BEGIN HEADER
+ *
+ * Contains: PDF exports through the window, with the recipe of ~/.pandoc
+ * CVM-Role: Test
+ * Maintainer: D. Zack Garza
+ * License: GNU GPL v3
+ *
+ * Description: The PDF export of this fork runs the `compile-pandoc` recipe
+ *              of ~/.pandoc (AGENTS.md §3). The spec exports through the
+ *              controls of the window, with the real recipe, pandoc and
+ *              pdflatex: the active document from the export launcher, and a
+ *              Project from the context menu of its folder. It reads the
+ *              text of each PDF, so the chapters of the Project are proven
+ *              in the order of its settings. A Project whose template the
+ *              recipe does not have shows one error window with the cause
+ *              and leaves no PDF (#47).
+ *
+ * END HEADER
+ */
+
+import { strict as assert } from "node:assert";
+import { type ChildProcess, execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import type { Browser, Page } from "playwright";
+import {
+  assertCleanExit,
+  attach,
+  clickToClose,
+  createFixture,
+  delay,
+  findEditorPage,
+  preserveArtifacts,
+  readAppLog,
+  requireInitialized,
+  shutdown,
+} from "./support/electron-app";
+
+const run = promisify(execFile);
+
+const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-pdf-export-e2e-latest");
+const LAUNCHER = "[data-command-launcher]";
+const PDF_PROFILE = "PDF.yaml";
+
+const NOTE_SENTENCE = "An even unimodular lattice has a rank that 8 divides.";
+const NOTE = `# Lattices\n\n${NOTE_SENTENCE}\n`;
+// The order of the Project is not the order of the names.
+const FIRST_CHAPTER = { name: "zeta.md", sentence: "The first chapter is about the genus." };
+const SECOND_CHAPTER = { name: "alpha.md", sentence: "The second chapter is about the rank." };
+const UNKNOWN_TEMPLATE = "no-such-template";
+
+/** The pages of the error windows of the application. */
+async function errorWindows(browser: Browser): Promise<Page[]> {
+  const pages = browser.contexts().flatMap((context) => context.pages());
+  const counts = await Promise.all(pages.map(async (page) => await page.locator("#error").count()));
+  return pages.filter((_page, index) => counts[index] > 0);
+}
+
+async function waitUntil(
+  probe: () => Promise<boolean> | boolean,
+  what: string,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await probe()) {
+      return;
+    }
+    await delay(200);
+  }
+  throw new Error(`Timed out waiting for ${what}`);
+}
+
+/** The text of a PDF, with each run of white space as one space. */
+async function pdfText(file: string): Promise<string> {
+  const header = (await readFile(file)).subarray(0, 5).toString("latin1");
+  assert.equal(header, "%PDF-", `${file} is a PDF`);
+  const { stdout } = await run("pdftotext", [file, "-"], { maxBuffer: 16 * 1024 * 1024 });
+  return stdout.replace(/\s+/g, " ");
+}
+
+describe("assembled app: a PDF export through the window (#47)", function () {
+  let appProcess: ChildProcess | undefined;
+  let browser: Browser | undefined;
+  let page: Page | undefined;
+  let fixtureRoot: string | undefined;
+  let workspace = "";
+  let notePath = "";
+  let book = "";
+  let brokenBook = "";
+  let opened = "";
+  let getOutput: () => string = () => "";
+  const rendererEvents: string[] = [];
+  const screenshots = new Map<string, Buffer>();
+
+  /** A Project folder with the two chapters, in the order of its settings. */
+  async function project(name: string, title: string, texTemplate: string): Promise<string> {
+    const directory = path.join(workspace, name);
+    await mkdir(directory);
+    for (const chapter of [FIRST_CHAPTER, SECOND_CHAPTER]) {
+      await writeFile(
+        path.join(directory, chapter.name),
+        `# ${chapter.name}\n\n${chapter.sentence}\n`,
+        "utf8",
+      );
+    }
+    await writeFile(
+      path.join(directory, ".ztr-directory"),
+      JSON.stringify({
+        sorting: "name-up",
+        project: {
+          title,
+          profiles: [PDF_PROFILE],
+          files: [FIRST_CHAPTER.name, SECOND_CHAPTER.name],
+          cslStyle: "",
+          templates: { tex: texTemplate, html: "" },
+        },
+        icon: null,
+        color: null,
+      }),
+      "utf8",
+    );
+    return directory;
+  }
+
+  /** The paths that the application gave the desktop to open. */
+  async function openedPaths(): Promise<string[]> {
+    if (!existsSync(opened)) {
+      return [];
+    }
+    return (await readFile(opened, "utf8")).split("\n").filter((line) => line !== "");
+  }
+
+  /** Starts the export of a Project from the context menu of its folder. */
+  async function exportProjectFromTree(activePage: Page, directory: string): Promise<void> {
+    await activePage
+      .locator(`.tree-item[data-path=${JSON.stringify(directory)}] .display-text`)
+      .first()
+      .click({ button: "right" });
+    const item = activePage
+      .locator('.application-menu .menu-item[data-id="menu.project_build"]')
+      .last();
+    await item.waitFor({ state: "visible", timeout: 10_000 });
+    await item.click();
+  }
+
+  before(async function () {
+    const fixture = await createFixture("zettlr-pdf-export-e2e-", {
+      documentName: "note.md",
+      documentContents: NOTE,
+      config: {
+        darkMode: false,
+        export: { dir: "cwd", autoOpenExportedFiles: true },
+        fileManagerMode: "combined",
+        window: { fileManagerVisible: true },
+      },
+    });
+    fixtureRoot = fixture.root;
+    notePath = fixture.documentPath;
+    workspace = path.dirname(notePath);
+    book = await project("book", "Lattice book", "");
+    brokenBook = await project("broken-book", "Broken book", UNKNOWN_TEMPLATE);
+
+    // The desktop of the run: it records each path that the application
+    // gives it to open, and opens nothing.
+    const bin = path.join(fixture.root, "bin");
+    await mkdir(bin);
+    opened = path.join(fixture.root, "opened.log");
+    const xdgOpen = path.join(bin, "xdg-open");
+    await writeFile(xdgOpen, `#!/bin/sh\nprintf '%s\\n' "$1" >> '${opened}'\n`, "utf8");
+    await chmod(xdgOpen, 0o755);
+
+    const app = await attach(fixture.configDirectory, rendererEvents, {
+      environment: { PATH: `${bin}:${process.env.PATH}` },
+    });
+    appProcess = app.appProcess;
+    browser = app.browser;
+    getOutput = app.getOutput;
+    page = await findEditorPage(app.browser, this.timeout());
+
+    await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
+  });
+
+  after(async function () {
+    await shutdown(browser, appProcess);
+    await preserveArtifacts(
+      ARTIFACT_DIRECTORY,
+      fixtureRoot,
+      getOutput(),
+      rendererEvents,
+      screenshots,
+    );
+    if (fixtureRoot !== undefined) {
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
+    console.log(`E2E artifacts: ${ARTIFACT_DIRECTORY}`);
+    assertCleanExit(getOutput());
+  });
+
+  it("exports the active document with the PDF profile of the export launcher", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const runningBrowser = requireInitialized(browser, "The application must be running");
+    const exported = path.join(workspace, "note.pdf");
+
+    await activePage.evaluate(() => {
+      window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu.export" });
+    });
+    const profileRow = activePage.locator(
+      `${LAUNCHER} [data-launcher-row][data-export-profile=${JSON.stringify(PDF_PROFILE)}]`,
+    );
+    await profileRow.waitFor({ state: "visible", timeout: 10_000 });
+    assert.equal((await profileRow.innerText()).trim(), "PDF (compile-pandoc)");
+    screenshots.set("export-launcher.png", await activePage.screenshot());
+    await profileRow.click();
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
+
+    // The export is done when the application gives the file to the desktop.
+    await waitUntil(
+      async () => (await openedPaths()).includes(exported),
+      `the desktop to get ${exported}`,
+      60_000,
+    );
+    assert.ok((await pdfText(exported)).includes(NOTE_SENTENCE), "the PDF holds the sentence");
+    assert.deepEqual(
+      (await readdir(workspace)).filter((entry) => entry.endsWith(".pdf")),
+      ["note.pdf"],
+      "the folder of the document holds the one PDF and no dated copy of the recipe",
+    );
+    assert.equal(await readFile(notePath, "utf8"), NOTE, "the export changes no text");
+    assert.deepEqual(await errorWindows(runningBrowser), [], "no error window is shown");
+    screenshots.set("document-exported.png", await activePage.screenshot());
+  });
+
+  it("exports the chapters of a Project in the order of its settings, from the menu of its folder", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const runningBrowser = requireInitialized(browser, "The application must be running");
+    const exported = path.join(book, "Lattice book.pdf");
+
+    await exportProjectFromTree(activePage, book);
+
+    // A finished Project export shows its folder; the run has no
+    // notification service, so the application gives the folder to the desktop.
+    await waitUntil(
+      async () => (await openedPaths()).includes(book),
+      `the desktop to get ${book}`,
+      60_000,
+    );
+    const text = await pdfText(exported);
+    const first = text.indexOf(FIRST_CHAPTER.sentence);
+    const second = text.indexOf(SECOND_CHAPTER.sentence);
+    assert.ok(first !== -1 && second !== -1, `the PDF holds both chapters: ${text}`);
+    assert.ok(first < second, "the chapters are in the order of the Project, not of their names");
+    assert.deepEqual(
+      (await readdir(book)).filter((entry) => entry.endsWith(".pdf")),
+      ["Lattice book.pdf"],
+    );
+    assert.deepEqual(await errorWindows(runningBrowser), [], "no error window is shown");
+  });
+
+  it("shows the cause when the recipe does not have the template of a Project, and makes no PDF", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const runningBrowser = requireInitialized(browser, "The application must be running");
+    const before = await openedPaths();
+
+    await exportProjectFromTree(activePage, brokenBook);
+
+    let shown: Page[] = [];
+    await waitUntil(
+      async () => {
+        shown = await errorWindows(runningBrowser);
+        return shown.length > 0;
+      },
+      "the error window of the export",
+      60_000,
+    );
+    assert.equal(shown.length, 1, "one error window is shown");
+    const errorPage = shown[0];
+    screenshots.set("recipe-failure.png", await errorPage.screenshot());
+    const text = await errorPage.locator("#error").innerText();
+    assert.ok(
+      text.includes(`Could not export the Project "Broken book" with ${PDF_PROFILE}.`),
+      `the error window names the Project and the profile:\n${text}`,
+    );
+    assert.ok(
+      text.includes(`templates/${UNKNOWN_TEMPLATE}.latex`),
+      `the error window has the cause of the recipe:\n${text}`,
+    );
+
+    assert.deepEqual(
+      (await readdir(brokenBook)).filter((entry) => entry.endsWith(".pdf")),
+      [],
+      "the Project folder has no PDF",
+    );
+    assert.deepEqual(await openedPaths(), before, "the application shows no folder as exported");
+    // An entry of the log is its line and the lines up to the next entry.
+    const entries = (await readAppLog(requireInitialized(fixtureRoot, "the fixture exists")))
+      .split(/\n(?=\[\d\d:\d\d:\d\d\] )/)
+      .filter((entry) =>
+        entry.includes(`[Project] Broken book did not export with ${PDF_PROFILE}`),
+      );
+    assert.equal(entries.length, 1, "the app log has the failed export one time");
+    assert.ok(
+      entries[0].includes(`templates/${UNKNOWN_TEMPLATE}.latex`),
+      `the log entry has the cause of the recipe:\n${entries[0]}`,
+    );
+
+    await clickToClose(errorPage, errorPage.locator("button").first());
+  });
+});

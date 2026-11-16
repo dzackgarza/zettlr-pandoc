@@ -144,8 +144,11 @@ Desktop entry → wrapper → splash → boot script:
   script starts the binary under `direnv exec "$HOME"`: the app gets the
   variables of `~/.envrc`, the Agent API token among them (§6). The script
   stops when `direnv` or `~/.envrc` is absent. It retains focus-if-running (intentional — do not
-  "fix"), Hyprland window-class detection (`class == zettlr-pandoc`), and
-  fail-loud behavior on build or launch failure.
+  "fix") and fail-loud behavior on build or launch failure. An app "already
+  runs" when it holds the `SingletonLock` of the profile of the start
+  (`profile_running`); a window of the class `zettlr-pandoc` does not decide,
+  as an app of another profile has the same class. The class is only how the
+  script sees that the window of its own start is up.
 - Launcher log: `~/.cache/zettlr-pandoc-dev.log`.
 
 ## Shared Markdown editor
@@ -286,6 +289,14 @@ they must be threaded through **four** layers:
   (`writeDefaults`). Proof: `test/export-document.spec.ts`,
   `test/project-export.spec.ts`.
 - The Chromium "Simple PDF" export was removed; every export now goes through pandoc.
+- **Proof through the window.** `e2e/pdf-export.spec.ts` exports with the real
+  recipe, pandoc and pdflatex: the active document from the PDF row of the
+  export launcher, and a Project from "Export Project" in the menu of its
+  folder. It reads the text of each PDF (`pdftotext`), so the chapters are
+  proven in the order of the Project, and it shows the error window and the
+  log entry of a recipe that fails. The recipe runs latexmk in force mode: a
+  TeX error in a document does not fail it, so the spec forces the failure
+  with a template that the recipe does not have.
 - **One list of export profiles.** `exportProfiles`
   (`commands/exporter/index.ts`) joins the defaults files of
   `userData/defaults` and the custom profiles (`getCustomProfiles`); a custom
@@ -366,6 +377,9 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   is the one that starts a second compositor when `WAYLAND_DISPLAY` is unset.
 - The command checks and the three gates of the preflight run at the same time.
   The preflight costs the time of the slowest tool, not the sum.
+- Proof in the assembled app: `e2e/start-without-required-tool.spec.ts` (a
+  PATH without `biber`, a home folder without `~/.pandoc/justfile`: the
+  native box, what the output names, and exit code 1).
 
 ### 6. Agent API MCP tunnel
 
@@ -426,6 +440,15 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   stops without it, and a development start (`just launch`,
   `just launch-desktop`) takes it from the shell. An e2e run makes a token of
   its own (`AGENT_API_TOKEN` in `e2e/support/electron-app.ts`).
+- **The review CLI sends the baseline of the producer of the patch.**
+  `baselineSha256` of a proposal pins the text that the patch was made from.
+  `zettlr-pandoc-review-diff` requires `--baseline-sha256` and refuses a
+  call without it before the first request; it sends no hash of a read of
+  its own, and it holds no copy of the comparison: the editor refuses a
+  baseline that is not its working text (`REVISION_MISMATCH`). A new field
+  that a request requires is an option that the CLI requires, not a value
+  that the CLI fills in. Proof: `test/agent-http-api.spec.ts` ("sends
+  nothing from the external CLI when no baseline of the patch is given").
 - Operations tagged `zotero` in `openapi.yaml` are served at `/zotero/mcp` (MCP
   server `zettlr-pandoc-zotero`), not at `/mcp`, and the served `/openapi.json`
   leaves out their routes; the Custom GPT Action imports that document and has
@@ -578,6 +601,14 @@ Zettlr starts it on one diagram.
   the author sees the edit before it is made, §28).
   `[[#heading]]` (empty target) resolves to the linking document; backlinks and
   the graph leave that self link out.
+- **A line that arrives before the text waits for it.** The window gets the
+  line of a `[[file#heading]]` link (`jump-to-line`) when the tab of the
+  file exists; the editor of the tab gets the text of the file later. A pane
+  whose editor has no document keeps the line (`pendingJumpLine`,
+  `MainEditor.vue`) and jumps when its load ended; a jump in an editor
+  without the text finds no such line and leaves the cursor on line 1.
+  Proof: `e2e/jump-to-heading-while-loading.spec.ts` (a document of 15,000
+  lines, by a Mod-click and by the key of "Follow link").
 - **One reading of a link.** A wikilink is a `ZettelkastenLink` of the Markdown
   AST, read with the setting `zkn.linkFormat`: in `[[a|b]]` the target is `a`
   for `link|title` and `b` for `title|link`, and `[[x]]` in code is no link.
@@ -1137,7 +1168,13 @@ of an isolated instance are in the first comment of #132.
   defined`. A callback that is an argument has no name and is not wrapped.
 - **A native message box is not a page.** Playwright does not see it. A spec
   finds the box by its title with `xdotool`, captures it with ImageMagick
-  `import`, and presses a key in it (`e2e/quit-with-open-review.spec.ts`). The
+  `import`, and presses a key in it (`e2e/quit-with-open-review.spec.ts`). A
+  start that shows a box keeps the programs of the system on its PATH: on
+  the hosted image GTK loads the icon of a box through `bwrap`, and a start
+  whose PATH has no `bwrap` aborts in GTK before the box shows. A spec that
+  takes one command away replaces the directory that holds it by links to
+  its other entries (`pathWithout`,
+  `e2e/start-without-required-tool.spec.ts`). The
   CI toolchain installs both tools (`scripts/setup-ci-toolchain.sh`). Such a
   spec runs through the lanes only: a Mocha run on the display of the
   environment presses its keys on the desktop of the author.
@@ -1270,7 +1307,14 @@ of an isolated instance are in the first comment of #132.
   outside every open workspace is not named.
 - **`closeWindow` answers whether the window may close.** The window
   provider closes the `BrowserWindow` only for `true`, and gives the
-  documents provider the function that repeats the close.
+  documents provider the function that repeats the close. The window
+  provider does this in `closeWithDocuments`
+  (`windows/close-with-documents.ts`). A close that rejects keeps the
+  window and shows "The window was not closed: <cause>" in it; the window
+  is never closed without its documents. Proof:
+  `test/window-close-with-documents.spec.ts` (each answer of the documents
+  provider, and a rejection), `e2e/window-close.spec.ts` (the real
+  provider).
 - **`closeFileEverywhere` answers whether the document closed.** It
   detaches before it closes a tab, so a refused close leaves the tabs and
   the buffer. A caller that removes the file afterwards (`file-delete`, the
@@ -2409,7 +2453,7 @@ gh api graphql -f query='query { repository(owner:"dzackgarza", name:"zettlr-pan
 
 `thread-resolution` is red while any thread is unresolved, so a red `thread-resolution` says the triage loop has not been run. Triage every substantive thread through `pr-feedback-triage`: a disposition and its evidence on the thread itself, a commit behind any accepted finding, and no thread resolved on intent. Policy findings (`POLICY.FAIL_OPEN`, `POLICY.NO_ERROR_DISCARD`, `POLICY.RUNTIME_DEFAULT`, `POLICY.NO_HIDDEN_CONFIG`, `POLICY.NO_TYPE_ESCAPE`) are the global bridge-burning rules; they are not style notes and they are not waivable by a sentence in the PR body.
 
-The local commit hook exempts this fork from verification. The hosted `Unit Tests / Lint` job builds the packaged app and runs the assembled-app E2E suite on it. Neither a clean commit nor a green local run is evidence about the PR; the run over the branch head is.
+The local commit hook exempts this fork from verification. The hosted check `Unit Tests / Lint` passes when the jobs `unit` and `e2e` passed; each `e2e` shard builds the packaged app and runs its part of the assembled-app suite on it (§13). Neither a clean commit nor a green local run is evidence about the PR; the run over the branch head is.
 
 ## When Acting on Review Feedback
 

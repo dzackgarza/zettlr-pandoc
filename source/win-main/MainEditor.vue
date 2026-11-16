@@ -1517,6 +1517,7 @@ async function activateTab(): Promise<void> {
 
   publishActiveEditorState(editor);
   applyPendingNavigation();
+  applyPendingJump(editor);
   if (!editor.hasFocus() && !isTypingOutsideLeaf()) {
     editor.focus();
   }
@@ -1531,8 +1532,31 @@ async function activateTab(): Promise<void> {
   }
 }
 
+/**
+ * A line that the window sent while this editor had no document. The window
+ * sends the line of a `[[file#heading]]` link when the tab of the file
+ * exists, and the editor of the tab gets the text of the file later: a jump
+ * in an editor without that text finds no such line. The line waits here
+ * until the load of the document ended.
+ */
+let pendingJumpLine: number | null = null;
+
 function jtl(lineNumber: number): void {
-  currentEditor?.jtl(lineNumber);
+  if (currentEditor === null || editorLoadPromise !== null) {
+    pendingJumpLine = lineNumber;
+    return;
+  }
+  currentEditor.jtl(lineNumber);
+}
+
+/** Jumps to the line that waited for the document of this editor. */
+function applyPendingJump(editor: MarkdownEditor): void {
+  if (pendingJumpLine === null) {
+    return;
+  }
+  const lineNumber = pendingJumpLine;
+  pendingJumpLine = null;
+  editor.jtl(lineNumber);
 }
 
 /** A CSL name field: persons carry family names, institutions a literal. */

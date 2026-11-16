@@ -126,11 +126,16 @@ zettlr-pandoc-review-diff \
   --document /path/to/document.md \
   --patch /path/to/proposition.diff \
   --description "Review proposition" \
+  --baseline-sha256 "$(sha256sum < /path/to/document.md | cut -d ' ' -f 1)" \
   --port 27412
 ```
 
 The running editor validates and applies the unified patch.
 The command exits nonzero when the editor refuses the proposition.
+
+`--baseline-sha256` is the SHA-256 of the text that the patch was made from.
+For a document with unsaved text in the editor, that text is the working text: read it through the Agent API and pass its `revision.sha256`.
+The editor refuses a patch whose baseline is not its working text (`REVISION_MISMATCH`), so a patch of an earlier text opens no review.
 
 The editor answers only a caller that sends its token.
 The command reads the token from the environment variable `ZETTLR_AGENT_API_TOKEN`, the variable that the editor was started with, and exits without a request when the variable is absent.

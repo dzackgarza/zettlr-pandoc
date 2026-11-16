@@ -76,6 +76,7 @@ describe("Project export", function () {
   let macroHome: string;
   let fsal: FSAL;
   let assets: AssetsProvider;
+  let config: ConfigProvider;
   let services: ProjectExportServices;
   const errorWindows: ErrorWindow[] = [];
 
@@ -224,11 +225,7 @@ describe("Project export", function () {
     );
 
     const log = new LogProvider();
-    const config = new ConfigProvider(
-      log,
-      [path.resolve("static", "lang")],
-      unexpectedStoreWriteFailure,
-    );
+    config = new ConfigProvider(log, [path.resolve("static", "lang")], unexpectedStoreWriteFailure);
     config.set("export.customCommands", [
       { displayName: "First command", command: noEngine },
       { displayName: "Second command", command: noTemplate },
@@ -301,6 +298,33 @@ describe("Project export", function () {
         `the message has no "${part}"`,
       );
     }
+  });
+
+  it("lists an export script of the settings among the export profiles (#57)", async function () {
+    // The export menu, the launcher and the Project export read this list. A
+    // script of the settings that is absent from it can be neither chosen
+    // nor run.
+    config.set("export.scripts", [
+      {
+        name: "Handout script",
+        profile: "LaTeX.yaml",
+        command: await exportCommand("handout-script", "exit 0"),
+        extension: "pdf",
+      },
+    ]);
+    const profiles = await assets.listExportProfiles();
+    config.set("export.scripts", []);
+
+    assert.deepEqual(
+      profiles.filter((profile) => !profile.isInvalid && profile.writer === "script"),
+      [{ name: "Handout script", reader: "markdown", writer: "script", isInvalid: false }],
+    );
+    assert.deepEqual(
+      (await assets.listExportProfiles()).filter(
+        (profile) => !profile.isInvalid && profile.writer === "script",
+      ),
+      [],
+    );
   });
 
   it("gives a command a Project folder with an apostrophe in its name", async function () {

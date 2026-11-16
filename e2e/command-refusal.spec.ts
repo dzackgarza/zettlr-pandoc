@@ -13,7 +13,9 @@
  *              write permission, and a move of a document with unsaved
  *              changes. Each is refused, each leaves the file where it was,
  *              and each shows one error in the window that names the file
- *              (#178).
+ *              (#178). A command that the application does not have is
+ *              refused the same way: the caller gets the refusal, and the
+ *              window shows it (#57).
  *
  * END HEADER
  */
@@ -168,6 +170,34 @@ describe("an application command that cannot do its work", function () {
     screenshots.set("rename-refused.png", await editorPage.screenshot());
 
     await chmod(lockedDirectory, 0o700);
+    await dismissErrors(editorPage);
+  });
+
+  it("refuses a command that the application does not have, and shows the refusal", async function () {
+    const editorPage = requireInitialized(page, "The editor page must be initialized");
+    assert.deepEqual(await errorMessages(editorPage), [], "no error is shown before the command");
+
+    const rejection = await editorPage.evaluate(
+      async () =>
+        await window.ipc
+          // @ts-expect-error The contract of the channel names no such command.
+          .invoke("application", { command: "no-such-command" })
+          .then(
+            () => "the command answered",
+            (reason: Error) => reason.message,
+          ),
+    );
+
+    assert.match(
+      rejection,
+      /The channel application has no command no-such-command\./,
+      "the caller gets the refusal, not an answer",
+    );
+    await editorPage.locator(ERROR_TOAST).first().waitFor({ state: "visible", timeout: 20_000 });
+    assert.deepEqual(await errorMessages(editorPage), [
+      "The channel application has no command no-such-command.",
+    ]);
+    screenshots.set("unknown-command-refused.png", await editorPage.screenshot());
     await dismissErrors(editorPage);
   });
 
