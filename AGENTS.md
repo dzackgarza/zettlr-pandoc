@@ -297,6 +297,21 @@ they must be threaded through **four** layers:
   log entry of a recipe that fails. The recipe runs latexmk in force mode: a
   TeX error in a document does not fail it, so the spec forces the failure
   with a template that the recipe does not have.
+- **A PDF with TeX errors is exported, and the author gets the errors.** For
+  a document with a TeX error that still gives a PDF, the recipe keeps the
+  PDF, prints `latexmk exited N but PDF was produced` and ends with exit
+  code 0 (`_compile-pandoc-latexmk`). The recipe decides that the PDF stays,
+  so the export completes and opens the file. `runRecipeExport` reads the
+  errors of TeX from the output of such a run (`texErrorsOfRecipeRun`,
+  `exporter/tex-errors.ts`) into `ExporterOutput.texErrors`, each error one
+  time. With such errors the export of a document and of a Project opens one
+  error window ("The PDF has TeX errors") with the PDF and each error, and
+  shows no message of a clean export; a Project names such a profile in the
+  one window of a profile that did not export. An export does not read exit
+  code 0 of the recipe alone as a PDF without a fault. Proof:
+  `test/export-tex-errors.spec.ts`, `test/export-document.spec.ts`,
+  `test/project-export.spec.ts`, and with the real recipe
+  `e2e/pdf-export.spec.ts`.
 - **One list of export profiles.** `exportProfiles`
   (`commands/exporter/index.ts`) joins the defaults files of
   `userData/defaults` and the custom profiles (`getCustomProfiles`); a custom
