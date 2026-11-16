@@ -259,9 +259,9 @@ they must be threaded through **four** layers:
   `just --justfile ~/.pandoc/justfile compile-pandoc <file> <title> [<template>]`
   for single files, and `compile-pandoc-project <title> <template> <files…>` for
   ordered Project exports (issue #1).
-  PDF is a **custom profile** (`writer: compile-pandoc`) in `getCustomProfiles`
-  (`exporter/index.ts`); dispatch is in `makeExport`. The dzg templates require
-  **pdflatex** (xelatex/lualatex fail).
+  PDF is an **export item of the application** with the engine `recipe`
+  (`exporter/export-items.ts`); dispatch is in `makeExport`. The dzg templates
+  require **pdflatex** (xelatex/lualatex fail).
 - **The recipe gets the bibliography of the documents.** The run sets
   `PANDOC_BIB_SOURCE` to the files of the bibliography of each input
   (`documentBibliography`, §12), apart by `:`, without repeats; the main
@@ -312,14 +312,34 @@ they must be threaded through **four** layers:
   `test/export-tex-errors.spec.ts`, `test/export-document.spec.ts`,
   `test/project-export.spec.ts`, and with the real recipe
   `e2e/pdf-export.spec.ts`.
-- **One list of export profiles.** `exportProfiles`
-  (`commands/exporter/index.ts`) joins the defaults files of
-  `userData/defaults` and the custom profiles (`getCustomProfiles`); a custom
-  profile replaces a defaults file of the same name, so an old `PDF.yaml`
-  there does not replace the PDF recipe. The export menu and the launcher
-  (`list-export-profiles`), the Project export
-  (`AssetsProvider.listExportProfiles`) and `just export-headless` read it.
-  Proof: `test/project-export.spec.ts`.
+- **One list of export items.** An export item is one thing that an author
+  exports with (`exporter/export-items.ts`). It has one engine: a Pandoc
+  defaults file, the PDF recipe, a bundle writer (Textbundle, Textpack), or a
+  command of the author; an item with a Pandoc engine can run a command on
+  the file that Pandoc wrote. `exportItems` makes the one list from the
+  defaults files of `userData/defaults`, the items of the application and the
+  items of the settings (`export.items`: name, base, command, extension), and
+  gives each item that cannot run its reason. An item of the application
+  replaces a defaults file of its name, so an old `PDF.yaml` there does not
+  replace the PDF recipe. The launcher, the Project window and the
+  Preferences (`list-export-items`), the Project export
+  (`AssetsProvider.listExportItems`) and `just export-headless` read it.
+- **A window names an item; the main process resolves it.** The command
+  `export` takes `{file, item, exportTo}` with the identity of the item, and
+  a Project stores identities in `project.profiles`. No window sends a
+  profile object. An entry of a Project file from before the export items is
+  the command line of a command; `exportItemOfProjectEntry` still finds its
+  item. `makeExport` chooses the exporter by the engine of the item; a
+  command runs through it as each other item does, gets the document or the
+  folder of the Project as its one argument, and names no file that it wrote
+  (`ExporterOutput.targetFile` is null).
+- **The settings of an older version become items.** `migrateExportItems`
+  (`config/migrate-export-items.ts`) makes items of `export.customCommands`
+  (no base) and `export.scripts` (the base is the profile) when the
+  configuration is read. Proof: `test/export-items.spec.ts`,
+  `test/project-export.spec.ts`, `test/export-document.spec.ts`; through the
+  window `e2e/pdf-export.spec.ts`, `e2e/window-header.spec.ts`, and
+  `e2e/project-export-failure.spec.ts` with a configuration in the old form.
 
 ### 4. Quarto books
 
@@ -1045,6 +1065,22 @@ of an isolated instance are in the first comment of #132.
 
 ### 13. Assembled-app E2E runs
 
+- **A window error fails its spec file.** The lanes runner loads
+  `e2e/support/root-hooks.ts` before each spec file (`--file`). `attach` puts
+  the windows of each app that a file starts under the gate of that file: a
+  console error, an uncaught exception or a dialog that no test of the file
+  provokes fails the file in the last hook of the root suite, with the
+  events in the message. A spec needs no line for this, and a spec that gives
+  `attach` a new array is under the gate too. A spec of a failure declares
+  the message that it causes with `provokesRendererEvents(/…/)`; a pattern
+  names that one message, never a class of errors. A console error of a
+  resource that did not load names the resource.
+- **A failed test keeps its windows.** The hook after each test takes a
+  screenshot of each open window when the test failed; `preserveArtifacts`
+  writes them as `failure-<test>-window-<n>.png` with `failures.txt`.
+- **No exclusive test passes.** mocha runs with `--forbid-only` in the lanes
+  runner and in `scripts/run-unit-tests.sh`: a file with `.only` fails.
+  Proof of the three rules: `test/e2e-run-lanes.spec.ts`.
 - `just test-e2e` and `just test-e2e-file <spec>` run the specs of `e2e/`.
   The recipes first make the packaged build of the tree when it is not
   current (`_current-package`: `verify-build.py --if-stale`), one build for
@@ -2380,8 +2416,8 @@ of an isolated instance are in the first comment of #132.
 - The raw production command can report success without a fresh asar. Use `just
   package` or `just verify-build` so the verifier checks the current fingerprint.
 - `userData/defaults` is copied once and never pruned. A surface that offers or
-  runs an export profile reads `exportProfiles`; a list of its own lets a
-  **stale shipped profile** replace a custom one.
+  runs an export reads `exportItems`; a list of its own lets a **stale shipped
+  profile** replace an item of the application.
 - `packages/pandoc-editor/src/util/math-delimiters.ts` must stay CodeMirror-free (main-process
   bundle).
 - The launcher's focus-if-running is **intentional** — quit fully to load a new build.
