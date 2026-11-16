@@ -177,6 +177,44 @@ default mousedown puts the caret at the edge of the widget, the renderer then
 shows the source, and the click of a button that a person holds arrives at
 that source text (#131). Proof: `e2e/shift-click-widgets.spec.ts`.
 
+**The syntax tree can end before the document does.** The parser works for
+a set time after a change and goes on in the background, so on a machine
+under load the tree of a state is shorter than its text, and the rest
+arrives in a later update that changes no text. A decoration that is made
+from the tree follows the tree:
+
+- A view plugin or a layer that reads `syntaxTree` or
+  `visitVisibleSyntaxNodes` has `syntaxTreeChanged(update)`
+  (`packages/pandoc-editor/src/util/visible-syntax-nodes.ts`) in the
+  condition of its update, beside `docChanged` and `viewportChanged`.
+  Without it the decorations of the shorter tree stay until the next
+  keystroke.
+- A state field that keeps decorations per block leaves the text after
+  `tree.length` as it is; it is not known yet, and it is not changed
+  (`incrementalNodeDecorations`). A field that takes it as changed removes
+  each widget below a typed character and makes it again.
+
+Proof: `test/editor-incremental-rendering.spec.ts`. `withParserTimePassed`
+of that file sets the clock of the parser, so the parser stops after one
+step; "... when the parser is behind after each edit" compares an edited
+editor with a new one for each renderer of the production set, and a new
+renderer is covered by it.
+
+**What the editor closes itself, because CodeMirror does not.**
+
+- A reload of a document (`loadDocument` with a document already loaded)
+  closes the list of completions and each hover before it replaces the
+  state. `setState` keeps a measurement that a plugin of the old state asked
+  for, and that measurement places a tooltip of the old text in the new
+  text ("Invalid position").
+- `closeHoverOutsideEditor` (`tooltips/close-hover-outside-editor.ts`) closes
+  a hover that opens while the pointer is not over the editor. The content
+  of a hover can arrive after the pointer left; CodeMirror drops a waiting
+  hover when the pointer moves away inside the editor and not when it
+  leaves the editor. A tooltip is inside the element of the editor; a
+  tooltip parent outside it would need a place in this plugin. Proof:
+  `test/editor-hover-outside.spec.ts`.
+
 ## System-specific integrations
 
 ### 1. Central mathematical macro system
@@ -1312,6 +1350,29 @@ of an isolated instance are in the first comment of #132.
   actions: the query field of the Search view starts a search 200 ms after a
   change of its text, and the Enter key starts one more
   (`e2e/global-search-dispatch-failure.spec.ts`).
+- **A spec waits for the outcome in the window, and acts as an author
+  acts.** Each spec that failed only on a busy machine had one of four
+  shapes:
+  - A wait that the state before the action satisfies. After a click on
+    another tab, "an active tab" is true at once; the wait is for the
+    clicked tab (`e2e/dirty-buffer-indicator.spec.ts`). A value of the main
+    process is read when it exists, not when a tab is active
+    (`e2e/move-with-unwritable-review-state.spec.ts`).
+  - A fixed pause in the place of the outcome. A spec waits for the outcome
+    up to its limit and then checks for a short time that it stays
+    (`e2e/jump-to-heading-while-loading.spec.ts`).
+  - `fill()` against a selection that the app makes after the field is
+    visible. `fill()` selects all and then inserts; a selection of the app
+    between the two steps makes the text replace only that selection. The
+    spec waits for the focus and the selection that an author sees and
+    types over it (`e2e/rename-one-field.spec.ts`).
+  - An order that depends on the speed of the test process. An action that
+    must follow an event of the window at once is made inside the page, in
+    the handler of that event (`e2e/global-search-dispatch-failure.spec.ts`).
+
+  A failure that has none of these shapes is a defect of the app until its
+  cause says otherwise. A spec is not run many times to see whether it
+  fails again: one run with its log kept is read for the cause.
 - **Shared helpers.** `e2e/support/native-dialog.ts` finds, captures and
   answers a native window. `e2e/support/panes.ts` gives the panes of a
   window and opens a document in one.
