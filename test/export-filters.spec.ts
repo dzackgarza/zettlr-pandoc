@@ -1,22 +1,20 @@
-import type { MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
+import { pathToFileURL } from "node:url";
 import assert from "assert";
 import { execFile } from "child_process";
 import { mkdtemp, readFile, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import { writeDefaults } from "source/app/service-providers/commands/exporter/index";
-import { loadMathJaxMacros } from "source/app/util/load-mathjax-macros";
 import { promisify } from "util";
 import YAML from "yaml";
 
 const execFileAsync = promisify(execFile);
 
-// The ~/.pandoc directory of the export: its macro tree.
+// The ~/.pandoc directory of the export: its templates and its macro tree.
 const MACRO_TREE = path.resolve("test", "fixtures", "pandoc-macros");
-let macros: Record<string, MathJaxMacro>;
-before(async function () {
-  macros = await loadMathJaxMacros("test/fixtures/mathjax-macros.json");
-});
+// The folder of the MathJax of the application. These specs write defaults
+// and load no MathJax, so the folder has no file.
+const MATHJAX_DIRECTORY = path.resolve(os.tmpdir(), "zettlr-export-mathjax");
 
 const config = {
   export: {
@@ -25,7 +23,6 @@ const config = {
     stripTags: false,
     stripLinks: "no" as const,
     enforceMarkSupport: false,
-    injectMathHeaders: true,
     htmlTemplate: "",
     latexTemplate: "",
   },
@@ -56,8 +53,7 @@ describe("Declarative export filter chain", function () {
       [markFilter], // the declared, ordered export filter chain
       directory,
       {
-        mathJaxDirectory: path.join(directory, "unused-mathjax"),
-        macros,
+        mathJaxDirectory: MATHJAX_DIRECTORY,
         pandocDirectory: MACRO_TREE,
       },
     );
@@ -87,40 +83,93 @@ describe("Declarative export filter chain", function () {
   });
 });
 
-describe("Export math-header injection toggle", function () {
-  it("skips the local MathJax injection when injectMathHeaders is off", async function () {
-    const directory = await mkdtemp(path.join(os.tmpdir(), "zettlr-export-nomath-"));
+describe("The math of an export", function () {
+  async function writtenDefaults(profileFile: string): Promise<Record<string, unknown>> {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "zettlr-export-math-"));
     const inputFile = path.join(directory, "input.md");
-    const outputFile = path.join(directory, "output.html");
-
     await writeFile(inputFile, "$\\RR$\n");
-    const htmlProfile = YAML.parse(
-      await readFile("static/defaults/HTML.yaml", { encoding: "utf8" }),
-    ) as Record<string, unknown>;
-    // The exporter can change the object of the profile.
-    const methodOfProfile = structuredClone(htmlProfile["html-math-method"]);
-    const noInject = { export: { ...config.export, injectMathHeaders: false }, zkn: config.zkn };
-
+    const profile = YAML.parse(await readFile(profileFile, { encoding: "utf8" })) as Record<
+      string,
+      unknown
+    >;
     await writeDefaults(
-      htmlProfile,
-      { "input-files": [inputFile], "output-file": outputFile, standalone: true },
-      noInject,
+      profile,
+      { "input-files": [inputFile], "output-file": path.join(directory, "out"), standalone: true },
+      config,
       [],
       directory,
-      {
-        mathJaxDirectory: path.join(directory, "unused-mathjax"),
-        macros,
-        pandocDirectory: MACRO_TREE,
-      },
+      { mathJaxDirectory: MATHJAX_DIRECTORY, pandocDirectory: MACRO_TREE },
     );
-
-    const written = YAML.parse(
+    return YAML.parse(
       await readFile(path.join(directory, "defaults.yml"), { encoding: "utf8" }),
     ) as Record<string, unknown>;
-    const headers = (written["include-in-header"] ?? []) as string[];
-    assert.ok(!headers.some((h) => /zettlr-mathjax/.test(h)), "no injected MathJax header");
-    // Injection sets the method of its own; skipping keeps that of the profile.
-    assert.deepStrictEqual(written["html-math-method"], methodOfProfile);
+  }
+
+  it("gives an HTML export the template of ~/.pandoc and the two places of MathJax, and no header", async function () {
+    const written = await writtenDefaults("static/defaults/HTML.yaml");
+
+    assert.equal(
+      written.template,
+      path.join(MACRO_TREE, "templates", "pandoc_preview_template.html"),
+      "the template of ~/.pandoc for the writer owns the math",
+    );
+    assert.deepEqual(written["html-math-method"], {
+      method: "mathjax",
+      url: pathToFileURL(path.join(MATHJAX_DIRECTORY, "tex-chtml.js")).href,
+    });
+    assert.deepEqual(written.variables, {
+      "mathjax-root": pathToFileURL(MATHJAX_DIRECTORY).href,
+      "mathjax-fonts": pathToFileURL(path.join(MATHJAX_DIRECTORY, "fonts")).href,
+    });
+    assert.deepEqual(written["include-in-header"], [], "the application adds no header");
+  });
+
+  it("gives a reveal.js export the deck template of ~/.pandoc", async function () {
+    const written = await writtenDefaults("static/defaults/Reveal.js.yaml");
+
+    assert.equal(
+      written.template,
+      path.join(MACRO_TREE, "templates", "pandoc_revealjs_template.html"),
+    );
+    assert.deepEqual(written.variables, {
+      "mathjax-root": pathToFileURL(MATHJAX_DIRECTORY).href,
+      "mathjax-fonts": pathToFileURL(path.join(MATHJAX_DIRECTORY, "fonts")).href,
+    });
+  });
+
+  it("gives a LaTeX export the template of ~/.pandoc, and no header and no MathJax", async function () {
+    const profile = YAML.parse(
+      await readFile("static/defaults/LaTeX.yaml", { encoding: "utf8" }),
+    ) as Record<string, unknown>;
+    const written = await writtenDefaults("static/defaults/LaTeX.yaml");
+
+    assert.equal(written.template, path.join(MACRO_TREE, "templates", "research_draft.tex"));
+    assert.deepEqual(written["include-in-header"], profile["include-in-header"]);
+    assert.deepEqual(written["html-math-method"], profile["html-math-method"]);
+    assert.deepEqual(written.variables, profile.variables);
+  });
+
+  it("stops an export whose template of ~/.pandoc is no file, and names the file", async function () {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "zettlr-export-math-"));
+    const emptyPandocDirectory = path.join(directory, "pandoc");
+    const profile = YAML.parse(
+      await readFile("static/defaults/HTML.yaml", { encoding: "utf8" }),
+    ) as Record<string, unknown>;
+
+    await assert.rejects(
+      writeDefaults(
+        profile,
+        { "input-files": [], "output-file": path.join(directory, "out.html") },
+        config,
+        [],
+        directory,
+        { mathJaxDirectory: MATHJAX_DIRECTORY, pandocDirectory: emptyPandocDirectory },
+      ),
+      (error: Error) =>
+        error.message.includes(
+          path.join(emptyPandocDirectory, "templates", "pandoc_preview_template.html"),
+        ),
+    );
   });
 });
 
@@ -140,7 +189,7 @@ describe("Export template defaults", function () {
       ...profileExtra,
     };
     const cfg = {
-      export: { ...config.export, injectMathHeaders: false, ...configExtra },
+      export: { ...config.export, ...configExtra },
       zkn: config.zkn,
     };
     await writeDefaults(
@@ -154,8 +203,7 @@ describe("Export template defaults", function () {
       [],
       directory,
       {
-        mathJaxDirectory: path.join(directory, "unused-mathjax"),
-        macros,
+        mathJaxDirectory: MATHJAX_DIRECTORY,
         pandocDirectory: MACRO_TREE,
       },
     );

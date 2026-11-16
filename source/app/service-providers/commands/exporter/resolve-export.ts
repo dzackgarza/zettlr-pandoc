@@ -29,9 +29,10 @@ export interface Sourced {
   /**
    * `export`: the export itself (the template or the style of a Project).
    * `defaults-file`: the defaults file of the item. `settings`: the
-   * settings of the application.
+   * settings of the application. `pandoc-directory`: the template of
+   * ~/.pandoc for the writer (`PANDOC_DIRECTORY_TEMPLATES`).
    */
-  from: "export" | "defaults-file" | "settings";
+  from: "export" | "defaults-file" | "settings" | "pandoc-directory";
 }
 
 /** The settings that decide what an export runs. */
@@ -42,8 +43,6 @@ export interface ExportSettings {
   latexTemplate: string;
   cslStyle: string;
   cslLibrary: string;
-  /** Whether the application adds its math headers to a Pandoc export */
-  injectMathHeaders: boolean;
 }
 
 /** What one export sets in the place of the settings (a Project). */
@@ -92,10 +91,28 @@ export function filterName(entry: unknown): string {
 }
 
 /**
+ * The template of ~/.pandoc (`templates/`) that a Pandoc export of a writer
+ * uses when no other template is set. Each of them owns the math of its
+ * output: the HTML templates hold the MathJax configuration with the macros
+ * that `bin/generate-mathjax-config.py` writes, and the LaTeX template loads
+ * the style of the macro tree. They are the templates of the same directory
+ * that the PDF recipe uses, so the application assembles no math itself. A
+ * writer that is not listed has no such template; Pandoc uses its own.
+ */
+export const PANDOC_DIRECTORY_TEMPLATES: Readonly<Record<string, string>> = {
+  html: "pandoc_preview_template.html",
+  html5: "pandoc_preview_template.html",
+  html4: "pandoc_preview_template.html",
+  revealjs: "pandoc_revealjs_template.html",
+  latex: "research_draft.tex",
+};
+
+/**
  * The template of a Pandoc export. The template of the export (a Project)
  * goes first, then the template of the defaults file, then the template of
- * the settings for the family of the writer. Without any of them Pandoc
- * uses its own template for the writer.
+ * the settings for the family of the writer, then the template of ~/.pandoc
+ * for the writer. Without any of them Pandoc uses its own template for the
+ * writer.
  */
 export function effectiveTemplate(
   writer: string,
@@ -115,6 +132,9 @@ export function effectiveTemplate(
   }
   if (isTexWriter(writerName) && settings.latexTemplate !== "") {
     return { value: settings.latexTemplate, from: "settings" };
+  }
+  if (Object.hasOwn(PANDOC_DIRECTORY_TEMPLATES, writerName)) {
+    return { value: PANDOC_DIRECTORY_TEMPLATES[writerName], from: "pandoc-directory" };
   }
   return undefined;
 }
@@ -167,19 +187,14 @@ export function projectOverride(item: ExportItem, project: ProjectExportSettings
 }
 
 /**
- * Who gives a Pandoc export with this writer its math. The headers of the
- * application are for the HTML writers and the TeX writers
- * (`injectPandocMathHeaders`).
+ * Who gives a Pandoc export with this writer its math. The template owns
+ * the math of the HTML writers and of the TeX writers: its MathJax
+ * configuration, its packages, its macros. Each other writer gets what
+ * Pandoc makes of the math itself.
  */
-export function mathOwner(
-  writer: string,
-  settings: Pick<ExportSettings, "injectMathHeaders">,
-): "application" | "template" | "pandoc" {
+export function mathOwner(writer: string): "template" | "pandoc" {
   const writerName = parseReaderWriter(writer).name;
-  if (!isHtmlWriter(writerName) && !isTexWriter(writerName)) {
-    return "pandoc";
-  }
-  return settings.injectMathHeaders ? "application" : "template";
+  return isHtmlWriter(writerName) || isTexWriter(writerName) ? "template" : "pandoc";
 }
 
 /** What the defaults file of a Pandoc engine declares, as far as an export decides with it. */
@@ -203,13 +218,11 @@ export interface ResolvedPandocStage {
   /** The library of the settings, or undefined */
   citationLibrary: string | undefined;
   /**
-   * Who gives the export its math. The application adds its headers, with
-   * the macros of the Pandoc directory, to an HTML writer and to a TeX
-   * writer when the setting is on; with the setting off the template owns
-   * the math of those writers. Each other writer gets what Pandoc makes of
-   * the math itself.
+   * Who gives the export its math: the template for the HTML writers and
+   * the TeX writers, Pandoc itself for each other writer. The templates of
+   * the Pandoc directory hold the macros.
    */
-  math: { owner: "application" | "template" | "pandoc"; pandocDirectory: string };
+  math: { owner: "template" | "pandoc"; pandocDirectory: string };
 }
 
 /** One stage of an export, in the order that the stages run. */
@@ -293,7 +306,7 @@ export function resolveExport(
         template: effectiveTemplate(engine.writer, declared.template, override, settings),
         citationStyle: effectiveCitationStyle(override, settings),
         citationLibrary,
-        math: { owner: mathOwner(engine.writer, settings), pandocDirectory },
+        math: { owner: mathOwner(engine.writer), pandocDirectory },
       });
       if (post !== undefined) {
         stages.push({
@@ -318,6 +331,8 @@ function sourceLabel(sourced: Sourced): string {
       return "defaults file";
     case "settings":
       return "settings";
+    case "pandoc-directory":
+      return "~/.pandoc";
   }
 }
 
@@ -347,9 +362,7 @@ export function describeResolvedExport(resolved: ResolvedExport): string[] {
             `citation style: ${baseName(stage.citationStyle.value)} (${sourceLabel(stage.citationStyle)})`,
           );
         }
-        if (stage.math.owner === "application") {
-          lines.push(`math: headers of the application, macros of ${stage.math.pandocDirectory}`);
-        } else if (stage.math.owner === "template") {
+        if (stage.math.owner === "template") {
           lines.push("math: the template");
         }
         break;

@@ -188,13 +188,11 @@ export type ConfigOptions = {
     // (~/.pandoc/filters) or an absolute path. Ordered and declared, unlike the
     // former implicit fs.readdir sweep of the lua-filter directory.
     filters: string[];
-    // Whether the exporter injects its own local MathJax config/preamble into
-    // HTML and TeX exports (self-contained, offline). Turn off to defer math to
-    // the profile's template (e.g. a ~/.pandoc template that owns MathJax).
-    injectMathHeaders: boolean;
     // Default Pandoc templates applied per writer family when the export profile
     // declares none. A path (absolute, or a name resolved from ~/.pandoc/templates).
     // htmlTemplate covers html/revealjs; latexTemplate covers latex/pdf/beamer.
+    // With neither, an export uses the template of ~/.pandoc for its writer
+    // (`PANDOC_DIRECTORY_TEMPLATES`). The template owns the math of an export.
     htmlTemplate: string;
     latexTemplate: string;
     // The export items of the author (`exporter/export-items.ts`). An item
@@ -466,7 +464,6 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
       cslStyle: "", // Path to a CSL Style file
       exportQmdWithQuarto: false, // Whether .qmd-files should be exported with Quarto
       filters: [], // Ordered Pandoc filters applied to every export (resolved from ~/.pandoc/filters)
-      injectMathHeaders: true, // Inject local MathJax config/preamble into exports; off defers to the profile template
       htmlTemplate: "", // Default Pandoc template for HTML/revealjs exports (when the profile declares none)
       latexTemplate: "", // Default Pandoc template for latex/pdf/beamer exports (when the profile declares none)
       items: [],

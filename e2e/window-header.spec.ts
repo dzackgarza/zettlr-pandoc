@@ -282,8 +282,8 @@ describe("the window header", function () {
     for (const fact of [
       "(HTML.yaml)",
       "filters: wikilinks.lua",
-      "template: Pandoc default",
-      "math: headers of the application",
+      "template: pandoc_preview_template.html (~/.pandoc)",
+      "math: the template",
     ]) {
       assert.ok(htmlFacts.includes(fact), `the HTML row shows "${fact}": ${htmlFacts}`);
     }
