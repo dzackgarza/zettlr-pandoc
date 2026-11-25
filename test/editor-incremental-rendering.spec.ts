@@ -1,22 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        Incremental block widget rendering
- * CVM-Role:        TESTING
- * License:         GNU GPL v3
- *
- * Description:     The block widget field renders again only what a
- *                  transaction can change. These tests state the two halves
- *                  of that contract: the work of a transaction does not
- *                  follow the length of the document, and the widgets after
- *                  a sequence of transactions are the widgets that a new
- *                  editor shows for the same document and selection.
- *
- * END HEADER
- */
-
-// The renderer aggregate reads the preload bridge when it is imported.
 import "./provision-renderer-window-seams";
 import { ensureSyntaxTree, forceParsing, syntaxTree } from "@codemirror/language";
 import { EditorSelection, EditorState, type TransactionSpec } from "@codemirror/state";
@@ -56,12 +37,10 @@ class MathMarker extends WidgetType {
 
 interface CountedEditor {
   state: EditorState;
-  /** The number of widgets that the renderer made since the last reset. */
   made: () => number;
   reset: () => void;
 }
 
-/** The syntax tree of a state covers the whole document only after this. */
 function parsed(state: EditorState): EditorState {
   assert.notEqual(
     ensureSyntaxTree(state, state.doc.length, 60_000),
@@ -71,15 +50,6 @@ function parsed(state: EditorState): EditorState {
   return state.update({}).state;
 }
 
-/**
- * Runs a change while the time of the parser passes after one step.
- *
- * The parser of a state works for a set time after a change and goes on in
- * the background. During `run`, each reading of the clock is a second later
- * than the one before, so the parser stops after its first step, as on a
- * machine under load. The tree of the changed state then ends before the
- * document does.
- */
 function withParserTimePassed<T>(run: () => T): T {
   const realNow = Date.now;
   let now = realNow.call(Date);
@@ -131,7 +101,6 @@ function paragraphs(count: number): string {
 function widgets(state: EditorState): string[] {
   const found: string[] = [];
   for (const source of state.facet(EditorView.decorations)) {
-    // The block widget field provides a set; no extension of these states provides a function.
     const set = source as DecorationSet;
     const cursor = set.iter();
     while (cursor.value !== null) {
@@ -145,24 +114,28 @@ function widgets(state: EditorState): string[] {
 describe("Block widgets follow the size of a change", function () {
   this.timeout(120_000);
 
-  function widgetsMadeByTypedCharacter(paragraphCount: number): number {
+  function widgetsMadeByTypedCharacter(paragraphCount: number, parserBehind: boolean): number {
     const doc = paragraphs(paragraphCount);
     const editor = countedEditor(doc, 0);
     const position = doc.indexOf("holds", doc.length / 2);
     editor.reset();
-    const typed = editor.state.update({
-      changes: { from: position, insert: "x" },
-      selection: { anchor: position + 1 },
-    }).state;
+    const edit = (): EditorState =>
+      editor.state.update({
+        changes: { from: position, insert: "x" },
+        selection: { anchor: position + 1 },
+      }).state;
+    const typed = parsed(parserBehind ? withParserTimePassed(edit) : edit());
     assert.equal(widgets(typed).length, 2 * paragraphCount);
     return editor.made();
   }
 
   it("makes the same number of widgets for a typed character in a short and in a long document", function () {
-    const short = widgetsMadeByTypedCharacter(40);
-    const long = widgetsMadeByTypedCharacter(4000);
-    assert.equal(long, short);
-    assert.ok(short <= 4, `a typed character made ${short} widgets`);
+    for (const parserBehind of [false, true]) {
+      const short = widgetsMadeByTypedCharacter(40, parserBehind);
+      const long = widgetsMadeByTypedCharacter(4000, parserBehind);
+      assert.equal(long, short, `parser behind: ${parserBehind}`);
+      assert.ok(short >= 1 && short <= 4, `a typed character made ${short} widgets`);
+    }
   });
 
   it("keeps each widget below a change that the parser has not reached yet", function () {
@@ -190,7 +163,6 @@ describe("Block widgets follow the size of a change", function () {
     );
     assert.ok(editor.made() <= 4, `a typed character made ${editor.made()} widgets`);
 
-    // When the parser has reached the end, the widgets are those of the text.
     const whole = countedEditor(typed.doc.toString(), position + 1);
     assert.deepEqual(widgets(parsed(typed)), widgets(whole.state));
   });
@@ -323,7 +295,6 @@ describe("The production renderers", function () {
     document.body.replaceChildren();
   });
 
-  /** The reference view that the main process sends for a document. */
   function referenceView(doc: string): EditorWorkspaceReferences {
     const snapshot = extractReferences("edited-document.md", doc);
     return {
@@ -384,8 +355,6 @@ describe("The production renderers", function () {
   function sameDecoration(a: Decoration, b: Decoration): boolean {
     const widget: WidgetType | undefined = a.spec.widget;
     const other: WidgetType | undefined = b.spec.widget;
-    // A widget class without an `eq` of its own is equal only to itself. Two
-    // such widgets of one class over the same source show the same content.
     if (widget !== undefined && other !== undefined && widget.eq === WidgetType.prototype.eq) {
       return widget.constructor === other.constructor;
     }
@@ -409,13 +378,6 @@ describe("The production renderers", function () {
     }
   }
 
-  /**
-   * Makes each of a sequence of edits and caret moves in one editor, and
-   * compares its drawing with that of a new editor of the same text after
-   * each step. With `parserBehind`, the parser of the edit stops after one
-   * step, as on a machine under load, and reaches the end of the document
-   * in a later update that changes no text.
-   */
   function assertEditedEditorDrawsAsNewEditor(parserBehind: boolean): void {
     const at = (needle: string, state: EditorState): number => {
       const position = state.sliceDoc().indexOf(needle);
