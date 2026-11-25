@@ -3,7 +3,10 @@
 - `source/app/util/preflight.ts`, called from `source/app/util/environment-check.ts`.
   Fails loud (native dialog + `app.exit(1)`) if `pandoc`, `just`, `latexmk`,
   `pdflatex`, `biber`, `pandoc-crossref`, `latexpand` or `~/.pandoc/justfile`
-  are missing in the app's runtime environment.
+  are missing in the app's runtime environment. The TikZ preview needs
+  `~/.pandoc/filters/tikzcd.lua` and `~/.pandoc/templates/standalone-tikz.tex`,
+  and a filter whose first line does not state the protocol of the app stops
+  the start too ([§7](tikz.md)).
 - **One probe of each tool.** The preflight, the pandoc-crossref gate and the
   pandoc version of the environment check read the same `probeTool` answer
   ([§25](external-tools.md)), so each tool starts one time. A tool that does not answer

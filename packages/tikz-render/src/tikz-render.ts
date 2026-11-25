@@ -1,33 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        TikZ render service
- * CVM-Role:        Utility Function
- * License:         GNU GPL v3
- *
- * Description:     Renders a TikZ figure (raw \begin{tikzcd}/\begin{tikzpicture}
- *                  block or a ```tikz/```tikzcd code fence) to inline SVG by running the
- *                  tikzcd.lua filter through pandoc. The caller supplies the
- *                  filter data tree and, independently, the user-owned
- *                  standalone template which injects packages/macros. The
- *                  filter compiles via pdflatex and
- *                  pdf2svg with a content-addressed cache, namespaces SVG ids,
- *                  and emits one machine-parseable marker line per
- *                  figure-compile error; this module runs the filter through
- *                  @dzack/external-process and translates every outcome
- *                  into a typed result —
- *                  missing tools, a toolchain probe that failed for a reason
- *                  other than absence, compile failures, a render killed by
- *                  a signal and a render that passed its time limit are loud
- *                  and distinct, never silence. The environment every child
- *                  runs under is supplied by the caller, never read from
- *                  ambient process state. A render that ends leaves no
- *                  process and no scratch file, however it ends.
- *
- * END HEADER
- */
-
 import { describeProbe, probeTool } from "@dzack/external-process/probe-tool";
 import { describeOutcome, runProcess } from "@dzack/external-process/run-process";
 import { Semaphore } from "async-mutex";
@@ -38,56 +8,38 @@ import { tmpdir } from "os";
 import path from "path";
 import { maskTexComments, texCommandDeclarationEntries } from "./tex-command-declarations";
 
-const REQUIRED_TIKZ_DATA_FILES = ["filters/tikzcd.lua", "filters/utilities.lua"] as const;
+const TIKZ_FILTER = "filters/tikzcd.lua";
 
-/**
- * Handshake between the app and the shared tikzcd.lua implementation. Bump
- * when the app starts relying on filter behavior that an older shared checkout
- * cannot provide; startup preflight and explicit data-dir resolution both fail
- * loudly on a mismatch instead of silently degrading the live-preview contract.
- */
 export const TIKZ_RENDER_PROTOCOL = 3;
-const TIKZ_RENDER_PROTOCOL_RE = /^-- ZETTLR_TIKZ_RENDER_PROTOCOL=(\d+)$/m;
+const TIKZ_RENDER_PROTOCOL_LINE_RE = /^local ZETTLR_TIKZ_RENDER_PROTOCOL = (\d+)$/;
 
-function hasTikzDataFiles(dataDir: string): boolean {
-  return REQUIRED_TIKZ_DATA_FILES.every((relativePath) =>
-    existsSync(path.join(dataDir, relativePath)),
-  );
+function hasTikzFilter(dataDir: string): boolean {
+  return existsSync(path.join(dataDir, TIKZ_FILTER));
 }
 
 export function tikzRenderProtocolVersion(dataDir: string): number | undefined {
-  const filterPath = path.join(dataDir, "filters", "tikzcd.lua");
+  const filterPath = path.join(dataDir, TIKZ_FILTER);
   if (!existsSync(filterPath)) {
     return undefined;
   }
-  const match = TIKZ_RENDER_PROTOCOL_RE.exec(readFileSync(filterPath, "utf8"));
+  const firstLine = readFileSync(filterPath, "utf8").split("\n", 1)[0];
+  const match = TIKZ_RENDER_PROTOCOL_LINE_RE.exec(firstLine);
   return match === null ? undefined : Number(match[1]);
 }
 
 function assertSupportedTikzDataDir(dataDir: string, label: string): void {
-  if (!hasTikzDataFiles(dataDir)) {
-    throw new Error(`${label} ${dataDir} is missing ` + REQUIRED_TIKZ_DATA_FILES.join(" or "));
+  if (!hasTikzFilter(dataDir)) {
+    throw new Error(`${label} ${dataDir} is missing ${TIKZ_FILTER}`);
   }
   const protocol = tikzRenderProtocolVersion(dataDir);
   if (protocol !== TIKZ_RENDER_PROTOCOL) {
     throw new Error(
       `${label} ${dataDir} uses TikZ renderer protocol ${protocol === undefined ? "unknown" : protocol}, ` +
-        `but the TikZ renderer requires protocol ${TIKZ_RENDER_PROTOCOL}. Update the TikZ filter files in that directory.`,
+        `but the TikZ renderer requires protocol ${TIKZ_RENDER_PROTOCOL}. Update the TikZ filter in that directory.`,
     );
   }
 }
 
-/**
- * Resolves the single Pandoc data tree used by editor TikZ rendering.
- *
- * An explicit setting is authoritative and must carry the filter and its Lua
- * dependency. The standalone TeX template is intentionally NOT part of this
- * data-tree contract: resolveTikzTemplatePath owns that independently under
- * ~/.pandoc, so a configured filter tree cannot accidentally become a second
- * preamble owner. Without an explicit data tree, a maintained ~/.pandoc filter
- * checkout wins; without it rendering fails loudly rather than substituting a
- * private filter implementation.
- */
 export function resolveTikzDataDir(configuredDir: string, homeDir: string): string {
   if (configuredDir !== "") {
     assertSupportedTikzDataDir(configuredDir, "Configured TikZ data directory");
@@ -95,23 +47,17 @@ export function resolveTikzDataDir(configuredDir: string, homeDir: string): stri
   }
 
   const userPandocDir = path.join(homeDir, ".pandoc");
-  if (hasTikzDataFiles(userPandocDir)) {
+  if (hasTikzFilter(userPandocDir)) {
     assertSupportedTikzDataDir(userPandocDir, "Shared Pandoc data tree");
     return userPandocDir;
   }
 
   throw new Error(
-    `TikZ rendering requires the shared Pandoc data tree ${userPandocDir} to contain ` +
-      REQUIRED_TIKZ_DATA_FILES.join(" and ") +
+    `TikZ rendering requires the shared Pandoc data tree ${userPandocDir} to contain ${TIKZ_FILTER}` +
       "; the renderer does not substitute a private filter copy for missing shared Pandoc configuration.",
   );
 }
 
-/**
- * The editor preview always compiles snippets through the user's maintained
- * standalone template. The renderer does not synthesize a preamble or inject a
- * second macro set: ~/.pandoc owns that authoring environment.
- */
 export function resolveTikzTemplatePath(homeDir: string): string {
   const templatePath = path.join(homeDir, ".pandoc", "templates", "standalone-tikz.tex");
   if (!existsSync(templatePath)) {
@@ -178,12 +124,6 @@ interface TikzTemplateSource {
   source: string;
 }
 
-/**
- * Walk the same local template/include graph that the TikZ compiler sees.
- * System TeX packages intentionally remain outside this graph: the editor's
- * standard LaTeX catalogue owns those, while this traversal is only for the
- * user's maintained ~/.pandoc template/styles tree.
- */
 function tikzTemplateSources(templatePath: string): TikzTemplateSource[] {
   const pandocRoot = path.dirname(path.dirname(templatePath));
   const stylesRoot = path.join(pandocRoot, "styles");
@@ -204,7 +144,6 @@ function tikzTemplateSources(templatePath: string): TikzTemplateSource[] {
     const source = readFileSync(resolvedFile, "utf8");
     sources.push({ filePath: resolvedFile, source });
 
-    // TeX loads no file that a comment names.
     const visible = maskTexComments(source);
     for (const match of visible.matchAll(TEX_INPUT_RE)) {
       queue.push(
@@ -232,17 +171,6 @@ function tikzTemplateSources(templatePath: string): TikzTemplateSource[] {
   return sources;
 }
 
-/**
- * Fingerprint the complete user-owned TeX dependency graph that supplies the
- * standalone TikZ preamble. The literal template is not enough: it normally
- * contains only `\usepackage{dzg-tikz}`, while the macro definitions that
- * affect rendered output live in the package's transitive \input graph.
- *
- * Paths are relative to ~/.pandoc rather than checkout-specific absolute
- * paths. Sorting makes the digest independent of filesystem enumeration order;
- * including both relative path and bytes means renaming, adding, removing or
- * editing any reachable local dependency invalidates the cache key.
- */
 export function tikzTemplateDependencyHash(templatePath: string): string {
   const pandocRoot = path.dirname(path.dirname(templatePath));
   const sources = tikzTemplateSources(templatePath)
@@ -262,12 +190,6 @@ export function tikzTemplateDependencyHash(templatePath: string): string {
   return hash.digest("hex");
 }
 
-/**
- * Enumerate user-defined control words visible to the owned TikZ template.
- * Only files under the user's template/styles tree are followed; system TeX
- * packages are represented by the maintained standard LaTeX catalogue instead
- * of recursively indexing an entire TeX Live installation.
- */
 export function tikzTemplateCommands(templatePath: string): string[] {
   const commands = new Set<string>();
   for (const { source } of tikzTemplateSources(templatePath)) {
@@ -281,20 +203,11 @@ export function tikzTemplateCommands(templatePath: string): string[] {
 
 export interface TikzTemplateCompletion {
   label: string;
-  /** The arity of the declaration; absent for an xparse declaration, whose argument specification is not read. */
   argumentCount?: number;
-  /** The authored declaration line, for completion documentation only. */
   declaration?: string;
-  /** User-owned source file that declared the command. */
   sourceFile?: string;
 }
 
-/**
- * Completion metadata for the same user-owned template/include graph, read
- * by the one reader of TeX declarations (`texCommandDeclarationEntries`).
- * When the arity is not known, the command remains searchable but no
- * argument scaffold is fabricated.
- */
 export function tikzTemplateCompletions(templatePath: string): TikzTemplateCompletion[] {
   const completions = new Map<string, TikzTemplateCompletion>();
   for (const { filePath, source } of tikzTemplateSources(templatePath)) {
@@ -313,81 +226,32 @@ export function tikzTemplateCompletions(templatePath: string): TikzTemplateCompl
 export type TikzCompletionIPCResponse = ReturnType<typeof tikzTemplateCompletions>;
 
 export interface TikzRenderRequest {
-  /**
-   * The figure source. For 'raw' this is the complete
-   * \begin{tikzcd}/\begin{tikzpicture} … \end{…} block; for 'fence' it is the
-   * body of a ```tikz or ```tikzcd code fence. Snippet fences use the owned standalone
-   * template; the legacy inline renderer also accepts a full LaTeX document,
-   * which intentionally owns its own preamble and is not offered as a
-   * microlocal template-owned live-preview target.
-   */
   source: string;
   kind: "raw" | "fence";
-  /** Source language. tikzcd fences are template-owned snippets, not standalone TeX documents. */
   language: "tikz" | "tikzcd";
-  /**
-   * The document the figure was authored in; the filter resolves the figure's
-   * \input{…} against this file's directory.
-   *
-   * There is exactly one representation of "this buffer has no on-disk path":
-   * the empty string. That is what the editor configuration stores in
-   * `metadata.path` for an unsaved buffer (see getDefaultConfig), and it is
-   * what the shared filter branches on (`doc_path ~= ""` selects the
-   * document root, otherwise the process working directory). The field is
-   * therefore always supplied — a caller with no path passes the
-   * configuration's own value, it does not omit the field.
-   */
   docPath: string;
-  /** Normal renders use the filter cache; an explicit rerender bypasses it. */
   cachePolicy?: "use" | "refresh";
 }
 
 export interface TikzRenderConfig {
-  /** The resolved shared/user-owned Pandoc data tree. */
   tikzAssetDir: string;
-  /** User-owned standalone template used to wrap snippet figures. */
   templatePath: string;
-  /** The host-owned render cache; SVGs land and persist here. */
   cacheDir: string;
-  /** Effective centralized source tree used for authored figure inputs. */
   figuresSourceDir?: string;
-  /**
-   * The time that one render may take. A render that takes longer is stopped
-   * with each process that it started and reports 'render-timeout'.
-   */
   timeoutMs: number;
-  /**
-   * The environment every child process of this render runs under. It decides
-   * which pandoc, pdflatex and pdf2svg are found, so it is an input to the
-   * render, not an ambient condition the service may read for itself: the
-   * caller states which environment it is asking for and that decision is
-   * recorded at the call site.
-   */
   env: NodeJS.ProcessEnv;
 }
 
-/**
- * Who waits for a render. A preview is a figure that the author looks at; a
- * background render is work that the author did not start (the lint).
- */
 export type TikzRenderPriority = "preview" | "background";
 
 const RENDER_PRIORITY: Record<TikzRenderPriority, number> = { preview: 1, background: 0 };
 
 export interface TikzCompileError {
-  /** 1-based line within the figure body. */
   line: number;
-  /** The LaTeX bang-error message. */
   message: string;
-  /** The verbatim figure-body source line the error maps to. */
   sourceLine: string;
 }
 
-/**
- * Reads the base document font size that TeX uses for ordinary diagram labels.
- * Standard LaTeX classes default to 10pt; standalone follows that convention.
- * A document/template may opt into another point size through documentclass.
- */
 export function latexBaseFontSizePt(latexSource: string): number {
   const documentClass = /\\documentclass\s*(?:\[([^\]]*)\])?\s*\{[^}]+\}/.exec(latexSource);
   if (documentClass === null) {
@@ -420,65 +284,29 @@ export type TikzRenderResult =
       html: string;
       svg: string;
       svgPath: string;
-      /** TeX point size corresponding to one ordinary diagram-label em. */
       texFontSizePt: number;
     }
   | { ok: false; kind: "missing-tools"; missing: string[] }
-  /**
-   * A tool did not answer its probe. A tool that is not on the PATH is
-   * reported as 'missing-tools'; each other cause — a file without the
-   * execute bit, a tool that did not answer `--version` within the time limit
-   * of the probe, a failed start — says that the tool may be installed.
-   * Telling that user to install a tool they already have is a wrong
-   * diagnosis, so the cause (`describeProbe`) is carried.
-   */
   | { ok: false; kind: "toolchain-probe-failed"; tool: string; cause: string }
   | { ok: false; kind: "compile-error"; errors: TikzCompileError[]; log: string }
   | { ok: false; kind: "pandoc-error"; log: string }
-  /**
-   * The render process was killed before it could finish (OOM killer, an
-   * interrupt). This is not pandoc reporting a problem: no diagnostic was
-   * produced and nothing about the figure is known. The signal that ended it
-   * is the information that distinguishes this outcome.
-   */
   | { ok: false; kind: "render-terminated"; signal: NodeJS.Signals; log: string }
-  /**
-   * The render passed the time limit of its configuration and was stopped.
-   * Nothing about the figure is known; a TeX loop that does not end is the
-   * usual cause.
-   */
   | { ok: false; kind: "render-timeout"; timeoutMs: number; log: string };
 
-/** The tools the filter shells out to, checked before any render. */
 const REQUIRED_TOOLS = ["pandoc", "pdflatex", "pdf2svg"];
 
-/** One marker line per figure-compile error: body-line|message|source. */
 const ERROR_MARKER_RE = /^\[tikzcd-figure-error\] (\d+)\|([^|]*)\|(.*)$/;
 
-// The scratch directories of the renders that have not ended. The exit of the
-// app removes them. `runProcess` stops the processes of each run at the exit
-// of the app; its module registers its exit listener when it is imported,
-// before this module registers its own, so the processes stop first.
 const activeScratchDirs = new Set<string>();
 
 process.on("exit", () => {
   for (const scratchDir of activeScratchDirs) {
-    // A stopped process can write one more file while its directory is read.
     rmSync(scratchDir, { recursive: true, maxRetries: 5, retryDelay: 20 });
   }
 });
 
-// One render at a time in the process: each caller of `renderTikz` (the
-// preview of the editor, the lint) waits here. Two renders therefore never
-// write one file of the cache at the same time, and a figure that a second
-// render asks for while the first compiles it is a cache hit for the second.
-// A preview goes before the background renders that wait.
 const renderTurns = new Semaphore(1);
 
-/**
- * Renders one TikZ figure to inline SVG through the shared Pandoc filter,
- * after the renders that went before it in the process (`renderTurns`).
- */
 export async function renderTikz(
   request: TikzRenderRequest,
   config: TikzRenderConfig,
@@ -497,10 +325,6 @@ async function renderOneFigure(
 ): Promise<TikzRenderResult> {
   const env = config.env;
   const texFontSizePt = requestBaseFontSizePt(request, config);
-  // Recompute on every request. The macro/style files are intentionally owned
-  // outside the host and may change while the app remains open; caching
-  // this fingerprint in-process would recreate the exact stale-preview bug the
-  // persistent figure cache is meant to avoid.
   const renderContextHash = tikzTemplateDependencyHash(config.templatePath);
 
   const missing: string[] = [];
@@ -513,9 +337,6 @@ async function renderOneFigure(
       missing.push(tool);
       continue;
     }
-    // The remaining tools are deliberately not probed: with one probe broken
-    // the toolchain status is unknown, and a partial "missing" list would
-    // read as a complete diagnosis.
     return { ok: false, kind: "toolchain-probe-failed", tool, cause: describeProbe(tool, probe) };
   }
   if (missing.length > 0) {
@@ -524,9 +345,6 @@ async function renderOneFigure(
 
   await mkdir(config.cacheDir, { recursive: true });
 
-  // pandoc's markdown reader classifies a \begin{…} block as RawBlock latex
-  // and a ```tikz fence as CodeBlock tikz — exactly the two surfaces the
-  // filter handles.
   const markdown =
     request.kind === "raw"
       ? `${request.source.trim()}\n`
@@ -535,10 +353,6 @@ async function renderOneFigure(
         : `\`\`\`tikz\n${request.source}\n\`\`\`\n`;
 
   const filterPath = path.join(config.tikzAssetDir, "filters/tikzcd.lua");
-  // pandoc makes the scratch directory of the filter below TMPDIR, and the
-  // filter removes it when TeX has ended. A filter that was stopped removes
-  // nothing, so each render has a temporary directory of its own, which this
-  // function removes.
   const scratchDir = await mkdtemp(path.join(tmpdir(), "tikz-render-"));
   activeScratchDirs.add(scratchDir);
   const renderEnv: NodeJS.ProcessEnv = {
@@ -546,10 +360,6 @@ async function renderOneFigure(
     TMPDIR: scratchDir,
     PANDOC_DIR: config.tikzAssetDir,
     FIGURE_TEMPLATE_FILE: config.templatePath,
-    // The template is user-owned under ~/.pandoc and may load packages/macros
-    // from its sibling styles tree. Keep that lookup owned by the same tree
-    // even when the filter itself comes from an explicitly configured or
-    // bundled data directory.
     FIGURE_STYLES_DIR: path.join(path.dirname(path.dirname(config.templatePath)), "styles"),
     FIGURES_SOURCE_DIR:
       config.figuresSourceDir ??
@@ -562,8 +372,6 @@ async function renderOneFigure(
     TIKZ_FORCE_REBUILD: request.cachePolicy === "refresh" ? "1" : "0",
   };
 
-  // The run ends when no process of the render is left: the shell and the
-  // TeX that the filter starts are in its group (`waitForGroup`).
   const outcome = await runProcess({
     command: "pandoc",
     args: ["-f", "markdown", "-t", "html", "--lua-filter", filterPath],
@@ -577,7 +385,6 @@ async function renderOneFigure(
   });
 
   if (outcome.ended === "not-started") {
-    // The probe of this render started pandoc on the same PATH.
     throw new Error(`tikz-render: ${describeOutcome("pandoc", outcome)}`);
   }
 
@@ -591,9 +398,6 @@ async function renderOneFigure(
   }
 
   if (outcome.ended === "signal") {
-    // The render never ran to completion, so whatever landed on stderr is a
-    // partial transcript, not a diagnostic about the figure. Reporting the
-    // signal keeps a kill distinguishable from pandoc failing on its own.
     return { ok: false, kind: "render-terminated", signal: outcome.signal, log: outcome.stderr };
   }
 
@@ -620,18 +424,9 @@ async function renderOneFigure(
 
   const svgMarkup = outcome.stdout.match(/<svg[\s\S]*?<\/svg>/)?.[0];
   if (svgMarkup === undefined) {
-    // The HTML writer omitted the figure: the filter dropped a block that did
-    // not compile without a bang-error block to cite (or produced no SVG).
     return { ok: false, kind: "compile-error", errors: [], log: outcome.stderr };
   }
 
-  // The viewer source path is itself content-sensitive. In particular an
-  // explicit cache-bypassing refresh may discover an output change caused by a
-  // dependency outside the graph above (for example a system TeX package or a
-  // referenced graphic). If the path stayed request-addressed, Vue/Viewer.js
-  // would see the same prop and could keep displaying its previous image even
-  // though pdflatex really reran. Fold the actual SVG bytes into the path so a
-  // changed render necessarily reaches the existing Viewer.js instance.
   const requestHash = createHash("sha1")
     .update(
       `${request.kind}\0${request.language}\0${request.docPath}\0${request.source}\0${renderContextHash}\0${svgMarkup}`,
@@ -640,7 +435,5 @@ async function renderOneFigure(
   const svgPath = path.join(config.cacheDir, `lightbox-${requestHash}.svg`);
   await writeFile(svgPath, `<?xml version="1.0" encoding="UTF-8"?>\n${svgMarkup}\n`);
 
-  // Reaching here means the pandoc output carries an <svg>…</svg>: that is the
-  // guarantee consumers of an ok result are entitled to assume of `html`.
   return { ok: true, html: outcome.stdout, svg: svgMarkup, svgPath, texFontSizePt };
 }

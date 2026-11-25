@@ -4,7 +4,6 @@ derived_from_repository = "https://github.com/dzackgarza/pandoc-config"
 derived_from_commit = "1871f489b6ca915e70174925ec67fc8b2818206b"
 source_paths = [
   "filters/tikzcd.lua",
-  "filters/utilities.lua",
   "templates/standalone-tikz.tex",
 ]
-maintenance = "Test-only derivative used for hermetic render-service tests. Production TikZ rendering never selects this tree; ~/.pandoc/pandoc-config is authoritative. Local test-only adaptations after the derived commit are expected and must track the live filter contract exercised by the tests."
+maintenance = "Test-only derivative used for hermetic render-service tests. Production TikZ rendering never selects this tree; ~/.pandoc/pandoc-config is authoritative. Local test-only adaptations after the derived commit are expected and must track the live filter contract exercised by the tests. The adaptations: the filter compiles with pdflatex, requires PANDOC_DIR and SVG_DIR, writes the TeX log between [tikzcd-pdflatex-log-begin] and [tikzcd-pdflatex-log-end] on stderr, defines starts_with itself and loads no other Lua file; its first line is the protocol line of the live filter."

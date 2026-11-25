@@ -12,6 +12,15 @@ Zettlr starts it on one diagram.
   application gives the pane a `TikzPreviewHost` (`src/host.ts`); Zettlr's host
   is in `MainEditor.vue` (the `tikz-render` IPC). See
   `packages/tikz-render/README.md`.
+- **The filter states its protocol on its first line.** The filter of
+  `~/.pandoc` (`filters/tikzcd.lua` of `pandoc-config`) starts with the code
+  line `local ZETTLR_TIKZ_RENDER_PROTOCOL = <n>`, and the number must be
+  `TIKZ_RENDER_PROTOCOL` (`tikz-render.ts`). The start preflight
+  (`tikzFilterCompatibilityFailure`, §5) and `resolveTikzDataDir` refuse
+  another number, a comment and a line below the first. The filter loads no
+  other Lua file. A change of the protocol changes both repositories, and
+  `pandoc-config` lands first: the hosted run clones its `main`. Proof:
+  `packages/tikz-render/test/tikz-render.spec.ts`.
 - **A render owns its processes and its scratch files.** The pandoc process
   of a render leads a process group; the shell and the TeX that the filter
   starts are in it. `renderTikz` stops the group at the time limit
