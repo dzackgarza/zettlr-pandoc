@@ -1,41 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        TikZ render service red proofs (issue #14)
- * CVM-Role:        TESTING
- * License:         GNU GPL v3
- *
- * Description:     Locks the main-process TikZ render contract: tikzcd.lua
- *                  runs through real pandoc against an explicitly supplied
- *                  data tree and standalone template, producing inline
- *                  SVG with namespaced ids and a lightbox-servable SVG file;
- *                  a failing figure surfaces the filter's mapped bang-error
- *                  diagnostic; a machine without pdflatex/pdf2svg gets a
- *                  typed missing-tools result, never silence; a toolchain
- *                  probe that fails for a reason other than absence reports
- *                  the tool and the errno rather than posing as absence; one
- *                  probe of each tool serves all renders of a session, and
- *                  a tool installed during the session is found; a
- *                  render whose
- *                  pandoc process is killed reports the signal that killed it
- *                  rather than posing as a pandoc diagnostic; a render that
- *                  passes its time limit, loses its pandoc process or is
- *                  active when the app exits leaves no process and no
- *                  scratch file (issue #208); and the
- *                  request's docPath is the single representation of the
- *                  authoring document's location, empty when the buffer has
- *                  none.
- *
- *                  The compile proofs run the real toolchain when pdflatex
- *                  and pdf2svg exist; on a machine without them the same
- *                  cases must yield the typed missing-tools result — either
- *                  way every assertion is against the declared contract, no
- *                  silent skips.
- *
- * END HEADER
- */
-
 import { strict as assert } from "assert";
 import { ChildProcess, spawn, spawnSync } from "child_process";
 import { randomBytes } from "crypto";
@@ -60,15 +22,8 @@ import {
 const TIKZ_ASSET_DIR = path.join(__dirname, "fixtures", "tikz-data");
 const TIKZ_TEMPLATE = path.join(TIKZ_ASSET_DIR, "templates/standalone-tikz.tex");
 
-/**
- * The document location of a buffer that has never been written to disk. The
- * request models that fact with the empty path — the same value the editor
- * configuration holds in metadata.path — and the filter reads it as "no
- * document root", resolving \input against the working directory instead.
- */
 const NO_DOC_PATH = "";
 
-/** The PATH of the run, which holds pandoc and the TeX tools. */
 function pathOfTheRun(): string {
   const value = process.env.PATH;
   if (value === undefined) {
@@ -77,7 +32,6 @@ function pathOfTheRun(): string {
   return value;
 }
 
-/** The time limit of a render that is expected to end. */
 const TIME_LIMIT_MS = 30000;
 
 const TIKZCD_OK = "\\begin{tikzcd}\nA \\arrow[r] & B\n\\end{tikzcd}";
@@ -158,11 +112,6 @@ describe("TikZ TeX typography metadata", function () {
   });
 
   it("offers the macros that TeX reads, with the arguments that TeX reads", async function () {
-    // The user's macro tree has declarations and a package load in a
-    // comment (styles/macros/tier4-preamble.tex,
-    // styles/macros/environments.tex) and a paired delimiter
-    // (styles/macros/tier3-tex-complex.tex). TeX skips a comment, and
-    // mathtools gives a paired delimiter one argument.
     const root = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-macros-"));
     try {
       const templates = path.join(root, "templates");
@@ -207,22 +156,16 @@ function toolPresent(tool: string): boolean {
 
 const toolchainPresent = toolPresent("pdflatex") && toolPresent("pdf2svg");
 
-/** The absolute path of a tool on the PATH of the test process. */
 function hostToolPath(tool: string): string {
   const found = spawnSync("which", [tool], { encoding: "utf8" });
   assert.strictEqual(found.status, 0, `${tool} is on the PATH of the test process`);
   return found.stdout.trim();
 }
 
-/**
- * A figure body no previous run can have compiled, so the filter's
- * content-addressed cache cannot short-circuit the render being observed.
- */
 function uncachedTikzcd(body: string): string {
   return `\\begin{tikzcd}\n% ${randomBytes(8).toString("hex")}\n${body}\n\\end{tikzcd}`;
 }
 
-/** The pids of pandoc processes currently running the vendored filter. */
 function filterProcessPids(): number[] {
   const found = spawnSync("pgrep", ["-f", "lua-filter.*tikzcd\\.lua"], { encoding: "utf8" });
   return found.stdout
@@ -231,15 +174,8 @@ function filterProcessPids(): number[] {
     .filter((pid) => Number.isInteger(pid) && pid > 0);
 }
 
-/** The message type that Node gives the listener of a diagnostics channel. */
 type ChannelMessage = Parameters<Parameters<typeof subscribe>[1]>[0];
 
-/**
- * Runs `work` and returns the argument list of each child process that this
- * process started in that time. Node publishes each started process on its
- * `child_process` diagnostics channel
- * (https://nodejs.org/api/diagnostics_channel.html#child-process).
- */
 async function startedProcesses(work: () => Promise<void>): Promise<string[][]> {
   const started: ChildProcess[] = [];
   const record = (message: ChannelMessage): void => {
@@ -256,24 +192,15 @@ async function startedProcesses(work: () => Promise<void>): Promise<string[][]> 
   return started.map((child) => child.spawnargs);
 }
 
-/** The entries of the temporary directory that `before` does not hold. */
 function newTemporaryEntries(before: ReadonlySet<string>): string[] {
   return readdirSync(tmpdir()).filter((entry) => !before.has(entry));
 }
 
-/** One process that has not ended, with the name of its command. */
 interface MarkedProcess {
   pid: number;
   command: string;
 }
 
-/**
- * The processes that hold `marker` in their environment and have not ended.
- * A process inherits the environment of the process that started it, so a
- * marker in the environment of a render names each process of that render.
- * `ps e` prints the environment of a process after its command. A process in
- * state Z has ended; its entry stays until its parent collects it.
- */
 function processesWithMarker(marker: string): MarkedProcess[] {
   const listed = spawnSync("ps", ["eww", "-u", String(userInfo().uid), "-o", "pid=,stat=,args="], {
     encoding: "utf8",
@@ -288,12 +215,10 @@ function processesWithMarker(marker: string): MarkedProcess[] {
     .map(([pid, , command]) => ({ pid: Number(pid), command: path.basename(command) }));
 }
 
-/** The commands of the processes with `marker`. */
 function commandsWithMarker(marker: string): string[] {
   return processesWithMarker(marker).map((found) => found.command);
 }
 
-/** The commands with `marker` that are alive after a short time to end. */
 async function survivingCommands(marker: string): Promise<string[]> {
   const deadline = Date.now() + 3000;
   let alive = commandsWithMarker(marker);
@@ -304,11 +229,6 @@ async function survivingCommands(marker: string): Promise<string[]> {
   return alive;
 }
 
-/**
- * The result of a render, or undefined when the render gives none in
- * `limitMs`. A render that does not return is an outcome that a case must be
- * able to state.
- */
 async function resultWithin(
   pending: Promise<TikzRenderResult>,
   limitMs: number,
@@ -319,7 +239,6 @@ async function resultWithin(
   ]);
 }
 
-/** The outcome of a render in one word. */
 function outcomeOf(result: TikzRenderResult | undefined): string {
   if (result === undefined) {
     return "no result";
@@ -327,7 +246,6 @@ function outcomeOf(result: TikzRenderResult | undefined): string {
   return result.ok ? "ok" : result.kind;
 }
 
-/** A diagram that no previous run compiled and whose TeX does not end. */
 function endlessTikzpicture(): string {
   return `\\begin{tikzpicture}\n% ${randomBytes(8).toString("hex")}\n\\loop\\iftrue\\repeat\n\\end{tikzpicture}`;
 }
@@ -374,9 +292,6 @@ describe("TikZ render service (issue #14)", function () {
 
   it("distinguishes a toolchain probe that failed from a tool that is absent", async function () {
     this.timeout(60000);
-    // A pandoc that is present on the requested PATH and cannot be executed.
-    // Telling this user to install it sends them after a problem they do not
-    // have, and the permission bit they do have stays invisible.
     const binDir = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-noexec-"));
     try {
       await writeFile(path.join(binDir, "pandoc"), "#!/bin/sh\nexit 0\n", { mode: 0o644 });
@@ -441,8 +356,6 @@ describe("TikZ render service (issue #14)", function () {
     );
     if (result.ok) {
       assert.ok(result.html.includes("<svg"), "the result embeds inline SVG");
-      // The filter namespaces every id/use pair with a content-hash prefix so
-      // several figures can share one document.
       const idMatch = result.html.match(/id="([0-9a-f]{8})-/);
       if (idMatch === null) {
         assert.fail("SVG element ids carry the content-hash namespace prefix");
@@ -533,8 +446,6 @@ describe("TikZ render service (issue #14)", function () {
   it("probes each tool one time for all renders of a session", async function () {
     this.timeout(120000);
     if (!toolchainPresent) this.skip();
-    // A PATH that no other case uses, so the first render here is the first
-    // render of its session.
     const sessionBin = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-session-"));
     try {
       const config = {
@@ -815,10 +726,6 @@ describe("TikZ render service (issue #14)", function () {
     const cachedSvg = path.join(cacheDir, generated[0]);
     const goodBytes = readFileSync(cachedSvg);
 
-    // The render service probes every tool with --version before invoking
-    // pandoc. This shim therefore looks available to the probe but fails when
-    // the filter asks it to convert a PDF, reproducing the precise post-TeX
-    // failure that used to overwrite/truncate svg_path in place.
     const failingBin = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-bad-pdf2svg-"));
     try {
       const shim = path.join(failingBin, "pdf2svg");
@@ -935,11 +842,6 @@ describe("TikZ render service (issue #14)", function () {
 
   it("resolves the figure \\input against the document the request names", async function () {
     this.timeout(240000);
-    // One domain fact — where the authoring document lives — carried by one
-    // field, and the filter acts on it: two documents in different directories
-    // include the same file name and get their own figure. The requests are
-    // identical except for docPath, so anything but a faithfully forwarded
-    // path renders the same figure twice.
     const firstDir = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-doc-"));
     const secondDir = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-doc-"));
     const stamp = randomBytes(4).toString("hex");
@@ -990,8 +892,6 @@ describe("TikZ render service (issue #14)", function () {
       `the second document's include resolves, got ${JSON.stringify(fromSecond).slice(0, 400)}`,
     );
     if (fromFirst.ok && fromSecond.ok) {
-      // The filter namespaces every id in a figure with a hash of that
-      // figure's own content, so two different bodies cannot share a prefix.
       const firstPrefix = fromFirst.html.match(/id="([0-9a-f]{8})-/)?.[1];
       const secondPrefix = fromSecond.html.match(/id="([0-9a-f]{8})-/)?.[1];
       assert.ok(
@@ -1194,8 +1094,6 @@ describe("TikZ render service (issue #14)", function () {
 
     const temporaryBefore = new Set(readdirSync(tmpdir()));
     const runningBefore = new Set(filterProcessPids());
-    // A real render of an uncached figure: pandoc runs the filter, which runs
-    // pdflatex, so the process is alive long enough to be signalled.
     const pending = renderTikz(
       {
         source: uncachedTikzcd("A \\arrow[r] & B"),
@@ -1215,8 +1113,6 @@ describe("TikZ render service (issue #14)", function () {
 
     let signalled = 0;
     for (let round = 0; round < 2000 && signalled === 0; round++) {
-      // Only the process this render started: an unrelated pandoc dying would
-      // prove nothing about this request's outcome.
       for (const pid of filterProcessPids().filter((pid) => !runningBefore.has(pid))) {
         process.kill(pid, "SIGTERM");
         signalled++;
@@ -1254,20 +1150,48 @@ describe("TikZ render service (issue #14)", function () {
       }
     }
   });
-
   it("uses an explicitly configured TikZ data directory", async function () {
     const configuredDir = path.join(cacheDir, "configured-pandoc");
     await mkdir(path.join(configuredDir, "filters"), { recursive: true });
     await writeFile(
       path.join(configuredDir, "filters/tikzcd.lua"),
-      "-- ZETTLR_TIKZ_RENDER_PROTOCOL=3\n-- configured filter\n",
+      "local ZETTLR_TIKZ_RENDER_PROTOCOL = 3\nreturn {}\n",
     );
-    await writeFile(path.join(configuredDir, "filters/utilities.lua"), "-- configured utilities\n");
 
     assert.strictEqual(
       resolveTikzDataDir(configuredDir, path.join(cacheDir, "home")),
       configuredDir,
-      "an explicit filter tree needs no duplicate standalone template",
+      "an explicit filter tree needs no duplicate standalone template and no other Lua file",
+    );
+  });
+
+  it("refuses a filter that states its protocol in a comment", async function () {
+    const configuredDir = path.join(cacheDir, "comment-protocol-pandoc");
+    await mkdir(path.join(configuredDir, "filters"), { recursive: true });
+    await writeFile(
+      path.join(configuredDir, "filters/tikzcd.lua"),
+      "-- ZETTLR_TIKZ_RENDER_PROTOCOL=3\nreturn {}\n",
+    );
+
+    assert.throws(
+      () => resolveTikzDataDir(configuredDir, path.join(cacheDir, "home")),
+      /uses TikZ renderer protocol unknown/,
+      "the protocol is the code line on the first line of the filter, and a comment is no such line",
+    );
+  });
+
+  it("reads the protocol from the first line of the filter only", async function () {
+    const configuredDir = path.join(cacheDir, "late-protocol-pandoc");
+    await mkdir(path.join(configuredDir, "filters"), { recursive: true });
+    await writeFile(
+      path.join(configuredDir, "filters/tikzcd.lua"),
+      "return {}\nlocal ZETTLR_TIKZ_RENDER_PROTOCOL = 3\n",
+    );
+
+    assert.throws(
+      () => resolveTikzDataDir(configuredDir, path.join(cacheDir, "home")),
+      /uses TikZ renderer protocol unknown/,
+      "a protocol line below the first line does not state the protocol of the filter",
     );
   });
 
@@ -1278,9 +1202,8 @@ describe("TikZ render service (issue #14)", function () {
     await mkdir(path.join(userPandocDir, "templates"), { recursive: true });
     await writeFile(
       path.join(userPandocDir, "filters/tikzcd.lua"),
-      "-- ZETTLR_TIKZ_RENDER_PROTOCOL=3\n-- live user filter\n",
+      "local ZETTLR_TIKZ_RENDER_PROTOCOL = 3\nreturn {}\n",
     );
-    await writeFile(path.join(userPandocDir, "filters/utilities.lua"), "-- live user utilities\n");
     await writeFile(
       path.join(userPandocDir, "templates/standalone-tikz.tex"),
       "% live user template\n",
@@ -1335,7 +1258,6 @@ describe("TikZ render process lifetime (issue #208)", function () {
   });
 
   afterEach(async function () {
-    // A failed case leaves the TeX process of its render and its files.
     const left = processesWithMarker(marker).map((found) => String(found.pid));
     if (left.length > 0) {
       spawnSync("kill", ["-KILL", ...left]);
@@ -1371,8 +1293,6 @@ describe("TikZ render process lifetime (issue #208)", function () {
     }
 
     const pending = renderTikz(request, config, "preview");
-    // Past the fixed limit of 30 s that the renderer had before the limit
-    // was a setting, the time for the processes to end, and a margin.
     const deadline = Date.now() + 40000;
     const started = new Set<string>();
     let result: TikzRenderResult | undefined;
@@ -1473,8 +1393,6 @@ describe("TikZ render process lifetime (issue #208)", function () {
       return;
     }
 
-    // An app process that starts a render and exits, when its input ends,
-    // while the render is active.
     const app = spawn(
       process.execPath,
       [
@@ -1505,8 +1423,6 @@ describe("TikZ render process lifetime (issue #208)", function () {
         }),
       ],
       {
-        // tsx keeps a cache in the temporary directory; that file is not one
-        // of the render.
         env: { ...process.env, [MARKER_NAME]: markerValue, TSX_DISABLE_CACHE: "1" },
         stdio: ["pipe", "inherit", "inherit"],
       },
