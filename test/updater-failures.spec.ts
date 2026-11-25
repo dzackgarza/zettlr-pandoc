@@ -1,24 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        Tests of the failures of the update provider
- * CVM-Role:        TESTING
- * Maintainer:      D. Zack Garza
- * License:         GNU GPL v3
- *
- * Description:     The update provider reads a release list, downloads an
- *                  asset of a release, and checks it against the SHA256 sums
- *                  of the release. A failure of each step gives the update
- *                  window a state that names it, and leaves no download in
- *                  the downloads folder that the provider gave up (#210).
- *                  The real provider reads a release server on loopback
- *                  through its real HTTP calls, and a spec drives it through
- *                  the IPC handler of the update window.
- *
- * END HEADER
- */
-
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
@@ -38,11 +17,8 @@ const ASSET = Buffer.alloc(256 * 1024, 7);
 const ASSET_SHA256 = createHash("sha256").update(ASSET).digest("hex");
 const WRONG_SHA256 = createHash("sha256").update("another file").digest("hex");
 
-/** What the release server answers. */
 interface ReleaseServer {
-  /** The SHA256 of the asset that SHA256SUMS.txt names. */
   sums: string;
-  /** Whether the asset download stops after its first half. */
   stopsHalfway: boolean;
 }
 
@@ -109,15 +85,12 @@ describe("The failures of the update provider (#210)", function () {
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    // A spec starts each check itself; the check of the boot would race it.
     config.set("system.checkForUpdates", false);
-    // The boot loads the MathJax projection of ~/.pandoc.
     const projection = path.join(home, ".pandoc", "templates", "css");
     await mkdir(projection, { recursive: true });
-    await copyFile(
-      path.resolve("test", "fixtures", "mathjax-macros.json"),
-      path.join(projection, "mathjax-macros.json"),
-    );
+    for (const name of ["mathjax-macros.json", "mathjax-paired-delimiters.json"]) {
+      await copyFile(path.resolve("test", "fixtures", name), path.join(projection, name));
+    }
   });
 
   beforeEach(async function () {
@@ -150,7 +123,6 @@ describe("The failures of the update provider (#210)", function () {
     await rm(path.join(home, ".pandoc"), { recursive: true });
   });
 
-  /** The state of the provider once `holds` is true of it, within five seconds. */
   async function stateWhen(
     what: string,
     holds: (state: UpdateState) => boolean,
@@ -166,12 +138,10 @@ describe("The failures of the update provider (#210)", function () {
     return provider.getUpdateState();
   }
 
-  /** Whether the downloads folder holds the asset. */
   async function downloadIsOnDisk(): Promise<boolean> {
     return (await readdir(downloads)).includes(ASSET_NAME);
   }
 
-  /** Checks for the release and starts the download of its asset. */
   async function startDownload(): Promise<void> {
     await invokeMain("update-provider", { command: "check-for-update" });
     assert.equal(provider.getUpdateState().updateAvailable, true);
@@ -181,7 +151,6 @@ describe("The failures of the update provider (#210)", function () {
     });
   }
 
-  /** Downloads the asset of the release to its end. */
   async function downloadAsset(): Promise<void> {
     await startDownload();
     const deadline = Date.now() + 5000;
