@@ -3,10 +3,10 @@ set -euo pipefail
 
 : "${HOME:?HOME must be set}"
 
-macro_generator="$HOME/.pandoc/bin/generate-mathjax-config.py"
+pandoc_justfile="$HOME/.pandoc/justfile"
 
-if [[ ! -f "$macro_generator" ]]; then
-  printf 'MathJax macro generator is unavailable: %s\n' "$macro_generator" >&2
+if [[ ! -f "$pandoc_justfile" ]]; then
+  printf 'The justfile of ~/.pandoc is unavailable: %s\n' "$pandoc_justfile" >&2
   exit 1
 fi
-timeout 15 python3 "$macro_generator"
+timeout 120 just --justfile "$pandoc_justfile" generate-math-macros

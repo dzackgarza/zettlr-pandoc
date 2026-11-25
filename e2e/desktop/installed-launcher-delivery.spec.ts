@@ -1,19 +1,3 @@
-// The #52 boundary proof: file arguments must survive the COMPLETE installed
-// launcher chain and end as a document in the real editor. The desktop entry
-// starts zettlr-pandoc-dev, which opens the kitty splash, which runs
-// zettlr-pandoc-boot. The boot script starts the packaged Electron binary when
-// no instance runs (cold), or hands the files to
-// zettlr-pandoc-open-in-running when an instance already runs. Every earlier test starts somewhere inside that chain, so
-// only this spec can catch an argument dropped at an outer link.
-//
-// The chain is exercised exactly as a desktop session runs it: the launcher is
-// installed under an isolated $HOME, and each delivery starts from the
-// installed .desktop entry via `gio launch`. Isolation is by $HOME alone —
-// window management is real Hyprland, which is global to the session, so this
-// spec REQUIRES a live Hyprland compositor and no other running Zettlr-Pandoc.
-// Those are asserted up front and failures are loud: a skipped or simulated
-// run would be exactly the helper-level proof this spec exists to replace.
-
 import { strict as assert } from "node:assert";
 import { execFile as execFileCallback } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
@@ -63,7 +47,6 @@ async function windowsOfClass(windowClass: string): Promise<HyprlandClient[]> {
   return (await hyprlandClients()).filter((client) => client.class === windowClass);
 }
 
-/** Thrown only when a poll deadline expires; probe failures propagate as-is. */
 class PollTimeoutError extends Error {}
 
 async function pollUntil<T>(
@@ -86,11 +69,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/**
- * Signals the process group. 'gone' is the one legal alternative — ESRCH,
- * the group already exited. Every other failure (EPERM, EINVAL) is a real
- * teardown defect and propagates.
- */
 function signalGroup(pid: number, signal: NodeJS.Signals): "delivered" | "gone" {
   try {
     process.kill(-pid, signal);
@@ -103,12 +81,6 @@ function signalGroup(pid: number, signal: NodeJS.Signals): "delivered" | "gone" 
   }
 }
 
-/**
- * The launcher's own failure channel: zettlr-pandoc-boot writes the macro
- * refresh, the packaging build, and every fail() reason to this file. It lives
- * inside the isolated $HOME that after() removes, so a cold-launch failure
- * reported without this tail leaves no evidence anywhere.
- */
 async function launcherLogTail(home: string): Promise<string> {
   const logFile = path.join(home, ".cache", "zettlr-pandoc-dev.log");
   const contents = await readFile(logFile, "utf8").catch(
@@ -117,7 +89,6 @@ async function launcherLogTail(home: string): Promise<string> {
   return contents.split("\n").slice(-40).join("\n");
 }
 
-/** The open-document summaries of GET /v1/context, keyed by absolute path. */
 async function openDocumentPaths(api: AgentClient): Promise<string[]> {
   const context = await api.get("/v1/context");
   assert.ok(isRecord(context) && Array.isArray(context.openDocuments));
@@ -128,31 +99,22 @@ async function openDocumentPaths(api: AgentClient): Promise<string[]> {
 }
 
 describe("file delivery through the installed desktop launcher (#52)", function () {
-  // The recipe builds the package before the run, so the boot script starts
-  // the current build and a test has the time of one start and its work.
   this.timeout(startDeadline({}) + 60_000);
 
   let testHome: string | undefined;
   let appPid: number | undefined;
 
   const environment = (): NodeJS.ProcessEnv => {
-    // $HOME isolation: the wrapper, boot script, and Electron all derive
-    // their paths from HOME / XDG fallbacks. XDG_RUNTIME_DIR stays — it is
-    // session-owned, not home-owned, and Wayland/Hyprland need it.
     const child: NodeJS.ProcessEnv = { ...process.env, HOME: testHome };
     delete child.XDG_CONFIG_HOME;
     delete child.XDG_DATA_HOME;
     delete child.XDG_CACHE_HOME;
     delete child.XDG_STATE_HOME;
-    // The launcher gets the token of the Agent API from ~/.envrc. A token
-    // of the shell that started this run must not reach the app.
     delete child.ZETTLR_AGENT_API_TOKEN;
     return child;
   };
 
   before(async function () {
-    // Hard environment preconditions. Failing them fails the suite loudly:
-    // this proof cannot degrade to a helper-level launch.
     await execFile("hyprctl", ["clients", "-j"]).catch((error: Error) => {
       assert.fail(
         `A live Hyprland compositor is required for the installed-launcher proof: ${error.message}`,
@@ -171,20 +133,15 @@ describe("file delivery through the installed desktop launcher (#52)", function 
         "single-instance per desktop, so this proof needs the session to itself: " +
         "close the running app and re-run.",
     );
-    // A stale build makes the boot script package the app before the start.
-    // This throws for a build that is absent or not current.
     currentPackagedBinary();
 
-    const macroGenerator = path.join(homedir(), ".pandoc", "bin", "generate-mathjax-config.py");
-    await readFile(macroGenerator).catch((error: NodeJS.ErrnoException) => {
+    const pandocJustfile = path.join(homedir(), ".pandoc", "justfile");
+    await readFile(pandocJustfile).catch((error: NodeJS.ErrnoException) => {
       assert.fail(
-        `The boot script requires the workstation MathJax generator at ${macroGenerator}: ${error.message}`,
+        `The boot script refreshes the MathJax macros through the justfile of ~/.pandoc at ${pandocJustfile}: ${error.message}`,
       );
     });
 
-    // An isolated $HOME with the real ~/.pandoc linked in (the boot script's
-    // one workstation-owned dependency) and the app profile pre-seeded the
-    // same way the other e2e fixtures seed theirs.
     testHome = await mkdtemp(path.join(tmpdir(), "zettlr-launcher-home-"));
     await symlink(path.join(homedir(), ".pandoc"), path.join(testHome, ".pandoc"));
     const profileDirectory = path.join(testHome, ".config", "Zettlr-Pandoc");
@@ -213,9 +170,6 @@ describe("file delivery through the installed desktop launcher (#52)", function 
       )}\n`,
       "utf8",
     );
-    // Pre-seed the window layout the same way createFixture() does, so the
-    // launch restores one known editor leaf instead of running first-start
-    // logic whose focus would compete with the delivered file.
     const alreadyOpenDocument = path.join(workspaceDirectory, "already-open.md");
     await writeFile(alreadyOpenDocument, "# Already open\n\nSeed document.\n", "utf8");
     await writeFile(
@@ -235,7 +189,6 @@ describe("file delivery through the installed desktop launcher (#52)", function 
       "utf8",
     );
 
-    // The home of the author holds the token in ~/.envrc, allowed for direnv.
     await writeFile(
       path.join(testHome, ".envrc"),
       `export ZETTLR_AGENT_API_TOKEN=${AGENT_API_TOKEN}\n`,
@@ -253,8 +206,6 @@ describe("file delivery through the installed desktop launcher (#52)", function 
 
   after(async function () {
     if (appPid !== undefined) {
-      // The packaged binary runs setsid in its own process group; terminate
-      // the whole group so renderer and GPU children do not outlive the test.
       const windowGone = async (): Promise<true | undefined> =>
         (await windowsOfClass(APP_WINDOW_CLASS)).length === 0 ? true : undefined;
       if (signalGroup(appPid, "SIGTERM") === "delivered") {
@@ -264,8 +215,6 @@ describe("file delivery through the installed desktop launcher (#52)", function 
           if (!(error instanceof PollTimeoutError)) {
             throw error;
           }
-          // Bounded escalation, not tolerance: KILL the group, then require
-          // the window to actually vanish or fail the teardown loudly.
           signalGroup(appPid, "SIGKILL");
           await pollUntil(windowGone, 10_000, "the app group to exit on SIGKILL");
         }
@@ -283,26 +232,13 @@ describe("file delivery through the installed desktop launcher (#52)", function 
     const coldDocument = path.join(home, "workspace", "delivered-cold.md");
     await writeFile(coldDocument, `# Cold delivery\n\n${COLD_MARKER}\n`, "utf8");
 
-    // The exact gesture a desktop session performs: activate the installed
-    // desktop entry with a file argument.
     const desktopFile = path.join(home, ".local", "share", "applications", "zettlr-pandoc.desktop");
-    // gio hands the launched chain this process's stdio, and execFile waits for
-    // EOF on it, so this resolves only once the whole chain has exited — which
-    // zettlr-pandoc-boot does only after the app reports a completed boot and
-    // Hyprland maps its window. A boot failure keeps the splash open until a
-    // key press, so it ends this test by timeout with its reason in the
-    // launcher log. A chain that exits here without a window is a splash that
-    // never mapped.
     const launch = await execFile("gio", ["launch", desktopFile, coldDocument], {
       env: environment(),
     });
 
     const [appWindow] = await windowsOfClass(APP_WINDOW_CLASS);
     if (appWindow === undefined) {
-      // Which channel carries the reason depends on how far the chain got:
-      // zettlr-pandoc-dev reports a splash that never mapped on the inherited
-      // stderr, before any launcher log exists; zettlr-pandoc-boot writes build
-      // failures to the log. Quote both — one of them is always empty.
       assert.fail(
         "The installed launcher chain exited without starting the app.\n" +
           `chain stderr: ${launch.stderr.trim()}\n` +
@@ -317,8 +253,6 @@ describe("file delivery through the installed desktop launcher (#52)", function 
     assert.ok(isRecord(ping) && typeof ping.pid === "number");
     appPid = ping.pid;
 
-    // The delivered file must become the focused document with the authored
-    // bytes — "a window appeared" is not delivery.
     const focused = await pollUntil(
       async () => {
         const context = await api.get("/v1/context");
@@ -368,9 +302,6 @@ describe("file delivery through the installed desktop launcher (#52)", function 
       "the running instance to open the delivered file",
     );
 
-    // Same instance, not a second copy: the pid answering the API is the one
-    // the cold launch started, and the desktop still shows exactly one app
-    // window.
     const ping = await api.get("/v1/ping");
     assert.ok(isRecord(ping) && typeof ping.pid === "number");
     assert.equal(ping.pid, appPid, "delivery must reach the original instance");

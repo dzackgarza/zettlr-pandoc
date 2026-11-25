@@ -3,7 +3,7 @@ set -euo pipefail
 
 : "${HOME:?HOME must be set}"
 
-for required_command in awk date direnv dirname flock grep hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput; do
+for required_command in awk date direnv dirname flock grep hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput uv; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     printf 'Required command is unavailable: %s\n' "$required_command" >&2
     exit 1

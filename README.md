@@ -43,7 +43,7 @@ Each changed chunk is adjudicated in the editor: accept it, annotate it with a c
 
 This fork does **not** own an independent macro file. The canonical macro language lives in `~/.pandoc/styles/macros/`, alongside the TeX styles and templates that consume it. MathJax reads the generated projection at `~/.pandoc/templates/css/mathjax-macros.json`; TikZ compilation reads the same source macros through the central `dzg-tikz` template graph.
 
-To add or change a macro, edit the canonical source under `~/.pandoc/styles/macros/` and run the central `generate-math-macros` recipe (or `~/.pandoc/bin/generate-mathjax-config.py`). The generated JSON/JS/HTML files are derivatives and must not be edited or overridden in the Zettlr profile. The desktop launcher regenerates those central projections before launching.
+To add or change a macro, edit the canonical source under `~/.pandoc/styles/macros/` and run the central recipe: `just --justfile ~/.pandoc/justfile generate-math-macros`. The generated JSON/JS/HTML files are derivatives and must not be edited or overridden in the Zettlr profile. The desktop launcher regenerates those central projections before launching.
 
 The generated JSON uses the standard MathJax [`tex.macros`](https://docs.mathjax.org/en/latest/input/tex/macros.html) shape: a JSON object mapping each macro name to its definition — a replacement string or `[replacement, argCount]`. Zettlr consumes that projection read-only; malformed or missing central configuration is reported rather than silently replaced by bundled defaults.
 

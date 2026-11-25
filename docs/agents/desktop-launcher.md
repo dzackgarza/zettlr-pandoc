@@ -68,3 +68,33 @@ terminal. The start is ready only when the app reports a completed boot.
   `$HOME`). "No such process" is the one accepted failure of that stop.
 - The splash closes when the script returns, so a failure shows the last 20
   lines of the log and waits for a key.
+
+## Proof
+
+- `test/desktop-macro-refresh.spec.ts` runs the macro refresh of a start
+  with a home whose `.pandoc` is a local clone of the real one, without a
+  virtual environment of the caller.
+- `e2e/desktop/installed-launcher-delivery.spec.ts` (#52) is the proof of
+  the whole chain: the desktop entry starts `zettlr-pandoc-dev`, which opens
+  the splash, which runs `zettlr-pandoc-boot`. A start without a running app
+  starts the packaged binary; a start with one gives the files to
+  `zettlr-pandoc-open-in-running`. The spec starts each delivery from the
+  installed desktop entry through `gio launch`, as a desktop session does.
+  - Only `$HOME` is isolated: the spec installs the launcher there and links
+    the real `~/.pandoc` into it. `XDG_RUNTIME_DIR` stays, because Wayland
+    and Hyprland need it, and a token of the shell of the run does not reach
+    the app.
+  - Hyprland is global to the session, so the spec needs a live Hyprland
+    and no other running Zettlr-Pandoc. It fails at the start without them;
+    a simulated start would be no proof of the chain.
+  - `gio launch` returns when the whole chain exits, which the boot script
+    does after the app booted and its window is up. A boot failure keeps the
+    splash open, so the test ends at its time limit; the spec then shows the
+    stderr of the chain (a splash that did not open) and the launcher log
+    (a failed build or start).
+  - A delivered file is the focused document with its bytes; a second
+    delivery reaches the same process, and the desktop shows one window.
+  - At the end the spec ends the process group of the app, then kills it,
+    and fails when the window stays.
+  - The workstation runs it with `just test-e2e-desktop`; it is no job of
+    the hosted run.

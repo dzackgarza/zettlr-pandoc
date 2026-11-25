@@ -1,20 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        Canonical MathJax macro loader
- * CVM-Role:        Utility
- * Maintainer:      Zettlr Contributors
- * License:         GNU GPL v3
- *
- * Description:     Loads the generated MathJax projection owned by the central
- *                  ~/.pandoc macro system. Production consumers must resolve
- *                  that projection from ~/.pandoc; the generic file loader is
- *                  retained only for explicit tests/fixtures.
- *
- * END HEADER
- */
-
 import isErrnoException from "@common/util/is-errno-exception";
 import isFile from "@common/util/is-file";
 import { type MathJaxMacro, parseMathJaxMacros } from "@dzack/tikz-render/mathjax-config";
@@ -45,7 +28,6 @@ export interface CanonicalMacroEntry {
   mathjax?: CanonicalMacroMathJaxDefinition;
 }
 
-/** A path of the macro tree whose content the filesystem refuses, with the cause. */
 export interface MacroSourceNotRead {
   path: string;
   cause: string;
@@ -57,22 +39,12 @@ export interface CanonicalMacroInventory {
   notRead: MacroSourceNotRead[];
 }
 
-/**
- * The macro tree of ~/.pandoc cannot be read, or its generated MathJax
- * projection cannot be read or is not a macro projection.
- */
 export class MacroSourcesUnavailableError extends Error {}
 
-/** Resolve the generated MathJax projection owned by ~/.pandoc. */
 export function canonicalMathJaxMacrosPath(homeDirectory: string): string {
   return path.join(homeDirectory, ".pandoc", "templates", "css", MATHJAX_MACROS_FILENAME);
 }
 
-/**
- * Load the central generated projection. Missing central configuration is a
- * configuration error: production must never fall back to a bundled/app-local
- * macro copy, because that creates a second semantic authority.
- */
 export async function loadCanonicalMathJaxMacros(
   homeDirectory: string,
 ): Promise<Record<string, MathJaxMacro>> {
@@ -84,37 +56,27 @@ export async function loadCanonicalMathJaxMacros(
     if (!isErrnoException(error)) throw error;
     throw new MacroSourcesUnavailableError(
       `Can't read the generated MathJax macro file ${filePath}: ${error.message}. ` +
-        "Run ~/.pandoc/bin/generate-mathjax-config.py to rebuild it.",
+        "Run `just --justfile ~/.pandoc/justfile generate-math-macros` to rebuild it.",
       { cause: error },
     );
   }
   try {
     return parseMathJaxMacros(JSON.parse(contents));
   } catch (error) {
-    // JSON.parse throws a SyntaxError and parseMathJaxMacros a TypeError for
-    // text that is no macro projection.
     if (!(error instanceof SyntaxError) && !(error instanceof TypeError)) throw error;
     throw new MacroSourcesUnavailableError(
       `The generated MathJax macro file ${filePath} is not a macro projection: ${error.message}. ` +
-        "Run ~/.pandoc/bin/generate-mathjax-config.py to rebuild it.",
+        "Run `just --justfile ~/.pandoc/justfile generate-math-macros` to rebuild it.",
       { cause: error },
     );
   }
 }
 
-/** The control words that the readable sources of the macro tree declare. */
 export interface CanonicalTexMacroCommands {
   commands: string[];
   notRead: MacroSourceNotRead[];
 }
 
-/**
- * Enumerate every user-declared control word in the canonical authoring macro
- * tree. Unlike the MathJax projection, this includes compiler-only macros whose
- * TeX definitions cannot be represented faithfully by MathJax. A folder or a
- * source file whose content the filesystem refuses is in `notRead`; a root
- * that refuses its content is a MacroSourcesUnavailableError.
- */
 export async function loadCanonicalTexMacroCommands(
   homeDirectory: string,
 ): Promise<CanonicalTexMacroCommands> {
@@ -135,12 +97,6 @@ interface MacroTree {
   notRead: MacroSourceNotRead[];
 }
 
-/**
- * Reads each TeX source of the macro tree at `root`, in the order of the
- * names. A folder or a source file whose content the filesystem refuses is
- * in `notRead`, and its declarations are not read; a root that refuses its
- * content is a MacroSourcesUnavailableError.
- */
 async function readMacroTree(root: string): Promise<MacroTree> {
   const declarations: MacroTree["declarations"] = [];
   const notRead: MacroSourceNotRead[] = [];
@@ -213,14 +169,6 @@ function mathJaxDefinition(definition: MathJaxMacro): CanonicalMacroMathJaxDefin
     : { replacement, argumentCount, optionalDefault };
 }
 
-/**
- * Inspect the complete canonical user macro vocabulary. Compiler-only TeX
- * declarations and MathJax-projected declarations are merged by control word;
- * duplicate authored declarations are deliberately preserved. A folder or a
- * source file whose content the filesystem refuses is in `notRead`, and its
- * declarations are not in the inventory; a root that refuses its content is
- * a MacroSourcesUnavailableError.
- */
 export async function loadCanonicalMacroInventory(
   homeDirectory: string,
 ): Promise<CanonicalMacroInventory> {
@@ -236,8 +184,6 @@ export async function loadCanonicalMacroInventory(
     .sort((a, b) => a.localeCompare(b))
     .map((name): CanonicalMacroEntry => {
       const projection = projected[name.slice(1)];
-      // A macro the MathJax projection defines but no TeX source declares has
-      // no declarations to report.
       const declared = declarations.get(name);
       return {
         name,
@@ -249,12 +195,6 @@ export async function loadCanonicalMacroInventory(
   return { root, macros, notRead: tree.notRead };
 }
 
-/**
- * Reads and validates one explicit MathJax macro projection. Production uses
- * this only through `loadCanonicalMathJaxMacros`; accepting an arbitrary path
- * here is useful for isolated fixtures and projection tests. An absent explicit
- * fixture yields an empty map, while malformed content fails loudly.
- */
 export async function loadMathJaxMacros(filePath: string): Promise<Record<string, MathJaxMacro>> {
   if (!isFile(filePath)) {
     return {};
