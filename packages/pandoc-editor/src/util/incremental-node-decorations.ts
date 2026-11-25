@@ -1,49 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        incrementalNodeDecorations
- * CVM-Role:        Utility Function
- * License:         GNU GPL v3
- *
- * Description:     A state field for decorations that are derived from syntax
- *                  nodes. A transaction computes again only the decorations
- *                  that it can change, so the work of a transaction follows
- *                  the size of the change and not the length of the document.
- *
- *                  A decoration can change for three reasons, and the field
- *                  has one rule for each:
- *
- *                  - The syntax tree changed. The Markdown parser keeps the
- *                    node object of each top-level block that it did not
- *                    parse again, so a block with the same node object has
- *                    the same decorations. The field computes again the
- *                    ranges between those blocks.
- *                  - A transaction changed a range whose decorations depend
- *                    on more than their own nodes, such as the selection or
- *                    a pending review change. The source names those ranges
- *                    for each transaction (`changedReach`), and the field
- *                    computes them again with the decorations that touch
- *                    them. The source names the ranges that changed, not
- *                    each such range, so a transaction that moves one range
- *                    of many costs the work of one.
- *                  - Another state value that the source reads changed. The
- *                    source reports that, and the field computes all
- *                    decorations again.
- *
- *                  All other decorations are mapped through the document
- *                  change. A widget in such a decoration is not created
- *                  again, so a widget must not keep a document position: it
- *                  reads its position from the view when it needs one.
- *
- *                  A decoration that the field computes again replaces the
- *                  one in its place only when the two are not equal. The
- *                  element of a widget therefore belongs to one widget object
- *                  until a different widget takes its place.
- *
- * END HEADER
- */
-
 import { syntaxTree } from "@codemirror/language";
 import { type EditorState, type Range, StateField, type Transaction } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
@@ -55,29 +9,14 @@ export interface SourceRange {
 }
 
 export interface NodeDecorationSource {
-  /**
-   * Returns the decorations of the syntax nodes that touch `[from, to]`. The
-   * field keeps only the decorations that belong to that range themselves.
-   */
   decorate: (state: EditorState, from: number, to: number) => Array<Range<Decoration>>;
-  /**
-   * Whether a state value that `decorate` reads changed. The document, the
-   * syntax tree and the selection are not such values.
-   */
   inputsChanged: (before: EditorState, after: EditorState) => boolean;
-  /**
-   * The ranges of the new document whose decorations a transaction can have
-   * changed through more than their own nodes: for a source that leaves a
-   * selected node undecorated, the old selection, mapped, and the new one.
-   */
   changedReach: (transaction: Transaction) => readonly SourceRange[];
 }
 
 interface TopLevelBlocks {
-  /** The node object of each top-level block and its start in the document. */
   nodes: Array<Tree | TreeBuffer>;
   from: number[];
-  /** The position of each node object in `nodes`. */
   index: Map<Tree | TreeBuffer, number>;
 }
 
@@ -87,8 +26,6 @@ interface NodeDecorations {
   blocks: TopLevelBlocks;
 }
 
-// The parser groups a long list of blocks below anonymous nodes to balance
-// the tree. It makes those nodes again for each parse, so they are not blocks.
 function collectBlocks(tree: Tree, offset: number, blocks: TopLevelBlocks): void {
   for (let i = 0; i < tree.children.length; i++) {
     const child = tree.children[i];
@@ -103,8 +40,6 @@ function collectBlocks(tree: Tree, offset: number, blocks: TopLevelBlocks): void
   }
 }
 
-// One tree has one list of blocks. Each field of an editor reads it for each
-// tree, so the list is made once and lives as long as its tree.
 const blocksOfTree = new WeakMap<Tree, TopLevelBlocks>();
 
 function topLevelBlocks(tree: Tree): TopLevelBlocks {
@@ -118,10 +53,38 @@ function topLevelBlocks(tree: Tree): TopLevelBlocks {
   return blocks;
 }
 
-/**
- * Returns the ranges of the new document that are not covered by a block
- * which the parser kept from the old tree.
- */
+function blocksAfterShortTree(
+  tree: Tree,
+  known: TopLevelBlocks,
+  transaction: Transaction,
+  regions: readonly SourceRange[],
+): TopLevelBlocks {
+  const parsed = topLevelBlocks(tree);
+  const blocks: TopLevelBlocks = {
+    nodes: [...parsed.nodes],
+    from: [...parsed.from],
+    index: new Map(parsed.index),
+  };
+  for (let i = 0; i < known.nodes.length; i++) {
+    const node = known.nodes[i];
+    const from = known.from[i];
+    const to = from + node.length;
+    if (transaction.docChanged && transaction.changes.touchesRange(from, to) !== false) {
+      continue;
+    }
+    const mapped = transaction.changes.mapPos(from);
+    const end = mapped + node.length;
+    const redrawn = regions.some((region) => mapped <= region.to && end >= region.from);
+    if (mapped < tree.length || redrawn || blocks.index.has(node)) {
+      continue;
+    }
+    blocks.index.set(node, blocks.nodes.length);
+    blocks.nodes.push(node);
+    blocks.from.push(mapped);
+  }
+  return blocks;
+}
+
 function changedRanges(
   before: TopLevelBlocks,
   after: TopLevelBlocks,
@@ -164,12 +127,6 @@ function mergeTouching(ranges: SourceRange[]): SourceRange[] {
   return merged;
 }
 
-/**
- * Whether a decoration belongs to a region that the field computes again. A
- * decoration that only meets the region at one of its ends belongs to the
- * unchanged block on that side. An empty decoration at such an end is what
- * remains of a deleted block, and belongs to the region.
- */
 function inRegion(from: number, to: number, region: SourceRange): boolean {
   const before = from < region.from && to <= region.from;
   const after = from >= region.to && to > region.to;
@@ -206,11 +163,6 @@ export function incrementalNodeDecorations(
       let blocks = value.blocks;
       if (tree !== value.tree) {
         blocks = topLevelBlocks(tree);
-        // The parser works for a set time after a change and goes on in the
-        // background, so the tree can end before the document does. The
-        // text after the end of the tree is not known yet: its decorations
-        // stay, mapped through the change, until the tree reaches it. A
-        // later tree has those blocks as new blocks and decorates them.
         const parsedTo = Math.min(tree.length, state.doc.length);
         for (const range of changedRanges(value.blocks, blocks, parsedTo)) {
           if (range.from < range.to) {
@@ -218,9 +170,6 @@ export function incrementalNodeDecorations(
           }
         }
       }
-      // One position more on each side: a decoration that meets the reach
-      // depends on it, and `inRegion` leaves out a decoration that only
-      // meets a region.
       for (const range of reach) {
         dirty.push({
           from: Math.max(0, range.from - 1),
@@ -232,6 +181,9 @@ export function incrementalNodeDecorations(
         ? value.decorations.map(transaction.changes)
         : value.decorations;
       const regions = mergeTouching(dirty);
+      if (tree.length < state.doc.length) {
+        blocks = blocksAfterShortTree(tree, value.blocks, transaction, regions);
+      }
       const add: Array<Range<Decoration>> = [];
       let previous: SourceRange | undefined;
       for (const region of regions) {
@@ -248,7 +200,6 @@ export function incrementalNodeDecorations(
           },
         });
         for (const range of source.decorate(state, region.from, region.to)) {
-          // A decoration that also belongs to the region before is already in `add`.
           const added = previous !== undefined && inRegion(range.from, range.to, previous);
           if (!inRegion(range.from, range.to, region) || added) {
             continue;

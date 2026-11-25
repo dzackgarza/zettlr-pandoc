@@ -117,7 +117,7 @@ describe("Block widgets follow the size of a change", function () {
   function widgetsMadeByTypedCharacter(paragraphCount: number, parserBehind: boolean): number {
     const doc = paragraphs(paragraphCount);
     const editor = countedEditor(doc, 0);
-    const position = doc.indexOf("holds", doc.length / 2);
+    const position = doc.indexOf("holds", paragraphs(20).length);
     editor.reset();
     const edit = (): EditorState =>
       editor.state.update({

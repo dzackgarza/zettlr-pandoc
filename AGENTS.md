@@ -193,12 +193,23 @@ from the tree follows the tree:
   `tree.length` as it is; it is not known yet, and it is not changed
   (`incrementalNodeDecorations`). A field that takes it as changed removes
   each widget below a typed character and makes it again.
+- That field also keeps the blocks that it knew after `tree.length`,
+  mapped through the change (`blocksAfterShortTree`). The tree that
+  reaches the end reuses those blocks of the earlier full tree; a field
+  that knows only the blocks of the short tree decorates the whole rest
+  of the document again. A known block that the change touches, or that
+  a region of the transaction meets, is left out: the field could not
+  decorate it, so the later tree decorates it.
 
 Proof: `test/editor-incremental-rendering.spec.ts`. `withParserTimePassed`
 of that file sets the clock of the parser, so the parser stops after one
 step; "... when the parser is behind after each edit" compares an edited
 editor with a new one for each renderer of the production set, and a new
-renderer is covered by it.
+renderer is covered by it. A spec that counts the work of an edit makes
+the edit in the first 3000 characters of a state without a view: a nested
+parser (the TeX of an `InlineCode`) skips the text outside the viewport of
+the parse, which a state without a view does not move, and the full parse
+of `ensureSyntaxTree` then makes the edited block again.
 
 **What the editor closes itself, because CodeMirror does not.**
 
@@ -817,13 +828,34 @@ rules keep that property. The measurement harness and the safe launch command
 of an isolated instance are in the first comment of #132.
 
 - **Decorations from syntax nodes** go through `incrementalNodeDecorations`
-  (`markdown-editor/util/incremental-node-decorations.ts`). A transaction
-  computes again only the top-level blocks that the parser made again and the
-  ranges that the selection left or entered. `renderBlockWidgets`
-  (`renderers/base-renderer.ts`) is built on it. A renderer that reads a state
-  value other than the document, the syntax tree and the selection reports a
-  change of that value through `inputsChanged`; a value that it does not
-  report leaves stale widgets.
+  (`packages/pandoc-editor/src/util/incremental-node-decorations.ts`). A
+  transaction computes again only the top-level blocks that the parser made
+  again and the ranges that the selection left or entered. `renderBlockWidgets`
+  (`renderers/base-renderer.ts`) is built on it. The field has one rule for
+  each cause of a change:
+  - The tree changed. The Markdown parser keeps the node object of each
+    top-level block that it did not parse again, so a block with the same
+    node object has the same decorations. The field computes again the ranges
+    between those blocks. The anonymous nodes that balance a long list of
+    blocks are made again for each parse, so they are no blocks. The list of
+    blocks of a tree is made once and lives as long as the tree.
+  - A transaction changed a range whose decorations depend on more than their
+    own nodes (the selection, a pending review change). The source names the
+    ranges that changed (`changedReach`), not each such range, and the field
+    computes them again, one position wider on each side, with the
+    decorations that touch them.
+  - Another state value that the source reads changed. The source reports it
+    through `inputsChanged`, and the field computes each decoration again; a
+    value that it does not report leaves stale widgets. The document, the
+    tree and the selection are no such values.
+
+  `decorate(state, from, to)` gives the decorations of the nodes that touch
+  the range; the field keeps those that belong to it. A decoration that only
+  meets a region at one end belongs to the block on that side; an empty
+  decoration at such an end is what is left of a deleted block and belongs to
+  the region (`inRegion`). A decoration that the field computes again and
+  that is equal to the old one keeps the old object, so the element of a
+  widget belongs to one widget object until another widget takes its place.
 - **A widget holds no document position.** The field keeps a widget outside a
   changed block, so a stored position goes stale. A handler reads the position
   from `view.posAtDOM`. The `eq` of a widget compares what the widget shows.
