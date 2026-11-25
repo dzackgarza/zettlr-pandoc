@@ -2,16 +2,13 @@ import isErrnoException from "@common/util/is-errno-exception";
 import isFile from "@common/util/is-file";
 import {
   type MathJaxMacro,
-  type MathJaxPairedDelimiter,
   parseMathJaxMacros,
-  parseMathJaxPairedDelimiters,
 } from "@dzack/tikz-render/mathjax-config";
 import { texCommandDeclarationEntries } from "@dzack/tikz-render/tex-command-declarations";
 import { type Dirent, promises as fs } from "fs";
 import path from "path";
 
 export const MATHJAX_MACROS_FILENAME = "mathjax-macros.json";
-export const MATHJAX_PAIRED_DELIMITERS_FILENAME = "mathjax-paired-delimiters.json";
 
 const TEX_SOURCE_EXTENSIONS = new Set([".tex", ".sty", ".cls"]);
 
@@ -51,15 +48,6 @@ export function canonicalMathJaxMacrosPath(homeDirectory: string): string {
   return path.join(homeDirectory, ".pandoc", "templates", "css", MATHJAX_MACROS_FILENAME);
 }
 
-export function canonicalMathJaxPairedDelimitersPath(homeDirectory: string): string {
-  return path.join(
-    homeDirectory,
-    ".pandoc",
-    "templates",
-    "css",
-    MATHJAX_PAIRED_DELIMITERS_FILENAME,
-  );
-}
 
 async function loadGeneratedProjection<T>(
   filePath: string,
@@ -98,15 +86,6 @@ export async function loadCanonicalMathJaxMacros(
   );
 }
 
-export async function loadCanonicalMathJaxPairedDelimiters(
-  homeDirectory: string,
-): Promise<Record<string, MathJaxPairedDelimiter>> {
-  return await loadGeneratedProjection(
-    canonicalMathJaxPairedDelimitersPath(homeDirectory),
-    "paired delimiter",
-    parseMathJaxPairedDelimiters,
-  );
-}
 
 export interface CanonicalTexMacroCommands {
   commands: string[];

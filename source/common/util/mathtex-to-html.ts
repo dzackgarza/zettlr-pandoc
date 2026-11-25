@@ -12,7 +12,6 @@ import "@mathjax/src/cjs/input/tex/newcommand/NewcommandConfiguration.js";
 import "@mathjax/src/cjs/input/tex/noundefined/NoUndefinedConfiguration.js";
 import {
   type MathJaxMacro,
-  type MathJaxPairedDelimiter,
   mathJaxPackages,
 } from "@dzack/tikz-render/mathjax-config";
 import { MathJaxMhchemFontExtension } from "@mathjax/mathjax-mhchem-font-extension/cjs/chtml.js";
@@ -140,16 +139,14 @@ function buildCompletionCatalogue<N, T, D>(tex: TeX<N, T, D>): MathJaxCompletion
 
 function texInput(
   macros: Record<string, MathJaxMacro>,
-  pairedDelimiters: Record<string, MathJaxPairedDelimiter>,
 ) {
-  return new TeX({ packages: [...mathJaxPackages], macros, mathtools: { pairedDelimiters } });
+  return new TeX({ packages: [...mathJaxPackages], macros });
 }
 
 export function buildMathJaxCompletionCatalogue(
   macros: Record<string, MathJaxMacro>,
-  pairedDelimiters: Record<string, MathJaxPairedDelimiter>,
 ): MathJaxCompletionCatalogue {
-  return buildCompletionCatalogue(texInput(macros, pairedDelimiters));
+  return buildCompletionCatalogue(texInput(macros));
 }
 
 export function mathJaxCompletionCatalogue(): MathJaxCompletionCatalogue {
@@ -158,13 +155,12 @@ export function mathJaxCompletionCatalogue(): MathJaxCompletionCatalogue {
 
 export function initializeMathJax(
   macros: Record<string, MathJaxMacro>,
-  pairedDelimiters: Record<string, MathJaxPairedDelimiter>,
 ): Promise<void> {
   if (initializing !== undefined) {
     return initializing;
   }
 
-  const tex = texInput(macros, pairedDelimiters);
+  const tex = texInput(macros);
   completionCatalogue = buildCompletionCatalogue(tex);
 
   if (documentElement === undefined) {

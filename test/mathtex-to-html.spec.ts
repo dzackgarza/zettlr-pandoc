@@ -58,7 +58,7 @@ it("renders updater Markdown with the lite adaptor without a global document", f
       `import { initializeMathJax } from './source/common/util/mathtex-to-html.ts'
 import { loadMathJaxMacros } from './source/app/util/load-mathjax-macros.ts'
 import { md2html } from './source/common/modules/markdown-utils/markdown-to-html.ts'
-await initializeMathJax(await loadMathJaxMacros('test/fixtures/mathjax-macros.json'), {})
+await initializeMathJax(await loadMathJaxMacros('test/fixtures/mathjax-macros.json'))
 process.stdout.write(await md2html('$$\\\\RR$$', { onCitation: () => undefined, zknLinkFormat: 'link|title' }))`,
     ],
     { encoding: "utf8" },
@@ -68,17 +68,13 @@ process.stdout.write(await md2html('$$\\\\RR$$', { onCitation: () => undefined, 
   assert.match(html, /ℝ/);
 });
 
-it("renders each form of a paired delimiter of ~/.pandoc as mathtools does", function () {
+it("renders each delimiter of ~/.pandoc grown to its content", function () {
   this.timeout(60000);
 
   const pairs = [
     ["\\qty{\\frac{a}{b}}", "\\left(\\frac{a}{b}\\right)"],
-    ["\\ceil{\\frac{a}{b}}", "\\mathopen{\\lceil}\\frac{a}{b}\\mathclose{\\rceil}"],
-    ["\\ceil*{\\frac{a}{b}}", "\\mathopen{}\\mathclose{\\left\\lceil\\frac{a}{b}\\right\\rceil}"],
-    [
-      "\\ceil[\\big]{\\frac{a}{b}}",
-      "\\mathopen{\\bigl\\lceil}\\frac{a}{b}\\mathclose{\\bigr\\rceil}",
-    ],
+    ["\\ceiling{\\frac{a}{b}}", "{\\left\\lceil\\frac{a}{b}\\right\\rceil}"],
+    ["\\intvl{\\frac{a}{b}}", "\\left[\\frac{a}{b}\\right]"],
     ["a \\coloneqq b", "a \\vcentercolon\\mathrel{\\mkern-1.2mu}= b"],
   ];
   const output = execFileSync(
@@ -91,8 +87,8 @@ it("renders each form of a paired delimiter of ~/.pandoc as mathtools does", fun
       "--eval",
       `import { homedir } from 'os'
 import { initializeMathJax, mathJaxToHTML } from './source/common/util/mathtex-to-html.ts'
-import { loadCanonicalMathJaxMacros, loadCanonicalMathJaxPairedDelimiters } from './source/app/util/load-mathjax-macros.ts'
-await initializeMathJax(await loadCanonicalMathJaxMacros(homedir()), await loadCanonicalMathJaxPairedDelimiters(homedir()))
+import { loadCanonicalMathJaxMacros } from './source/app/util/load-mathjax-macros.ts'
+await initializeMathJax(await loadCanonicalMathJaxMacros(homedir()))
 const pairs = JSON.parse(process.argv[1])
 const page = (tex) => mathJaxToHTML(tex, 'display').replace(/ data-latex="[^"]*"|<\\/?mjx-TeXAtom[^>]*>/g, '')
 process.stdout.write(JSON.stringify(pairs.map(([call, meaning]) => [call, page(call) === page(meaning) && !/color: red/.test(page(call))])))`,
@@ -116,7 +112,7 @@ function textOf(node: Node): string {
 describe("Utility#mathJaxToHTML()", function () {
   before(async function () {
     this.timeout(30000);
-    await initializeMathJax(await loadMathJaxMacros(FIXTURE), {});
+    await initializeMathJax(await loadMathJaxMacros(FIXTURE));
   });
 
   it("serializes configured macros and mhchem as CommonHTML display math", function () {

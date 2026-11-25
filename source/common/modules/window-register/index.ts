@@ -15,11 +15,7 @@ export default async function windowRegister(): Promise<void> {
   await loadData();
   await loadIcons();
 
-  const [macros, pairedDelimiters] = await Promise.all([
-    window.ipc.invoke("mathjax-macros"),
-    window.ipc.invoke("mathjax-paired-delimiters"),
-  ]);
-  await initializeMathJax(macros, pairedDelimiters);
+  await initializeMathJax(await window.ipc.invoke("mathjax-macros"));
 
   registerThemes();
   registerDefaultContextMenu();

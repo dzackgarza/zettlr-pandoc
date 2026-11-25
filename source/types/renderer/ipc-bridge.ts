@@ -1,7 +1,6 @@
 import type { IpcEmitter } from "@electron-toolkit/typed-ipc/renderer";
 import type {
   MathJaxMacrosIPCResponse,
-  MathJaxPairedDelimitersIPCResponse,
   TexMacroCommandsIPCResponse,
   TikzCompletionIPCResponse,
 } from "source/app/lifecycle";
@@ -127,7 +126,6 @@ export interface IpcFixedChannelContracts {
 export interface IpcBareChannelContracts {
   i18n: I18nIPCResponse;
   "mathjax-macros": MathJaxMacrosIPCResponse;
-  "mathjax-paired-delimiters": MathJaxPairedDelimitersIPCResponse;
   "tex-macro-commands": TexMacroCommandsIPCResponse;
   "tikz-completion-commands": TikzCompletionIPCResponse;
   "request-dir": RequestDirIPCResponse;

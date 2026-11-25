@@ -54,7 +54,7 @@ const ALIGN = "\\begin{align}\na &= b \\\\\nc &= d\n\\end{align}";
 describe("Pandoc Markdown LaTeX-environment classification", function () {
   before(async function () {
     this.timeout(60000);
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
   });
 
   describe("the HTML conversion", function () {

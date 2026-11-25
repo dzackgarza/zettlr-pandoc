@@ -14,7 +14,6 @@ import { openPath } from "source/app/util/open-path";
 import { handleInvokeChannel } from "../../util/handle-ipc-channel";
 import {
   loadCanonicalMathJaxMacros,
-  loadCanonicalMathJaxPairedDelimiters,
 } from "../../util/load-mathjax-macros";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
@@ -627,7 +626,6 @@ export default class UpdateProvider extends ProviderContract {
     const home = app.getPath("home");
     await initializeMathJax(
       await loadCanonicalMathJaxMacros(home),
-      await loadCanonicalMathJaxPairedDelimiters(home),
     );
     this._registerIpcHandler();
 

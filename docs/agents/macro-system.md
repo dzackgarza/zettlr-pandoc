@@ -3,32 +3,26 @@
 - **Only semantic source of truth:** `~/.pandoc/styles/macros/` (the user's ~1600-macro
   authoring language). Zettlr is a consumer. It must never seed, edit, bundle, prefer,
   or fall back to an app-local macro definition file.
-- **Generated MathJax projection:** `~/.pandoc/templates/css/mathjax-macros.json`
-  and `~/.pandoc/templates/css/mathjax-paired-delimiters.json`, both
+- **Generated MathJax projection:** `~/.pandoc/templates/css/mathjax-macros.json`,
   written by `~/.pandoc/bin/generate-mathjax-config.py`. The generator runs in
   the project environment of `pandoc-config` (it imports pylatexenc), so a
   caller runs the recipe: `just --justfile ~/.pandoc/justfile generate-math-macros`.
   `zettlr-pandoc-boot` runs it before a start
   ([desktop-launcher.md](desktop-launcher.md)).
 - **App load:** `source/app/util/load-mathjax-macros.ts` resolves the central generated
-  files and fails loudly when one is absent. The `mathjax-macros` and
-  `mathjax-paired-delimiters` IPC channels in `source/app/lifecycle.ts`
-  serve the same read-only projections to renderer consumers.
-  - **A paired delimiter of the macro tree is no macro.** A
-    `\DeclarePairedDelimiter` of `~/.pandoc` (`\ceil`) is an entry
-    `name: [left, right]` of `mathjax-paired-delimiters.json`, which the
-    renderer gives to the `mathtools` package of MathJax
-    (`mathtools.pairedDelimiters` of the TeX input). The package gives each
-    form of the PDF: `\ceil{x}` without scaling, `\ceil*{x}` with
-    `\left \right`, `\ceil[\big]{x}` with `\bigl \bigr`. `\qty{x}` is an
-    ordinary macro, `\left( x \right)`. A macro of the
-    macro map cannot have the star or the size. Proof:
-    `test/mathtex-to-html.spec.ts` ("renders each form of a paired
-    delimiter"): each call and its LaTeX meaning give the same CommonHTML
-    in a process that loads the real `~/.pandoc`.
-  - `loadCanonicalMathJaxMacros` and `loadCanonicalMathJaxPairedDelimiters`
-    throw `MacroSourcesUnavailableError` for a projection that cannot be read
-    or has another form; the message names the recipe.
+  file and fails loudly when it is absent. The `mathjax-macros` IPC channel in
+  `source/app/lifecycle.ts` serves the same read-only projection to renderer
+  consumers.
+  - **Each delimiter grows with its content.** A delimiter macro of
+    `~/.pandoc` is an ordinary macro with `\left` and `\right` (`\qty{x}` is
+    `\left( x \right)`); the generator of `~/.pandoc` refuses a
+    `\DeclarePairedDelimiter`. Proof: `test/mathtex-to-html.spec.ts`
+    ("renders each delimiter of ~/.pandoc grown to its content"): each call
+    and its LaTeX meaning give the same CommonHTML in a process that loads
+    the real `~/.pandoc`.
+  - `loadCanonicalMathJaxMacros` throws `MacroSourcesUnavailableError` for a
+    projection that cannot be read or has another form; the message names
+    the recipe.
   - `loadCanonicalTexMacroCommands` lists each control word that the TeX
     sources of the macro tree declare, also the macros of the compiler only,
     which the projection does not hold. `loadCanonicalMacroInventory` merges
@@ -40,8 +34,8 @@
     absent file gives an empty map; a malformed one throws. Production code
     does not call it.
 - **Format/validation:** `packages/tikz-render/src/mathjax-config.ts`
-  (`parseMathJaxMacros`, `parseMathJaxPairedDelimiters`; malformed central
-  projections fail rather than being replaced with bundled defaults). Its
+  (`parseMathJaxMacros`; a malformed central
+  projection fails rather than being replaced with bundled defaults). Its
   `mathJaxPackages` are the TeX packages of each renderer.
 - **Render:** `source/common/util/mathtex-to-html.ts` (`initializeMathJax`, local
   CommonHTML), wired in `source/common/modules/window-register/index.ts` (each

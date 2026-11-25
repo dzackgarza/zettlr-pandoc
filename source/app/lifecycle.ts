@@ -22,15 +22,11 @@ import { updateFlowmark } from "./util/flowmark-update";
 import { handleBareChannel } from "./util/handle-ipc-channel";
 import {
   loadCanonicalMathJaxMacros,
-  loadCanonicalMathJaxPairedDelimiters,
   loadCanonicalTexMacroCommands,
 } from "./util/load-mathjax-macros";
 import resolveTimespanMs from "./util/resolve-timespan-ms";
 
 export type MathJaxMacrosIPCResponse = Awaited<ReturnType<typeof loadCanonicalMathJaxMacros>>;
-export type MathJaxPairedDelimitersIPCResponse = Awaited<
-  ReturnType<typeof loadCanonicalMathJaxPairedDelimiters>
->;
 export type TexMacroCommandsIPCResponse = Awaited<ReturnType<typeof loadCanonicalTexMacroCommands>>;
 export type { TikzCompletionIPCResponse };
 
@@ -77,9 +73,6 @@ export async function bootApplication(): Promise<AppServiceContainer> {
 
   handleBareChannel("mathjax-macros", async () => {
     return await loadCanonicalMathJaxMacros(app.getPath("home"));
-  });
-  handleBareChannel("mathjax-paired-delimiters", async () => {
-    return await loadCanonicalMathJaxPairedDelimiters(app.getPath("home"));
   });
   handleBareChannel("tex-macro-commands", async () => {
     const vocabulary = await loadCanonicalTexMacroCommands(app.getPath("home"));

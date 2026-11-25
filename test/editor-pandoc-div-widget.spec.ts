@@ -17,7 +17,7 @@ describe("Editor presents Pandoc fenced divs semantically", function () {
 
   before(async function () {
     this.timeout(30000);
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
   });
 
   afterEach(function () {

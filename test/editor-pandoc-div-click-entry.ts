@@ -64,7 +64,7 @@ function findTextNode(text: string): { node: Text; from: number } {
 }
 
 async function mount(): Promise<void> {
-  await initializeMathJax({}, {});
+  await initializeMathJax({});
   const host = document.querySelector<HTMLElement>("#editor");
   if (host === null) {
     throw new Error("Click-test editor host is missing");

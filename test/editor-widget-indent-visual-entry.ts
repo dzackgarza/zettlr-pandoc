@@ -84,7 +84,7 @@ async function waitForVisualIndent(view: EditorView, scene: string): Promise<voi
 }
 
 async function mount(): Promise<void> {
-  await initializeMathJax({}, {});
+  await initializeMathJax({});
 
   const scene = document.body.dataset.scene ?? "list-math";
   const dark = document.body.dataset.dark === "true";

@@ -99,7 +99,7 @@ describe("LaTeX/TikZ completion sources", function () {
   });
 
   it("derives custom MathJax macros from the exact parser configuration", function () {
-    const catalogue = buildMathJaxCompletionCatalogue({ ZZ: "\\mathbb{Z}" }, {});
+    const catalogue = buildMathJaxCompletionCatalogue({ ZZ: "\\mathbb{Z}" });
     assert.ok(catalogue.commands.includes("\\ZZ"));
     assert.ok(catalogue.commands.includes("\\alpha"));
   });

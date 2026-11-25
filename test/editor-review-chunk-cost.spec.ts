@@ -100,7 +100,7 @@ describe("A review with many chunks", function () {
   this.timeout(120_000);
 
   before(async function () {
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
   });
 
   interface TypedCharacterCost {

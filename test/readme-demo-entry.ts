@@ -280,7 +280,6 @@ async function mount(): Promise<void> {
       RR: "\\mathbb{R}",
       abs: ["\\left\\lvert {#1} \\right\\rvert", 1],
     },
-    {},
   );
   const scene = document.body.dataset.scene ?? "math";
   if (scene === "math") {

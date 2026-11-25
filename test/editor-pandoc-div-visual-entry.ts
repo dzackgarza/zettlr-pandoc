@@ -124,7 +124,7 @@ The map $gG_x\\mapsto g\\cdot x$ is a bijection.
 `;
 
 async function mount(): Promise<void> {
-  await initializeMathJax({ RR: "\\mathbb{R}" }, {});
+  await initializeMathJax({ RR: "\\mathbb{R}" });
   window.getCitationCallback = () => (citations) =>
     citations
       .map((citation) => {

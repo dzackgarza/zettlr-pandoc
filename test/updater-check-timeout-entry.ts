@@ -40,7 +40,7 @@ async function main(): Promise<void> {
   config.set("system.checkForUpdates", false);
   const projection = path.join(home, ".pandoc", "templates", "css");
   await mkdir(projection, { recursive: true });
-  for (const name of ["mathjax-macros.json", "mathjax-paired-delimiters.json"]) {
+  for (const name of ["mathjax-macros.json"]) {
     await copyFile(path.resolve("test", "fixtures", name), path.join(projection, name));
   }
   const provider = new UpdateProvider(

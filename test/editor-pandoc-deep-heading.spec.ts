@@ -11,7 +11,7 @@ import { initializeMathJax } from "source/common/util/mathtex-to-html";
 describe("Editor renders Pandoc deep headings", function () {
   before(async function () {
     this.timeout(30000);
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
   });
 
   afterEach(function () {

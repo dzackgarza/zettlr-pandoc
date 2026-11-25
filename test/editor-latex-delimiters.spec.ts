@@ -15,7 +15,7 @@ async function rendersAsMath(markdown: string, kind: "display" | "inline"): Prom
 describe("Editor detects LaTeX math delimiters", function () {
   before(async function () {
     this.timeout(30000);
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
   });
 
   it("$$ … $$ block renders as display math", async function () {

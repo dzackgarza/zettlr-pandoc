@@ -25,7 +25,7 @@ describe("Editor renders line-wrapped citations inside Pandoc fenced divs", func
   before(async function () {
     this.timeout(30000);
     restoreCitationIpc = installCitationIpcFromCallback();
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
     window.getCitationCallback = () => (citations) =>
       citations.map((citation) => citation.id).join("; ");
   });

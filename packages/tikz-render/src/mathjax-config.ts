@@ -1,6 +1,5 @@
 export type MathJaxMacro = string | readonly [string, number] | readonly [string, number, string];
 
-export type MathJaxPairedDelimiter = readonly [string, string];
 
 export const mathJaxPackages = [
   "base",
@@ -50,26 +49,3 @@ export function parseMathJaxMacros(data: unknown): Record<string, MathJaxMacro> 
   return macros;
 }
 
-export function parseMathJaxPairedDelimiters(
-  data: unknown,
-): Record<string, MathJaxPairedDelimiter> {
-  if (!isJsonObject(data)) {
-    throw new TypeError(
-      "MathJax paired delimiters must be a JSON object mapping command names to [left, right]",
-    );
-  }
-
-  const delimiters: Record<string, MathJaxPairedDelimiter> = {};
-  for (const [name, pair] of Object.entries(data)) {
-    if (
-      !Array.isArray(pair) ||
-      pair.length !== 2 ||
-      typeof pair[0] !== "string" ||
-      typeof pair[1] !== "string"
-    ) {
-      throw new TypeError(`Invalid MathJax paired delimiter for "${name}"`);
-    }
-    delimiters[name] = [pair[0], pair[1]];
-  }
-  return delimiters;
-}
