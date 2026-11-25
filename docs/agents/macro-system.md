@@ -15,12 +15,13 @@
   `mathjax-paired-delimiters` IPC channels in `source/app/lifecycle.ts`
   serve the same read-only projections to renderer consumers.
   - **A paired delimiter of the macro tree is no macro.** A
-    `\DeclarePairedDelimiter` of `~/.pandoc` (`\qty`, `\ceil`) is an entry
+    `\DeclarePairedDelimiter` of `~/.pandoc` (`\ceil`) is an entry
     `name: [left, right]` of `mathjax-paired-delimiters.json`, which the
     renderer gives to the `mathtools` package of MathJax
     (`mathtools.pairedDelimiters` of the TeX input). The package gives each
-    form of the PDF: `\qty{x}` without scaling, `\qty*{x}` with
-    `\left \right`, `\qty[\big]{x}` with `\bigl \bigr`. A macro of the
+    form of the PDF: `\ceil{x}` without scaling, `\ceil*{x}` with
+    `\left \right`, `\ceil[\big]{x}` with `\bigl \bigr`. `\qty{x}` is an
+    ordinary macro, `\left( x \right)`. A macro of the
     macro map cannot have the star or the size. Proof:
     `test/mathtex-to-html.spec.ts` ("renders each form of a paired
     delimiter"): each call and its LaTeX meaning give the same CommonHTML

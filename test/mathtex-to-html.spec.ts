@@ -72,10 +72,13 @@ it("renders each form of a paired delimiter of ~/.pandoc as mathtools does", fun
   this.timeout(60000);
 
   const pairs = [
-    ["\\qty{\\frac{a}{b}}", "\\mathopen{(}\\frac{a}{b}\\mathclose{)}"],
-    ["\\qty*{\\frac{a}{b}}", "\\mathopen{}\\mathclose{\\left(\\frac{a}{b}\\right)}"],
-    ["\\qty[\\big]{\\frac{a}{b}}", "\\mathopen{\\bigl(}\\frac{a}{b}\\mathclose{\\bigr)}"],
+    ["\\qty{\\frac{a}{b}}", "\\left(\\frac{a}{b}\\right)"],
+    ["\\ceil{\\frac{a}{b}}", "\\mathopen{\\lceil}\\frac{a}{b}\\mathclose{\\rceil}"],
     ["\\ceil*{\\frac{a}{b}}", "\\mathopen{}\\mathclose{\\left\\lceil\\frac{a}{b}\\right\\rceil}"],
+    [
+      "\\ceil[\\big]{\\frac{a}{b}}",
+      "\\mathopen{\\bigl\\lceil}\\frac{a}{b}\\mathclose{\\bigr\\rceil}",
+    ],
     ["a \\coloneqq b", "a \\vcentercolon\\mathrel{\\mkern-1.2mu}= b"],
   ];
   const output = execFileSync(
