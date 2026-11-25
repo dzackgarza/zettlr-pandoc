@@ -1,17 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        MathTeX HTML Rendering Test
- * CVM-Role:        Test
- * Maintainer:      Hendrik Erz
- * License:         GNU GPL v3
- *
- * Description:     This file tests MathJax CommonHTML rendering.
- *
- * END HEADER
- */
-
 import { strict as assert } from "assert";
 import { execFileSync } from "child_process";
 import { readFileSync } from "fs";
@@ -25,12 +11,8 @@ import {
   mathJaxToHTML,
 } from "source/common/util/mathtex-to-html";
 
-// The app ships no macros; this test supplies its own example fixture file and
-// loads it through the real loader.
 const FIXTURE = "test/fixtures/mathjax-macros.json";
 
-// The module is initialized one time for a process, and a Mocha process runs
-// more than one spec file. The process of this test loaded nothing before.
 it("requires initialization before conversion", function () {
   this.timeout(30000);
 
@@ -56,8 +38,6 @@ mathJaxToHTML('\\\\RR', 'inline')`,
 it("registers updater IPC only after its boot initialization", function () {
   const source = readFileSync(resolve("source/app/service-providers/updates/index.ts"), "utf8");
   const bootAt = source.search(/async boot\s*\(\): Promise<void>/);
-  // Without this the slice below is the whole file, and the ordering it checks
-  // is read off two positions that have nothing to do with boot().
   assert.notEqual(bootAt, -1, "the updater provider must declare boot()");
   const boot = source.slice(bootAt);
 
@@ -88,6 +68,42 @@ process.stdout.write(await md2html('$$\\\\RR$$', { onCitation: () => undefined, 
   assert.match(html, /ℝ/);
 });
 
+it("renders each form of a paired delimiter of ~/.pandoc as mathtools does", function () {
+  this.timeout(60000);
+
+  const pairs = [
+    ["\\qty{\\frac{a}{b}}", "\\mathopen{(}\\frac{a}{b}\\mathclose{)}"],
+    ["\\qty*{\\frac{a}{b}}", "\\mathopen{}\\mathclose{\\left(\\frac{a}{b}\\right)}"],
+    ["\\qty[\\big]{\\frac{a}{b}}", "\\mathopen{\\bigl(}\\frac{a}{b}\\mathclose{\\bigr)}"],
+    ["\\ceil*{\\frac{a}{b}}", "\\mathopen{}\\mathclose{\\left\\lceil\\frac{a}{b}\\right\\rceil}"],
+    ["a \\coloneqq b", "a \\centercolon\\mathrel{\\mkern-1.2mu}= b"],
+  ];
+  const output = execFileSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      "--input-type",
+      "module",
+      "--eval",
+      `import { homedir } from 'os'
+import { initializeMathJax, mathJaxToHTML } from './source/common/util/mathtex-to-html.ts'
+import { loadCanonicalMathJaxMacros } from './source/app/util/load-mathjax-macros.ts'
+await initializeMathJax(await loadCanonicalMathJaxMacros(homedir()))
+const pairs = JSON.parse(process.argv[1])
+const page = (tex) => mathJaxToHTML(tex, 'display').replace(/ data-latex="[^"]*"/g, '')
+process.stdout.write(JSON.stringify(pairs.map(([call, meaning]) => [call, page(call) === page(meaning) && !/color: red/.test(page(call))])))`,
+      JSON.stringify(pairs),
+    ],
+    { encoding: "utf8" },
+  );
+
+  assert.deepEqual(
+    JSON.parse(output),
+    pairs.map(([call]) => [call, true]),
+  );
+});
+
 function textOf(node: Node): string {
   const text = node.textContent;
   assert.ok(text !== null, `expected ${node.nodeName} to carry text content`);
@@ -96,14 +112,11 @@ function textOf(node: Node): string {
 
 describe("Utility#mathJaxToHTML()", function () {
   before(async function () {
-    // Full-stylesheet initialization loads every dynamic font module once.
     this.timeout(30000);
     await initializeMathJax(await loadMathJaxMacros(FIXTURE));
   });
 
   it("serializes configured macros and mhchem as CommonHTML display math", function () {
-    // \RR (zero-arg) and \qty (one-arg) come from the fixture macro file;
-    // \ce exercises mhchem.
     const html = mathJaxToHTML("\\RR + \\qty{x} + \\ce{H2O}", "display");
 
     const rendered = new DOMParser().parseFromString(html, "text/html").body;
