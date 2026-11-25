@@ -155,9 +155,13 @@ describe("The resolved form of an export", function () {
       value: "research_draft.tex",
       from: "pandoc-directory",
     });
+    assert.deepEqual(templateOfWriter("beamer"), {
+      value: "research_beamer.tex",
+      from: "pandoc-directory",
+    });
     // A writer without a template in ~/.pandoc gets the template of Pandoc.
-    assert.equal(templateOfWriter("beamer"), undefined);
     assert.equal(templateOfWriter("docx"), undefined);
+    assert.equal(templateOfWriter("context"), undefined);
   });
 
   it("names who gives a Pandoc export its math", function () {

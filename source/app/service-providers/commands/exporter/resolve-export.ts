@@ -94,17 +94,27 @@ export function filterName(entry: unknown): string {
  * The template of ~/.pandoc (`templates/`) that a Pandoc export of a writer
  * uses when no other template is set. Each of them owns the math of its
  * output: the HTML templates hold the MathJax configuration with the macros
- * that `bin/generate-mathjax-config.py` writes, and the LaTeX template loads
+ * that `bin/generate-mathjax-config.py` writes, and the TeX templates load
  * the style of the macro tree. They are the templates of the same directory
- * that the PDF recipe uses, so the application assembles no math itself. A
- * writer that is not listed has no such template; Pandoc uses its own.
+ * that the PDF recipe uses, so the application assembles no math itself.
+ * The list holds each writer of Pandoc whose output renders the TeX of a
+ * formula; the AGENTS.md of pandoc-config gives the reason of each other
+ * writer. A writer that is not listed has no such template; Pandoc uses its
+ * own.
  */
 export const PANDOC_DIRECTORY_TEMPLATES: Readonly<Record<string, string>> = {
   html: "pandoc_preview_template.html",
   html5: "pandoc_preview_template.html",
   html4: "pandoc_preview_template.html",
+  s5: "pandoc_s5_template.html",
+  slidy: "pandoc_slidy_template.html",
+  slideous: "pandoc_slideous_template.html",
+  dzslides: "pandoc_dzslides_template.html",
+  chunkedhtml: "pandoc_chunkedhtml_template.html",
   revealjs: "pandoc_revealjs_template.html",
   latex: "research_draft.tex",
+  pdf: "research_draft.tex",
+  beamer: "research_beamer.tex",
 };
 
 /**

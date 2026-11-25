@@ -239,14 +239,34 @@ renderer is covered by it.
   (`exporter/export-math.ts`); there is no setting that turns such a path on.
   An export without a template of its own uses the template of
   `~/.pandoc/templates` for its writer (`PANDOC_DIRECTORY_TEMPLATES` in
-  `exporter/resolve-export.ts`): `pandoc_preview_template.html` for `html`,
-  `pandoc_revealjs_template.html` for `revealjs`, `research_draft.tex` for
-  `latex`. A template of a Project, of the defaults file or of the settings
-  goes before it and then owns the math. A listed template that is no file
-  stops the export with its path. A writer that is not listed gets the
-  template of Pandoc and no macro of `~/.pandoc`.
-- **HTML export:** the two HTML templates hold a MathJax configuration whose
-  macro line `~/.pandoc/bin/generate-mathjax-config.py` writes. The
+  `exporter/resolve-export.ts`):
+
+  | Writer | Template of `~/.pandoc/templates` |
+  | --- | --- |
+  | `html`, `html5`, `html4` | `pandoc_preview_template.html` |
+  | `s5`, `slidy`, `slideous`, `dzslides`, `chunkedhtml` | `pandoc_<writer>_template.html` |
+  | `revealjs` | `pandoc_revealjs_template.html` |
+  | `latex`, `pdf` | `research_draft.tex` |
+  | `beamer` | `research_beamer.tex` |
+
+  These are the writers of Pandoc whose output renders the TeX of a
+  formula. Each other writer gets the template of Pandoc and no macro of
+  `~/.pandoc`: Pandoc converts the formula to the math of the format
+  before the template (EPUB, Word, ODT, JATS, DocBook, Typst, ...), the
+  writer keeps the TeX for the program that reads the output (Markdown,
+  Org, ...), the output has no text, or the writer is `context`, whose
+  TeX does not have the LaTeX commands of the macros. The AGENTS.md of
+  pandoc-config, "Templates that zettlr-pandoc exports with", gives each
+  writer with its reason. A template of a Project, of the defaults file or
+  of the settings goes before it and then owns the math. A listed template
+  that is no file stops the export with its path. A new writer in this
+  list is also an HTML writer or a TeX writer (`HTML_WRITERS`,
+  `TEX_WRITERS` of `pandoc-maps.ts`), so it gets the places of MathJax or
+  the TeX template of a Project.
+- **HTML export:** the HTML templates include one MathJax configuration
+  (`mathjax-config.html` of `~/.pandoc/templates`; reveal.js has one of
+  its own) whose macro line `~/.pandoc/bin/generate-mathjax-config.py`
+  writes. The
   application gives them places and nothing else: the math method `mathjax`
   with its own MathJax component, and the Pandoc variables `mathjax-root`
   (the folder of the component) and `mathjax-fonts` (the folder of the font
@@ -262,7 +282,8 @@ renderer is covered by it.
   extensions and fonts from that folder at run time and asks no other
   machine for anything. Proof: `e2e/html-export-packaged.spec.ts` (the
   packaged app, with a macro of `~/.pandoc`), `test/export-math.spec.ts`
-  (real Pandoc, the real templates, Chromium).
+  (real Pandoc, the real templates, Chromium; the macro map and the places
+  of each HTML writer of the list; pdflatex on a Beamer and a PDF export).
 - **TeX export:** `research_draft.tex` loads the style of the macro tree, as
   it does for the PDF recipe. The exported `.tex` file needs the styles of
   `~/.pandoc` on the path of TeX. The MathJax projection is for MathJax

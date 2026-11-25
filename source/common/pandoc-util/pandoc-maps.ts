@@ -297,7 +297,9 @@ export const HTML_WRITERS = [
   "revealjs",
   "s5",
   "slidy",
+  "slideous",
   "dzslides",
+  "chunkedhtml",
 ] as const;
 
 /**

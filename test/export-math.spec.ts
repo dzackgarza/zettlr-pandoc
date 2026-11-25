@@ -23,8 +23,8 @@
 
 import { pathToFileURL } from "node:url";
 import assert from "assert";
-import { execFile } from "child_process";
-import { mkdtemp, readFile, writeFile } from "fs/promises";
+import { execFile, execFileSync } from "child_process";
+import { mkdtemp, readdir, readFile, stat, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import {
@@ -56,27 +56,64 @@ const config = {
   zkn: { linkFormat: "link|title" as const },
 };
 
-/** Writes the defaults of an export of `source` with a profile, and runs Pandoc with them. */
-async function exported(
+/** TeX finds the styles of ~/.pandoc where the TeX of the author finds them. */
+const TEX_ENVIRONMENT = {
+  ...process.env,
+  TEXINPUTS: `${path.join(PANDOC_DIRECTORY, "styles")}//:`,
+};
+
+/** A profile of the application with other values for some of its keys. */
+async function profileOf(
   profileFile: string,
+  changes: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const profile = YAML.parse(await readFile(profileFile, { encoding: "utf8" })) as Record<
+    string,
+    unknown
+  >;
+  return { ...profile, ...changes };
+}
+
+/**
+ * Writes the defaults of an export of `source` with a profile, and runs Pandoc
+ * with them. The output of a writer that writes a folder (chunkedhtml) is the
+ * text of its pages.
+ */
+async function exported(
+  profile: Record<string, unknown>,
   source: string,
-  extension: string,
+  outputName: string,
   mathJaxDirectory: string,
 ): Promise<{ directory: string; outputFile: string; output: string }> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "zettlr-export-math-"));
   const inputFile = path.join(directory, "input.md");
-  const outputFile = path.join(directory, `output.${extension}`);
+  const outputFile = path.join(directory, outputName);
   await writeFile(inputFile, source);
   const defaultsFile = await writeDefaults(
-    YAML.parse(await readFile(profileFile, { encoding: "utf8" })),
+    profile,
     { "input-files": [inputFile], "output-file": outputFile, standalone: true },
     config,
     [],
     directory,
     { mathJaxDirectory, pandocDirectory: PANDOC_DIRECTORY },
   );
-  await execFileAsync("pandoc", ["--defaults", defaultsFile]);
+  await execFileAsync("pandoc", ["--defaults", defaultsFile], { env: TEX_ENVIRONMENT });
+  if (outputName.endsWith(".pdf")) {
+    return { directory, outputFile, output: "" };
+  }
+  if ((await stat(outputFile)).isDirectory()) {
+    const pages = (await readdir(outputFile)).filter((name) => name.endsWith(".html")).sort();
+    const texts = await Promise.all(
+      pages.map((name) => readFile(path.join(outputFile, name), { encoding: "utf8" })),
+    );
+    return { directory, outputFile, output: texts.join("\n") };
+  }
   return { directory, outputFile, output: await readFile(outputFile, { encoding: "utf8" }) };
+}
+
+/** The text of a PDF. */
+function pdfText(pdfFile: string): string {
+  return execFileSync("pdftotext", [pdfFile, "-"], { encoding: "utf8" });
 }
 
 describe("The math of a Pandoc export", function () {
@@ -119,9 +156,9 @@ describe("The math of a Pandoc export", function () {
     await copyExportMathJax(mathJax);
 
     const { directory, outputFile, output } = await exported(
-      "static/defaults/HTML.yaml",
+      await profileOf("static/defaults/HTML.yaml", {}),
       "$\\ZZ$ and $\\boldsymbol{\\iota}$ and $\\ce{H2O}$\n",
-      "html",
+      "output.html",
       mathJax,
     );
 
@@ -166,17 +203,13 @@ describe("The math of a Pandoc export", function () {
   it("gives a reveal.js deck the macros of ~/.pandoc through the MathJax 3 plugin, with the MathJax of the application", async function () {
     this.timeout(60_000);
     const mathJax = path.join(os.tmpdir(), "zettlr-export-mathjax-of-a-deck");
-    const profile = YAML.parse(
-      await readFile("static/defaults/Reveal.js.yaml", { encoding: "utf8" }),
-    ) as Record<string, unknown>;
     // The profile embeds reveal.js itself, which Pandoc gets from the
     // network. This test reads the deck as text and needs no reveal.js.
-    profile["embed-resources"] = false;
-    const directory = await mkdtemp(path.join(os.tmpdir(), "zettlr-export-math-"));
-    const profileFile = path.join(directory, "Reveal.js.yaml");
-    await writeFile(profileFile, YAML.stringify(profile));
+    const profile = await profileOf("static/defaults/Reveal.js.yaml", {
+      "embed-resources": false,
+    });
 
-    const { output } = await exported(profileFile, "# Slide\n\n$\\ZZ$\n", "html", mathJax);
+    const { output } = await exported(profile, "# Slide\n\n$\\ZZ$\n", "output.html", mathJax);
 
     assert.ok(output.includes("RevealMath.MathJax3"), "the MathJax 3 plugin is a plugin");
     assert.ok(
@@ -197,9 +230,9 @@ describe("The math of a Pandoc export", function () {
   it("gives a LaTeX export the template of ~/.pandoc, which loads the macro style", async function () {
     this.timeout(60_000);
     const { output } = await exported(
-      "static/defaults/LaTeX.yaml",
+      await profileOf("static/defaults/LaTeX.yaml", {}),
       "$\\ZZ$\n",
-      "tex",
+      "output.tex",
       path.join(os.tmpdir(), "no-mathjax-for-tex"),
     );
 
@@ -212,5 +245,79 @@ describe("The math of a Pandoc export", function () {
     assert.ok(output.includes(firstPackage), "the document is made with that template");
     assert.ok(output.includes("\\ZZ"), "the formula keeps its macro");
     assert.ok(!output.includes("zettlr-mathjax"), "the application adds no header");
+  });
+  it("gives each other HTML writer the MathJax configuration of ~/.pandoc, with the MathJax of the application", async function () {
+    this.timeout(60_000);
+    const mathJax = path.join(os.tmpdir(), "zettlr-export-mathjax-of-a-page");
+    const writers = [
+      { writer: "s5", output: "output.html" },
+      { writer: "slidy", output: "output.html" },
+      { writer: "slideous", output: "output.html" },
+      { writer: "dzslides", output: "output.html" },
+      // chunkedhtml writes a folder with one page for each section.
+      { writer: "chunkedhtml", output: "output" },
+    ];
+    for (const { writer, output: outputName } of writers) {
+      // The HTML profile makes a self-contained page; the slide writers then
+      // want their scripts and styles, which this test does not need.
+      const profile = await profileOf("static/defaults/HTML.yaml", {
+        writer,
+        "self-contained": false,
+      });
+      const { output } = await exported(profile, "# A slide\n\n$\\ZZ$\n", outputName, mathJax);
+
+      const config = output.indexOf("window.MathJax = {");
+      const script = output.indexOf(pathToFileURL(path.join(mathJax, "tex-chtml.js")).href);
+      assert.ok(
+        config >= 0 && config < script,
+        `${writer}: the configuration of the template comes before the MathJax of the application`,
+      );
+      assert.ok(
+        /macros: \{.*"ZZ":/.test(output.slice(config, script)),
+        `${writer}: the configuration has the macros of ~/.pandoc`,
+      );
+      assert.ok(
+        output.includes(`mathjax: "${pathToFileURL(mathJax).href}",`),
+        `${writer}: the page names the folder of the MathJax of the application`,
+      );
+      assert.ok(
+        output.includes(`fonts: "${pathToFileURL(path.join(mathJax, "fonts")).href}",`),
+        `${writer}: the page names the fonts of the application`,
+      );
+    }
+  });
+
+  it("typesets a macro of ~/.pandoc with pdflatex in a Beamer export and a PDF export", async function () {
+    this.timeout(120_000);
+    const source = "---\ntitle: Macros\n---\n\n# A slide\n\nThe set $\\Hom(\\ZZ, \\QQ)$.\n";
+    const latex = "static/defaults/LaTeX.yaml";
+
+    const beamer = await exported(
+      await profileOf(latex, { writer: "beamer" }),
+      source,
+      "slides.tex",
+      path.join(os.tmpdir(), "no-mathjax-for-tex"),
+    );
+    execFileSync("pdflatex", ["-interaction=nonstopmode", "-halt-on-error", "slides.tex"], {
+      cwd: beamer.directory,
+      env: TEX_ENVIRONMENT,
+    });
+
+    // The LaTeX profile makes a heading of level 1 a chapter, which the
+    // amsart class of research_draft.tex does not have (#234); the PDF
+    // document has no heading.
+    const pdf = await exported(
+      await profileOf(latex, { writer: "pdf", "pdf-engine": "pdflatex" }),
+      "The set $\\Hom(\\ZZ, \\QQ)$.\n",
+      "output.pdf",
+      path.join(os.tmpdir(), "no-mathjax-for-tex"),
+    );
+
+    // The macro tree makes \Hom an operator and \ZZ, \QQ bold letters; a
+    // TeX without the macros stops at the first of them.
+    for (const pdfFile of [path.join(beamer.directory, "slides.pdf"), pdf.outputFile]) {
+      const text = pdfText(pdfFile);
+      assert.ok(text.includes("The set Hom(Z, Q)."), text);
+    }
   });
 });
