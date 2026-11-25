@@ -234,7 +234,7 @@ renderer is covered by it.
   CommonHTML), wired in `source/common/modules/window-register/index.ts`.
 - **TikZ:** TeX compilation follows the real central `dzg-tikz` template/include
   graph.
-- **The template owns the math of an export.** The application assembles no
+- **`~/.pandoc` owns the math of an export.** The application assembles no
   MathJax configuration and no TeX preamble for an export
   (`exporter/export-math.ts`); there is no setting that turns such a path on.
   An export without a template of its own uses the template of
@@ -248,21 +248,40 @@ renderer is covered by it.
   | `revealjs` | `pandoc_revealjs_template.html` |
   | `latex`, `pdf` | `research_draft.tex` |
   | `beamer` | `research_beamer.tex` |
+  | `context` | `pandoc_context_template.tex` |
 
-  These are the writers of Pandoc whose output renders the TeX of a
-  formula. Each other writer gets the template of Pandoc and no macro of
-  `~/.pandoc`: Pandoc converts the formula to the math of the format
-  before the template (EPUB, Word, ODT, JATS, DocBook, Typst, ...), the
-  writer keeps the TeX for the program that reads the output (Markdown,
-  Org, ...), the output has no text, or the writer is `context`, whose
-  TeX does not have the LaTeX commands of the macros. The AGENTS.md of
-  pandoc-config, "Templates that zettlr-pandoc exports with", gives each
-  writer with its reason. A template of a Project, of the defaults file or
-  of the settings goes before it and then owns the math. A listed template
-  that is no file stops the export with its path. A new writer in this
-  list is also an HTML writer or a TeX writer (`HTML_WRITERS`,
-  `TEX_WRITERS` of `pandoc-maps.ts`), so it gets the places of MathJax or
-  the TeX template of a Project.
+  The template of an HTML writer or a TeX writer (`HTML_WRITERS`,
+  `TEX_WRITERS` of `pandoc-maps.ts`) owns the macros. A template of a
+  Project, of the defaults file or of the settings goes before it and then
+  owns the math. A listed template that is no file stops the export with
+  its path.
+- **Each other writer gets the macros from the reader** (`macroInputOf`,
+  the stage `math.owner: "macro-input"` of `ResolvedExport`). The first
+  input of the export is `~/.pandoc/templates/css/math-macros.md`: the
+  `\newcommand` line of each macro, which
+  `~/.pandoc/bin/generate-mathjax-config.py` writes. The extension
+  `latex_macros` of the reader applies each definition to the math of the
+  inputs after it, so Word gets OMML, ODT, EPUB and JATS get MathML, and a
+  writer that keeps TeX (Markdown, plain text) gets the TeX of the
+  expansion. The filter `~/.pandoc/filters/math-macros.lua` runs after the
+  leading filters and removes the definitions from the document.
+  - Only the reader `markdown` has `latex_macros`. An export of such a
+    writer with another reader (`commonmark_x`, `gfm`) stops with that
+    cause, and so does a Pandoc directory without one of the files.
+  - A `% title` block holds only in the first input of Pandoc, so such an
+    export loses it. A title in the YAML front matter holds.
+  - ConTeXt is no LaTeX (it has no `\operatorname`): its last filter,
+    `~/.pandoc/filters/context-mathml.lua`, gives each formula as the
+    MathML of texmath, and the template loads the MathML module of
+    ConTeXt.
+  - texmath converts the expansion of 1503 of the 1580 macros of
+    `~/.pandoc`; for the others Pandoc warns "Could not convert TeX math"
+    and keeps the TeX. texmath gives a letter of `\mathbf` the variant
+    bold-italic.
+  - Proof: `test/export-math.spec.ts` (real Pandoc and the real
+    `~/.pandoc`: docx, odt, epub3, jats, gfm, plain, and a ConTeXt PDF),
+    `test/export-document.spec.ts` (a Word export through the command),
+    `test/export-resolved.spec.ts` (the stage and its filters).
 - **HTML export:** the HTML templates include one MathJax configuration
   (`mathjax-config.html` of `~/.pandoc/templates`; reveal.js has one of
   its own) whose macro line `~/.pandoc/bin/generate-mathjax-config.py`

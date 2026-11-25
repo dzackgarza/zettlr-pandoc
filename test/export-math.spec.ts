@@ -16,7 +16,9 @@
  *                  application brings. The HTML page is opened in Chromium:
  *                  a macro of ~/.pandoc, a bold symbol and a chemical
  *                  formula are typeset, and the page asks no other machine
- *                  for anything.
+ *                  for anything. Each other writer gets the macros from the
+ *                  first input of the export (`MacroInput`): its output
+ *                  holds the expansion of a macro, and ConTeXt typesets it.
  *
  * END HEADER
  */
@@ -115,6 +117,25 @@ async function exported(
 function pdfText(pdfFile: string): string {
   return execFileSync("pdftotext", [pdfFile, "-"], { encoding: "utf8" });
 }
+
+/** The text of the members of an archive (docx, odt, epub) whose names match a pattern. */
+function archiveText(archive: string, member: string): string {
+  return execFileSync("unzip", ["-p", archive, member], { encoding: "utf8" });
+}
+
+/**
+ * A program of the TeX distribution that kpsewhich belongs to. ConTeXt finds
+ * its tree from the path by which it runs; through a link in /usr/bin it
+ * finds no texmfcnf.lua ("unknown script mtx-context.lua").
+ */
+function texProgram(name: string): string {
+  const bin = execFileSync("kpsewhich", ["-var-value=SELFAUTOLOC"], { encoding: "utf8" }).trim();
+  return path.join(bin, name);
+}
+
+/** A formula of the expansion of `\Hom(\ZZ, \QQ)` in the MathML of texmath. */
+const HOM_MATHML = /<(mml:)?mi mathvariant="normal">Hom<\/(mml:)?mi>/;
+const HOM_SOURCE = "---\ntitle: Macros\n---\n\nThe set $\\Hom(\\ZZ, \\QQ)$.\n";
 
 describe("The math of a Pandoc export", function () {
   it("names the MathJax of the application in HTML defaults and keeps their variables", function () {
@@ -319,5 +340,120 @@ describe("The math of a Pandoc export", function () {
       const text = pdfText(pdfFile);
       assert.ok(text.includes("The set Hom(Z, Q)."), text);
     }
+  });
+
+  it("gives each other writer the expansion of a macro of ~/.pandoc, and no definition", async function () {
+    this.timeout(120_000);
+    const noMathJax = path.join(os.tmpdir(), "no-mathjax-for-this-writer");
+    const word = "static/defaults/Microsoft Word.yaml";
+    const cases: Array<{
+      profile: Record<string, unknown>;
+      outputName: string;
+      formula: (outputFile: string, output: string) => string;
+      expansion: RegExp;
+    }> = [
+      {
+        profile: await profileOf(word, {}),
+        outputName: "output.docx",
+        // OMML puts each run of a formula in an <m:t> of its own.
+        formula: (file) =>
+          [...archiveText(file, "word/document.xml").matchAll(/<m:t[^>]*>([^<]*)<\/m:t>/g)]
+            .map((match) => match[1])
+            .join(""),
+        expansion: /^Hom\(Z,Q\)$/,
+      },
+      {
+        profile: await profileOf("static/defaults/Open Document Text.yaml", {}),
+        outputName: "output.odt",
+        formula: (file) => archiveText(file, "Formula-*/content.xml"),
+        expansion: HOM_MATHML,
+      },
+      {
+        profile: await profileOf(word, { writer: "epub3" }),
+        outputName: "output.epub",
+        formula: (file) => archiveText(file, "*.xhtml"),
+        expansion: HOM_MATHML,
+      },
+      {
+        profile: await profileOf(word, { writer: "jats" }),
+        outputName: "output.xml",
+        formula: (_file, output) => output,
+        expansion: HOM_MATHML,
+      },
+      {
+        profile: await profileOf("static/defaults/Markdown.yaml", {}),
+        outputName: "output.markdown",
+        formula: (_file, output) => output,
+        expansion: /\$`\{ \\operatorname\{Hom\} \}\(\{\\mathbf\{Z\}\}, \{\\mathbf\{Q\}\}\)`\$/,
+      },
+      {
+        profile: await profileOf("static/defaults/Plain Text.yaml", {}),
+        outputName: "output.txt",
+        formula: (_file, output) => output,
+        // The plain writer puts a thin space after an operator and a comma.
+        expansion: /The set Hom\s?\(Z,\s?Q\)\./,
+      },
+    ];
+    for (const { profile, outputName, formula, expansion } of cases) {
+      const { outputFile, output } = await exported(profile, HOM_SOURCE, outputName, noMathJax);
+      const text = formula(outputFile, output);
+      assert.match(text, expansion, `${String(profile.writer)}: the formula is the expansion`);
+      for (const raw of ["\\ZZ", "\\Hom", "newcommand", "math-macros"]) {
+        assert.ok(!text.includes(raw), `${String(profile.writer)}: the output has no ${raw}`);
+      }
+    }
+  });
+
+  it("typesets a macro of ~/.pandoc with ConTeXt in a ConTeXt export", async function () {
+    this.timeout(180_000);
+    const exportedFile = await exported(
+      await profileOf("static/defaults/Microsoft Word.yaml", { writer: "context" }),
+      HOM_SOURCE,
+      "output.tex",
+      path.join(os.tmpdir(), "no-mathjax-for-context"),
+    );
+
+    // The template of ~/.pandoc loads the MathML module of ConTeXt, and each
+    // formula is the MathML of texmath: ConTeXt is no LaTeX and does not
+    // define \operatorname of the expansion.
+    assert.ok(exportedFile.output.includes("\\usemodule[mathml]"), "the template of ~/.pandoc");
+    assert.ok(exportedFile.output.includes("\\startmml"), "the formula is MathML");
+    execFileSync(texProgram("context"), ["--batchmode", "--nonstopmode", "output.tex"], {
+      cwd: exportedFile.directory,
+    });
+    const text = pdfText(path.join(exportedFile.directory, "output.pdf"));
+    // texmath gives a letter of \mathbf the variant bold-italic (U+1D481).
+    assert.match(text, /The set Hom\(𝒁, 𝑸\)\./u);
+  });
+
+  it("refuses an export whose reader cannot expand the macros of ~/.pandoc for its writer", async function () {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "zettlr-export-math-reader-"));
+    await assert.rejects(
+      writeDefaults(
+        await profileOf("static/defaults/Microsoft Word.yaml", { reader: "commonmark_x" }),
+        { "input-files": [path.join(directory, "input.md")], "output-file": "out.docx" },
+        config,
+        [],
+        directory,
+        { mathJaxDirectory: "/mathjax", pandocDirectory: PANDOC_DIRECTORY },
+      ),
+      /The export reads commonmark_x\. The writer docx gets the macros of ~\/\.pandoc only from the reader markdown/,
+    );
+  });
+
+  it("refuses an export when the Pandoc directory has no macro input", async function () {
+    const pandocDirectory = await mkdtemp(path.join(os.tmpdir(), "zettlr-pandoc-directory-"));
+    await assert.rejects(
+      writeDefaults(
+        await profileOf("static/defaults/Microsoft Word.yaml", {}),
+        { "input-files": [], "output-file": "out.docx" },
+        config,
+        [],
+        pandocDirectory,
+        { mathJaxDirectory: "/mathjax", pandocDirectory },
+      ),
+      (error: Error) =>
+        error.message.includes(path.join(pandocDirectory, "templates/css/math-macros.md")),
+    );
   });
 });

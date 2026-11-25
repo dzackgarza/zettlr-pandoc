@@ -192,7 +192,9 @@ export type ConfigOptions = {
     // declares none. A path (absolute, or a name resolved from ~/.pandoc/templates).
     // htmlTemplate covers html/revealjs; latexTemplate covers latex/pdf/beamer.
     // With neither, an export uses the template of ~/.pandoc for its writer
-    // (`PANDOC_DIRECTORY_TEMPLATES`). The template owns the math of an export.
+    // (`PANDOC_DIRECTORY_TEMPLATES`). The template of an HTML or a TeX writer owns
+    // the math of its export; each other writer gets the macros from the reader
+    // (`macroInputOf`).
     htmlTemplate: string;
     latexTemplate: string;
     // The export items of the author (`exporter/export-items.ts`). An item

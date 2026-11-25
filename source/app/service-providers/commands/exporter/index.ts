@@ -47,6 +47,7 @@ import {
   effectiveFilters,
   effectiveTemplate,
   leadingFilters,
+  macroInputOf,
   type ResolvedExport,
   resolveExport,
 } from "./resolve-export";
@@ -296,6 +297,36 @@ export async function writeDefaults(
     enableExtension(parsedReader, "mark");
   }
 
+  // A writer whose template does not own the math gets the macros of
+  // ~/.pandoc from the reader: the definitions are the first input, and
+  // `latex_macros` expands them (`MacroInput`). Of the readers of Pandoc only
+  // `markdown` has that extension (`pandoc --list-extensions=<reader>`);
+  // with another reader the writer would get each macro as raw TeX.
+  const macroInput = macroInputOf(defaults.writer as string, math.pandocDirectory);
+  if (macroInput !== undefined) {
+    if (parsedReader.name !== "markdown") {
+      throw new Error(
+        trans(
+          "The export reads %s. The writer %s gets the macros of ~/.pandoc only from the reader markdown, which expands them (latex_macros).",
+          parsedReader.name,
+          defaults.writer as string,
+        ),
+      );
+    }
+    const files = [macroInput.file, macroInput.dropFilter, macroInput.lastFilter];
+    for (const file of files) {
+      if (file !== undefined && !isFile(file)) {
+        throw new Error(
+          trans(
+            "The file %s of the Pandoc directory is no file. The export needs it for its math.",
+            file,
+          ),
+        );
+      }
+    }
+    enableExtension(parsedReader, "latex_macros");
+  }
+
   // Finally, write the modified reader
   defaults.reader = readerWriterToString(parsedReader);
 
@@ -370,12 +401,22 @@ export async function writeDefaults(
   // The declared, ordered filters of each export run before the filters of
   // the defaults file, so structural filters (e.g. amsthm-env conversion)
   // run before the citeproc of the defaults file.
-  defaults.filters = effectiveFilters(filters, defaults.filters);
+  defaults.filters = effectiveFilters(filters, defaults.filters, macroInput);
 
   // After we have added our default keys, let the plugin add their keys, which
   // enables them to override certain keys if necessary.
   for (const key in properties) {
     defaults[key] = properties[key];
+  }
+
+  // The definitions go before each input: a definition after its use
+  // expands nothing.
+  if (macroInput !== undefined) {
+    const inputs: unknown = defaults["input-files"];
+    if (!Array.isArray(inputs)) {
+      throw new TypeError("A Pandoc export names its inputs in input-files");
+    }
+    defaults["input-files"] = [macroInput.file, ...inputs];
   }
 
   // The template owns the math. The application names the MathJax that it

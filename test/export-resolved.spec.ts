@@ -159,9 +159,12 @@ describe("The resolved form of an export", function () {
       value: "research_beamer.tex",
       from: "pandoc-directory",
     });
+    assert.deepEqual(templateOfWriter("context"), {
+      value: "pandoc_context_template.tex",
+      from: "pandoc-directory",
+    });
     // A writer without a template in ~/.pandoc gets the template of Pandoc.
     assert.equal(templateOfWriter("docx"), undefined);
-    assert.equal(templateOfWriter("context"), undefined);
   });
 
   it("names who gives a Pandoc export its math", function () {
@@ -192,8 +195,55 @@ describe("The resolved form of an export", function () {
       owner: "template",
       pandocDirectory: PANDOC_DIRECTORY,
     });
-    // A Word document gets what Pandoc makes of the math.
-    assert.deepEqual(mathOfWriter("docx"), { owner: "pandoc", pandocDirectory: PANDOC_DIRECTORY });
+    // Each other writer gets the macros from the first input of the export.
+    for (const writer of ["docx", "odt", "epub3", "jats", "context", "gfm+raw_html", "plain"]) {
+      assert.deepEqual(mathOfWriter(writer), {
+        owner: "macro-input",
+        pandocDirectory: PANDOC_DIRECTORY,
+        input: `${PANDOC_DIRECTORY}/templates/css/math-macros.md`,
+      });
+    }
+  });
+
+  it("puts the filters of the macro input into the filter chain of a writer whose template does not own the math", function () {
+    const filtersOfWriter = (writer: string): string[] => {
+      const name = `${writer}.yaml`;
+      const [stage] = resolveExport(
+        exportItem(name, [{ name, reader: "markdown", writer }]),
+        { filters: [{ type: "citeproc" }], template: undefined },
+        SETTINGS,
+        NO_OVERRIDE,
+        PANDOC_DIRECTORY,
+        WIKILINK_FILTER,
+      ).stages;
+      assert.ok(stage.kind === "pandoc");
+      return stage.filters;
+    };
+
+    // The definitions leave the document before each other filter reads it.
+    assert.deepEqual(filtersOfWriter("docx"), [
+      WIKILINK_FILTER,
+      "amsthm.lua",
+      "/filters/own.lua",
+      `${PANDOC_DIRECTORY}/filters/math-macros.lua`,
+      "citeproc",
+    ]);
+    // ConTeXt gets each formula as MathML after each other filter.
+    assert.deepEqual(filtersOfWriter("context"), [
+      WIKILINK_FILTER,
+      "amsthm.lua",
+      "/filters/own.lua",
+      `${PANDOC_DIRECTORY}/filters/math-macros.lua`,
+      "citeproc",
+      `${PANDOC_DIRECTORY}/filters/context-mathml.lua`,
+    ]);
+    // A template that owns the math has no macro input.
+    assert.deepEqual(filtersOfWriter("html"), [
+      WIKILINK_FILTER,
+      "amsthm.lua",
+      "/filters/own.lua",
+      "citeproc",
+    ]);
   });
 
   it("puts the command of an item after its Pandoc stage", function () {
@@ -323,6 +373,20 @@ describe("The resolved form of an export", function () {
         "recipe compile-pandoc of ~/.pandoc (its filters, its flags)",
         "template: book.tex (Project)",
       ],
+    );
+    const word = { name: "Word.yaml", reader: "markdown", writer: "docx" };
+    assert.deepEqual(
+      describeResolvedExport(
+        resolveExport(
+          exportItem("Word.yaml", [word]),
+          { filters: [], template: undefined },
+          SETTINGS,
+          NO_OVERRIDE,
+          PANDOC_DIRECTORY,
+          WIKILINK_FILTER,
+        ),
+      ).filter((line) => line.startsWith("math:")),
+      ["math: the macros of math-macros.md (~/.pandoc), the first input"],
     );
   });
 

@@ -137,11 +137,15 @@ describe("Export of one document", function () {
     // home directory.
     macroHome = path.join(home, ".pandoc");
     await cp(path.resolve("test", "fixtures", "pandoc-macros"), macroHome, { recursive: true });
-    // A Pandoc export runs the wikilink filter of pandoc-config.
-    await cp(
-      path.join(homedir(), ".pandoc", "filters", "wikilinks.lua"),
-      path.join(macroHome, "filters", "wikilinks.lua"),
-    );
+    // A Pandoc export runs the wikilink filter of pandoc-config, and a Word
+    // export the filter that removes the macro definitions of its first
+    // input.
+    for (const filter of ["wikilinks.lua", "math-macros.lua"]) {
+      await cp(
+        path.join(homedir(), ".pandoc", "filters", filter),
+        path.join(macroHome, "filters", filter),
+      );
+    }
 
     // The export profiles of the author.
     const defaults = path.join(userData, "defaults");
@@ -467,5 +471,27 @@ describe("Export of one document", function () {
     // Word math is Office Math: one inline and one display formula.
     assert.equal(xml.match(/<m:oMath>/g)?.length, 2);
     assert.equal(xml.match(/<m:oMathPara>/g)?.length, 1);
+  });
+
+  it("exports a macro of the macro tree to Word as its expansion", async function () {
+    const reals = path.join(root, "Reals.md");
+    await writeFile(reals, "# Reals\n\nThe line \\(\\RR\\).\n");
+
+    await exportDocument(services, { file: reals, item: WORD, exportTo: "cwd" });
+
+    assert.deepEqual(errorWindows, []);
+    const xml = execFileSync("unzip", ["-p", path.join(root, "Reals.docx"), "word/document.xml"], {
+      encoding: "utf8",
+    });
+    // \RR of the macro tree is \mathbb{R}: the formula is the letter R in
+    // the double-struck script of Office Math, and the document holds no
+    // definition and no macro.
+    assert.ok(
+      xml.includes(
+        '<m:oMath><m:r><m:rPr><m:scr m:val="double-struck" /><m:sty m:val="p" /></m:rPr><m:t>R</m:t></m:r></m:oMath>',
+      ),
+      xml,
+    );
+    assert.ok(!xml.includes("newcommand") && !xml.includes("RR"), xml);
   });
 });

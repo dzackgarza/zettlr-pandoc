@@ -101,6 +101,7 @@ TEXMFSYSCONFIG ${texlive_dir}/texmf-config
 TEXMFLOCAL ${texlive_dir}/texmf-local
 collection-basic 1
 collection-bibtexextra 1
+collection-context 1
 collection-fontsrecommended 1
 collection-latexextra 1
 collection-luatex 1
@@ -115,6 +116,11 @@ PROFILE
 "${tlmgr}" install bbm bbm-macros latexmk latexpand
 fi
 sudo "${tlmgr}" path add
+# A ConTeXt export typesets the MathML of its formulas (AGENTS.md §1).
+# ConTeXt reads its files and its format from a cache of its own
+# (TEXMFCACHE), not from the ls-R and the formats of tlmgr; this makes both.
+"${texlive_dir}/bin/x86_64-linux/mtxrun" --generate >/dev/null
+"${texlive_dir}/bin/x86_64-linux/context" --make >/dev/null
 
 pandoc_package="$(fetch \
   "https://github.com/jgm/pandoc/releases/download/${pandoc_version}/pandoc-${pandoc_version}-1-amd64.deb" \
@@ -178,6 +184,7 @@ command -v latexmk >/dev/null
 command -v latexpand >/dev/null
 command -v pdflatex >/dev/null
 command -v lualatex >/dev/null
+command -v context >/dev/null
 command -v biber >/dev/null
 command -v pdf2svg >/dev/null
 command -v xvfb-run >/dev/null

@@ -10,11 +10,12 @@
  * Description:     What an export runs is decided in more than one place: the
  *                  defaults file of the item, the settings, the Project, and
  *                  the recipe of ~/.pandoc. The functions here decide the
- *                  effective filter chain, the effective template and the
- *                  effective citation style. The defaults writer of the
- *                  export calls them, and `resolveExport` puts the same
- *                  decisions into one record that a window shows and that
- *                  the log keeps: what a window shows is what runs.
+ *                  effective filter chain, the effective template, the
+ *                  macro input of a writer whose template does not own its
+ *                  math, and the effective citation style. The defaults
+ *                  writer of the export calls them, and `resolveExport` puts
+ *                  the same decisions into one record that a window shows
+ *                  and that the log keeps: what a window shows is what runs.
  *
  * END HEADER
  */
@@ -62,13 +63,20 @@ export function leadingFilters(wikilinkFilter: string, settingsFilters: string[]
 
 /**
  * The filter chain of a Pandoc export, in the order that Pandoc runs it: the
- * leading filters, then the filters of the defaults file.
+ * leading filters, the filter that removes the macro definitions, the
+ * filters of the defaults file, then the last filter of the macro input
+ * (`MacroInput`), which writes each formula for its writer.
  */
 export function effectiveFilters<Entry>(
   leading: string[],
   defaultsFilters: Entry[],
+  macroInput: MacroInput | undefined,
 ): Array<string | Entry> {
-  return [...leading, ...defaultsFilters];
+  if (macroInput === undefined) {
+    return [...leading, ...defaultsFilters];
+  }
+  const last = macroInput.lastFilter === undefined ? [] : [macroInput.lastFilter];
+  return [...leading, macroInput.dropFilter, ...defaultsFilters, ...last];
 }
 
 /**
@@ -97,10 +105,10 @@ export function filterName(entry: unknown): string {
  * that `bin/generate-mathjax-config.py` writes, and the TeX templates load
  * the style of the macro tree. They are the templates of the same directory
  * that the PDF recipe uses, so the application assembles no math itself.
- * The list holds each writer of Pandoc whose output renders the TeX of a
- * formula; the AGENTS.md of pandoc-config gives the reason of each other
- * writer. A writer that is not listed has no such template; Pandoc uses its
- * own.
+ * The ConTeXt template loads the MathML module of ConTeXt, which typesets
+ * the formulas of `CONTEXT_MATHML_FILTER`. A writer that is not listed has
+ * no such template; Pandoc uses its own, and the writer gets the macros
+ * from the reader (`macroInputOf`).
  */
 export const PANDOC_DIRECTORY_TEMPLATES: Readonly<Record<string, string>> = {
   html: "pandoc_preview_template.html",
@@ -115,7 +123,53 @@ export const PANDOC_DIRECTORY_TEMPLATES: Readonly<Record<string, string>> = {
   latex: "research_draft.tex",
   pdf: "research_draft.tex",
   beamer: "research_beamer.tex",
+  context: "pandoc_context_template.tex",
 };
+
+/**
+ * The macro definitions of ~/.pandoc as an input of a Markdown reader:
+ * `\newcommand` lines in a fenced div, which `bin/generate-mathjax-config.py`
+ * of pandoc-config writes from the macro tree.
+ */
+export const MACRO_INPUT = "templates/css/math-macros.md";
+/** The filter of ~/.pandoc that removes the div of `MACRO_INPUT` from the document. */
+export const MACRO_INPUT_FILTER = "filters/math-macros.lua";
+/** The filter of ~/.pandoc that gives ConTeXt each formula as MathML. */
+export const CONTEXT_MATHML_FILTER = "filters/context-mathml.lua";
+
+/**
+ * How the macros of ~/.pandoc reach a writer whose template does not own
+ * the math. The Markdown reader applies each `\newcommand` that it reads to
+ * the TeX math of the inputs after it (the extension `latex_macros`), so
+ * the writer gets the expansion of each macro: the OMML of Word, the MathML
+ * of ODT, EPUB and JATS, the TeX of the expansion for a writer that keeps
+ * TeX. The definitions are the first input; definitions after the use
+ * expand nothing. `dropFilter` removes them from the document, as a writer
+ * that keeps raw TeX would write them. `lastFilter` runs after each other
+ * filter: for ConTeXt, which is no LaTeX, it gives each formula as the
+ * MathML of texmath.
+ */
+export interface MacroInput {
+  /** The absolute path of the definitions */
+  file: string;
+  dropFilter: string;
+  lastFilter: string | undefined;
+}
+
+/** The macro input of a writer, or undefined for a writer whose template owns the math. */
+export function macroInputOf(writer: string, pandocDirectory: string): MacroInput | undefined {
+  if (mathOwner(writer) === "template") {
+    return undefined;
+  }
+  return {
+    file: `${pandocDirectory}/${MACRO_INPUT}`,
+    dropFilter: `${pandocDirectory}/${MACRO_INPUT_FILTER}`,
+    lastFilter:
+      parseReaderWriter(writer).name === "context"
+        ? `${pandocDirectory}/${CONTEXT_MATHML_FILTER}`
+        : undefined,
+  };
+}
 
 /**
  * The template of a Pandoc export. The template of the export (a Project)
@@ -197,14 +251,14 @@ export function projectOverride(item: ExportItem, project: ProjectExportSettings
 }
 
 /**
- * Who gives a Pandoc export with this writer its math. The template owns
+ * Who gives a Pandoc export with this writer its macros. The template owns
  * the math of the HTML writers and of the TeX writers: its MathJax
- * configuration, its packages, its macros. Each other writer gets what
- * Pandoc makes of the math itself.
+ * configuration, its packages, its macros. Each other writer gets the
+ * expansion of the macros from the reader (`macroInputOf`).
  */
-export function mathOwner(writer: string): "template" | "pandoc" {
+export function mathOwner(writer: string): "template" | "macro-input" {
   const writerName = parseReaderWriter(writer).name;
-  return isHtmlWriter(writerName) || isTexWriter(writerName) ? "template" : "pandoc";
+  return isHtmlWriter(writerName) || isTexWriter(writerName) ? "template" : "macro-input";
 }
 
 /** What the defaults file of a Pandoc engine declares, as far as an export decides with it. */
@@ -228,11 +282,13 @@ export interface ResolvedPandocStage {
   /** The library of the settings, or undefined */
   citationLibrary: string | undefined;
   /**
-   * Who gives the export its math: the template for the HTML writers and
-   * the TeX writers, Pandoc itself for each other writer. The templates of
-   * the Pandoc directory hold the macros.
+   * Who gives the export its macros: the template for the HTML writers and
+   * the TeX writers, the macro input of the Pandoc directory, the first
+   * input of the export, for each other writer.
    */
-  math: { owner: "template" | "pandoc"; pandocDirectory: string };
+  math:
+    | { owner: "template"; pandocDirectory: string }
+    | { owner: "macro-input"; pandocDirectory: string; input: string };
 }
 
 /** One stage of an export, in the order that the stages run. */
@@ -304,6 +360,7 @@ export function resolveExport(
       if (declared === undefined) {
         throw new Error(`The export item "${item.id}" has a Pandoc engine and no defaults.`);
       }
+      const macroInput = macroInputOf(engine.writer, pandocDirectory);
       stages.push({
         kind: "pandoc",
         defaultsFile: engine.defaultsFile,
@@ -312,11 +369,15 @@ export function resolveExport(
         filters: effectiveFilters(
           leadingFilters(wikilinkFilter, settings.filters),
           declared.filters,
+          macroInput,
         ).map(filterName),
         template: effectiveTemplate(engine.writer, declared.template, override, settings),
         citationStyle: effectiveCitationStyle(override, settings),
         citationLibrary,
-        math: { owner: mathOwner(engine.writer), pandocDirectory },
+        math:
+          macroInput === undefined
+            ? { owner: "template", pandocDirectory }
+            : { owner: "macro-input", pandocDirectory, input: macroInput.file },
       });
       if (post !== undefined) {
         stages.push({
@@ -372,9 +433,11 @@ export function describeResolvedExport(resolved: ResolvedExport): string[] {
             `citation style: ${baseName(stage.citationStyle.value)} (${sourceLabel(stage.citationStyle)})`,
           );
         }
-        if (stage.math.owner === "template") {
-          lines.push("math: the template");
-        }
+        lines.push(
+          stage.math.owner === "template"
+            ? "math: the template"
+            : `math: the macros of ${baseName(stage.math.input)} (~/.pandoc), the first input`,
+        );
         break;
       case "recipe":
         lines.push(`recipe ${stage.recipe} of ~/.pandoc (its filters, its flags)`);
