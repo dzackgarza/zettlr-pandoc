@@ -86,7 +86,7 @@ release title:
     git tag -a "v$version" -m "{{title}}"
     git push origin "refs/tags/v$version"
 
-[doc("Build the AppImage and its checksum list into release/ from a clean, verified")]
+[doc("Build the AppImage and its checksum list into release/ from a clean, verified package of HEAD.")]
 [private]
 release-assets: package
     #!/usr/bin/env bash
@@ -102,12 +102,12 @@ release-assets: package
 run-packaged:
     ./out/Zettlr-Pandoc-linux-x64/zettlr-pandoc
 
-[doc("Run exactly one focused TypeScript test file without inheriting Mocha's")]
+[doc("Run exactly one focused TypeScript test file without inheriting Mocha's repository-wide spec glob.")]
 test-file file: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "{{file}}"
 
-[doc("The unit-test launcher removes its temp directory at exit; an assembled-app")]
+[doc("The unit-test launcher removes its temp directory at exit; an assembled-app spec keeps its artifacts in the system temp directory, as under `test-e2e`.")]
 test-e2e-file file: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     @{{e2e_lanes}} "{{file}}"
@@ -116,12 +116,12 @@ e2e_file_limit_seconds := "180"
 
 e2e_lanes := 'exec setpriv --pdeathsig KILL just _e2e-run node --import tsx "' + justfile_directory() + '/e2e/support/run-lanes.ts" --file-limit-seconds ' + e2e_file_limit_seconds
 
-[doc("An assembled-app spec starts the packaged build (`attach`), so a run")]
+[doc("An assembled-app spec starts the packaged build (`attach`), so a run compiles the app one time.")]
 [private]
 _current-package: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/verify-build.py" --if-stale
 
-[doc("Run a command in the environment of an e2e run. The run owns its")]
+[doc("Run a command in the environment of an e2e run.")]
 [private]
 [positional-arguments]
 _e2e-run +command:
@@ -141,7 +141,7 @@ test-references: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/export-quoted-inputs.spec.ts" "test/documents-provider-navigation.spec.ts" "test/preflight-crossref.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-search.spec.ts"
 
-[doc("Run the reference UI suite: the references-provider Electron shell spec")]
+[doc("Run the reference UI suite: the references-provider Electron shell spec (Phase 3b) plus the Chromium probe specs.")]
 test-reference-ui: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/reference-provider-shell.spec.ts" "test/reference-search-overlay.spec.ts" "test/reference-navigation.spec.ts" "test/reference-create-label.spec.ts" "test/reference-error-surface.spec.ts"
@@ -151,7 +151,7 @@ test-annotations-animation: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/annotations-panel-animation.spec.ts"
 
-[doc("Cross-repository proof: ordered Project inputs through the companion")]
+[doc("Cross-repository proof: ordered Project inputs through the companion pandoc-config compile-pandoc-project recipe (issue 1).")]
 test-pandoc-config-integration:
     bash "{{justfile_directory()}}/scripts/test-pandoc-config-integration.sh"
 
@@ -174,17 +174,17 @@ test-e2e shard="1/1": _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     @{{e2e_lanes}} --shard {{shard}} e2e/*.spec.ts
 
-[doc("Run the workstation-owned desktop-launcher proofs (e2e/desktop/). These")]
+[doc("Run the workstation-owned desktop-launcher proofs (e2e/desktop/).")]
 test-e2e-desktop: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     {{bun}} run test:e2e:desktop
 
-[doc("Git event hooks are installed globally by ai-review-ci via core.hooksPath")]
+[doc("Git event hooks are installed globally by ai-review-ci via core.hooksPath (`pre-commit` -> this repo's test-commit, `pre-push` -> test-push).")]
 [private]
 test-commit:
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-commit
 
-[doc("The desktop proofs hang off THIS recipe rather than scripts[\"test:push\"]:")]
+[doc("The desktop proofs hang off THIS recipe rather than scripts[\"test:push\"]: the pre-push hook is the only caller of it, while the CI tier reaches the profile's own test-push directly.")]
 [private]
 test-push:
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-push
@@ -216,15 +216,15 @@ capture-pandoc-divs output: sync-dependencies
 capture-yaml-frontmatter output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" yaml-frontmatter "{{output}}"
 
-[doc("Capture the widget-indent scenes (issue #15) in isolated offscreen Electron:")]
+[doc("Capture the widget-indent scenes (issue #15) in isolated offscreen Electron: math widgets on visually indented list lines, plus the blockquote/div regression scenes.")]
 capture-widget-indent output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" widget-indent "{{output}}"
 
-[doc("Capture the TikZ editor scenes (issue #14) in isolated offscreen Electron:")]
+[doc("Capture the TikZ editor scenes (issue #14) in isolated offscreen Electron: inline figures rendered by the REAL toolchain (pandoc + pdflatex + pdf2svg through the shared Pandoc filter), the in-place compile diagnostic, explicit lightbox affordance, and textbook-scale corpus.")]
 capture-tikz output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" tikz "{{output}}"
 
-[doc("Capture and assemble the README demo GIFs (math typing, theorem envs,")]
+[doc("Capture and assemble the README demo GIFs (math typing, theorem envs, review workflow): scripted scenes replayed frame by frame in isolated offscreen Electron, then assembled with ffmpeg.")]
 readme-demos output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" readme-demos "{{output}}"
     bash "{{justfile_directory()}}/scripts/build-readme-demos.sh" "{{output}}"
@@ -233,62 +233,62 @@ readme-demos output: sync-dependencies
 capture-pandoc-help output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" pandoc-help "{{output}}"
 
-[doc("Capture the Mod-P reference search overlay in isolated Electron: bundles the")]
+[doc("Capture the Mod-P reference search overlay in isolated Electron: bundles the probe entry with the production renderer webpack config, drives the real fixture-backed overlay, and writes screenshots plus the probe result JSON.")]
 capture-reference-search output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-search "{{output}}"
 
-[doc("Capture the reference chip presentation in isolated offscreen Electron")]
+[doc("Capture the reference chip presentation in isolated offscreen Electron (issue #1 Phase 4).")]
 capture-reference-chips output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-chips "{{output}}"
 
-[doc("Capture the combined `@` completion popup in isolated offscreen Electron")]
+[doc("Capture the combined `@` completion popup in isolated offscreen Electron (issue #1, ledger C4): citation entries and typed label entries together, a label option's info panel with its quick-help link, and the disabled another-Project entry (whose inert apply the driver proves).")]
 capture-reference-completion output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-completion "{{output}}"
 
-[doc("Capture the reference hover tooltip presentation in isolated offscreen")]
+[doc("Capture the reference hover tooltip presentation in isolated offscreen Electron (issue #1 Phase 4).")]
 capture-reference-hover output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-hover "{{output}}"
 
-[doc("Capture the Phase 5 reference navigation scenes (edit-first reveal, fold +")]
+[doc("Capture the Phase 5 reference navigation scenes (edit-first reveal, fold + scroll capture state, Mod-click states) in isolated offscreen Electron.")]
 capture-reference-navigation output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-navigation "{{output}}"
 
-[doc("Capture the issue #34 review-diff accept/reject interface in isolated")]
+[doc("Capture the issue #34 review-diff accept/reject interface in isolated offscreen Electron at desktop and narrow widths, light and dark.")]
 capture-review-diff output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" review-diff "{{output}}"
 
-[doc("Capture M5's four structural-gate scenes (doc-collaboration plan, section")]
+[doc("Capture M5's four structural-gate scenes (doc-collaboration plan, section 10 names 02/07/08/09): several open targets each carrying an ordinal marker, a point target's hollow marker at its deletion seam, an orphaned target's marker with no span, and overlapping targets collapsed to one marker with a count — light and dark.")]
 capture-editor-annotations output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" editor-annotations "{{output}}"
 
-[doc("Capture the M6 selection-creation composer (plan scene")]
+[doc("Capture the M6 selection-creation composer (plan scene 01-selection-composer, gated against mockup-2-creation-dialog.png) in isolated offscreen Electron: bundles the probe entry with the production renderer webpack config, mounts the REAL AnnotationCreateDialog over a real EditorView, types a real instruction, and screenshots the result.")]
 capture-selection-composer output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" selection-composer "{{output}}"
 
-[doc("The collaboration scenes of the plan's capture suite, in the current")]
+[doc("The collaboration scenes of the plan's capture suite, in the current design (workspace list in the panel; chunk controls, review bar and the annotation thread inside the editor): 03 a thread opened from its chip, 05 a thread opened from its panel row with a pending linked proposal, 10 a resolved thread shown in the editor, 11 the narrow window, 04 a multi-turn thread with no linked proposal, 06 a partially decided proposal beside the review's remaining chunk controls, the review-inline-controls scenes (light, narrow, dark), and 12 every surface in the dark theme, with the locator states of plan section 3.")]
 capture-annotations-panel output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" annotations-panel "{{output}}"
 
-[doc("M10's gate: assembles the plan's full twelve-scene capture suite (section")]
+[doc("M10's gate: assembles the plan's full twelve-scene capture suite (section 10) into ONE output directory, from the three registrations that already own its scenes — capture-editor-annotations (02/07/08/09, light+dark), capture-selection-composer (01), and capture-annotations-panel (03/05/10/11 plus 04/06/12) — rather than inventing a fourth, parallel mechanism.")]
 capture-annotations output="/tmp/zettlr-pandoc-annotations-captures": sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" editor-annotations "{{output}}"
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" selection-composer "{{output}}"
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" annotations-panel "{{output}}"
     @echo "Twelve-scene capture suite written to {{output}}"
 
-[doc("Capture the real main-window chrome: the assembled app launched through the")]
+[doc("Capture the real main-window chrome: the assembled app launched through the e2e harness on a workspace whose root is test/fixtures/quarto-book, with the sidebar and the annotation panel visible, in light and dark at 1500 and 1100 px wide.")]
 capture-chrome output="/tmp/zettlr-pandoc-chrome-captures" launch_timeout_ms="180000": _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     xvfb-run -a --server-args="-screen 0 1920x1080x24" node --import tsx "{{justfile_directory()}}/scripts/chrome-capture.ts" "{{output}}" "{{launch_timeout_ms}}"
 
-[doc("Run a real export headlessly (no GUI), via the app's own makeExport with the")]
+[doc("Run a real export headlessly (no GUI), via the app's own makeExport with the exact profile list the GUI sees (userData/defaults + custom profiles).")]
 export-headless profile file: sync-dependencies
     node --require "{{justfile_directory()}}/scripts/harness/electron-stub.cjs" --import tsx "{{justfile_directory()}}/scripts/harness/export-run.ts" "{{profile}}" "{{file}}"
 
-[doc("Build observability: run the production package build and PROVE it produced a")]
+[doc("Build observability: run the production package build and PROVE it produced a fresh app.asar built from the current commit.")]
 verify-build: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/verify-build.py"
 
-[doc("Verify the EXISTING packaged artifact is built from the current commit, without")]
+[doc("Verify the EXISTING packaged artifact is built from the current commit, without rebuilding.")]
 verify-build-only:
     python3 "{{justfile_directory()}}/scripts/verify-build.py" --verify-only
