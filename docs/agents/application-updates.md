@@ -19,5 +19,17 @@
   not found (`ENOTFOUND`) and a check that gets no answer in its time limit
   (`ETIMEDOUT`) set the error of the state without a notification: the check
   runs each hour.
+- **A nightly is not older than its release.** A nightly of Zettlr has
+  the version of the stable release with `-nightly` (#5429), which SemVer
+  reads as a prerelease. The comparison treats `nightly` as a build
+  identifier, so `semver.lt` never offers a nightly the release of the same
+  number.
+- **The changelog is HTML that the update window sanitizes.** The provider
+  renders it through `md2html`, so the boot of the provider initializes
+  MathJax with the projections of `~/.pandoc` before it registers its IPC.
+- **The checksum file has one line for each asset:** the SHA256 sum, two
+  spaces, the file name.
+- **The provider closes the write stream before it opens the download**:
+  Windows refuses to open a file with an open handle.
 - **Proof:** `test/updater-failures.spec.ts`,
   `test/updater-check-timeout.spec.ts`.

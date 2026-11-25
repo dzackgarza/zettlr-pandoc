@@ -1,15 +1,3 @@
-/**
- * Mounts the production markdown editor with the visual-indent plugin and the
- * math renderer for isolated visual capture (issue #15). Follows the
- * editor-pandoc-div-visual-entry.ts pattern.
- *
- * The scenes exercise the line-level `text-indent` trap: visual-indent hangs
- * list markers and blockquote marks outside the text block via a negative
- * `text-indent` on the `.cm-line`, and every widget renderer that produces a
- * block container inherits it. The capture harness measures whether widget
- * content escapes its own box leftward.
- */
-
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
@@ -29,7 +17,6 @@ declare global {
   }
 }
 
-/** The issue #15 sample: leading, mid-item, and nested-depth inline math. */
 const listMath = `# List math scenes
 
 - $Y$ is a Halphen surface of index 2, so $abc$ holds;
@@ -41,7 +28,6 @@ const listMath = `# List math scenes
 The trailing paragraph keeps the caret away from every list line.
 `;
 
-/** Blockquote and fenced-div regression scenes for the escape removals. */
 const quoteDiv = `# Quote and div scenes
 
 > A quoted line where $E_{8} \\oplus U$ appears mid-quote, so the quote mark
@@ -54,10 +40,6 @@ Inside a fenced div, $\\pi_{E}$ renders in place.
 The trailing paragraph keeps the caret away from the scenes.
 `;
 
-/**
- * Table-editor and mermaid regression scenes for issue #7: both paths render
- * generated markup directly, and their output must survive unchanged.
- */
 const tableMermaid = `# Table and mermaid scenes
 
 | Lattice | Signature |
@@ -72,25 +54,14 @@ graph TD; A[Coble] --> B[Halphen]; B --> C[Enriques];
 The trailing paragraph keeps the caret away from the scenes.
 `;
 
-/**
- * The visual-indent plugin needs a measure round-trip before its line
- * decorations exist: the first render schedules measurements, and only a
- * later update pass can consume them. Pump empty transactions until an
- * indented line materializes, and fail loudly if none ever does — a capture
- * without the trap armed would prove nothing.
- */
 async function waitForVisualIndent(view: EditorView, scene: string): Promise<void> {
   for (let round = 0; round < 60; round++) {
     if (scene === "quote-div") {
-      // The fork hides blockquote marks, so quote lines measure a zero indent
-      // and never arm the trap; this scene only needs its widgets mounted.
       if (document.querySelector(".preview-math") !== null) {
         return;
       }
     }
     if (scene === "table-mermaid") {
-      // The regression scene needs the table widget mounted and mermaid's
-      // async render landed; the indent trap is not its concern.
       if (document.querySelector("table") !== null && document.querySelector("svg") !== null) {
         return;
       }
@@ -113,7 +84,7 @@ async function waitForVisualIndent(view: EditorView, scene: string): Promise<voi
 }
 
 async function mount(): Promise<void> {
-  await initializeMathJax({});
+  await initializeMathJax({}, {});
 
   const scene = document.body.dataset.scene ?? "list-math";
   const dark = document.body.dataset.dark === "true";

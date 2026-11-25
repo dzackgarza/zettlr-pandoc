@@ -1,21 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        Widget DOM reuse across renderers
- * CVM-Role:        TESTING
- * License:         GNU GPL v3
- *
- * Description:     Proves that a widget never inherits the DOM element of a
- *                  different renderer. Every renderer's widget is wrapped in
- *                  one shared wrapper type, which is what CodeMirror compares
- *                  before it recycles a widget's element, so a citation's
- *                  element can otherwise be handed to the math renderer and
- *                  keep the citation's classes -- and its background.
- *
- * END HEADER
- */
-
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
@@ -34,7 +16,7 @@ describe("Editor keeps renderer widgets in their own DOM", function () {
 
   before(async function () {
     this.timeout(30000);
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
   });
 
   after(function () {
@@ -61,9 +43,6 @@ describe("Editor keeps renderer widgets in their own DOM", function () {
     const citation = view.dom.querySelector(".citeproc-citation");
     assert.ok(citation !== null, "the citation must render before the state changes");
 
-    // Put the cursor inside the citation. Its widget gives way to the source,
-    // so the decoration that follows -- the math -- takes over the widget slot
-    // the citation held, and CodeMirror offers it the citation's element.
     view.dispatch({ selection: { anchor: DOC.indexOf("@Ols04") + 2 } });
 
     const citationsHoldingMath = view.dom.querySelectorAll(".citeproc-citation mjx-container");

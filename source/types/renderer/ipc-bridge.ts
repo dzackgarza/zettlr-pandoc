@@ -1,32 +1,7 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        Renderer IPC invoke and broadcast composition
- * CVM-Role:        Types
- * Maintainer:      D. Zack Garza
- * License:         GNU GPL v3
- *
- * Description:     The typed surface of window.ipc.invoke and window.ipc.on,
- *                  composed from provider-owned contracts. Nothing is
- *                  declared here: every request and response type lives
- *                  beside the ipcMain handler that implements it, and every
- *                  broadcast payload beside the main-process code that sends
- *                  it (for modules with pre-existing whole-file lint debt, in
- *                  a small ipc-contract.ts in the same module directory).
- *                  This file only assembles those owner-exported types into
- *                  two channel tables: IpcInvokeContracts (a window asks the
- *                  main process) and IpcBroadcastContracts (the main process
- *                  tells a window). The invoke signature, the listener
- *                  signature of window.ipc.on and the signatures of the
- *                  main-process senders derive from them.
- *
- * END HEADER
- */
-
 import type { IpcEmitter } from "@electron-toolkit/typed-ipc/renderer";
 import type {
   MathJaxMacrosIPCResponse,
+  MathJaxPairedDelimitersIPCResponse,
   TexMacroCommandsIPCResponse,
   TikzCompletionIPCResponse,
 } from "source/app/lifecycle";
@@ -121,9 +96,6 @@ import type {
   WorkspaceEditProposal,
 } from "source/types/common/workspace-edit";
 
-/**
- * Every multiplexer channel, mapped to its owner-exported contract.
- */
 export interface IpcInvokeContracts {
   application: ApplicationIPCContract;
   "documents-provider": DocumentManagerIPCContract;
@@ -147,41 +119,25 @@ export interface IpcInvokeContracts {
   "log-provider": LogProviderIPCContract;
 }
 
-/**
- * Channels whose message carries no command discriminant: one fixed request
- * shape, one fixed response, owner-exported as a single contract entry.
- */
 export interface IpcFixedChannelContracts {
   "request-files": RequestFilesIPCContract;
   "close-all": CloseAllIPCContract;
 }
 
-/**
- * Channels invoked bare (no message), mapped to their owner-declared
- * response.
- */
 export interface IpcBareChannelContracts {
   i18n: I18nIPCResponse;
   "mathjax-macros": MathJaxMacrosIPCResponse;
+  "mathjax-paired-delimiters": MathJaxPairedDelimitersIPCResponse;
   "tex-macro-commands": TexMacroCommandsIPCResponse;
   "tikz-completion-commands": TikzCompletionIPCResponse;
   "request-dir": RequestDirIPCResponse;
   "paste-image-retrieve-data": PasteImageRetrieveDataIPCResponse;
 }
 
-/** The request half of one contract entry. */
 export type IpcRequestOf<E> = E extends { request: infer R } ? R : never;
 
-/** The response half of one contract entry. */
 export type IpcResponseOf<E> = E extends { response: infer R } ? R : never;
 
-/**
- * The invoke signature derived from the channel table: a literal command
- * resolves to its owner-declared response, and a wrong channel, command, or
- * payload is a compile error at the call site. A caller gets the response
- * that the owner declares; a caller that needs a narrower value examines the
- * response.
- */
 export interface IpcInvoke {
   <C extends keyof IpcInvokeContracts, K extends keyof IpcInvokeContracts[C] & string>(
     channel: C,
@@ -194,13 +150,6 @@ export interface IpcInvoke {
   <C extends keyof IpcBareChannelContracts>(channel: C): Promise<IpcBareChannelContracts[C]>;
 }
 
-/**
- * Every channel on which the main process sends a window a message, mapped
- * to the arguments that a listener of window.ipc.on gets after its event.
- * The senders (broadcastIPCMessage, tellMainWindows, sendIPCMessage,
- * replyIPCMessage) take the same arguments. A channel whose message has more
- * than one shape declares the union of every shape that a sender sends.
- */
 export interface IpcBroadcastContracts {
   shortcut: ShortcutBroadcast;
   "insert-table": InsertTableBroadcast;
@@ -216,7 +165,6 @@ export interface IpcBroadcastContracts {
   [COMMAND_FAILED_CHANNEL]: [failure: CommandFailedBroadcast];
   [WORKSPACE_EDIT_PROPOSAL_CHANNEL]: [proposal: WorkspaceEditProposal];
   [CITEPROC_PROBLEMS_CHANNEL]: [problems: CitationResourceProblem[]];
-  /** The database that loaded: its path, or CITEPROC_MAIN_DB for the main library. */
   "citeproc-database-updated": [database: string];
   "documents-update": [update: DocumentsUpdateBroadcast];
   "config-provider": [message: ConfigProviderBroadcast];
@@ -240,24 +188,11 @@ export interface IpcBroadcastContracts {
   "document-lint-retried": [];
 }
 
-/**
- * T itself when IPC can carry each argument of each channel. A channel with
- * a function or a symbol in its arguments fails the constraint here, at the
- * table, and not at each sender.
- */
 type CarriedByIpc<T extends { [C in keyof T]: Cloneable<T[C]> }> = T;
 
-/** The arguments of a message on `channel`, after the event. */
 export type IpcBroadcastArgs<C extends keyof IpcBroadcastContracts> =
   CarriedByIpc<IpcBroadcastContracts>[C];
 
-/**
- * The listener signature of window.ipc.on derived from the broadcast table: a
- * listener gets the arguments that the table declares for its channel, and
- * an unknown channel or a listener that annotates another payload is a
- * compile error at the call site. The function that it returns removes the
- * listener.
- */
 export interface IpcOn {
   <C extends keyof IpcBroadcastContracts>(
     channel: C,
@@ -266,20 +201,7 @@ export interface IpcOn {
 }
 
 declare global {
-  /**
-   * The typed surface of window.ipc.on, aliased into the global scope for
-   * the ambient Window declaration in source/global.d.ts, as ZettlrIpcInvoke
-   * is.
-   */
   type ZettlrIpcOn = IpcOn;
 
-  /**
-   * The typed surface of window.ipc.invoke, aliased into the global scope so
-   * the ambient Window declaration in source/global.d.ts (which cannot use
-   * import statements) can reference it. The document operation channels
-   * come from @electron-toolkit/typed-ipc over the handler-adjacent
-   * DocumentIpcHandlers; the multiplexer and bare channels derive from the
-   * provider-owned contract maps composed above.
-   */
   type ZettlrIpcInvoke = IpcEmitter<DocumentIpcHandlers>["invoke"] & IpcInvoke;
 }

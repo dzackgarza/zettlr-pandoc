@@ -1,55 +1,26 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        WindowRegistration module
- * CVM-Role:        Controller
- * Maintainer:      Hendrik Erz
- * License:         GNU GPL v3
- *
- * Description:     This module exports the windowRegister function which must
- *                  be run by every renderer process before anything else. It
- *                  will register certain globals, the necessary stylesheets and
- *                  other important assets.
- *
- * END HEADER
- */
-
 import { loadData } from "@common/i18n-renderer";
 import { initializeMathJax } from "@common/util/mathtex-to-html";
 import showToast from "@common/util/show-toast";
 import { COMMAND_FAILED_CHANNEL } from "@dts/common/command-failure";
-import type { MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import loadIcons from "./load-icons";
 import registerDefaultContextMenu from "./register-default-context";
 import registerThemes from "./register-themes";
 import { registerRendererErrorCapture } from "./renderer-error-capture";
 
-/**
- * This function is the renderer's counterpart to the main process's window
- * configuration and registers stuff like custom window controls and the menu
- * bar (on Windows and Linux, if native is off)
- */
 export default async function windowRegister(): Promise<void> {
   registerRendererErrorCapture();
-  // A command of the application that this window started and that threw.
-  // The dispatcher sends the cause to this window; the caller only logs it.
   window.ipc.on(COMMAND_FAILED_CHANNEL, (_event, failure) => {
     showToast(failure.message, "error", 12000);
   });
-  // Immediately load the translations
   await loadData();
-  // Load the clarity icons
   await loadIcons();
 
-  // Fetch the user's MathJax macros from the main process (the renderer is
-  // sandboxed and cannot read the config file itself), then preload the font
-  // data before synchronous document conversion begins.
-  const macros = (await window.ipc.invoke("mathjax-macros")) as Record<string, MathJaxMacro>;
-  await initializeMathJax(macros);
+  const [macros, pairedDelimiters] = await Promise.all([
+    window.ipc.invoke("mathjax-macros"),
+    window.ipc.invoke("mathjax-paired-delimiters"),
+  ]);
+  await initializeMathJax(macros, pairedDelimiters);
 
-  // ... the theming functionality ...
   registerThemes();
-  // ... the default context menus
   registerDefaultContextMenu();
 }

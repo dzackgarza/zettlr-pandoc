@@ -58,7 +58,7 @@ it("renders updater Markdown with the lite adaptor without a global document", f
       `import { initializeMathJax } from './source/common/util/mathtex-to-html.ts'
 import { loadMathJaxMacros } from './source/app/util/load-mathjax-macros.ts'
 import { md2html } from './source/common/modules/markdown-utils/markdown-to-html.ts'
-await initializeMathJax(await loadMathJaxMacros('test/fixtures/mathjax-macros.json'))
+await initializeMathJax(await loadMathJaxMacros('test/fixtures/mathjax-macros.json'), {})
 process.stdout.write(await md2html('$$\\\\RR$$', { onCitation: () => undefined, zknLinkFormat: 'link|title' }))`,
     ],
     { encoding: "utf8" },
@@ -76,7 +76,7 @@ it("renders each form of a paired delimiter of ~/.pandoc as mathtools does", fun
     ["\\qty*{\\frac{a}{b}}", "\\mathopen{}\\mathclose{\\left(\\frac{a}{b}\\right)}"],
     ["\\qty[\\big]{\\frac{a}{b}}", "\\mathopen{\\bigl(}\\frac{a}{b}\\mathclose{\\bigr)}"],
     ["\\ceil*{\\frac{a}{b}}", "\\mathopen{}\\mathclose{\\left\\lceil\\frac{a}{b}\\right\\rceil}"],
-    ["a \\coloneqq b", "a \\centercolon\\mathrel{\\mkern-1.2mu}= b"],
+    ["a \\coloneqq b", "a \\vcentercolon\\mathrel{\\mkern-1.2mu}= b"],
   ];
   const output = execFileSync(
     process.execPath,
@@ -88,10 +88,10 @@ it("renders each form of a paired delimiter of ~/.pandoc as mathtools does", fun
       "--eval",
       `import { homedir } from 'os'
 import { initializeMathJax, mathJaxToHTML } from './source/common/util/mathtex-to-html.ts'
-import { loadCanonicalMathJaxMacros } from './source/app/util/load-mathjax-macros.ts'
-await initializeMathJax(await loadCanonicalMathJaxMacros(homedir()))
+import { loadCanonicalMathJaxMacros, loadCanonicalMathJaxPairedDelimiters } from './source/app/util/load-mathjax-macros.ts'
+await initializeMathJax(await loadCanonicalMathJaxMacros(homedir()), await loadCanonicalMathJaxPairedDelimiters(homedir()))
 const pairs = JSON.parse(process.argv[1])
-const page = (tex) => mathJaxToHTML(tex, 'display').replace(/ data-latex="[^"]*"/g, '')
+const page = (tex) => mathJaxToHTML(tex, 'display').replace(/ data-latex="[^"]*"|<\\/?mjx-TeXAtom[^>]*>/g, '')
 process.stdout.write(JSON.stringify(pairs.map(([call, meaning]) => [call, page(call) === page(meaning) && !/color: red/.test(page(call))])))`,
       JSON.stringify(pairs),
     ],
@@ -113,7 +113,7 @@ function textOf(node: Node): string {
 describe("Utility#mathJaxToHTML()", function () {
   before(async function () {
     this.timeout(30000);
-    await initializeMathJax(await loadMathJaxMacros(FIXTURE));
+    await initializeMathJax(await loadMathJaxMacros(FIXTURE), {});
   });
 
   it("serializes configured macros and mhchem as CommonHTML display math", function () {

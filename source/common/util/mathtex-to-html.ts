@@ -1,18 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        MathJax rendering utility
- * CVM-Role:        Utility functions
- * Maintainer:      Hendrik Erz
- * License:         GNU GPL v3
- *
- * Description:     This module renders MathTeX equations into CommonHTML strings
- *                  and elements with MathJax.
- *
- * END HEADER
- */
-
 import { browserAdaptor } from "@mathjax/src/cjs/adaptors/browserAdaptor.js";
 import { liteAdaptor } from "@mathjax/src/cjs/adaptors/liteAdaptor.js";
 import { TeX } from "@mathjax/src/cjs/input/tex.js";
@@ -21,10 +6,15 @@ import { CHTML } from "@mathjax/src/cjs/output/chtml.js";
 import "@mathjax/src/cjs/input/tex/ams/AmsConfiguration.js";
 import "@mathjax/src/cjs/input/tex/boldsymbol/BoldsymbolConfiguration.js";
 import "@mathjax/src/cjs/input/tex/configmacros/ConfigMacrosConfiguration.js";
+import "@mathjax/src/cjs/input/tex/mathtools/MathtoolsConfiguration.js";
 import "@mathjax/src/cjs/input/tex/mhchem/MhchemConfiguration.js";
 import "@mathjax/src/cjs/input/tex/newcommand/NewcommandConfiguration.js";
 import "@mathjax/src/cjs/input/tex/noundefined/NoUndefinedConfiguration.js";
-import { type MathJaxMacro, mathJaxPackages } from "@dzack/tikz-render/mathjax-config";
+import {
+  type MathJaxMacro,
+  type MathJaxPairedDelimiter,
+  mathJaxPackages,
+} from "@dzack/tikz-render/mathjax-config";
 import { MathJaxMhchemFontExtension } from "@mathjax/mathjax-mhchem-font-extension/cjs/chtml.js";
 import { MathJaxNewcmFont } from "@mathjax/mathjax-newcm-font/cjs/chtml.js";
 import { type LiteDocument } from "@mathjax/src/cjs/adaptors/lite/Document.js";
@@ -40,10 +30,6 @@ import "./mathjax-newcm-dynamic";
 
 const documentElement = globalThis.document;
 
-// Register the mhchem glyphs (long reaction arrows and bonds) on the font
-// class before any output jax is constructed: with the complete stylesheet
-// (adaptiveCSS: false) only class-level registration emits the @font-face
-// rules for the extension's own woff2 files.
 MathJaxNewcmFont.addExtension({
   ...MathJaxMhchemFontExtension,
   fontURL: documentElement === undefined ? "" : new URL("../mathjax", documentElement.baseURI).href,
@@ -60,11 +46,6 @@ let browserAdaptorInstance: ReturnType<typeof browserAdaptor> | undefined;
 
 type MathJaxDisplay = "inline" | "display";
 
-// The cache must hold the equations of the documents in use. With fewer
-// entries than one document has equations, a scroll through the document
-// evicts each equation before the scroll comes back to it, and each pass
-// converts all of them again (#136: 444 distinct equations in one document,
-// 610 to 730 ms of conversion in each pass at a limit of 256).
 const BROWSER_RENDER_CACHE_LIMIT = 2048;
 const browserRenderCache = new Map<string, HTMLElement>();
 
@@ -98,9 +79,7 @@ let initialized = false;
 let initializing: Promise<void> | undefined;
 
 export interface MathJaxCompletionCatalogue {
-  /** Control sequences exactly as authored, including the leading backslash. */
   commands: readonly string[];
-  /** Environments accepted by the active MathJax TeX package configuration. */
   environments: readonly string[];
 }
 
@@ -118,16 +97,9 @@ function mapKeysForHandler<N, T, D>(tex: TeX<N, T, D>, handlerType: HandlerType)
   const keys: string[] = [];
   for (const mapName of handler.toString().split(", ").filter(Boolean)) {
     const tokenMap = handler.retrieve(mapName);
-    // Only parse maps hold a finite token table. Pattern maps (RegExpMap:
-    // letters, digits) match open-ended token classes and name no commands.
     if (!(tokenMap instanceof AbstractParseMap)) {
       continue;
     }
-    // MathJax exposes no public enumeration of a parse map; its table is the
-    // `private map: Map<string, K>` of AbstractParseMap
-    // (mathjax/MathJax-src ts/input/tex/TokenMap.ts). Element access reads
-    // that runtime field through the narrow structural type missing from the
-    // public declaration.
     const enumerableMap: unknown = Reflect.get(tokenMap, "map");
     if (!(enumerableMap instanceof Map)) {
       continue;
@@ -148,9 +120,6 @@ function buildCompletionCatalogue<N, T, D>(tex: TeX<N, T, D>): MathJaxCompletion
     ...mapKeysForHandler(tex, HandlerType.DELIMITER),
   ]) {
     const bare = key.startsWith("\\") ? key.slice(1) : key;
-    // Completion is intentionally for control words. TeX's one-character
-    // control symbols (\%, \_, etc.) need no useful fuzzy catalogue and would
-    // make the popup noisy as soon as the slash is typed.
     if (/^[A-Za-z@]+$/u.test(bare)) {
       commands.add(`\\${bare}`);
     }
@@ -169,39 +138,33 @@ function buildCompletionCatalogue<N, T, D>(tex: TeX<N, T, D>): MathJaxCompletion
   };
 }
 
-/** Build completion data from the same MathJax configuration used at boot. */
-export function buildMathJaxCompletionCatalogue(
+function texInput(
   macros: Record<string, MathJaxMacro>,
-): MathJaxCompletionCatalogue {
-  return buildCompletionCatalogue(new TeX({ packages: [...mathJaxPackages], macros }));
+  pairedDelimiters: Record<string, MathJaxPairedDelimiter>,
+) {
+  return new TeX({ packages: [...mathJaxPackages], macros, mathtools: { pairedDelimiters } });
 }
 
-/**
- * Completion data from the exact MathJax TeX parser Zettlr initialized. This
- * includes the configured base/AMS/mhchem packages and the central macro map;
- * it is therefore preferable to maintaining a parallel LaTeX command list.
- */
+export function buildMathJaxCompletionCatalogue(
+  macros: Record<string, MathJaxMacro>,
+  pairedDelimiters: Record<string, MathJaxPairedDelimiter>,
+): MathJaxCompletionCatalogue {
+  return buildCompletionCatalogue(texInput(macros, pairedDelimiters));
+}
+
 export function mathJaxCompletionCatalogue(): MathJaxCompletionCatalogue {
   return completionCatalogue;
 }
 
-/**
- * Constructs the MathJax input/output pipeline with the supplied macro set and
- * loads the font data. Production macros come from the generated central
- * ~/.pandoc projection (renderer: fetched over IPC; main process: read from
- * disk), so no independent macro set is baked into the app. This is
- * restart-gated: the first call builds the renderer and
- * subsequent calls return the same in-flight/settled promise, ignoring any
- * later macro argument.
- *
- * @param   {Record<string, MathJaxMacro>}  macros  The supplied macro projection.
- */
-export function initializeMathJax(macros: Record<string, MathJaxMacro>): Promise<void> {
+export function initializeMathJax(
+  macros: Record<string, MathJaxMacro>,
+  pairedDelimiters: Record<string, MathJaxPairedDelimiter>,
+): Promise<void> {
   if (initializing !== undefined) {
     return initializing;
   }
 
-  const tex = new TeX({ packages: [...mathJaxPackages], macros });
+  const tex = texInput(macros, pairedDelimiters);
   completionCatalogue = buildCompletionCatalogue(tex);
 
   if (documentElement === undefined) {
@@ -209,8 +172,6 @@ export function initializeMathJax(macros: Record<string, MathJaxMacro>): Promise
     mainChtml = new CHTML<LiteElement, LiteText, LiteDocument>({
       fontData: MathJaxNewcmFont,
       dynamicPrefix: "",
-      // Emit the complete stylesheet: widgets render incrementally, so
-      // adaptive CSS would miss constructs first used after initialization.
       adaptiveCSS: false,
     });
     mainRenderer = new HTMLDocument(mainAdaptorInstance.parse(""), mainAdaptorInstance, {
@@ -226,11 +187,7 @@ export function initializeMathJax(macros: Record<string, MathJaxMacro>): Promise
       fontData: MathJaxNewcmFont,
       fontURL: new URL("../mathjax", documentElement.baseURI).href,
       dynamicPrefix: "",
-      // Emit the complete stylesheet: widgets render incrementally, so
-      // adaptive CSS would miss constructs first used after initialization.
       adaptiveCSS: false,
-      // A display equation wider than its pane scrolls inside its own box;
-      // it does not widen the pane.
       displayOverflow: "scroll",
     });
     browserRenderer = new HTMLDocument(documentElement, browserAdaptorInstance, {
@@ -285,14 +242,6 @@ function mathJaxToMainNode(equation: string, display: MathJaxDisplay): LiteEleme
   return node;
 }
 
-/**
- * Renders the provided equation to HTML and places it inside the provided
- * element.
- *
- * @param   {string}       equation     The MathTeX equation.
- * @param   {HTMLElement}  element      The target element.
- * @param   {'inline'|'display'}  display   The MathJax display variant.
- */
 export function mathJaxToElem(equation: string, element: HTMLElement, display: MathJaxDisplay) {
   if (!initialized) {
     throw new Error("MathJax must be initialized before rendering");
@@ -301,13 +250,6 @@ export function mathJaxToElem(equation: string, element: HTMLElement, display: M
   element.replaceChildren(mathJaxToBrowserNode(equation, display));
 }
 
-/**
- * Renders the provided equation to HTML and returns the HTML string.
- *
- * @param   {'inline'|'display'}  display   The MathJax display variant.
- *
- * @return  {string}                     The equation as HTML.
- */
 export function mathJaxToHTML(equation: string, display: MathJaxDisplay): string {
   if (!initialized) {
     throw new Error("MathJax must be initialized before rendering");

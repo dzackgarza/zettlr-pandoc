@@ -1,5 +1,3 @@
-/** Mounts the production editor renderer for real Chromium click-position tests. */
-
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
@@ -66,7 +64,7 @@ function findTextNode(text: string): { node: Text; from: number } {
 }
 
 async function mount(): Promise<void> {
-  await initializeMathJax({});
+  await initializeMathJax({}, {});
   const host = document.querySelector<HTMLElement>("#editor");
   if (host === null) {
     throw new Error("Click-test editor host is missing");

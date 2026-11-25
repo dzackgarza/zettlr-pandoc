@@ -1,4 +1,3 @@
-// Installs process-wide test doubles; it must load before the modules that read them.
 import "./provision-renderer-window-seams";
 import { strict as assert } from "node:assert";
 import "./provision-renderer-window-seams";
@@ -39,7 +38,6 @@ function sourceOf(completion: Completion): string | undefined {
   return (completion as SourcedCompletion).zettlrSource;
 }
 
-/** The code under the "Expands to" heading of a completion info panel. */
 function expansionIn(info: Node): string | null | undefined {
   assert.ok(info instanceof Element);
   const heading = Array.from(info.querySelectorAll(".zettlr-completion-info-section-label")).find(
@@ -101,7 +99,7 @@ describe("LaTeX/TikZ completion sources", function () {
   });
 
   it("derives custom MathJax macros from the exact parser configuration", function () {
-    const catalogue = buildMathJaxCompletionCatalogue({ ZZ: "\\mathbb{Z}" });
+    const catalogue = buildMathJaxCompletionCatalogue({ ZZ: "\\mathbb{Z}" }, {});
     assert.ok(catalogue.commands.includes("\\ZZ"));
     assert.ok(catalogue.commands.includes("\\alpha"));
   });

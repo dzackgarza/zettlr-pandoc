@@ -1,17 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        Multiline citation rendering inside Pandoc fenced divs
- * CVM-Role:        TESTING
- * License:         GNU GPL v3
- *
- * Description:     Proves line-wrapped Pandoc citations can participate in
- *                  cursor-local live preview inside semantic fenced divs.
- *
- * END HEADER
- */
-
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
@@ -39,7 +25,7 @@ describe("Editor renders line-wrapped citations inside Pandoc fenced divs", func
   before(async function () {
     this.timeout(30000);
     restoreCitationIpc = installCitationIpcFromCallback();
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
     window.getCitationCallback = () => (citations) =>
       citations.map((citation) => citation.id).join("; ");
   });
@@ -64,10 +50,6 @@ describe("Editor renders line-wrapped citations inside Pandoc fenced divs", func
       extensions: [markdownParser(), configField, renderPandoc, renderCitations, renderMath],
     });
     const view = new EditorView({ state, parent: document.body });
-    // On a cold parser the markdown parse can miss CodeMirror's synchronous
-    // time slice, leaving the first render with a partial tree while these
-    // specs assert synchronously. forceParsing completes the parse and applies
-    // the resulting tree through a real view update.
     assert.ok(
       forceParsing(view, doc.length, 5000),
       "the syntax tree must be fully parsed before asserting",

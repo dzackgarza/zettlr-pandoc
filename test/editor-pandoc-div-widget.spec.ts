@@ -1,18 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        Live editor Pandoc fenced-div rendering tests
- * CVM-Role:        Test
- * License:         GNU GPL v3
- *
- * Description:     Drives a real CodeMirror EditorView with the Markdown
- *                  parser and Pandoc renderer to verify the cursor-sensitive
- *                  semantic presentation of fenced divs.
- *
- * END HEADER
- */
-
 import { history, redo, undo } from "@codemirror/commands";
 import { forceParsing } from "@codemirror/language";
 import { EditorSelection, EditorState } from "@codemirror/state";
@@ -32,7 +17,7 @@ describe("Editor presents Pandoc fenced divs semantically", function () {
 
   before(async function () {
     this.timeout(30000);
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
   });
 
   afterEach(function () {
@@ -56,10 +41,6 @@ describe("Editor presents Pandoc fenced divs semantically", function () {
       extensions: [configField, extensions, EditorState.allowMultipleSelections.of(true)],
     });
     const view = new EditorView({ state, parent: document.body });
-    // On a cold parser the markdown parse can miss CodeMirror's synchronous
-    // time slice, leaving the first render with a partial tree while these
-    // specs assert synchronously. forceParsing completes the parse and applies
-    // the resulting tree through a real view update.
     assert.ok(
       forceParsing(view, doc.length, 5000),
       "the syntax tree must be fully parsed before asserting",
@@ -520,21 +501,14 @@ outside`;
   });
 
   it("classifies Quarto classless theorem divs by their label prefix", function () {
-    // Quarto states the theorem kind through the crossref prefix of the id,
-    // not through a class: `::: {#def-core}` is the same definition the
-    // pandoc-crossref form spells `::: {.definition}`.
     const docs = [
       ["#thm-main", "result", "Theorem"],
       ["#def-core", "definition", "Definition"],
       ["#exm-first", "explanation", "Example"],
       ["#exr-warmup", "task", "Exercise"],
-      // The float families: a div is how Quarto writes a figure holding
-      // subfigures, a cross-referenced table, or a listing.
       ["#fig-elephant", "float", "Figure"],
       ["#tbl-lattices", "float", "Table"],
       ["#lst-parser", "float", "Listing"],
-      // Equations and sections carry their label on the display math and the
-      // heading, never on a div, so a div spelled this way stays generic.
       ["#eq-euler", "generic", "Div"],
       ["#sec-intro", "generic", "Div"],
     ] as const;
@@ -611,9 +585,6 @@ outside`;
   });
 
   it("records no application error for a div that the author did not close", async function () {
-    // Pandoc closes such a div at the end of its container and gives the
-    // warning that Flowmark shows (`pandoc/unclosed-fenced-div`). The source
-    // of the div stays visible: the state is one of the document.
     const recorded: string[] = [];
     const ipcBefore = Object.getOwnPropertyDescriptor(window, "ipc");
     Object.defineProperty(window, "ipc", {

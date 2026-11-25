@@ -1,27 +1,4 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        Table-cell renderer contract (issue #23)
- * CVM-Role:        TESTING
- * Maintainer:      D. Zack Garza
- * License:         GNU GPL v3
- *
- * Description:     Locks that the renderer set runs inside a table-editor cell
- *                  subview: inline math ($x^2$) authored in a cell must render
- *                  the same way it does in body text (a `.preview-math` widget),
- *                  not stay as raw LaTeX source. Drives the production
- *                  createSubviewForCell over a real main EditorView carrying a
- *                  pipe table, and asserts on the mounted subview's DOM.
- *
- * END HEADER
- */
-
 import "./provision-renderer-window-seams";
-// Initialize the renderer/table-editor module graph in the app's order before
-// importing the subview directly, so the renderers -> table-editor -> subview
-// cycle resolves (webpack tolerates it; a bare tsx import of subview first hits
-// a temporal-dead-zone on subviewUpdatePlugin).
 import "source/common/modules/markdown-editor/renderers";
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
@@ -46,7 +23,7 @@ describe("Table-cell rendering (issue #23)", function () {
 
   before(async function () {
     this.timeout(30000);
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
   });
 
   afterEach(function () {
@@ -56,7 +33,6 @@ describe("Table-cell rendering (issue #23)", function () {
     document.body.replaceChildren();
   });
 
-  /** A main EditorView carrying the table, in preview mode with math rendering on. */
   function createMainView(): EditorView {
     const config = getDefaultConfig();
     config.renderingMode = "preview";
@@ -97,7 +73,6 @@ describe("Table-cell rendering (issue #23)", function () {
       "the rendered math must carry the cell equation",
     );
 
-    // The visible cell text must not still show the raw LaTeX delimiters.
     const cellText = subview.dom.querySelector(".cm-content")?.textContent ?? "";
     assert.ok(
       !cellText.includes("$x^2$"),

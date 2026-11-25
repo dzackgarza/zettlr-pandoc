@@ -285,7 +285,7 @@ describe("The production renderers", function () {
   const views: EditorView[] = [];
 
   before(async function () {
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
   });
 
   afterEach(function () {

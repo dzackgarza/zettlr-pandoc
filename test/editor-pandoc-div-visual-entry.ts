@@ -1,5 +1,3 @@
-/** Mounts the production CodeMirror/Pandoc renderers for isolated visual capture. */
-
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
@@ -93,8 +91,6 @@ By [@Ols04 Lem. 7.1, 7.2], some result follows.
 Outside the active div.
 `;
 
-// Divs with an identifier, a title, and both (#177). A title that is longer
-// than a narrow editor wraps; it is not cut off.
 const titled = `## Orbits and stabilizers
 
 ::: {.definition #def:orbit-stabilizer-fixed-points title="Orbit, stabilizer, and the set of fixed points of a group action"}
@@ -128,7 +124,7 @@ The map $gG_x\\mapsto g\\cdot x$ is a bijection.
 `;
 
 async function mount(): Promise<void> {
-  await initializeMathJax({ RR: "\\mathbb{R}" });
+  await initializeMathJax({ RR: "\\mathbb{R}" }, {});
   window.getCitationCallback = () => (citations) =>
     citations
       .map((citation) => {

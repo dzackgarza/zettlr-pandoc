@@ -1,18 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * CVM-Role:        <none>
- * Maintainer:      Hendrik Erz
- * License:         GNU GPL v3
- *
- * Description:     This file contains lifecycle functions for boot and shutdown
- *                  that boot up things like the service providers, and shut
- *                  them down appropriately.
- *
- * END HEADER
- */
-
 import { trans } from "@common/i18n-main";
 import type { EnvironmentInfo } from "@dts/common/environment";
 import {
@@ -21,7 +6,6 @@ import {
   tikzTemplateCompletions,
 } from "@dzack/tikz-render/tikz-render";
 import { app, ipcMain } from "electron";
-// Developer tools
 import installExtension, { VUEJS_DEVTOOLS } from "electron-devtools-installer";
 import path from "path";
 import {
@@ -32,53 +16,37 @@ import {
 } from "./app-service-container";
 import { getCLIArgument } from "./service-providers/cli-provider";
 import { attachAppNavigationHandlers } from "./util/attach-app-navigation-handlers";
-// Helper/Utility functions
 import registerCustomProtocols from "./util/custom-protocols";
 import environmentCheck, { checkedEnvironment } from "./util/environment-check";
 import { updateFlowmark } from "./util/flowmark-update";
 import { handleBareChannel } from "./util/handle-ipc-channel";
 import {
   loadCanonicalMathJaxMacros,
+  loadCanonicalMathJaxPairedDelimiters,
   loadCanonicalTexMacroCommands,
 } from "./util/load-mathjax-macros";
 import resolveTimespanMs from "./util/resolve-timespan-ms";
 
-/**
- * What the bare 'mathjax-macros' invoke channel answers with — the loader's
- * own signature. The handler is registered in bootApplication() below;
- * composed into the renderer's invoke type in
- * source/types/renderer/ipc-bridge.ts.
- */
 export type MathJaxMacrosIPCResponse = Awaited<ReturnType<typeof loadCanonicalMathJaxMacros>>;
+export type MathJaxPairedDelimitersIPCResponse = Awaited<
+  ReturnType<typeof loadCanonicalMathJaxPairedDelimiters>
+>;
 export type TexMacroCommandsIPCResponse = Awaited<ReturnType<typeof loadCanonicalTexMacroCommands>>;
 export type { TikzCompletionIPCResponse };
 
-// Statistics: Record the uptime of the application
 let upTimestamp: number;
 
-/**
- * Boots the application
- *
- * @return  {void}    Nothing to return
- */
 export async function bootApplication(): Promise<AppServiceContainer> {
   upTimestamp = Date.now();
 
-  // First of all we MUST perform the environment check, since everything else
-  // depends on this.
   await environmentCheck();
 
-  // We need to instantiate the service container right away to have access to
-  // the log and config providers. Then we just need to remember to boot it
-  // before we access anything important.
   const appServiceContainer = new AppServiceContainer();
   const config = appServiceContainer.config;
   const log = appServiceContainer.log;
 
   log.info(`こんにちは！ Booting Zettlr at ${(new Date()).toString()}.`);
 
-  // Upgrade Flowmark from its main branch in the background. A failed check
-  // keeps whatever Flowmark is installed and tells the user why.
   const flowmarkTask = appServiceContainer.lrt.registerTask(
     trans("Updating Flowmark"),
     "pandoc-flowmark main",
@@ -97,12 +65,6 @@ export async function bootApplication(): Promise<AppServiceContainer> {
     appServiceContainer.lrt.settleTask(flowmarkTask, new Error(reason));
   });
 
-  // The Vue.js devtools are a browser extension that the app gets from the
-  // network. Its content script puts an inline script into each frame of a
-  // window, and a frame that has the content security policy of the window
-  // refuses that script with a console error (#183). The app therefore loads
-  // the extension only for a start that asks for it, and that start fails
-  // when the extension cannot be loaded.
   if (getCLIArgument("vue-devtools")) {
     log.info("Installing the Vue.js devtools extension ...");
     const extension = await installExtension(VUEJS_DEVTOOLS);
@@ -111,20 +73,16 @@ export async function bootApplication(): Promise<AppServiceContainer> {
 
   registerCustomProtocols(log);
 
-  // Prevent navigation away from our main windows and the creation of arbitrary
-  // browser windows with external URLs
   attachAppNavigationHandlers(log);
 
-  // Register the central macro projection BEFORE the service container boots:
-  // onboarding/renderers may request it during startup. ~/.pandoc is the only
-  // semantic authority.
   handleBareChannel("mathjax-macros", async () => {
     return await loadCanonicalMathJaxMacros(app.getPath("home"));
   });
+  handleBareChannel("mathjax-paired-delimiters", async () => {
+    return await loadCanonicalMathJaxPairedDelimiters(app.getPath("home"));
+  });
   handleBareChannel("tex-macro-commands", async () => {
     const vocabulary = await loadCanonicalTexMacroCommands(app.getPath("home"));
-    // The completion list has the commands of the readable sources; the log
-    // names each source whose commands it does not have.
     for (const source of vocabulary.notRead) {
       log.warning(`[Macros] The completion list has no command of ${source.path}: ${source.cause}`);
     }
@@ -134,15 +92,12 @@ export async function bootApplication(): Promise<AppServiceContainer> {
     return tikzTemplateCompletions(resolveTikzTemplatePath(app.getPath("home")));
   });
 
-  // Now boot up the service container
   await appServiceContainer.boot();
 
-  // Now make the service container available for the rest of the main process.
   setAppServiceContainer(appServiceContainer);
 
   const environment = checkedEnvironment();
 
-  // The About and Preferences windows read this synchronously.
   const environmentInfo: EnvironmentInfo = {
     programVersions: {
       pandoc: environment.pandocVersion,
@@ -158,11 +113,6 @@ export async function bootApplication(): Promise<AppServiceContainer> {
   return appServiceContainer;
 }
 
-/**
- * Shuts the application down and performs cleanup operations
- *
- * @return  {Promise<void>}  Resolves always
- */
 export async function shutdownApplication(): Promise<void> {
   if (!isAppServiceContainerReady()) {
     return;
@@ -173,10 +123,8 @@ export async function shutdownApplication(): Promise<void> {
 
   const downTimestamp = Date.now();
 
-  // Get a nice resolved timespan with right properties
   const span = resolveTimespanMs(downTimestamp - upTimestamp);
 
-  // Now construct the message. Always include minutes, seconds, and milliseconds
   let uptimeMessage: string = `${span.minutes} minutes, and ${span.seconds}.${span.ms} seconds`;
   if (span.hours > 0) {
     uptimeMessage = `${span.hours} hours, ${uptimeMessage}`;

@@ -3,18 +3,31 @@
 - **Only semantic source of truth:** `~/.pandoc/styles/macros/` (the user's ~1600-macro
   authoring language). Zettlr is a consumer. It must never seed, edit, bundle, prefer,
   or fall back to an app-local macro definition file.
-- **Generated MathJax projection:** `~/.pandoc/templates/css/mathjax-macros.json`,
+- **Generated MathJax projection:** `~/.pandoc/templates/css/mathjax-macros.json`
+  and `~/.pandoc/templates/css/mathjax-paired-delimiters.json`, both
   written by `~/.pandoc/bin/generate-mathjax-config.py`. The generator runs in
   the project environment of `pandoc-config` (it imports pylatexenc), so a
   caller runs the recipe: `just --justfile ~/.pandoc/justfile generate-math-macros`.
   `zettlr-pandoc-boot` runs it before a start
   ([desktop-launcher.md](desktop-launcher.md)).
-- **App load:** `source/app/util/load-mathjax-macros.ts` resolves that central generated
-  file and fails loudly when it is absent. The `mathjax-macros` IPC in
-  `source/app/lifecycle.ts` serves the same read-only projection to renderer consumers.
-  - `loadCanonicalMathJaxMacros` throws `MacroSourcesUnavailableError` for a
-    projection that cannot be read or is no macro projection; the message
-    names the recipe.
+- **App load:** `source/app/util/load-mathjax-macros.ts` resolves the central generated
+  files and fails loudly when one is absent. The `mathjax-macros` and
+  `mathjax-paired-delimiters` IPC channels in `source/app/lifecycle.ts`
+  serve the same read-only projections to renderer consumers.
+  - **A paired delimiter of the macro tree is no macro.** A
+    `\DeclarePairedDelimiter` of `~/.pandoc` (`\qty`, `\ceil`) is an entry
+    `name: [left, right]` of `mathjax-paired-delimiters.json`, which the
+    renderer gives to the `mathtools` package of MathJax
+    (`mathtools.pairedDelimiters` of the TeX input). The package gives each
+    form of the PDF: `\qty{x}` without scaling, `\qty*{x}` with
+    `\left \right`, `\qty[\big]{x}` with `\bigl \bigr`. A macro of the
+    macro map cannot have the star or the size. Proof:
+    `test/mathtex-to-html.spec.ts` ("renders each form of a paired
+    delimiter"): each call and its LaTeX meaning give the same CommonHTML
+    in a process that loads the real `~/.pandoc`.
+  - `loadCanonicalMathJaxMacros` and `loadCanonicalMathJaxPairedDelimiters`
+    throw `MacroSourcesUnavailableError` for a projection that cannot be read
+    or has another form; the message names the recipe.
   - `loadCanonicalTexMacroCommands` lists each control word that the TeX
     sources of the macro tree declare, also the macros of the compiler only,
     which the projection does not hold. `loadCanonicalMacroInventory` merges
@@ -25,10 +38,33 @@
   - `loadMathJaxMacros` reads one projection that a spec names. An
     absent file gives an empty map; a malformed one throws. Production code
     does not call it.
-- **Format/validation:** `packages/tikz-render/src/mathjax-config.ts` (`parseMathJaxMacros`;
-  malformed central projections fail rather than being replaced with bundled defaults).
+- **Format/validation:** `packages/tikz-render/src/mathjax-config.ts`
+  (`parseMathJaxMacros`, `parseMathJaxPairedDelimiters`; malformed central
+  projections fail rather than being replaced with bundled defaults). Its
+  `mathJaxPackages` are the TeX packages of each renderer.
 - **Render:** `source/common/util/mathtex-to-html.ts` (`initializeMathJax`, local
-  CommonHTML), wired in `source/common/modules/window-register/index.ts`.
+  CommonHTML), wired in `source/common/modules/window-register/index.ts` (each
+  window) and in the update provider (the changelog of the main process).
+  - The first call of `initializeMathJax` builds the renderer; a later call
+    gets the same promise and its arguments do nothing. A change of the
+    projection needs a restart.
+  - The output has the complete stylesheet (`adaptiveCSS: false`): widgets
+    render one at a time, and an adaptive stylesheet has no rules for a
+    construct that is first used after the start. The mhchem glyphs are
+    registered on the font class before an output jax is made, because with
+    the complete stylesheet only that registration gives the `@font-face`
+    rules of the extension.
+  - A display equation that is wider than its pane scrolls in its own box
+    (`displayOverflow: "scroll"`).
+  - The window keeps 2048 rendered equations (`BROWSER_RENDER_CACHE_LIMIT`).
+    With fewer entries than a document has equations, a scroll evicts each
+    equation before it comes back (#136: 444 equations, 610 to 730 ms for
+    each pass at 256).
+  - The completion catalogue (`mathJaxCompletionCatalogue`) is read from the
+    parse maps of the TeX input that renders. MathJax has no public
+    enumeration of a parse map; the catalogue reads the private `map` of
+    `AbstractParseMap` (MathJax-src `ts/input/tex/TokenMap.ts`) and only
+    control words, not control symbols such as `\%`.
 - **TikZ:** TeX compilation follows the real central `dzg-tikz` template/include
   graph.
 - **`~/.pandoc` owns the math of an export.** The application assembles no

@@ -1,15 +1,3 @@
-/**
- * Mounts the production editor renderers and exposes a scripted step
- * sequence for the README demo GIFs. The capture driver replays the steps
- * one frame at a time (see readme-demo-capture.mjs); each step returns how
- * long the resulting frame should hold in the assembled animation.
- *
- * Scenes (selected via <body data-scene>):
- *   math   — typing inline/display math with live MathJax rendering
- *   amsthm — typing theorem/proof fenced divs with live styled boxes
- *   review — an external review proposition adjudicated chunk by chunk
- */
-
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import type { ReviewSuggestionView } from "@dts/common/review-diff";
@@ -30,7 +18,6 @@ declare global {
   interface Window {
     captureReady: Promise<void>;
     demoStepCount: number;
-    /** Runs step i and returns the hold time (seconds) for its frame. */
     runDemoStep: (index: number) => Promise<number>;
   }
 }
@@ -44,7 +31,6 @@ const TYPE_HOLD = 0.07;
 const steps: Step[] = [];
 let view: EditorView;
 
-/** One step per character, inserted at the cursor like real typing. */
 function typeChars(text: string, hold: number = TYPE_HOLD): void {
   for (const char of text) {
     steps.push({
@@ -56,7 +42,6 @@ function typeChars(text: string, hold: number = TYPE_HOLD): void {
   }
 }
 
-/** Moves the cursor to the given offset resolver in one step. */
 function moveCursor(position: () => number, hold: number): void {
   steps.push({
     hold,
@@ -69,13 +54,10 @@ function moveCursor(position: () => number, hold: number): void {
 function pause(hold: number): void {
   steps.push({
     hold,
-    run: () => {
-      /* hold the current frame */
-    },
+    run: () => {},
   });
 }
 
-/** Offset of `needle` in the current document (throws when absent). */
 function docIndex(needle: string, shift: number = 0): number {
   const index = view.state.doc.toString().indexOf(needle);
   if (index === -1) {
@@ -247,13 +229,6 @@ function scriptReviewScene(): void {
 
   const config = (): ReviewChunksConfig => ({ suggestions });
 
-  /**
-   * What the provider's broadcast does to this pane when the owner decides
-   * a chunk: the decided suggestion leaves the set, and a rejection puts its
-   * removed text back. The demo mounts the review extension without a host
-   * for the chunk controls, so it drives the decision the way the real
-   * broadcast does.
-   */
   const decide = (chunkId: string, decision: "accept" | "reject"): void => {
     const suggestion = suggestions.find((candidate) => candidate.suggestionId === chunkId);
     if (suggestion === undefined) {
@@ -289,7 +264,7 @@ function scriptReviewScene(): void {
       decide("suggestion-constant", "accept");
     },
   });
-  pause(2.0); // the accepted chunk's marks leave; the second one still stands
+  pause(2.0);
   steps.push({
     hold: 2.0,
     run: () => {
@@ -300,10 +275,13 @@ function scriptReviewScene(): void {
 }
 
 async function mount(): Promise<void> {
-  await initializeMathJax({
-    RR: "\\mathbb{R}",
-    abs: ["\\left\\lvert {#1} \\right\\rvert", 1],
-  });
+  await initializeMathJax(
+    {
+      RR: "\\mathbb{R}",
+      abs: ["\\left\\lvert {#1} \\right\\rvert", 1],
+    },
+    {},
+  );
   const scene = document.body.dataset.scene ?? "math";
   if (scene === "math") {
     scriptMathScene();

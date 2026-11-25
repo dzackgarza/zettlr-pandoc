@@ -1,24 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        Reference hover red proofs (issue #1 Phase 4)
- * CVM-Role:        TESTING
- * License:         GNU GPL v3
- *
- * Description:     Locks the reference hover contract by driving the
- *                  hoverTooltip source function directly against a real
- *                  headless EditorView: a resolved supported-family
- *                  occurrence answers a tooltip spanning exactly the
- *                  authored `@key` token whose create() DOM presents type,
- *                  key, defining path, enclosing section, a bounded rendered
- *                  excerpt, and an expand action indicator. Bibliography
- *                  citations, plain prose, and unresolved occurrences answer
- *                  null — hover never fabricates a target.
- *
- * END HEADER
- */
-
 import "./provision-renderer-window-seams";
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
@@ -44,10 +23,6 @@ const FIXTURE_ROOT = path.join("test", "fixtures", "reference-workspace");
 const THEOREMS_PATH = path.join(FIXTURE_ROOT, "ProjectA", "Theorems.md");
 const HALPHEN_PATH = path.join(FIXTURE_ROOT, "ProjectA", "Halphen_Surfaces.md");
 
-/**
- * The single-project workspace (no ProjectB): every key defined in it is
- * unique, so thm:torelli resolves to the ProjectA/Theorems.md definition.
- */
 const RESOLVED_FILES = [
   path.join("ProjectA", "Theorems.md"),
   path.join("ProjectA", "Coble_Lattice_Table.md"),
@@ -68,13 +43,7 @@ describe("Reference hover tooltips (issue #1 Phase 4)", function () {
 
   before(async function () {
     this.timeout(30000);
-    // The excerpt upgrade renders math through md2html, which calls
-    // mathJaxToHTML. That requires the same MathJax boot every renderer window performs.
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
-    // The production preload bridge exists in every renderer window, so the
-    // tooltip renders its excerpt through it unconditionally (review B9);
-    // the harness provisions the same seam with a deterministic renderer
-    // (the established chips-spec pattern).
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
     window.getCitationCallback = () => (citations) => citations.map((item) => item.id).join("; ");
   });
 
@@ -205,17 +174,11 @@ describe("Reference hover tooltips (issue #1 Phase 4)", function () {
     const excerpt = dom.querySelector<HTMLElement>("[data-reference-excerpt]");
     assert.ok(excerpt !== null, "the tooltip must carry the rendered excerpt");
 
-    // The excerpt is fence-stripped source text synchronously and upgrades in
-    // place once the async md2html render lands; wait for that upgrade.
     for (let round = 0; round < 200 && excerpt.childElementCount === 0; round++) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     assert.ok(excerpt.childElementCount > 0, "the excerpt must upgrade to rendered markdown");
 
-    // The reported symptom: hovering a reference to a math-bearing definition
-    // shows bare Unicode math-alphanumerics with no layout, because the
-    // render path destroys MathJax's custom elements. The rendered excerpt
-    // must keep the MathJax CommonHTML structure that positions the math.
     const container = excerpt.querySelector("mjx-container");
     assert.ok(container !== null, "the excerpt must keep the MathJax container element");
     assert.ok(

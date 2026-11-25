@@ -1,11 +1,17 @@
 import isErrnoException from "@common/util/is-errno-exception";
 import isFile from "@common/util/is-file";
-import { type MathJaxMacro, parseMathJaxMacros } from "@dzack/tikz-render/mathjax-config";
+import {
+  type MathJaxMacro,
+  type MathJaxPairedDelimiter,
+  parseMathJaxMacros,
+  parseMathJaxPairedDelimiters,
+} from "@dzack/tikz-render/mathjax-config";
 import { texCommandDeclarationEntries } from "@dzack/tikz-render/tex-command-declarations";
 import { type Dirent, promises as fs } from "fs";
 import path from "path";
 
 export const MATHJAX_MACROS_FILENAME = "mathjax-macros.json";
+export const MATHJAX_PAIRED_DELIMITERS_FILENAME = "mathjax-paired-delimiters.json";
 
 const TEX_SOURCE_EXTENSIONS = new Set([".tex", ".sty", ".cls"]);
 
@@ -45,31 +51,61 @@ export function canonicalMathJaxMacrosPath(homeDirectory: string): string {
   return path.join(homeDirectory, ".pandoc", "templates", "css", MATHJAX_MACROS_FILENAME);
 }
 
-export async function loadCanonicalMathJaxMacros(
-  homeDirectory: string,
-): Promise<Record<string, MathJaxMacro>> {
-  const filePath = canonicalMathJaxMacrosPath(homeDirectory);
+export function canonicalMathJaxPairedDelimitersPath(homeDirectory: string): string {
+  return path.join(
+    homeDirectory,
+    ".pandoc",
+    "templates",
+    "css",
+    MATHJAX_PAIRED_DELIMITERS_FILENAME,
+  );
+}
+
+async function loadGeneratedProjection<T>(
+  filePath: string,
+  what: string,
+  parse: (data: unknown) => T,
+): Promise<T> {
+  const rebuild = "Run `just --justfile ~/.pandoc/justfile generate-math-macros` to rebuild it.";
   let contents: string;
   try {
     contents = await fs.readFile(filePath, "utf8");
   } catch (error) {
     if (!isErrnoException(error)) throw error;
     throw new MacroSourcesUnavailableError(
-      `Can't read the generated MathJax macro file ${filePath}: ${error.message}. ` +
-        "Run `just --justfile ~/.pandoc/justfile generate-math-macros` to rebuild it.",
+      `Can't read the generated MathJax ${what} file ${filePath}: ${error.message}. ${rebuild}`,
       { cause: error },
     );
   }
   try {
-    return parseMathJaxMacros(JSON.parse(contents));
+    return parse(JSON.parse(contents));
   } catch (error) {
     if (!(error instanceof SyntaxError) && !(error instanceof TypeError)) throw error;
     throw new MacroSourcesUnavailableError(
-      `The generated MathJax macro file ${filePath} is not a macro projection: ${error.message}. ` +
-        "Run `just --justfile ~/.pandoc/justfile generate-math-macros` to rebuild it.",
+      `The generated MathJax ${what} file ${filePath} is not a ${what} projection: ${error.message}. ${rebuild}`,
       { cause: error },
     );
   }
+}
+
+export async function loadCanonicalMathJaxMacros(
+  homeDirectory: string,
+): Promise<Record<string, MathJaxMacro>> {
+  return await loadGeneratedProjection(
+    canonicalMathJaxMacrosPath(homeDirectory),
+    "macro",
+    parseMathJaxMacros,
+  );
+}
+
+export async function loadCanonicalMathJaxPairedDelimiters(
+  homeDirectory: string,
+): Promise<Record<string, MathJaxPairedDelimiter>> {
+  return await loadGeneratedProjection(
+    canonicalMathJaxPairedDelimitersPath(homeDirectory),
+    "paired delimiter",
+    parseMathJaxPairedDelimiters,
+  );
 }
 
 export interface CanonicalTexMacroCommands {

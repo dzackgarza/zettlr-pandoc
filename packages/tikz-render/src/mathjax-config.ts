@@ -1,40 +1,18 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        MathJax rendering configuration
- * CVM-Role:        Configuration
- * Maintainer:      Hendrik Erz
- * License:         GNU GPL v3
- *
- * Description:     Defines the TeX packages the renderer always enables and
- *                  validates MathJax macro definitions. The macros themselves
- *                  are not defined here: production loads the generated central
- *                  ~/.pandoc projection (see load-mathjax-macros).
- *
- * END HEADER
- */
-
 export type MathJaxMacro = string | readonly [string, number] | readonly [string, number, string];
 
-/**
- * The TeX input packages the fork always enables. `base` is implicit; the HTML
- * export projection re-adds the remainder via Pandoc's `[+]` merge key.
- */
+export type MathJaxPairedDelimiter = readonly [string, string];
+
 export const mathJaxPackages = [
   "base",
   "ams",
   "boldsymbol",
   "configmacros",
+  "mathtools",
   "mhchem",
   "newcommand",
   "noundefined",
 ] as const;
 
-/**
- * Type guard for a single MathJax macro definition (the `tex.macros` value
- * shape: replacement string, or [replacement, argCount, optionalDefault?]).
- */
 export function isMathJaxMacro(value: unknown): value is MathJaxMacro {
   if (typeof value === "string") {
     return true;
@@ -53,15 +31,12 @@ export function isMathJaxMacro(value: unknown): value is MathJaxMacro {
   return value.length === 3 && typeof value[2] === "string";
 }
 
-/**
- * Validates a parsed MathJax macro map. The map has the standard `tex.macros`
- * shape: each name maps to a replacement string or to the tuple
- * [replacement, argCount, optionalDefault?].
- * Any malformed entry throws rather than being silently dropped, so a broken
- * macro file fails loudly instead of rendering without the affected macro.
- */
+function isJsonObject(data: unknown): data is Record<string, unknown> {
+  return typeof data === "object" && data !== null && !Array.isArray(data);
+}
+
 export function parseMathJaxMacros(data: unknown): Record<string, MathJaxMacro> {
-  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+  if (!isJsonObject(data)) {
     throw new TypeError("MathJax macros must be a JSON object mapping macro names to definitions");
   }
 
@@ -73,4 +48,28 @@ export function parseMathJaxMacros(data: unknown): Record<string, MathJaxMacro> 
     macros[name] = definition;
   }
   return macros;
+}
+
+export function parseMathJaxPairedDelimiters(
+  data: unknown,
+): Record<string, MathJaxPairedDelimiter> {
+  if (!isJsonObject(data)) {
+    throw new TypeError(
+      "MathJax paired delimiters must be a JSON object mapping command names to [left, right]",
+    );
+  }
+
+  const delimiters: Record<string, MathJaxPairedDelimiter> = {};
+  for (const [name, pair] of Object.entries(data)) {
+    if (
+      !Array.isArray(pair) ||
+      pair.length !== 2 ||
+      typeof pair[0] !== "string" ||
+      typeof pair[1] !== "string"
+    ) {
+      throw new TypeError(`Invalid MathJax paired delimiter for "${name}"`);
+    }
+    delimiters[name] = [pair[0], pair[1]];
+  }
+  return delimiters;
 }

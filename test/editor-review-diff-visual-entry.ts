@@ -99,7 +99,7 @@ function rendererRegressionSuggestions(): ReviewSuggestionView[] {
 }
 
 async function mount(): Promise<void> {
-  await initializeMathJax({});
+  await initializeMathJax({}, {});
   const theoremStart = proposed.indexOf("revised theorem statement");
   const proofStart = proposed.indexOf("shorter proof sketch");
   const tableStart = proposed.indexOf("final");

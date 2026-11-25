@@ -1,30 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        Pandoc Markdown LaTeX-environment classification
- * CVM-Role:        Test
- * Maintainer:      D. Zack Garza
- * License:         GNU GPL v3
- *
- * Description:     Pandoc's Markdown reader does NOT promote bare LaTeX
- *                  environments such as \begin{align} to Markdown Math nodes.
- *                  With raw_tex enabled, LaTeX-reader inline environments are
- *                  RawInline(tex); other environments may be RawBlock(tex).
- *                  Only Pandoc's explicit Markdown math delimiters ($, $$,
- *                  \( \), \[ \]) produce Math nodes. The editor may still
- *                  visualize Pandoc RawInline(tex) math environments without
- *                  changing that syntax classification.
- *
- *                  The executable Pandoc JSON reader is the oracle. Source:
- *                  Pandoc 3.10.2 commit
- *                  f2ee5dfee866aab007a33552acc6bc01810c6918,
- *                  Markdown.hs `math` / `rawLaTeXInline'` and LaTeX.hs
- *                  `rawLaTeXInline` / `rawLaTeXBlock`.
- *
- * END HEADER
- */
-
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
@@ -56,12 +29,6 @@ async function rendersAsDisplayMath(markdown: string): Promise<boolean> {
   return /<mjx-container[^>]*display="true"/.test(html);
 }
 
-/**
- * What the EDITOR would hand MathJax for the first math node it finds, or null
- * when it produces no math node at all. This is the path the preview widget
- * takes (render-math.ts slices the node and strips its delimiters), so it
- * answers the question the author actually asks: does the editor draw this?
- */
 function editorMath(doc: string): { display: boolean; equation: string } | null {
   const state = EditorState.create({ doc, extensions: [markdownParser()] });
   const tree = ensureSyntaxTree(state, doc.length, 5000);
@@ -69,7 +36,6 @@ function editorMath(doc: string): { display: boolean; equation: string } | null 
   let found: { display: boolean; equation: string } | null = null;
   tree.iterate({
     enter(node) {
-      // The node types render-math.ts itself accepts.
       if (found !== null || !["InlineCode", "FencedCode"].includes(node.type.name)) {
         return;
       }
@@ -88,7 +54,7 @@ const ALIGN = "\\begin{align}\na &= b \\\\\nc &= d\n\\end{align}";
 describe("Pandoc Markdown LaTeX-environment classification", function () {
   before(async function () {
     this.timeout(60000);
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
   });
 
   describe("the HTML conversion", function () {
@@ -102,8 +68,6 @@ describe("Pandoc Markdown LaTeX-environment classification", function () {
         "flalign",
         "dmath",
         "subequations",
-        // Ordinary TeX math environments that Pandoc keeps as raw TeX when
-        // they stand alone in Markdown.
         "cases",
         "matrix",
         "aligned",
@@ -143,8 +107,6 @@ describe("Pandoc Markdown LaTeX-environment classification", function () {
     });
 
     it("does not fire inside inline math that already delimits an environment", function () {
-      // `$\begin{pmatrix}…\end{pmatrix}$` is one inline equation, not a display
-      // block: the dollars own it, and the environment is its content.
       const math = editorMath(
         "The matrix $\\begin{pmatrix}0&1\\\\1&0\\end{pmatrix}$ is hyperbolic.",
       );

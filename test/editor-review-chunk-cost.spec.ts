@@ -1,32 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        Cost of a review with many chunks
- * CVM-Role:        TESTING
- * License:         GNU GPL v3
- *
- * Description:     A review of a long document can have thousands of
- *                  outstanding chunks (#57, PR #55 thread YXVfu). A typed
- *                  character and the broadcast that answers it must cost
- *                  work for the chunks that they touch, not for each chunk
- *                  of the review. These specs count that work: the widgets
- *                  that a block renderer makes again, and the decorations
- *                  that the editor makes new. A review with two chunks and
- *                  a review with a thousand chunks of the same document
- *                  must give the same counts for a character typed far
- *                  from each chunk.
- *
- *                  The last spec states the other half: after a sequence of
- *                  edits, the chunks, their marks, their controls and the
- *                  ranges that they keep unrendered are those that a new
- *                  editor shows for the same document and the suggestions
- *                  that the provider maps through the same edits.
- *
- * END HEADER
- */
-
-// The editor modules read the preload bridge when they are imported.
 import "./provision-renderer-window-seams";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { type ChangeSpec, EditorState, type Extension } from "@codemirror/state";
@@ -65,7 +36,6 @@ class MathMarker extends WidgetType {
 
 const PARAGRAPHS = 2000;
 
-/** A document of paragraphs, each with two equations and the word "holds". */
 function paragraphs(count: number): string {
   let doc = "";
   for (let i = 0; i < count; i++) {
@@ -74,11 +44,6 @@ function paragraphs(count: number): string {
   return doc;
 }
 
-/**
- * One suggestion on each `every`-th paragraph: the agent wrote "holds" in
- * place of "has", so its anchor covers "holds" and the removed text is
- * "has".
- */
 function suggestionsOf(doc: string, every: number): ReviewSuggestionView[] {
   const suggestions: ReviewSuggestionView[] = [];
   let from = doc.indexOf("holds");
@@ -97,24 +62,20 @@ function suggestionsOf(doc: string, every: number): ReviewSuggestionView[] {
   return suggestions;
 }
 
-/** A position in a paragraph that no suggestion of `suggestionsOf(doc, 2)` touches. */
 function farFromEachChunk(doc: string): number {
   const paragraph = doc.indexOf(`Paragraph ${PARAGRAPHS / 2 + 1} `);
   return doc.indexOf("in a sentence", paragraph);
 }
 
-/** The syntax tree of a state covers the whole document only after this. */
 function parsed(state: EditorState): EditorState {
   assert.notEqual(ensureSyntaxTree(state, state.doc.length, 60_000), null);
   return state.update({}).state;
 }
 
-/** Each decoration value of the state fields of a state. */
 function decorationValues(state: EditorState): Set<Decoration> {
   const values = new Set<Decoration>();
   for (const source of state.facet(EditorView.decorations)) {
     if (typeof source === "function") {
-      // A view plugin draws its decorations for the viewport of a view.
       continue;
     }
     const cursor = source.iter();
@@ -126,7 +87,6 @@ function decorationValues(state: EditorState): Set<Decoration> {
   return values;
 }
 
-/** The number of decorations of `after` that `before` does not have. */
 function newDecorations(before: EditorState, after: EditorState): number {
   const old = decorationValues(before);
   return [...decorationValues(after)].filter((value) => !old.has(value)).length;
@@ -140,7 +100,7 @@ describe("A review with many chunks", function () {
   this.timeout(120_000);
 
   before(async function () {
-    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
+    await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"), {});
   });
 
   interface TypedCharacterCost {
@@ -148,7 +108,6 @@ describe("A review with many chunks", function () {
     decorations: number;
   }
 
-  /** The work of a character typed far from each chunk of a review. */
   function typedCharacterCost(every: number): TypedCharacterCost {
     const doc = paragraphs(PARAGRAPHS);
     let made = 0;
@@ -187,10 +146,6 @@ describe("A review with many chunks", function () {
     assert.deepEqual(many, few);
   });
 
-  /**
-   * The decorations that the editor makes new for a character typed far from
-   * each chunk and the broadcast in which the provider answers it.
-   */
   async function broadcastCost(every: number): Promise<number> {
     const path = "/tmp/review-chunk-cost.md";
     const doc = paragraphs(PARAGRAPHS);
@@ -242,16 +197,16 @@ describe("A review with many chunks", function () {
 
 describe("A review after a sequence of edits", function () {
   const WORKING = [
-    "# Review", // 1
-    "", // 2
-    "alpha proposed text", // 3
-    "", // 4
-    "bravo proposed first half", // 5
-    "bravo proposed second half", // 6
-    "", // 7
-    "charlie keeps its words", // 8
-    "", // 9
-    "delta end", // 10
+    "# Review",
+    "",
+    "alpha proposed text",
+    "",
+    "bravo proposed first half",
+    "bravo proposed second half",
+    "",
+    "charlie keeps its words",
+    "",
+    "delta end",
   ].join("\n");
 
   function at(text: string, occurrence = 0): number {
@@ -263,7 +218,6 @@ describe("A review after a sequence of edits", function () {
     return from;
   }
 
-  /** Four chunks: a substitution, a two-line insertion, a deletion and an insertion. */
   function suggestions(): ReviewSuggestionView[] {
     const alpha = at("proposed");
     const bravo = at("proposed", 1);
@@ -305,7 +259,6 @@ describe("A review after a sequence of edits", function () {
     return [reviewChunksExtension({ suggestions: review }), collaborationControls(noHost)];
   }
 
-  /** What the editor shows of a review: chunks, marks, controls and unrendered lines. */
   function shown(state: EditorState): unknown {
     const marks: string[] = [];
     for (const source of state.facet(EditorView.decorations)) {
@@ -335,23 +288,16 @@ describe("A review after a sequence of edits", function () {
   }
 
   it("shows what a new editor shows for the suggestions that the provider maps", function () {
-    // Each edit is stated on the text that the edits before it made.
     const edits: Array<(doc: string) => ChangeSpec> = [
-      // Far from each chunk.
       (doc) => ({ from: doc.indexOf("Review"), insert: "A " }),
-      // Inside the alpha anchor: the anchor splits around the owner's text.
       (doc) => ({ from: doc.indexOf("proposed") + 4, insert: "OWNER" }),
-      // A new line before the bravo chunk on its own line.
       (doc) => ({ from: doc.indexOf("bravo"), insert: "\n" }),
-      // Over the whole delta insertion: the suggestion is gone.
       (doc) => ({
         from: doc.indexOf("end"),
         to: doc.indexOf("end") + "end".length,
         insert: "stop",
       }),
-      // Across two blocks: from the alpha line into the bravo chunk.
       (doc) => ({ from: doc.indexOf("text"), to: doc.indexOf("first") }),
-      // At the seam of the charlie deletion.
       (doc) => ({ from: doc.indexOf("keeps"), insert: "now " }),
     ];
     let state = EditorState.create({ doc: WORKING, extensions: extensions(suggestions()) });
