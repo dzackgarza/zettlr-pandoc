@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Build and start Zettlr-Pandoc from the repository behind the installed
-# launcher symlink. The app is ready only when it reports a completed boot.
 set -euo pipefail
 
 : "${HOME:?HOME must be set}"
@@ -16,11 +14,6 @@ script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
 repo=$(cd -- "$(dirname -- "$script_path")/../.." && pwd -P)
 log="$HOME/.cache/zettlr-pandoc-dev.log"
 app_class="zettlr-pandoc"
-# How long to wait for the app window. A current packaged build only has to
-# start Electron. A rebuild first runs `just package`, whose own ceiling is
-# verify-build.py's BUILD_TIMEOUT_S (600s), so the wait must outlast it —
-# otherwise the splash gives up on a build that is still working, and the only
-# way to reach this deadline is a `just package` that outlived its own timeout.
 launch_timeout=300
 rebuild_launch_timeout=660
 
@@ -29,10 +22,6 @@ if [[ ! -f "$repo/justfile" ]]; then
   exit 1
 fi
 
-# True once Hyprland reports a window of the app's class. A hyprctl failure is
-# not "the app is not up yet" — it means the compositor cannot be queried at all,
-# and silently reading that as "keep waiting" would spin until the launch timeout
-# and then blame the app. Report it and stop.
 app_up() {
   local clients
   if ! clients=$(hyprctl clients -j 2>&1); then
@@ -44,17 +33,10 @@ app_up() {
     'any(.[]; .class == $app_class)' >/dev/null <<<"$clients"
 }
 
-# True while the pid is alive. A signal-0 probe fails for two very different
-# reasons: the process is gone (the answer this function exists to give) or the
-# probe itself was refused, e.g. EPERM. Discarding stderr collapsed both into
-# "dead", which would report a spurious launch failure.
 process_alive() {
   local pid="$1"
   local probe
 
-  # LC_ALL=C pins strerror to the English text matched below; without it a
-  # localized "Kein Prozess vorhanden" falls through to the fatal branch and
-  # aborts the launch over a process that simply exited.
   if probe=$(LC_ALL=C kill -0 "$pid" 2>&1); then
     return 0
   fi
@@ -66,13 +48,6 @@ process_alive() {
   exit 1
 }
 
-# True while an app holds the single-instance lock of the profile that this
-# start opens. Chromium's ProcessSingleton (process_singleton_posix.cc) keeps
-# the lock as the symbolic link SingletonLock -> "<hostname>-<pid>"; a link of
-# another host or of a process that is gone is a stale lock, which the next
-# start takes over. A window of the class does not decide: an app of another
-# profile (--data-dir) has the same class, and this start is not delivered to
-# it.
 profile_running() {
   local lock="$profile/SingletonLock"
   local target
@@ -91,8 +66,6 @@ restore_cursor() {
   tput cnorm >/dev/null 2>&1
 }
 
-# This script runs inside the splash terminal, which closes the moment it
-# returns. A failure must stay on screen until the user closes it.
 hold_open() {
   restore_cursor
   printf '\n   Press any key to close.'
@@ -108,9 +81,6 @@ fail() {
   exit 1
 }
 
-# True once the app reports a completed boot on stdout (source/main.ts) and
-# Hyprland has mapped its window. The window alone is not enough: Electron's
-# fatal error dialog carries the same class.
 app_booted() {
   grep -qxE '\[Application\] (Boot|Launch) complete\.' "$log" && app_up
 }
@@ -138,11 +108,6 @@ spin_until_booted() {
     fi
 
     if (( SECONDS - start > launch_timeout )); then
-      # The launch runs detached in its own process group. Abandoning it here
-      # would let a still-running `just package` exec the app minutes after the
-      # splash closed, against a caller that has already torn its state down
-      # (observed 2026-08-14: an orphan window holding a deleted $HOME). ESRCH
-      # is the one legal failure — the group beat us to it.
       if termination_error=$(LC_ALL=C kill -- -"$launch_pid" 2>&1); then
         :
       elif [[ "$termination_error" != *"No such process"* ]]; then
@@ -166,8 +131,6 @@ spin_until_booted() {
 trap restore_cursor EXIT
 
 mkdir -p "$HOME/.cache"
-# Serialize build selection and this launch's completion log. The app does not
-# inherit this descriptor: the launcher releases it as soon as startup finishes.
 exec 9>"$HOME/.cache/zettlr-pandoc-launch.lock"
 flock -w "$rebuild_launch_timeout" 9 || fail "Another desktop launch has not completed."
 printf '=== %s starting zettlr-pandoc from %s ===\n' "$(date)" "$repo" >"$log"
@@ -176,10 +139,6 @@ packaged_dir="$repo/out/Zettlr-Pandoc-linux-x64"
 packaged_binary="$packaged_dir/zettlr-pandoc"
 stamp_file="$packaged_dir/.source-fingerprint"
 
-# The profile of this start: the folder of --data-dir, resolved as
-# source/main.ts resolves it for a packaged app (relative to the folder of the
-# binary), or the userData folder of Electron (appData/productName; appData
-# is XDG_CONFIG_HOME, or ~/.config when it is not set).
 profile="${XDG_CONFIG_HOME:-$HOME/.config}/Zettlr-Pandoc"
 for argument in "$@"; do
   if [[ "$argument" == --data-dir=* ]]; then
@@ -193,33 +152,19 @@ done
 running=false
 if profile_running; then running=true; fi
 
-macro_generator="$HOME/.pandoc/bin/generate-mathjax-config.py"
 macro_config="$HOME/.pandoc/templates/css/mathjax-macros.json"
 
 if ! "$running"; then
-  if [[ ! -f "$macro_generator" ]]; then
-    fail "MathJax macro generator is unavailable: $macro_generator"
-  fi
-  if ! timeout 15 python3 "$macro_generator" >>"$log" 2>&1; then
+  if ! "$repo/scripts/desktop/zettlr-pandoc-refresh-macros" >>"$log" 2>&1; then
     fail "MathJax macro refresh failed."
   fi
   printf '[boot] %s regenerated canonical MathJax projections -> %s\n' "$(date +%T)" "$macro_config" >>"$log"
 fi
 
-# Honest launches without repeat cost: the packaged build in out/ carries a
-# stamp of the source fingerprint it was built from. A matching fingerprint
-# means no commit, tracked edit, or untracked file has changed since that
-# build — run the binary as-is. Any mismatch (or missing build) repackages
-# and stamps AFTER the build succeeds, so a failed build can never be
-# mistaken for current. Hot-reload development stays on `just launch-desktop`.
 if ! fingerprint=$("$repo/scripts/desktop/zettlr-pandoc-source-fingerprint" "$repo"); then
   fail "Could not fingerprint the repository source."
 fi
 
-# The app answers Agent API callers only with the token of its environment,
-# and an app with an enabled API and no token does not start. A desktop
-# entry has no shell environment: direnv loads ~/.envrc, the one place
-# that holds the token, for the app and for nothing else.
 if [[ ! -f "$HOME/.envrc" ]]; then
   fail "The environment file is unavailable: $HOME/.envrc"
 fi
@@ -230,8 +175,6 @@ if "$running" || { [[ -x "$packaged_binary" && -f "$stamp_file" ]] && [[ $(<"$st
   spinner_label='Starting (no rebuild)'
   tput civis >/dev/null 2>&1
   printf '[boot] %s launching packaged binary (existing instance or current build)\n' "$(date +%T)" >>"$log"
-  # An existing owner already holds the inspection port. Delivery processes
-  # need no debugger of their own.
   debug_args=()
   if ! "$running"; then debug_args=(--remote-debugging-port=27413); fi
   setsid direnv exec "$HOME" "$packaged_binary" --ozone-platform=wayland "${debug_args[@]}" "$@" >>"$log" 2>&1 </dev/null 9>&- &
@@ -240,10 +183,6 @@ else
   printf '\n   Source changed \342\200\224 rebuilding \033[1mZettlr-Pandoc\033[0m before launch\n\n'
   tput civis >/dev/null 2>&1
   spinner_label='Building local package & starting'
-  # `just package` computes and writes the stamp itself, fingerprinting
-  # BEFORE the build so a mid-build edit reads as stale on the next launch.
-  # This is a local launch artifact, not a release: skip JS minification, which
-  # otherwise dominates rebuild time across the 14 renderer entrypoints.
   debug_port="--remote-debugging-port=27413"
   setsid sh -c '
     repo="$1"; binary="$2"; debug="$3"; shift 3

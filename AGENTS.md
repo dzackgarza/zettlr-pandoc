@@ -161,6 +161,8 @@ Desktop entry → wrapper → splash → boot script:
   as an app of another profile has the same class. The class is only how the
   script sees that the window of its own start is up.
 - Launcher log: `~/.cache/zettlr-pandoc-dev.log`.
+- The steps of a start, the macro refresh and the time limits:
+  [desktop-launcher.md](docs/agents/desktop-launcher.md).
 
 ## Rules for every change
 
