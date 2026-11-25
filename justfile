@@ -1,14 +1,8 @@
-# Launch the MathJax-rendering fork spike.
 bun := "bun"
 
-# The package manager that package.json declares. bun 1.4 installs a second
-# copy of the vendored @lezer/markdown under @codemirror/lang-markdown from
-# the same lockfile, and CodeMirror then rejects the parser of the app
-# (test/pandoc-lezer-fork-integration.spec.ts).
 package_manager := `jq -r .packageManager package.json`
 zettlr_agent_tunnel_service := "openai-tunnel-zettlr-pandoc.service"
 
-# ai-review-ci contract consumed by doctor and the shared workflow triggers.
 ai_review_ci_schema_version := "1"
 ai_review_ci_profile := "bun"
 ai_review_ci_ref := "main"
@@ -17,7 +11,7 @@ ai_review_ci_workflow_template_version := "1"
 ai_review_ci_local_delegation := "global-justfile"
 ai_review_ci_default_branch := "develop"
 
-# Show available recipes.
+[doc("Show available recipes.")]
 default:
     @just --list
 
@@ -25,61 +19,50 @@ default:
 sync-dependencies:
     {{bun}} x {{package_manager}} install --frozen-lockfile
 
-# Install the repo-owned Hyprland desktop launcher into ~/.local.
+[doc("Install the repo-owned Hyprland desktop launcher into ~/.local.")]
 install-desktop-launcher:
     bash "{{justfile_directory()}}/scripts/install-desktop-launcher.sh"
 
-# Install the repo-owned systemd user service for the Agent API OpenAI MCP tunnel.
+[doc("Install the repo-owned systemd user service for the Agent API OpenAI MCP tunnel.")]
 install-systemd-tunnel:
     bash "{{justfile_directory()}}/scripts/install-systemd-tunnel.sh"
 
-# Install the system unit that restarts the tunnel after resume (needs sudo).
+[doc("Install the system unit that restarts the tunnel after resume (needs sudo).")]
 install-systemd-tunnel-resume:
     sudo install -m 0644 "{{justfile_directory()}}/scripts/systemd/openai-tunnel-zettlr-pandoc-resume@.service" /etc/systemd/system/
     sudo systemctl daemon-reload
     sudo systemctl enable "openai-tunnel-zettlr-pandoc-resume@$(id -un).service"
 
-# Enable the Agent API tunnel service and start it from the installed unit.
-# A tunnel that runs is started again, so a changed unit takes effect.
+[doc("Enable the Agent API tunnel service and start it from the installed unit.")]
 start-systemd-tunnel:
     systemctl --user daemon-reload
     systemctl --user enable "{{zettlr_agent_tunnel_service}}"
     systemctl --user restart "{{zettlr_agent_tunnel_service}}"
 
-# Stop and disable the Agent API tunnel service.
+[doc("Stop and disable the Agent API tunnel service.")]
 stop-systemd-tunnel:
     systemctl --user disable --now "{{zettlr_agent_tunnel_service}}"
 
-# Inspect the tunnel service state.
+[doc("Inspect the tunnel service state.")]
 status-systemd-tunnel:
     systemctl --user status "{{zettlr_agent_tunnel_service}}" --no-pager
 
-# Launch the app in develop mode (webpack dev server + Electron).
-# Free the dev ports first: a launch that was killed (or whose app was never
-# quit) leaves a forge-start/Electron holding :9001, and the next launch dies
-# on EADDRINUSE with the cause swallowed. --kill reaps only this project's
-# stale dev processes.
+[doc("Launch the app in develop mode (webpack dev server + Electron).")]
 launch: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py" --kill
     {{bun}} run start
 
-# Launch the desktop app in develop mode with the normal user configuration.
-# Extra arguments are file paths and app options handed to Electron
-# (electron-forge forwards app arguments after `--`); `--vue-devtools` loads
-# the Vue.js devtools extension. [positional-arguments] exposes them as "$@" so
-# paths containing spaces survive; bare {{args}} interpolation would word-split.
+[doc("Launch the desktop app in develop mode with the normal user configuration.")]
 [positional-arguments]
 launch-desktop *files: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py" --kill
     "{{justfile_directory()}}/node_modules/.bin/electron-forge" start -- "$@"
 
-# Build and verify a packaged Linux x64 app into out/Zettlr-Pandoc-linux-x64/.
-# The verifier writes the source fingerprint only after it proves that a fresh
-# app.asar contains the current commit.
+[doc("Build and verify a packaged Linux x64 app into out/Zettlr-Pandoc-linux-x64/.")]
 package: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/verify-build.py"
 
-# Bump the app version by level (patch, minor or major) and commit package.json.
+[doc("Bump the app version by level (patch, minor or major) and commit package.json.")]
 bump level:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -93,7 +76,7 @@ bump level:
     fi
     git commit -m "chore(release): v$version" -- package.json
 
-# Tag the package.json version and push the tag; the Release workflow builds and publishes the AppImage.
+[doc("Tag the package.json version and push the tag; the Release workflow builds and publishes the AppImage.")]
 release title:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -103,8 +86,7 @@ release title:
     git tag -a "v$version" -m "{{title}}"
     git push origin "refs/tags/v$version"
 
-# Build the AppImage and its checksum list into release/ from a clean, verified
-# package of HEAD.
+[doc("Build the AppImage and its checksum list into release/ from a clean, verified")]
 [private]
 release-assets: package
     #!/usr/bin/env bash
@@ -116,69 +98,30 @@ release-assets: package
     find release -mindepth 1 -maxdepth 1 ! -name '*.AppImage' -exec trash {} +
     (cd release && sha256sum -- *.AppImage > SHA256SUMS.txt)
 
-# Run the packaged binary (build it first with `just package`).
+[doc("Run the packaged binary (build it first with `just package`).")]
 run-packaged:
     ./out/Zettlr-Pandoc-linux-x64/zettlr-pandoc
 
-# Run exactly one focused TypeScript test file without inheriting Mocha's
-# repository-wide spec glob. Usage: just test-file test/example.spec.ts
+[doc("Run exactly one focused TypeScript test file without inheriting Mocha's")]
 test-file file: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "{{file}}"
 
-# The unit-test launcher removes its temp directory at exit; an assembled-app
-# spec keeps its artifacts in the system temp directory, as under `test-e2e`.
-# Run one assembled-app spec against the packaged build of the source.
+[doc("The unit-test launcher removes its temp directory at exit; an assembled-app")]
 test-e2e-file file: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     @{{e2e_lanes}} "{{file}}"
 
-# The time limit of one assembled-app spec file. The slowest file compiles a
-# build of its own and takes 69 s in a full run on the workstation; each
-# other file takes less than 50 s.
 e2e_file_limit_seconds := "180"
 
-# The start of the lanes runner in a recipe line. The just process of
-# `_e2e-run` takes the place of the shell of the line, so the just process of
-# the recipe passes its SIGTERM on to it, and the kernel ends it with the
-# just process of the recipe (`--pdeathsig`).
 e2e_lanes := 'exec setpriv --pdeathsig KILL just _e2e-run node --import tsx "' + justfile_directory() + '/e2e/support/run-lanes.ts" --file-limit-seconds ' + e2e_file_limit_seconds
 
-# An assembled-app spec starts the packaged build (`attach`), so a run
-# compiles the app one time. The build runs when the stamp of the package is
-# not the fingerprint of the source.
+[doc("An assembled-app spec starts the packaged build (`attach`), so a run")]
 [private]
 _current-package: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/verify-build.py" --if-stale
 
-# Run a command in the environment of an e2e run. The run owns its
-# loopback; the runner of `e2e/support/run-lanes.ts` owns the session bus and
-# the X displays (one Xvfb server for each lane, #70).
-#
-# The runner starts a session bus without services
-# (`scripts/e2e-session-bus.conf`) and gives it to each spec file: a desktop
-# notification of the app of a run does not reach the desktop of the author.
-#
-# The command is the one process of the recipe, so a signal that just passes
-# on (SIGTERM) is a signal of the command. The kernel ends the command when
-# its just process ends (`--pdeathsig`), also when SIGKILL ended it.
-#
-# The loopback is a network namespace with `lo` and no other interface. An
-# app of the run binds its ports there: a process of the host, such as the
-# desktop app of the author on the default Agent API port, takes no port
-# from the run, and the run reaches no service of the host and no network
-# (#215).
-#
-# The X socket folder is a mount of its own: /tmp/.X11-unix of the run is an
-# empty tmpfs. Xvfb removes the socket path of its display before it binds,
-# and with -displayfd it takes display 0 over the lock of a running server;
-# in the folder of the host that removes the socket of the X server of the
-# desktop.
-#
-# The outer namespace has root, which sets up `lo` and the mount. The command
-# runs in an inner user namespace with the user and the group of the run and
-# no capabilities. The hosted runner permits the namespaces after
-# `just setup-ci`.
+[doc("Run a command in the environment of an e2e run. The run owns its")]
 [private]
 [positional-arguments]
 _e2e-run +command:
@@ -189,77 +132,59 @@ _e2e-run +command:
     exec setpriv --pdeathsig KILL unshare --user --map-root-user --net --mount -- \
       bash -c "$setup" "$(id -u)" "$(id -g)" "$@"
 
-# Install or upgrade the flowmark and flowmark-lint commands from Flowmark's main branch.
+[doc("Install or upgrade the flowmark and flowmark-lint commands from Flowmark's main branch.")]
 install-flowmark:
     uv tool install --upgrade 'flowmark @ git+https://github.com/dzackgarza/pandoc-flowmark@main'
 
-# Run the focused workspace-reference test suite.
+[doc("Run the focused workspace-reference test suite.")]
 test-references: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/export-quoted-inputs.spec.ts" "test/documents-provider-navigation.spec.ts" "test/preflight-crossref.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-search.spec.ts"
 
-# Run the reference UI suite: the references-provider Electron shell spec
-# (Phase 3b) plus the Chromium probe specs (Mod-P search overlay incl. the
-# Phase 8 badge-keyed reverse lookup, Phase 5 navigation scenes, Phase 6
-# create-label dialog + key-edit prompt, Phase 8 recoverable-error surface).
-# Mirrors test-file's invocation with the longer timeout the xvfb probes need.
+[doc("Run the reference UI suite: the references-provider Electron shell spec")]
 test-reference-ui: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/reference-provider-shell.spec.ts" "test/reference-search-overlay.spec.ts" "test/reference-navigation.spec.ts" "test/reference-create-label.spec.ts" "test/reference-error-surface.spec.ts"
 
-# Run the annotations panel animation performance and layout isolation spec.
+[doc("Run the annotations panel animation performance and layout isolation spec.")]
 test-annotations-animation: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/annotations-panel-animation.spec.ts"
 
-# Cross-repository proof: ordered Project inputs through the companion
-# pandoc-config compile-pandoc-project recipe (issue #1). Hard-bails when the
-# companion checkout is missing; run explicitly, not part of the commit gate
-# (it depends on a sibling checkout and a TeX toolchain run).
+[doc("Cross-repository proof: ordered Project inputs through the companion")]
 test-pandoc-config-integration:
     bash "{{justfile_directory()}}/scripts/test-pandoc-config-integration.sh"
 
-# Run the format and lint services against the installed Flowmark commands.
+[doc("Run the format and lint services against the installed Flowmark commands.")]
 test-flowmark-integration: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "test/flowmark-format-integration.ts"
 
-# Run the Zotero operations against the running Zotero, its local-write-api add-on and the Better BibTeX export.
+[doc("Run the Zotero operations against the running Zotero, its local-write-api add-on and the Better BibTeX export.")]
 test-zotero-integration: sync-dependencies
     "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/zotero-agent-api-integration.ts"
 
-# Run the repository test suite. The guard executes before Mocha can start.
+[doc("Run the repository test suite. The guard executes before Mocha can start.")]
 test: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/scripts/run-unit-tests.sh" --timeout 120000 --inline-diffs
 
-# Run the assembled Electron app against its isolated document workspace.
-# Portable: runs on hosted CI and locally alike.
-# `shard` is the part of the files that the run takes (`2/4`: the second of
-# four parts); a job of the hosted run takes one part.
+[doc("Run the assembled Electron app against its isolated document workspace.")]
 test-e2e shard="1/1": _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     @{{e2e_lanes}} --shard {{shard}} e2e/*.spec.ts
 
-# Run the workstation-owned desktop-launcher proofs (e2e/desktop/). These
-# drive the installed desktop entry through a live Hyprland compositor and
-# the packaged binary from `just package`; they assert those preconditions
-# loudly instead of skipping, so they run in the local push gate, not CI.
+[doc("Run the workstation-owned desktop-launcher proofs (e2e/desktop/). These")]
 test-e2e-desktop: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     {{bun}} run test:e2e:desktop
 
-# Git event hooks are installed globally by ai-review-ci via core.hooksPath
-# (`pre-commit` -> this repo's test-commit, `pre-push` -> test-push).
-# This repo owns only the delegated recipe contract, not hook installation.
+[doc("Git event hooks are installed globally by ai-review-ci via core.hooksPath")]
 [private]
 test-commit:
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-commit
 
-# The desktop proofs hang off THIS recipe rather than scripts["test:push"]:
-# the pre-push hook is the only caller of it, while the CI tier reaches the
-# profile's own test-push directly. A hosted runner has no compositor and no
-# packaged binary, so a desktop proof there can only fail on its preconditions.
+[doc("The desktop proofs hang off THIS recipe rather than scripts[\"test:push\"]:")]
 [private]
 test-push:
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-push
@@ -272,7 +197,7 @@ test-ci:
     bash "{{justfile_directory()}}/scripts/configure-electron-sandbox-ci.sh" "{{justfile_directory()}}/node_modules/electron/dist"
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-ci
 
-# The scheduled QC run dispatches this tier: the whole-tree debt audit.
+[doc("The scheduled QC run dispatches this tier: the whole-tree debt audit.")]
 [private]
 ambient:
     {{bun}} x {{package_manager}} install --frozen-lockfile
@@ -283,177 +208,87 @@ setup-ci:
     just --justfile "{{justfile_directory()}}/justfile" install-flowmark
     bash "{{justfile_directory()}}/scripts/setup-ci-toolchain.sh"
 
-# Capture the real editor renderer in an isolated offscreen Electron process.
-# This never starts Forge, a dev server, xdg-open, or the system browser.
-# A fresh package-manager install leaves electron's chrome-sandbox without its
-# root-owned SUID bits, which aborts Chromium under xvfb. The probe renders
-# local test content only, so run unsandboxed rather than requiring sudo
-# provisioning for the test suite.
+[doc("Capture the real editor renderer in an isolated offscreen Electron process.")]
 capture-pandoc-divs output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" pandoc-divs "{{output}}"
 
-# Capture rendered YAML front matter in the production CodeMirror editor.
-# This never starts Forge, a dev server, xdg-open, or the system browser.
+[doc("Capture rendered YAML front matter in the production CodeMirror editor.")]
 capture-yaml-frontmatter output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" yaml-frontmatter "{{output}}"
 
-# Capture the widget-indent scenes (issue #15) in isolated offscreen Electron:
-# math widgets on visually indented list lines, plus the blockquote/div
-# regression scenes. Writes screenshots and per-scene diagnostics JSON.
-# This never starts Forge, a dev server, xdg-open, or the system browser.
+[doc("Capture the widget-indent scenes (issue #15) in isolated offscreen Electron:")]
 capture-widget-indent output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" widget-indent "{{output}}"
 
-# Capture the TikZ editor scenes (issue #14) in isolated offscreen Electron:
-# inline figures rendered by the REAL toolchain (pandoc + pdflatex + pdf2svg
-# through the shared Pandoc filter), the in-place compile diagnostic, explicit
-# lightbox affordance, and textbook-scale corpus. The same run loads the live
-# Stacks tags 01JO/07JW/067L, verifies their recorded xymatrix source, and emits
-# original/local/side-by-side screenshots plus normalized measurements. Requires
-# pdflatex, pdf2svg, and network access to stacks.math.columbia.edu.
-# This never starts Forge, a dev server, xdg-open, or the system browser.
+[doc("Capture the TikZ editor scenes (issue #14) in isolated offscreen Electron:")]
 capture-tikz output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" tikz "{{output}}"
 
-# Capture and assemble the README demo GIFs (math typing, theorem envs,
-# review workflow): scripted scenes replayed frame by frame in isolated
-# offscreen Electron, then assembled with ffmpeg. Writes <scene>.gif files
-# into the output directory. Requires ffmpeg and ImageMagick (`magick`).
-# This never starts Forge, a dev server, xdg-open, or the system browser.
+[doc("Capture and assemble the README demo GIFs (math typing, theorem envs,")]
 readme-demos output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" readme-demos "{{output}}"
     bash "{{justfile_directory()}}/scripts/build-readme-demos.sh" "{{output}}"
 
-# Capture the real Pandoc quick-reference Vue component in isolated Electron.
-# This never starts Forge, a dev server, xdg-open, or the system browser.
+[doc("Capture the real Pandoc quick-reference Vue component in isolated Electron.")]
 capture-pandoc-help output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" pandoc-help "{{output}}"
 
-# Capture the Mod-P reference search overlay in isolated Electron: bundles the
-# probe entry with the production renderer webpack config, drives the real
-# fixture-backed overlay, and writes screenshots plus the probe result JSON.
-# This never starts Forge, a dev server, xdg-open, or the system browser.
+[doc("Capture the Mod-P reference search overlay in isolated Electron: bundles the")]
 capture-reference-search output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-search "{{output}}"
 
-# Capture the reference chip presentation in isolated offscreen Electron
-# (issue #1 Phase 4). Follows the capture-pandoc-divs pattern; the entry and
-# capture files land with the green implementation, and the recipe fails
-# loudly until they exist. This never starts Forge, a dev server, xdg-open,
-# or the system browser.
-# A fresh package-manager install leaves electron's chrome-sandbox without its
-# root-owned SUID bits, which aborts Chromium under xvfb. The probe renders
-# local test content only, so run unsandboxed rather than requiring sudo
-# provisioning for the test suite.
+[doc("Capture the reference chip presentation in isolated offscreen Electron")]
 capture-reference-chips output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-chips "{{output}}"
 
-# Capture the combined `@` completion popup in isolated offscreen Electron
-# (issue #1, ledger C4): citation entries and typed label entries together,
-# a label option's info panel with its quick-help link, and the disabled
-# another-Project entry (whose inert apply the driver proves). Follows the
-# capture-reference-chips esbuild pattern. This never starts Forge, a dev
-# server, xdg-open, or the system browser.
+[doc("Capture the combined `@` completion popup in isolated offscreen Electron")]
 capture-reference-completion output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-completion "{{output}}"
 
-# Capture the reference hover tooltip presentation in isolated offscreen
-# Electron (issue #1 Phase 4). Follows the capture-pandoc-divs pattern; the
-# entry and capture files land with the green implementation, and the recipe
-# fails loudly until they exist. This never starts Forge, a dev server,
-# xdg-open, or the system browser.
-# A fresh package-manager install leaves electron's chrome-sandbox without its
-# root-owned SUID bits, which aborts Chromium under xvfb. The probe renders
-# local test content only, so run unsandboxed rather than requiring sudo
-# provisioning for the test suite.
+[doc("Capture the reference hover tooltip presentation in isolated offscreen")]
 capture-reference-hover output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-hover "{{output}}"
 
-# Capture the Phase 5 reference navigation scenes (edit-first reveal, fold +
-# scroll capture state, Mod-click states) in isolated offscreen Electron.
-# Mirrors capture-pandoc-divs' esbuild bundling and the
-# capture-reference-search Electron sandbox flags; the probe writes the same
-# screenshots the test spec drives. This never starts Forge, a dev server,
-# xdg-open, or the system browser.
+[doc("Capture the Phase 5 reference navigation scenes (edit-first reveal, fold +")]
 capture-reference-navigation output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" reference-navigation "{{output}}"
 
-# Capture the issue #34 review-diff accept/reject interface in isolated
-# offscreen Electron at desktop and narrow widths, light and dark.
-# This never starts Forge, a dev server, xdg-open, or the system browser.
+[doc("Capture the issue #34 review-diff accept/reject interface in isolated")]
 capture-review-diff output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" review-diff "{{output}}"
 
-# Capture M5's four structural-gate scenes (doc-collaboration plan, section
-# 10 names 02/07/08/09): several open targets each carrying an ordinal
-# marker, a point target's hollow marker at its deletion seam, an orphaned
-# target's marker with no span, and overlapping targets collapsed to one
-# marker with a count — light and dark. Scoped to what the editor alone
-# renders as locators (marks and gutter markers); M10 assembles the
-# full twelve-scene `just capture-annotations` around these.
+[doc("Capture M5's four structural-gate scenes (doc-collaboration plan, section")]
 capture-editor-annotations output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" editor-annotations "{{output}}"
 
-# Capture the M6 selection-creation composer (plan scene
-# 01-selection-composer, gated against mockup-2-creation-dialog.png) in
-# isolated offscreen Electron: bundles the probe entry with the production
-# renderer webpack config, mounts the REAL AnnotationCreateDialog over a
-# real EditorView, types a real instruction, and screenshots the result.
-# This never starts Forge, a dev server, xdg-open, or the system browser.
+[doc("Capture the M6 selection-creation composer (plan scene")]
 capture-selection-composer output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" selection-composer "{{output}}"
 
-# The collaboration scenes of the plan's capture suite, in the current
-# design (workspace list in the panel; chunk controls, review bar and the
-# annotation thread inside the editor): 03 a thread opened from its chip,
-# 05 a thread opened from its panel row with a pending linked proposal, 10
-# a resolved thread shown in the editor, 11 the narrow window, 04 a
-# multi-turn thread with no linked proposal, 06 a partially decided proposal
-# beside the review's remaining chunk controls, the review-inline-controls
-# scenes (light, narrow, dark), and 12 every surface in the dark theme,
-# with the locator states of plan section 3. Captured in isolated offscreen
-# Electron against a real Pinia store and a fixture
-# DocumentCollaborationSession. This never starts Forge, a dev server,
-# xdg-open, or the system browser.
+[doc("The collaboration scenes of the plan's capture suite, in the current")]
 capture-annotations-panel output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" annotations-panel "{{output}}"
 
-# M10's gate: assembles the plan's full twelve-scene capture suite (section
-# 10) into ONE output directory, from the three registrations that already
-# own its scenes — capture-editor-annotations (02/07/08/09, light+dark),
-# capture-selection-composer (01), and capture-annotations-panel (03/05/10/11
-# plus 04/06/12) — rather than inventing a fourth, parallel mechanism. Usage:
-#   bun run test test/annotation-restart.spec.ts && just capture-annotations
-# This never starts Forge, a dev server, xdg-open, or the system browser.
+[doc("M10's gate: assembles the plan's full twelve-scene capture suite (section")]
 capture-annotations output="/tmp/zettlr-pandoc-annotations-captures": sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" editor-annotations "{{output}}"
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" selection-composer "{{output}}"
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" annotations-panel "{{output}}"
     @echo "Twelve-scene capture suite written to {{output}}"
 
-# Capture the real main-window chrome: the assembled app launched through the
-# e2e harness on a workspace whose root is test/fixtures/quarto-book, with the
-# sidebar and the annotation panel visible, in light and dark at 1500 and
-# 1100 px wide. The proof surface for the chrome convergence milestones.
-# Runs under xvfb; never starts a dev server or the system browser.
+[doc("Capture the real main-window chrome: the assembled app launched through the")]
 capture-chrome output="/tmp/zettlr-pandoc-chrome-captures" launch_timeout_ms="180000": _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     xvfb-run -a --server-args="-screen 0 1920x1080x24" node --import tsx "{{justfile_directory()}}/scripts/chrome-capture.ts" "{{output}}" "{{launch_timeout_ms}}"
 
-# Run a real export headlessly (no GUI), via the app's own makeExport with the
-# exact profile list the GUI sees (userData/defaults + custom profiles). Proves
-# an export end-to-end from the terminal. Usage:
-#   just export-headless PDF.yaml path/to/file.md
+[doc("Run a real export headlessly (no GUI), via the app's own makeExport with the")]
 export-headless profile file: sync-dependencies
     node --require "{{justfile_directory()}}/scripts/harness/electron-stub.cjs" --import tsx "{{justfile_directory()}}/scripts/harness/export-run.ts" "{{profile}}" "{{file}}"
 
-# Build observability: run the production package build and PROVE it produced a
-# fresh app.asar built from the current commit. Exits non-zero (loud) if the
-# build silently produced stale/no bytes -- the failure that shipped old code.
+[doc("Build observability: run the production package build and PROVE it produced a")]
 verify-build: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/verify-build.py"
 
-# Verify the EXISTING packaged artifact is built from the current commit, without
-# rebuilding. Fast staleness check.
+[doc("Verify the EXISTING packaged artifact is built from the current commit, without")]
 verify-build-only:
     python3 "{{justfile_directory()}}/scripts/verify-build.py" --verify-only
