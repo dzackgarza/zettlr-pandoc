@@ -1,28 +1,3 @@
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        The math of a Pandoc export
- * CVM-Role:        Test
- * Maintainer:      D. Zack Garza
- * License:         GNU GPL v3
- *
- * Description:     The template of an export owns its math, and the
- *                  application gives an HTML export two places: the MathJax
- *                  component and the folder of the MathJax fonts
- *                  (`exporter/export-math.ts`). These tests run the real
- *                  Pandoc with the real templates of ~/.pandoc (the
- *                  pandoc-config of the machine) and the MathJax that the
- *                  application brings. The HTML page is opened in Chromium:
- *                  a macro of ~/.pandoc, a bold symbol and a chemical
- *                  formula are typeset, and the page asks no other machine
- *                  for anything. Each other writer gets the macros from the
- *                  first input of the export (`MacroInput`): its output
- *                  holds the expansion of a macro, and ConTeXt typesets it.
- *
- * END HEADER
- */
-
 import { pathToFileURL } from "node:url";
 import assert from "assert";
 import { execFile, execFileSync } from "child_process";
@@ -42,7 +17,6 @@ import { runProbe } from "./visual/display-probe";
 
 const execFileAsync = promisify(execFile);
 
-/** The Pandoc directory of the machine: the templates that own the math. */
 const PANDOC_DIRECTORY = path.join(os.homedir(), ".pandoc");
 
 const config = {
@@ -58,13 +32,11 @@ const config = {
   zkn: { linkFormat: "link|title" as const },
 };
 
-/** TeX finds the styles of ~/.pandoc where the TeX of the author finds them. */
 const TEX_ENVIRONMENT = {
   ...process.env,
   TEXINPUTS: `${path.join(PANDOC_DIRECTORY, "styles")}//:`,
 };
 
-/** A profile of the application with other values for some of its keys. */
 async function profileOf(
   profileFile: string,
   changes: Record<string, unknown>,
@@ -76,11 +48,6 @@ async function profileOf(
   return { ...profile, ...changes };
 }
 
-/**
- * Writes the defaults of an export of `source` with a profile, and runs Pandoc
- * with them. The output of a writer that writes a folder (chunkedhtml) is the
- * text of its pages.
- */
 async function exported(
   profile: Record<string, unknown>,
   source: string,
@@ -113,27 +80,19 @@ async function exported(
   return { directory, outputFile, output: await readFile(outputFile, { encoding: "utf8" }) };
 }
 
-/** The text of a PDF. */
 function pdfText(pdfFile: string): string {
   return execFileSync("pdftotext", [pdfFile, "-"], { encoding: "utf8" });
 }
 
-/** The text of the members of an archive (docx, odt, epub) whose names match a pattern. */
 function archiveText(archive: string, member: string): string {
   return execFileSync("unzip", ["-p", archive, member], { encoding: "utf8" });
 }
 
-/**
- * A program of the TeX distribution that kpsewhich belongs to. ConTeXt finds
- * its tree from the path by which it runs; through a link in /usr/bin it
- * finds no texmfcnf.lua ("unknown script mtx-context.lua").
- */
 function texProgram(name: string): string {
   const bin = execFileSync("kpsewhich", ["-var-value=SELFAUTOLOC"], { encoding: "utf8" }).trim();
   return path.join(bin, name);
 }
 
-/** A formula of the expansion of `\Hom(\ZZ, \QQ)` in the MathML of texmath. */
 const HOM_MATHML = /<(mml:)?mi mathvariant="normal">Hom<\/(mml:)?mi>/;
 const HOM_SOURCE = "---\ntitle: Macros\n---\n\nThe set $\\Hom(\\ZZ, \\QQ)$.\n";
 
@@ -183,10 +142,6 @@ describe("The math of a Pandoc export", function () {
       mathJax,
     );
 
-    // The page has one MathJax configuration, that of the template with the
-    // macros. The application wrote none; the template names the two folders
-    // that the application gave it. The profile makes a self-contained page,
-    // so Pandoc put the component itself into the page.
     assert.equal(output.split("window.MathJax =").length - 1, 1, "one MathJax configuration");
     assert.ok(
       output.includes(`mathjax: "${pathToFileURL(mathJax).href}",`),
@@ -205,7 +160,6 @@ describe("The math of a Pandoc export", function () {
     ]);
     const html = await readFile(rendered, { encoding: "utf8" });
     assert.equal(html.split("<mjx-container").length - 1, 3, "three formulas are typeset");
-    // MathJax shows a macro that it does not know as its own text.
     for (const formula of ["\\ZZ", "\\boldsymbol{\\iota}", "\\ce{H2O}"]) {
       assert.ok(html.includes(`<mjx-math data-latex="${formula}"`), `${formula} is a formula`);
       assert.ok(
@@ -224,8 +178,6 @@ describe("The math of a Pandoc export", function () {
   it("gives a reveal.js deck the macros of ~/.pandoc through the MathJax 3 plugin, with the MathJax of the application", async function () {
     this.timeout(60_000);
     const mathJax = path.join(os.tmpdir(), "zettlr-export-mathjax-of-a-deck");
-    // The profile embeds reveal.js itself, which Pandoc gets from the
-    // network. This test reads the deck as text and needs no reveal.js.
     const profile = await profileOf("static/defaults/Reveal.js.yaml", {
       "embed-resources": false,
     });
@@ -275,12 +227,9 @@ describe("The math of a Pandoc export", function () {
       { writer: "slidy", output: "output.html" },
       { writer: "slideous", output: "output.html" },
       { writer: "dzslides", output: "output.html" },
-      // chunkedhtml writes a folder with one page for each section.
       { writer: "chunkedhtml", output: "output" },
     ];
     for (const { writer, output: outputName } of writers) {
-      // The HTML profile makes a self-contained page; the slide writers then
-      // want their scripts and styles, which this test does not need.
       const profile = await profileOf("static/defaults/HTML.yaml", {
         writer,
         "self-contained": false,
@@ -324,9 +273,6 @@ describe("The math of a Pandoc export", function () {
       env: TEX_ENVIRONMENT,
     });
 
-    // The LaTeX profile makes a heading of level 1 a chapter, which the
-    // amsart class of research_draft.tex does not have (#234); the PDF
-    // document has no heading.
     const pdf = await exported(
       await profileOf(latex, { writer: "pdf", "pdf-engine": "pdflatex" }),
       "The set $\\Hom(\\ZZ, \\QQ)$.\n",
@@ -334,8 +280,6 @@ describe("The math of a Pandoc export", function () {
       path.join(os.tmpdir(), "no-mathjax-for-tex"),
     );
 
-    // The macro tree makes \Hom an operator and \ZZ, \QQ bold letters; a
-    // TeX without the macros stops at the first of them.
     for (const pdfFile of [path.join(beamer.directory, "slides.pdf"), pdf.outputFile]) {
       const text = pdfText(pdfFile);
       assert.ok(text.includes("The set Hom(Z, Q)."), text);
@@ -355,7 +299,6 @@ describe("The math of a Pandoc export", function () {
       {
         profile: await profileOf(word, {}),
         outputName: "output.docx",
-        // OMML puts each run of a formula in an <m:t> of its own.
         formula: (file) =>
           [...archiveText(file, "word/document.xml").matchAll(/<m:t[^>]*>([^<]*)<\/m:t>/g)]
             .map((match) => match[1])
@@ -369,7 +312,10 @@ describe("The math of a Pandoc export", function () {
         expansion: HOM_MATHML,
       },
       {
-        profile: await profileOf(word, { writer: "epub3" }),
+        profile: await profileOf(word, {
+          writer: "epub3",
+          "html-math-method": { method: "mathml" },
+        }),
         outputName: "output.epub",
         formula: (file) => archiveText(file, "*.xhtml"),
         expansion: HOM_MATHML,
@@ -390,7 +336,6 @@ describe("The math of a Pandoc export", function () {
         profile: await profileOf("static/defaults/Plain Text.yaml", {}),
         outputName: "output.txt",
         formula: (_file, output) => output,
-        // The plain writer puts a thin space after an operator and a comma.
         expansion: /The set Hom\s?\(Z,\s?Q\)\./,
       },
     ];
@@ -413,16 +358,12 @@ describe("The math of a Pandoc export", function () {
       path.join(os.tmpdir(), "no-mathjax-for-context"),
     );
 
-    // The template of ~/.pandoc loads the MathML module of ConTeXt, and each
-    // formula is the MathML of texmath: ConTeXt is no LaTeX and does not
-    // define \operatorname of the expansion.
     assert.ok(exportedFile.output.includes("\\usemodule[mathml]"), "the template of ~/.pandoc");
     assert.ok(exportedFile.output.includes("\\startmml"), "the formula is MathML");
     execFileSync(texProgram("context"), ["--batchmode", "--nonstopmode", "output.tex"], {
       cwd: exportedFile.directory,
     });
     const text = pdfText(path.join(exportedFile.directory, "output.pdf"));
-    // texmath gives a letter of \mathbf the variant bold-italic (U+1D481).
     assert.match(text, /The set Hom\(𝒁, 𝑸\)\./u);
   });
 

@@ -278,10 +278,17 @@ renderer is covered by it.
     `~/.pandoc`; for the others Pandoc warns "Could not convert TeX math"
     and keeps the TeX. texmath gives a letter of `\mathbf` the variant
     bold-italic.
+  - The math method of EPUB is MathML in Pandoc 3.11 and HTML text in
+    Pandoc 3.9.0.2, the release of the hosted run. A profile that needs
+    MathML in an EPUB names `html-math-method: mathml`.
   - Proof: `test/export-math.spec.ts` (real Pandoc and the real
     `~/.pandoc`: docx, odt, epub3, jats, gfm, plain, and a ConTeXt PDF),
     `test/export-document.spec.ts` (a Word export through the command),
-    `test/export-resolved.spec.ts` (the stage and its filters).
+    `test/export-resolved.spec.ts` (the stage and its filters). A spec
+    starts ConTeXt from the folder of `kpsewhich -var-value=SELFAUTOLOC`:
+    ConTeXt finds its tree from the path by which it runs, and through a
+    link in `/usr/bin` it finds no `texmfcnf.lua` ("unknown script
+    mtx-context.lua").
 - **HTML export:** the HTML templates include one MathJax configuration
   (`mathjax-config.html` of `~/.pandoc/templates`; reveal.js has one of
   its own) whose macro line `~/.pandoc/bin/generate-mathjax-config.py`
