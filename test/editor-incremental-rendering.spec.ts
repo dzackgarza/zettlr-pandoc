@@ -50,11 +50,11 @@ function parsed(state: EditorState): EditorState {
   return state.update({}).state;
 }
 
-function withParserTimePassed<T>(run: () => T): T {
+function withClockStep<T>(step: number, run: () => T): T {
   const realNow = Date.now;
   let now = realNow.call(Date);
   Date.now = () => {
-    now += 1000;
+    now += step;
     return now;
   };
   try {
@@ -62,6 +62,14 @@ function withParserTimePassed<T>(run: () => T): T {
   } finally {
     Date.now = realNow;
   }
+}
+
+function withParserTimePassed<T>(run: () => T): T {
+  return withClockStep(1000, run);
+}
+
+function withParserTimeStopped<T>(run: () => T): T {
+  return withClockStep(0, run);
 }
 
 function countedEditor(doc: string, anchor: number): CountedEditor {
@@ -124,7 +132,13 @@ describe("Block widgets follow the size of a change", function () {
         changes: { from: position, insert: "x" },
         selection: { anchor: position + 1 },
       }).state;
-    const typed = parsed(parserBehind ? withParserTimePassed(edit) : edit());
+    const edited = parserBehind ? withParserTimePassed(edit) : withParserTimeStopped(edit);
+    assert.equal(
+      syntaxTree(edited).length === edited.doc.length,
+      !parserBehind,
+      "the tree at the edit covers the document exactly when the parser is not behind",
+    );
+    const typed = parsed(edited);
     assert.equal(widgets(typed).length, 2 * paragraphCount);
     return editor.made();
   }
