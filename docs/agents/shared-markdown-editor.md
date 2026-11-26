@@ -72,3 +72,15 @@ of `ensureSyntaxTree` then makes the edited block again.
   leaves the editor. A tooltip is inside the element of the editor; a
   tooltip parent outside it would need a place in this plugin. Proof:
   `test/editor-hover-outside.spec.ts`.
+- A `requestMeasure` read that uses a position of the state of its request
+  measures nothing when the document of the view is another document.
+  CodeMirror replaces a waiting request only with a request of the same
+  key, so a request of a line that a later change removed or shortened is
+  read against the new text ("Invalid position 74 in document of length
+  73", #239). `plugins/visual-indent.ts` has such a read: it measures the
+  left edge of the text after the list, quote or whitespace mark of a line,
+  and indents the wrapped lines to it (`text-indent` of minus the width,
+  `padding-left` of the width, less the 6 px left padding of `.cm-line`).
+  It shows each tab as spaces, because the width of a tab changes with the
+  indent and would make the line jump. Proof:
+  `test/editor-visual-indent-measure.spec.ts`.
